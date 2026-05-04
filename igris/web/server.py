@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Dict, List, Optional
 
 from fastapi import Body, FastAPI, HTTPException, Request
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
@@ -21,6 +21,7 @@ from igris.core.task_engine import TaskEngine
 from igris.core.teacher import build_teacher_payload, validate_teacher_assignment, propose_remediation_task
 from igris.core import execution_report
 from igris.core.chat_engine import chat as chat_llm, check_ollama_available
+from igris.core import chat_streaming
 from igris.core.outcome_router import route_outcome
 from igris.core import patch_proposal as patch_mod
 from igris.layers.advisory import router as provider_router
@@ -133,6 +134,63 @@ def create_app() -> FastAPI:
             "fallback_used": result["fallback_used"],
             "latency_ms": result["latency_ms"],
         }
+
+    # ---- Chat Streaming + Tier ----
+
+    @app.post("/api/chat/stream")
+    async def api_chat_stream(request: Request):
+        content = await request.json()
+        message = content.get("message", "")
+        session_id = content.get("session_id")
+        if not message:
+            raise HTTPException(status_code=400, detail="message required")
+
+        history = []
+        if session_id and session_id in sessions:
+            history = sessions[session_id]
+
+        chunks = chat_streaming.chat_stream_sync(
+            message=message, history=history,
+        )
+
+        # Store in session if provided
+        if session_id:
+            if session_id not in sessions:
+                sessions[session_id] = []
+            sessions[session_id].append({"role": "user", "content": message})
+            full_text = "".join(c.text for c in chunks if c.type == "content")
+            sessions[session_id].append({"role": "assistant", "content": full_text})
+
+            task_engine.append_timeline_event({
+                "type": "chat", "title": "Chat stream",
+                "detail": f"User: {message[:80]}",
+            })
+
+        async def event_generator():
+            for chunk in chunks:
+                yield chunk.to_sse()
+
+        return StreamingResponse(
+            event_generator(),
+            media_type="text/event-stream",
+            headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+        )
+
+    @app.get("/api/chat/tiers")
+    async def api_chat_tiers() -> Dict[str, object]:
+        return chat_streaming.get_tier_availability()
+
+    @app.post("/api/chat/tiers")
+    async def api_set_chat_tier(request: Request) -> Dict[str, object]:
+        content = await request.json()
+        tier = content.get("tier", "")
+        if not tier:
+            raise HTTPException(status_code=400, detail="tier required")
+        try:
+            config = chat_streaming.set_tier(tier)
+            return config.to_dict()
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
 
     # ---- Git ----
 
