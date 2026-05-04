@@ -292,6 +292,59 @@ def create_app() -> FastAPI:
     async def api_git_pr_summary(base: str = "main") -> Dict[str, object]:
         return git_ops.generate_pr_summary(base_branch=base)
 
+    # ---- GitHub Workflow (gated) ----
+
+    from igris.layers.git_layer import github_workflow as gh_wf
+
+    @app.post("/api/git/commit")
+    async def api_git_commit_gated(request: Request) -> Dict[str, object]:
+        content = await request.json()
+        message = content.get("message", "")
+        approval = content.get("approval", "")
+        if not message:
+            raise HTTPException(status_code=400, detail="Commit message required")
+        result = gh_wf.gated_commit(message=message, approval=approval)
+        task_engine.append_timeline_event({
+            "type": "git",
+            "title": f"Gated commit: {'OK' if result.success else 'blocked'}",
+            "detail": safety.redact_secrets(result.message if result.success else result.error),
+            "severity": "info" if result.success else "warning",
+        })
+        return result.to_dict()
+
+    @app.post("/api/github/pr/prepare")
+    async def api_github_pr_prepare(request: Request) -> Dict[str, object]:
+        content = await request.json()
+        base = content.get("base", "main")
+        title = content.get("title")
+        extra = content.get("extra_context")
+        prep = gh_wf.prepare_pr(base_branch=base, title=title, extra_context=extra)
+        return prep.to_dict()
+
+    @app.post("/api/github/pr/create")
+    async def api_github_pr_create(request: Request) -> Dict[str, object]:
+        content = await request.json()
+        title = content.get("title", "")
+        body = content.get("body", "")
+        base = content.get("base", "main")
+        approval = content.get("approval", "")
+        if not title:
+            raise HTTPException(status_code=400, detail="PR title required")
+        result = gh_wf.gated_create_pr(
+            title=title, body=body, base=base, approval=approval,
+        )
+        task_engine.append_timeline_event({
+            "type": "github",
+            "title": f"PR create: {'OK (gated)' if result.success else 'blocked'}",
+            "detail": safety.redact_secrets(result.error if result.error else f"PR #{result.pr_number}"),
+            "severity": "info" if result.success else "warning",
+        })
+        return result.to_dict()
+
+    @app.get("/api/github/pr/status")
+    async def api_github_pr_status() -> Dict[str, object]:
+        return gh_wf.get_pr_status()
+
     # ---- Routing / Cost ----
 
     @app.get("/api/routing/history")
