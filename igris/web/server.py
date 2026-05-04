@@ -22,11 +22,13 @@ from igris.core.teacher import build_teacher_payload, validate_teacher_assignmen
 from igris.core import execution_report
 from igris.core.chat_engine import chat as chat_llm, check_ollama_available
 from igris.core.outcome_router import route_outcome
+from igris.core import patch_proposal as patch_mod
 from igris.layers.advisory import router as provider_router
 from igris.layers.execution import runner as execution_runner
 from igris.layers.execution.safe_commands import ALLOWED_COMMANDS
 from igris.core import safety
 from igris.layers.git_layer.git_status import get_git_info
+from igris.layers.git_layer import git_ops
 from igris.models.config import CONFIG
 from igris.models.report import GitStatusResponse, TestRunResponse
 from igris.agents import build_default_registry
@@ -130,6 +132,58 @@ def create_app() -> FastAPI:
             branch=info.branch, remote=info.remote,
             dirty=info.dirty, changed=info.changed, head=info.head,
         )
+
+    @app.get("/api/git/diff")
+    async def api_git_diff(staged: bool = False) -> Dict[str, object]:
+        return git_ops.get_diff(staged=staged)
+
+    @app.get("/api/git/diff/stat")
+    async def api_git_diff_stat() -> Dict[str, object]:
+        return git_ops.get_diff_stat()
+
+    @app.get("/api/git/branches")
+    async def api_git_branches() -> Dict[str, object]:
+        return git_ops.list_branches()
+
+    @app.post("/api/git/branch")
+    async def api_git_create_branch(request: Request) -> Dict[str, object]:
+        content = await request.json()
+        name = content.get("name", "")
+        if not name:
+            raise HTTPException(status_code=400, detail="Branch name required")
+        result = git_ops.create_branch(name)
+        if result.get("success"):
+            task_engine.append_timeline_event({
+                "type": "git", "title": f"Branch created: {result.get('branch')}",
+                "detail": "", "severity": "info",
+            })
+        return result
+
+    @app.post("/api/git/commit-proposal")
+    async def api_git_commit_proposal(request: Request) -> Dict[str, object]:
+        content = await request.json()
+        message = content.get("message", "")
+        files = content.get("files")
+        if not message:
+            raise HTTPException(status_code=400, detail="Commit message required")
+        proposal = git_ops.create_commit_proposal(message, files)
+        return {
+            "message": proposal.message,
+            "files": proposal.files,
+            "safe": proposal.safe,
+            "warnings": proposal.warnings,
+            "blocked_files": proposal.blocked_files,
+            "secret_files": proposal.secret_files,
+            "runtime_artifacts": proposal.runtime_artifacts,
+        }
+
+    @app.get("/api/git/safety-check")
+    async def api_git_safety_check() -> Dict[str, object]:
+        return git_ops.pre_commit_safety_check()
+
+    @app.get("/api/git/pr-summary")
+    async def api_git_pr_summary(base: str = "main") -> Dict[str, object]:
+        return git_ops.generate_pr_summary(base_branch=base)
 
     # ---- Routing / Cost ----
 
@@ -533,6 +587,97 @@ def create_app() -> FastAPI:
             rec = route_outcome(r)
             outcomes.append(rec)
         return {"outcomes": outcomes}
+
+    # ---- Patch Proposals ----
+
+    @app.get("/api/patches")
+    async def api_list_patches() -> Dict[str, object]:
+        patches = patch_mod.list_patch_proposals(project_root=str(CONFIG.project_root))
+        return {"patches": patches}
+
+    @app.post("/api/patches/propose")
+    async def api_propose_patch(request: Request) -> Dict[str, object]:
+        content = await request.json()
+        title = content.get("title", "Untitled patch")
+        description = content.get("description", "")
+        task_id = content.get("task_id")
+        files = content.get("files", [])
+        if not files:
+            raise HTTPException(status_code=400, detail="No files provided")
+        proposal = patch_mod.create_patch_proposal(
+            title=title,
+            description=description,
+            files=files,
+            task_id=task_id,
+            project_root=str(CONFIG.project_root),
+        )
+        task_engine.append_timeline_event({
+            "type": "patch", "title": f"Patch proposed: {title}",
+            "detail": f"{len(files)} file(s)", "severity": "info",
+            "related_task_id": task_id,
+            "related_patch_id": proposal.id,
+        })
+        return patch_mod._proposal_to_dict(proposal)
+
+    @app.get("/api/patches/{proposal_id}")
+    async def api_get_patch(proposal_id: str) -> Dict[str, object]:
+        proposal = patch_mod.load_patch_proposal(proposal_id, project_root=str(CONFIG.project_root))
+        if proposal is None:
+            raise HTTPException(status_code=404, detail="Proposal not found")
+        return patch_mod._proposal_to_dict(proposal)
+
+    @app.post("/api/patches/{proposal_id}/validate")
+    async def api_validate_patch(proposal_id: str) -> Dict[str, object]:
+        proposal = patch_mod.load_patch_proposal(proposal_id, project_root=str(CONFIG.project_root))
+        if proposal is None:
+            raise HTTPException(status_code=404, detail="Proposal not found")
+        result = patch_mod.validate_patch_proposal(proposal, project_root=str(CONFIG.project_root))
+        severity = "info" if result.valid else "warning"
+        task_engine.append_timeline_event({
+            "type": "patch", "title": f"Patch validated: {proposal.title}",
+            "detail": f"valid={result.valid}, risk={result.risk}",
+            "severity": severity,
+            "related_patch_id": proposal.id,
+        })
+        return {
+            "proposal_id": proposal_id,
+            "status": proposal.status,
+            "validation": {
+                "valid": result.valid,
+                "reasons": result.reasons,
+                "blocked_paths": result.blocked_paths,
+                "secret_findings": result.secret_findings,
+                "risk": result.risk,
+            },
+        }
+
+    @app.post("/api/patches/{proposal_id}/apply")
+    async def api_apply_patch(proposal_id: str) -> Dict[str, object]:
+        result = patch_mod.apply_patch_proposal(proposal_id, project_root=str(CONFIG.project_root))
+        if not result.get("success"):
+            raise HTTPException(status_code=400, detail=result.get("error", "Apply failed"))
+        task_engine.append_timeline_event({
+            "type": "patch", "title": f"Patch applied: {proposal_id}",
+            "detail": f"{len(result.get('applied_files', []))} file(s) modified",
+            "severity": "info",
+            "related_patch_id": proposal_id,
+        })
+        return result
+
+    @app.post("/api/patches/{proposal_id}/reject")
+    async def api_reject_patch(proposal_id: str, request: Request) -> Dict[str, object]:
+        content = await request.json()
+        reason = content.get("reason", "")
+        result = patch_mod.reject_patch_proposal(proposal_id, reason=reason, project_root=str(CONFIG.project_root))
+        if not result.get("success"):
+            raise HTTPException(status_code=400, detail=result.get("error", "Reject failed"))
+        task_engine.append_timeline_event({
+            "type": "patch", "title": f"Patch rejected: {proposal_id}",
+            "detail": reason or "No reason given",
+            "severity": "warning",
+            "related_patch_id": proposal_id,
+        })
+        return result
 
     return app
 

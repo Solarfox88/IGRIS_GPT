@@ -183,7 +183,7 @@
     var loaded = false;
     $$('.tab[data-tab="git"]').forEach(function (btn) {
       btn.addEventListener("click", function () {
-        if (!loaded) { loaded = true; loadGit(); }
+        if (!loaded) { loaded = true; loadGit(); loadBranches(); }
       });
     });
   })();
@@ -196,6 +196,108 @@
       $("#git-info").innerHTML = '<span class="error">Failed to load git status</span>';
     }
   }
+
+  async function loadBranches() {
+    var r = await api("GET", "/api/git/branches");
+    if (r.ok) {
+      var d = r.data;
+      var html = "<strong>Current:</strong> " + esc(d.current || "unknown") + "<br>";
+      html += "<strong>Branches:</strong> " + (d.branches || []).map(function(b) { return esc(b); }).join(", ");
+      $("#git-branches").innerHTML = html;
+    }
+  }
+
+  async function loadDiff(staged) {
+    var url = "/api/git/diff" + (staged ? "?staged=true" : "");
+    var r = await api("GET", url);
+    if (r.ok) {
+      var d = r.data;
+      if (!d.diff) {
+        $("#git-diff").innerHTML = "<em>No changes</em>";
+        return;
+      }
+      var lines = d.diff.split("\n").map(function(l) {
+        if (l.startsWith("+++") || l.startsWith("---")) return '<div class="diff-line diff-hdr">' + esc(l) + '</div>';
+        if (l.startsWith("+")) return '<div class="diff-line diff-add">' + esc(l) + '</div>';
+        if (l.startsWith("-")) return '<div class="diff-line diff-del">' + esc(l) + '</div>';
+        if (l.startsWith("@@")) return '<div class="diff-line diff-hdr">' + esc(l) + '</div>';
+        return '<div class="diff-line diff-ctx">' + esc(l) + '</div>';
+      }).join("");
+      var warn = d.secret_detected ? '<div class="error">⚠ Secret-like content detected and redacted</div>' : '';
+      $("#git-diff").innerHTML = warn + lines;
+    }
+  }
+
+  (function() {
+    var el = $("#btn-refresh-git");
+    if (el) el.addEventListener("click", function() { loadGit(); loadBranches(); });
+    el = $("#btn-load-diff");
+    if (el) el.addEventListener("click", function() { loadDiff(false); });
+    el = $("#btn-load-staged-diff");
+    if (el) el.addEventListener("click", function() { loadDiff(true); });
+
+    el = $("#btn-git-safety");
+    if (el) el.addEventListener("click", async function() {
+      var r = await api("GET", "/api/git/safety-check");
+      if (r.ok) {
+        var d = r.data;
+        var html = "<strong>Safe:</strong> " + (d.safe ? "✓ Yes" : "✗ No") + "<br>";
+        if (d.staged_files && d.staged_files.length) html += "<strong>Staged:</strong> " + d.staged_files.map(esc).join(", ") + "<br>";
+        if (d.warnings && d.warnings.length) html += '<div class="error">' + d.warnings.map(esc).join("<br>") + '</div>';
+        if (d.secret_files && d.secret_files.length) html += "<strong>Secret files:</strong> " + d.secret_files.map(esc).join(", ") + "<br>";
+        if (d.runtime_artifacts && d.runtime_artifacts.length) html += "<strong>Artifacts:</strong> " + d.runtime_artifacts.map(esc).join(", ");
+        $("#git-safety").innerHTML = html;
+      }
+    });
+
+    var branchForm = $("#git-branch-form");
+    if (branchForm) branchForm.addEventListener("submit", async function(e) {
+      e.preventDefault();
+      var name = $("#git-branch-name").value.trim();
+      if (!name) return;
+      var r = await api("POST", "/api/git/branch", { name: name });
+      if (r.ok && r.data.success) {
+        $("#git-branch-name").value = "";
+        loadGit();
+        loadBranches();
+      } else {
+        alert("Error: " + (r.data.error || "Failed to create branch"));
+      }
+    });
+
+    var commitForm = $("#git-commit-form");
+    if (commitForm) commitForm.addEventListener("submit", async function(e) {
+      e.preventDefault();
+      var msg = $("#git-commit-msg").value.trim();
+      if (!msg) return;
+      var r = await api("POST", "/api/git/commit-proposal", { message: msg });
+      if (r.ok) {
+        var d = r.data;
+        var html = "<strong>Message:</strong> " + esc(d.message) + "<br>";
+        html += "<strong>Safe:</strong> " + (d.safe ? "✓ Yes" : "✗ No") + "<br>";
+        if (d.files && d.files.length) html += "<strong>Files:</strong> " + d.files.map(esc).join(", ") + "<br>";
+        if (d.warnings && d.warnings.length) html += '<div class="error">' + d.warnings.map(esc).join("<br>") + '</div>';
+        if (d.blocked_files && d.blocked_files.length) html += "<strong>Blocked:</strong> " + d.blocked_files.map(esc).join(", ") + "<br>";
+        if (d.secret_files && d.secret_files.length) html += "<strong>Secret files:</strong> " + d.secret_files.map(esc).join(", ");
+        $("#git-commit-proposal").innerHTML = html;
+      }
+    });
+
+    var prBtn = $("#btn-pr-summary");
+    if (prBtn) prBtn.addEventListener("click", async function() {
+      var r = await api("GET", "/api/git/pr-summary");
+      if (r.ok) {
+        var d = r.data;
+        if (d.error) { $("#git-pr-summary").innerHTML = '<span class="error">' + esc(d.error) + '</span>'; return; }
+        var html = "<strong>Branch:</strong> " + esc(d.branch) + " → " + esc(d.base) + "<br>";
+        html += "<strong>Commits:</strong> " + (d.commit_count || 0) + "<br>";
+        if (d.commits && d.commits.length) html += "<pre>" + d.commits.map(esc).join("\n") + "</pre>";
+        if (d.summary) html += "<strong>Summary:</strong> " + esc(d.summary) + "<br>";
+        if (d.stat) html += "<pre>" + esc(d.stat) + "</pre>";
+        $("#git-pr-summary").innerHTML = html;
+      }
+    });
+  })();
 
   // Tests
   (function () {
@@ -515,4 +617,170 @@
     html += "</table>";
     container.innerHTML = html;
   }
+
+  // ---- Patches ----
+  (function () {
+    var loaded = false;
+    $$('.tab[data-tab="patches"]').forEach(function (btn) {
+      btn.addEventListener("click", function () {
+        if (!loaded) { loaded = true; loadPatches(); }
+      });
+    });
+    var refreshBtn = $("#btn-refresh-patches");
+    if (refreshBtn) refreshBtn.addEventListener("click", loadPatches);
+  })();
+
+  async function loadPatches() {
+    var container = $("#patches-list");
+    if (!container) return;
+    container.innerHTML = '<span class="loading">Loading...</span>';
+    var r = await api("GET", "/api/patches");
+    if (!r.ok) { container.innerHTML = '<span class="error">Failed to load patches</span>'; return; }
+    var patches = r.data.patches || [];
+    if (!patches.length) { container.innerHTML = "<em>No patch proposals yet.</em>"; return; }
+    var html = "";
+    patches.forEach(function (p) {
+      html += '<div class="patch-item" data-patch-id="' + esc(p.id) + '">' +
+        '<span class="pi-title">' + esc(p.title) + '</span> ' +
+        '<span class="patch-status ' + esc(p.status) + '">' + esc(p.status) + '</span>' +
+        '<div class="pi-meta">' + esc(p.file_count) + ' file(s) | risk: ' + esc(p.risk) + ' | ' + esc(p.created_at) + '</div>' +
+        '</div>';
+    });
+    container.innerHTML = html;
+    $$(".patch-item").forEach(function (el) {
+      el.addEventListener("click", function () { loadPatchDetail(el.dataset.patchId); });
+    });
+  }
+
+  async function loadPatchDetail(id) {
+    var detail = $("#patch-detail");
+    var diffBox = $("#patch-diff");
+    var actions = $("#patch-actions");
+    if (!detail) return;
+    detail.innerHTML = '<span class="loading">Loading...</span>';
+    if (diffBox) diffBox.innerHTML = "";
+    if (actions) actions.innerHTML = "";
+
+    var r = await api("GET", "/api/patches/" + id);
+    if (!r.ok) { detail.innerHTML = '<span class="error">Failed to load proposal</span>'; return; }
+    var p = r.data;
+
+    var html = "<strong>" + esc(p.title) + "</strong> " +
+      '<span class="patch-status ' + esc(p.status) + '">' + esc(p.status) + '</span>' +
+      "<p>" + esc(p.description) + "</p>" +
+      "<p>Risk: " + esc(p.risk) + " | Files: " + p.files.length + "</p>";
+    if (p.validation) {
+      html += "<p><strong>Validation:</strong> " + (p.validation.valid ? "PASSED" : "FAILED") + " (risk: " + esc(p.validation.risk) + ")</p>";
+      if (p.validation.reasons && p.validation.reasons.length) {
+        html += "<ul>";
+        p.validation.reasons.forEach(function (r) { html += "<li>" + esc(r) + "</li>"; });
+        html += "</ul>";
+      }
+    }
+    if (p.safety_notes) html += "<p><em>" + esc(p.safety_notes) + "</em></p>";
+    if (p.rollback_notes) html += "<p>Rollback: " + esc(p.rollback_notes) + "</p>";
+    if (p.reject_reason) html += "<p>Rejection: " + esc(p.reject_reason) + "</p>";
+    detail.innerHTML = html;
+
+    // Render diffs
+    if (diffBox && p.files) {
+      var dhtml = "";
+      p.files.forEach(function (f) {
+        dhtml += '<div class="diff-line diff-hdr">--- ' + esc(f.path) + ' (' + esc(f.action) + ')</div>';
+        if (f.diff) {
+          f.diff.split("\n").forEach(function (line) {
+            var cls = "diff-ctx";
+            if (line.startsWith("+")) cls = "diff-add";
+            else if (line.startsWith("-")) cls = "diff-del";
+            else if (line.startsWith("@@")) cls = "diff-hdr";
+            dhtml += '<div class="diff-line ' + cls + '">' + esc(line) + '</div>';
+          });
+        } else {
+          dhtml += '<div class="diff-line diff-ctx">(no diff)</div>';
+        }
+      });
+      diffBox.innerHTML = dhtml;
+    }
+
+    // Action buttons
+    if (actions) {
+      var btns = "";
+      if (p.status === "proposed" || p.status === "validated") {
+        btns += '<button type="button" class="action-btn" id="btn-patch-validate">Validate</button> ';
+      }
+      if (p.status === "validated") {
+        btns += '<button type="button" class="action-btn" id="btn-patch-apply" style="background:#238636">Apply</button> ';
+      }
+      if (p.status !== "applied" && p.status !== "rejected") {
+        btns += '<button type="button" class="action-btn" id="btn-patch-reject" style="background:#da3633">Reject</button>';
+      }
+      actions.innerHTML = btns;
+
+      var valBtn = $("#btn-patch-validate");
+      if (valBtn) valBtn.addEventListener("click", function () { validatePatch(id); });
+      var appBtn = $("#btn-patch-apply");
+      if (appBtn) appBtn.addEventListener("click", function () { applyPatch(id); });
+      var rejBtn = $("#btn-patch-reject");
+      if (rejBtn) rejBtn.addEventListener("click", function () { rejectPatch(id); });
+    }
+  }
+
+  async function validatePatch(id) {
+    var detail = $("#patch-detail");
+    var r = await api("POST", "/api/patches/" + id + "/validate");
+    if (r.ok) {
+      loadPatchDetail(id);
+      loadPatches();
+    } else {
+      if (detail) detail.innerHTML += '<p class="error">Validation error: ' + esc(r.data.detail || "unknown") + '</p>';
+    }
+  }
+
+  async function applyPatch(id) {
+    var detail = $("#patch-detail");
+    var r = await api("POST", "/api/patches/" + id + "/apply");
+    if (r.ok) {
+      loadPatchDetail(id);
+      loadPatches();
+    } else {
+      if (detail) detail.innerHTML += '<p class="error">Apply error: ' + esc(r.data.detail || "unknown") + '</p>';
+    }
+  }
+
+  async function rejectPatch(id) {
+    var reason = prompt("Rejection reason (optional):");
+    var r = await api("POST", "/api/patches/" + id + "/reject", { reason: reason || "" });
+    if (r.ok) {
+      loadPatchDetail(id);
+      loadPatches();
+    }
+  }
+
+  // Patch form
+  (function () {
+    var form = $("#patch-form");
+    if (!form) return;
+    form.addEventListener("submit", async function (e) {
+      e.preventDefault();
+      var title = $("#patch-title").value.trim();
+      var desc = $("#patch-desc").value.trim();
+      var path = $("#patch-path").value.trim();
+      var action = $("#patch-action").value;
+      var content = $("#patch-content").value;
+      if (!path) { alert("File path is required"); return; }
+      if (!content && action === "create") { alert("Content is required for create"); return; }
+      var r = await api("POST", "/api/patches/propose", {
+        title: title || "Untitled patch",
+        description: desc,
+        files: [{ path: path, action: action, after: content }]
+      });
+      if (r.ok) {
+        form.reset();
+        loadPatches();
+        loadPatchDetail(r.data.id);
+      } else {
+        alert("Error: " + (r.data.detail || r.data.error || "unknown"));
+      }
+    });
+  })();
 })();
