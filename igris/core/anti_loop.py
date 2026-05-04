@@ -55,3 +55,77 @@ def should_force_strategy_shift(tasks: Iterable[str], threshold: int = 3) -> boo
     """
     counts = compute_family_counts(tasks)
     return bool(saturated_families(counts, threshold=threshold))
+
+
+def is_observation_like(task: str) -> bool:
+    """Return True if the task description appears to be observational.
+
+    Observational tasks typically involve reading, inspecting or reporting
+    on the current state (e.g. checking tests, reading logs, listing
+    files).  This heuristic is intentionally broad and simply looks for
+    keywords; future versions might use a classifier.
+    """
+    lowered = task.lower()
+    return any(
+        kw in lowered
+        for kw in ["check", "inspect", "view", "read", "list", "show", "report"]
+    )
+
+
+def explain_saturation(tasks: Iterable[str], threshold: int = 3) -> str:
+    """Produce a human‑readable explanation of which families are saturated.
+
+    Returns a sentence listing saturated families and their counts.  If no
+    family is saturated, returns an empty string.
+    """
+    counts = compute_family_counts(tasks)
+    saturated = [f for f, n in counts.items() if n >= threshold]
+    if not saturated:
+        return ""
+    parts = [f"{fam} ({counts[fam]})" for fam in saturated]
+    return "Saturated families: " + ", ".join(parts)
+
+
+def can_select_family(
+    family: str,
+    history: Iterable[str],
+    differentiator: Optional[str] = None,
+    threshold: int = 3,
+) -> bool:
+    """Check if a task family can be selected given recent history.
+
+    :param family: The candidate family to select.
+    :param history: Recent task descriptions.
+    :param differentiator: Optional explanation of how this iteration is different.
+    :param threshold: Saturation threshold.
+    :returns: True if the family is not saturated or a differentiator is provided.
+    """
+    counts = compute_family_counts(history)
+    saturated = saturated_families(counts, threshold=threshold)
+    if family not in saturated:
+        return True
+    # If saturated but a differentiator is provided, allow selection
+    return bool(differentiator)
+
+
+def required_strategy_shift_family(
+    current_family: str, history: Iterable[str], threshold: int = 3
+) -> Optional[str]:
+    """Determine which family should be used next when the current family is saturated.
+
+    This is a naive heuristic: if the current family is saturated, recommend
+    switching to a different family among the recent tasks (choose the
+    least frequent one).  If all families are saturated or no tasks exist,
+    return None.
+    """
+    counts = compute_family_counts(history)
+    saturated = saturated_families(counts, threshold=threshold)
+    if current_family not in saturated:
+        return None
+    # Choose the least frequent family among existing counts, excluding current
+    alternatives = {fam: cnt for fam, cnt in counts.items() if fam != current_family}
+    if not alternatives:
+        return None
+    # Sort by count ascending
+    sorted_alts = sorted(alternatives.items(), key=lambda x: x[1])
+    return sorted_alts[0][0]

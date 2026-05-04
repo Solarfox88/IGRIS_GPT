@@ -1,56 +1,56 @@
-"""
-Functions for retrieving read‑only git information.
-
-These helpers use subprocess calls to `git` to determine the current branch,
-clean/dirty status, changed files and the most recent commit hash.  They
-operate relative to the configured project root.
-"""
+"""Read-only Git status helpers."""
 
 from __future__ import annotations
 
 import subprocess
 from pathlib import Path
-from typing import List, Optional
+from typing import List
 
 from igris.models.config import CONFIG
+from igris.models.report import GitStatusResponse
 
 
-class GitInfo:
-    def __init__(self, branch: Optional[str], remote: Optional[str], dirty: bool, changed: List[str], head: Optional[str]):
-        self.branch = branch
-        self.remote = remote
-        self.dirty = dirty
-        self.changed = changed
-        self.head = head
+def _repo_root() -> Path:
+    root = Path(CONFIG.project_root)
+    if root.exists() and root.is_dir():
+        return root
+    return Path.cwd()
 
 
-def _run_git(args: List[str]) -> str:
+def _run_git(args: List[str], cwd: Path | None = None) -> str:
+    cwd = cwd or _repo_root()
     try:
         result = subprocess.run(
             ["git", *args],
-            cwd=str(CONFIG.project_root),
-            capture_output=True,
+            cwd=str(cwd),
             text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
             timeout=5,
-            check=True,
+            check=False,
         )
-        return result.stdout.strip()
-    except (subprocess.CalledProcessError, FileNotFoundError, subprocess.TimeoutExpired):
+    except Exception:
         return ""
+    if result.returncode != 0:
+        return ""
+    return result.stdout.strip()
 
 
-def get_git_info() -> GitInfo:
-    """Gather information about the git repository located at project_root."""
-    branch = _run_git(["rev-parse", "--abbrev-ref", "HEAD"])
-    remote = _run_git(["remote", "get-url", "origin"])
-    status_output = _run_git(["status", "--porcelain"])
-    dirty = bool(status_output)
-    changed = [line[3:] for line in status_output.splitlines() if line] if status_output else []
-    head = _run_git(["rev-parse", "--short", "HEAD"])
-    return GitInfo(
-        branch=branch or None,
-        remote=remote or None,
+def get_git_info() -> GitStatusResponse:
+    root = _repo_root()
+
+    branch = _run_git(["rev-parse", "--abbrev-ref", "HEAD"], root) or "unknown"
+    remote = _run_git(["remote", "get-url", "origin"], root) or ""
+    head = _run_git(["log", "-1", "--oneline"], root) or ""
+
+    status = _run_git(["status", "--short"], root)
+    changed = [line for line in status.splitlines() if line.strip()]
+    dirty = bool(changed)
+
+    return GitStatusResponse(
+        branch=branch,
+        remote=remote,
         dirty=dirty,
         changed=changed,
-        head=head or None,
+        head=head,
     )

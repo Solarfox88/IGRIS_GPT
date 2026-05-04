@@ -2,7 +2,7 @@
 name = "igris_gpt"
 version = "0.1.0"
 description = "Clean, installable AI engineering agent derived from the original IGRIS project."
-authors = [ { name = "Solarfox88", email = "" } ]
+authors = [ { name = "Solarfox88", email = "noreply@example.com" } ]
 readme = "README.md"
 requires-python = ">=3.11"
 

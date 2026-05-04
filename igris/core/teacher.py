@@ -11,18 +11,50 @@ from __future__ import annotations
 
 from typing import Dict, List
 
-from igris.core import anti_loop
+from igris.core import anti_loop, semantic_dedup
 
 
 def build_teacher_payload(tasks: List[str], threshold: int = 3) -> Dict[str, object]:
-    """Assemble a payload summarising the state for the teacher.
+    """Assemble a richer payload summarising the state for the teacher.
 
-    The payload includes the list of saturated families and the recent tasks.
+    The payload includes:
+    - recent tasks (up to last 20)
+    - family counts and saturated families
+    - a human‑readable explanation of saturation
+    - a suggested strategy shift family if the latest task belongs to a saturated family
+    - whether the most recent task appears semantically duplicated
+
+    :param tasks: Ordered list of task descriptions.  The last element is
+      treated as the most recent task.
+    :param threshold: Saturation threshold (defaults to 3).
+    :returns: A dictionary containing the assembled context.
     """
+    recent_tasks = tasks[-20:]
     counts = anti_loop.compute_family_counts(tasks)
     saturated = anti_loop.saturated_families(counts, threshold=threshold)
+    saturation_explanation = anti_loop.explain_saturation(tasks, threshold=threshold)
+    # Determine the current family and required strategy shift, if any
+    current_family = None
+    required_shift = None
+    if tasks:
+        current_family = anti_loop.classify_task_family(tasks[-1])
+        required_shift = anti_loop.required_strategy_shift_family(
+            current_family, tasks, threshold=threshold
+        )
+    # Check for semantic duplication of the most recent task
+    duplicate_info = None
+    if tasks:
+        is_dup, explanation = semantic_dedup.explain_duplicate(tasks[-1], tasks[:-1])
+        duplicate_info = {
+            "is_duplicate": is_dup,
+            "explanation": explanation,
+        }
     return {
-        "recent_tasks": tasks[-20:],
-        "saturated_families": saturated,
+        "recent_tasks": recent_tasks,
         "family_counts": counts,
+        "saturated_families": saturated,
+        "saturation_explanation": saturation_explanation,
+        "current_family": current_family,
+        "required_strategy_shift": required_shift,
+        "duplicate": duplicate_info,
     }

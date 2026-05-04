@@ -10,7 +10,7 @@ decision.
 
 from __future__ import annotations
 
-from typing import Optional, Tuple
+from typing import List, Optional, Tuple, Dict, Any
 
 from igris.models.config import CONFIG
 
@@ -22,18 +22,33 @@ class Provider(str):
 
 
 _last_provider: Optional[Tuple[str, str]] = None
+# Maintain a history of provider decisions for cost/routing summary.
+# Each entry is a dict with provider, model and reason fields.
+_provider_history: List[Dict[str, Any]] = []
 
 
 def choose_provider(for_task: str = "chat") -> Tuple[str, str]:
-    """Return the name and model of the chosen provider.
+    """Return the name and model of the chosen provider and record the choice.
 
     Currently the logic is simplistic: always use the local provider.  If the
     fallback API key is missing the fallback provider will not be chosen.
-    This function records the last choice for reporting.
+    This function records the last choice for reporting in both `_last_provider` and
+    `_provider_history`.  In future versions this logic can consider factors
+    such as task complexity, model capabilities, latency and cost budgets.
     """
-    global _last_provider
-    # Always choose local provider for the MVP
-    _last_provider = (Provider.LOCAL, CONFIG.local_llm.model)
+    global _last_provider, _provider_history
+    # Determine provider; default to local
+    provider = Provider.LOCAL
+    model = CONFIG.local_llm.model
+    reason = "Using local provider because it is low cost and sufficient for the task."
+    # TODO: add logic for fallback or vastai here based on CONFIG and availability
+    _last_provider = (provider, model)
+    # Record history entry
+    _provider_history.append({
+        "provider": provider,
+        "model": model,
+        "reason": reason,
+    })
     return _last_provider
 
 
@@ -55,3 +70,30 @@ def explain_routing() -> str:
             f"Using Vast.ai instance with model {model} due to high compute requirements."
         )
     return "Unknown provider choice."
+
+
+def get_history() -> List[Dict[str, Any]]:
+    """Return a copy of the provider history.
+
+    Each entry in the history is a dict with keys: provider, model and reason.
+    """
+    return list(_provider_history)
+
+
+def cost_summary() -> Dict[str, Any]:
+    """Return a simple summary of provider usage.
+
+    The summary includes the count of calls per provider, the last provider used,
+    and a total call count.  It does not include actual costs because these
+    depend on external pricing which is not available to the agent.
+    """
+    summary = {
+        "total_calls": len(_provider_history),
+        "providers": {},
+        "last_provider": _last_provider[0] if _last_provider else None,
+    }
+    for entry in _provider_history:
+        provider = entry["provider"]
+        summary["providers"].setdefault(provider, 0)
+        summary["providers"][provider] += 1
+    return summary

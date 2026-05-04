@@ -1,59 +1,91 @@
-"""
-Safe command runner.
-
-This module exposes functions to run whitelisted commands defined in
-`safe_commands.py`.  Each command is executed with a timeout and limited
-working directory to prevent arbitrary code execution.
-"""
+"""Safe command runner for IGRIS_GPT."""
 
 from __future__ import annotations
 
+import os
+import platform
 import subprocess
+import sys
 from pathlib import Path
-from typing import Optional
+from typing import Dict, List
 
 from igris.layers.execution.safe_commands import ALLOWED_COMMANDS
 from igris.models.config import CONFIG
 
 
 class CommandError(Exception):
-    """Raised when an invalid or unsafe command is requested."""
+    """Raised when a requested safe command cannot be executed."""
 
-    pass
+def _project_root() -> Path:
+    root = Path(CONFIG.project_root)
+    if root.exists() and root.is_dir():
+        return root
+    return Path.cwd()
 
 
-def run_safe_command(command_name: str, timeout: int = 30) -> dict:
-    """Execute a whitelisted command and return its output and status.
-
-    :param command_name: Key in ALLOWED_COMMANDS.
-    :param timeout: Maximum number of seconds to allow the command to run.
-    :return: A dict with stdout, stderr and returncode.
-    :raises CommandError: If the command is not in the allowlist.
-    """
-    if command_name not in ALLOWED_COMMANDS:
-        raise CommandError(f"Command '{command_name}' is not allowed")
-    cmd = ALLOWED_COMMANDS[command_name]
+def _run_command(command: List[str], cwd: Path, timeout: int = 30) -> Dict[str, object]:
     try:
         result = subprocess.run(
-            cmd,
-            cwd=str(CONFIG.project_root),
-            capture_output=True,
+            command,
+            cwd=str(cwd),
             text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
             timeout=timeout,
+            check=False,
         )
-    except subprocess.TimeoutExpired:
-        return {"stdout": "", "stderr": "Command timed out", "returncode": -1}
-    return {
-        "stdout": result.stdout[:10_000],
-        "stderr": result.stderr[:10_000],
-        "returncode": result.returncode,
-    }
+        return {
+            "returncode": result.returncode,
+            "stdout": result.stdout,
+            "stderr": result.stderr,
+        }
+    except subprocess.TimeoutExpired as exc:
+        return {
+            "returncode": 124,
+            "stdout": exc.stdout or "",
+            "stderr": "Command timed out",
+        }
+    except Exception as exc:
+        return {
+            "returncode": 1,
+            "stdout": "",
+            "stderr": str(exc),
+        }
 
 
-def run_tests(timeout: int = 300) -> dict:
-    """Run the test suite using the safe test command.
+def _windows_command_for(command_id: str, command: List[str]) -> List[str]:
+    if command_id == "list_files":
+        return ["cmd", "/c", "dir", "/b"]
+    if command_id == "git_status_short":
+        return ["git", "status", "--short"]
+    if command_id == "git_log_recent":
+        return ["git", "log", "--oneline", "-10"]
+    if command_id == "run_tests":
+        return [sys.executable, "-m", "pytest", "-q"]
+    return command
 
-    This is a convenience wrapper that calls the `run_tests` command defined
-    in `ALLOWED_COMMANDS`.  The timeout may be larger for tests.
+
+def run_safe_command(command_id: str) -> Dict[str, object]:
+    """Run an allowlisted command by ID.
+
+    This is intentionally not a free shell. Only commands listed in
+    safe_commands.ALLOWED_COMMANDS can be executed.
     """
-    return run_safe_command("run_tests", timeout=timeout)
+    if command_id not in ALLOWED_COMMANDS:
+        return {
+            "returncode": 126,
+            "stdout": "",
+            "stderr": f"Command not allowed: {command_id}",
+        }
+
+    command = list(ALLOWED_COMMANDS[command_id])
+    if platform.system().lower().startswith("win"):
+        command = _windows_command_for(command_id, command)
+
+    return _run_command(command, cwd=_project_root(), timeout=30)
+
+
+def run_tests() -> Dict[str, object]:
+    """Run the project test suite with pytest."""
+    return _run_command([sys.executable, "-m", "pytest", "-q"], cwd=Path.cwd(), timeout=120)
+
