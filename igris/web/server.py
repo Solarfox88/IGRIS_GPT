@@ -35,6 +35,7 @@ from igris.agents import build_default_registry
 from igris.a2a.agent_card import build_agent_card
 from igris.core.project_context import build_project_snapshot
 from igris.core.memory import recent_memory_events, append_memory_event
+from igris.core import mission_planner
 
 MODULE_DIR = Path(__file__).resolve().parent
 TEMPLATES_DIR = MODULE_DIR / "templates"
@@ -353,6 +354,80 @@ def create_app() -> FastAPI:
     async def api_memory_recent(namespace: str, limit: int = 20) -> Dict[str, object]:
         events = recent_memory_events(namespace, limit)
         return {"events": events}
+
+    # ---- Missions ----
+
+    def _redact_mission_dict(d: Dict[str, object]) -> Dict[str, object]:
+        """Redact secrets from mission response."""
+        for key in ("title", "description", "plan_summary"):
+            if key in d and isinstance(d[key], str):
+                d[key] = _redact(d[key])
+        if "steps" in d and isinstance(d["steps"], list):
+            for step in d["steps"]:
+                for key in ("title", "description"):
+                    if key in step and isinstance(step[key], str):
+                        step[key] = _redact(step[key])
+        return d
+
+    @app.post("/api/missions")
+    async def api_create_mission(request: Request) -> Dict[str, object]:
+        content = await request.json()
+        title = content.get("title", "")
+        description = content.get("description", "")
+        if not title:
+            raise HTTPException(status_code=400, detail="Mission title required")
+        m = mission_planner.Mission(title=title, description=description)
+        mission_planner.save_mission(m, project_root=str(CONFIG.project_root))
+        task_engine.append_timeline_event({
+            "type": "mission", "title": f"Mission created: {_redact(title)}",
+            "detail": _redact(description[:200]), "severity": "info",
+        })
+        return _redact_mission_dict(m.to_dict())
+
+    @app.get("/api/missions")
+    async def api_list_missions() -> Dict[str, object]:
+        missions = mission_planner.list_missions(project_root=str(CONFIG.project_root))
+        return {"missions": [_redact_mission_dict(m.to_dict()) for m in missions]}
+
+    @app.get("/api/missions/{mission_id}")
+    async def api_get_mission(mission_id: str) -> Dict[str, object]:
+        m = mission_planner.load_mission(mission_id, project_root=str(CONFIG.project_root))
+        if not m:
+            raise HTTPException(status_code=404, detail="Mission not found")
+        return _redact_mission_dict(m.to_dict())
+
+    @app.post("/api/missions/{mission_id}/plan")
+    async def api_plan_mission(mission_id: str) -> Dict[str, object]:
+        m = mission_planner.plan_mission(mission_id, project_root=str(CONFIG.project_root))
+        if not m:
+            raise HTTPException(status_code=404, detail="Mission not found")
+        task_engine.append_timeline_event({
+            "type": "mission", "title": f"Mission planned: {_redact(m.title)}",
+            "detail": f"{len(m.steps)} steps", "severity": "info",
+        })
+        return _redact_mission_dict(m.to_dict())
+
+    @app.post("/api/missions/{mission_id}/materialize-tasks")
+    async def api_materialize_tasks(mission_id: str) -> Dict[str, object]:
+        m = mission_planner.materialize_tasks(
+            mission_id, task_engine, project_root=str(CONFIG.project_root),
+        )
+        if not m:
+            raise HTTPException(status_code=404, detail="Mission not found or no plan")
+        task_engine.append_timeline_event({
+            "type": "mission", "title": f"Tasks materialized: {_redact(m.title)}",
+            "detail": f"{len(m.task_ids)} tasks created", "severity": "info",
+        })
+        return _redact_mission_dict(m.to_dict())
+
+    @app.get("/api/missions/{mission_id}/graph")
+    async def api_mission_graph(mission_id: str) -> Dict[str, object]:
+        graph = mission_planner.get_mission_graph(
+            mission_id, project_root=str(CONFIG.project_root),
+        )
+        if not graph:
+            raise HTTPException(status_code=404, detail="Mission not found")
+        return graph
 
     # ---- Task management ----
 
