@@ -161,11 +161,24 @@ def check_availability() -> Dict[str, Any]:
     ollama_ok = check_ollama_available()
     openai_key = bool(CONFIG.fallback_llm.api_key)
     vast_key = bool(CONFIG.vastai.api_key)
+
+    # Determine local model availability
+    local_model_available = False
+    if ollama_ok:
+        local_model_available = _check_ollama_model(CONFIG.local_llm.model)
+
     return {
         "ollama": {
             "available": ollama_ok,
+            "reachable": ollama_ok,
             "provider": CONFIG.local_llm.provider,
-            "model": CONFIG.local_llm.model,
+            "model_configured": CONFIG.local_llm.model,
+            "model_available": local_model_available,
+            "status": (
+                "online + model ready" if local_model_available
+                else "online (model not pulled)" if ollama_ok
+                else "offline"
+            ),
             "cost_per_call": COST_ESTIMATES.get("local", 0.0),
         },
         "openai": {
@@ -173,6 +186,7 @@ def check_availability() -> Dict[str, Any]:
             "provider": CONFIG.fallback_llm.provider,
             "model": CONFIG.fallback_llm.model,
             "key_present": openai_key,
+            "status": "configured" if openai_key else "no API key",
             "cost_per_call": COST_ESTIMATES.get("fallback", 0.003),
         },
         "vastai": {
@@ -180,8 +194,29 @@ def check_availability() -> Dict[str, Any]:
             "key_present": vast_key,
             "cost_per_call": COST_ESTIMATES.get("vastai", 0.01),
             "auto_provision": False,
+            "status": "key present (gated)" if vast_key else "not configured",
         },
+        "fallback_chain": (
+            "local → fallback → deterministic" if openai_key
+            else "local → deterministic"
+        ),
     }
+
+
+def _check_ollama_model(model_name: str) -> bool:
+    """Check if a specific model is pulled in Ollama."""
+    import urllib.request
+    import urllib.error
+    base_url = CONFIG.local_llm.base_url or "http://127.0.0.1:11434"
+    try:
+        with urllib.request.urlopen(f"{base_url}/api/tags", timeout=3) as resp:
+            import json as _json
+            data = _json.loads(resp.read().decode("utf-8"))
+            models = [m.get("name", "") for m in data.get("models", [])]
+            return any(model_name in m for m in models)
+    except (urllib.error.URLError, urllib.error.HTTPError, OSError,
+            TimeoutError, ConnectionError, ValueError):
+        return False
 
 
 def get_budget_config() -> Dict[str, Any]:
@@ -252,5 +287,5 @@ def estimate_route(
         "estimated_cost": est_cost,
         "budget_remaining": round(budget["max_session_cost"] - budget["spent"], 6),
         "would_exceed_budget": budget["spent"] + est_cost > budget["max_session_cost"],
-        "availability": {k: v["available"] for k, v in avail.items()},
+        "availability": {k: v["available"] for k, v in avail.items() if isinstance(v, dict) and "available" in v},
     }

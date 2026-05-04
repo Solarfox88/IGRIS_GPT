@@ -77,6 +77,21 @@ def create_app() -> FastAPI:
     def _redact(text: str) -> str:
         return safety.redact_secrets(text)
 
+    def _check_model_available(model_name: str) -> bool:
+        """Check if a specific model is available in Ollama."""
+        import urllib.request
+        import urllib.error
+        base_url = CONFIG.local_llm.base_url or "http://127.0.0.1:11434"
+        try:
+            with urllib.request.urlopen(f"{base_url}/api/tags", timeout=3) as resp:
+                import json as _json
+                data = _json.loads(resp.read().decode("utf-8"))
+                models = [m.get("name", "") for m in data.get("models", [])]
+                return any(model_name in m for m in models)
+        except (urllib.error.URLError, urllib.error.HTTPError, OSError,
+                TimeoutError, ConnectionError, ValueError):
+            return False
+
     # ---- Root ----
 
     @app.get("/", response_class=HTMLResponse)
@@ -452,7 +467,15 @@ def create_app() -> FastAPI:
         checks["static"] = STATIC_DIR.exists()
         from igris.agents import list_agents
         checks["agents_registered"] = len(list_agents()) > 0
-        checks["ollama_available"] = check_ollama_available()
+        ollama_ok = check_ollama_available()
+        checks["ollama_available"] = ollama_ok
+        checks["local_model_configured"] = CONFIG.local_llm.model
+        checks["local_model_available"] = _check_model_available(CONFIG.local_llm.model) if ollama_ok else False
+        checks["fallback_active"] = bool(CONFIG.fallback_llm.api_key)
+        checks["fallback_reason"] = (
+            "OpenAI API key configured" if CONFIG.fallback_llm.api_key
+            else "No fallback API key — using deterministic fallback"
+        )
         return checks
 
     # ---- Project Context ----
