@@ -90,21 +90,30 @@ See `config/config.sample.json` for full configuration reference.
 
 IGRIS_GPT uses a multi-tier chat engine:
 
-1. **Ollama** (local, free) — default if running
-2. **OpenAI** (fallback) — if `OPENAI_API_KEY` is set
-3. **Deterministic fallback** — contextual responses without any LLM
+1. **IGRIS Personality** — grounded responses for known operational intents (instant, no LLM)
+2. **Ollama** (local, free) — default LLM if running
+3. **OpenAI** (fallback) — if `OPENAI_API_KEY` is set
+4. **Deterministic fallback** — contextual responses without any LLM
 
 Set up Ollama: `bash scripts/setup_ollama.sh`
 
 The system never crashes if no LLM is available — it gracefully degrades to
 deterministic responses that help navigate IGRIS capabilities.
 
+### Chat Behavior and Capability Grounding
+
+Chat responses are **IGRIS-aware**: the system answers as a local engineering agent,
+not as generic ChatGPT. When asked about machine info, network, GitHub, or capabilities,
+IGRIS explains what it can do safely through its APIs and what requires approval.
+
+See [docs/CHAT_BEHAVIOR.md](docs/CHAT_BEHAVIOR.md) for details.
+
 ---
 
 ## Tests
 
 ```bash
-python -m pytest -q     # 393 tests
+python -m pytest -q     # 988 tests
 ```
 
 ---

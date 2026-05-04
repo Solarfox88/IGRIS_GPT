@@ -19,6 +19,11 @@ from igris.core.chat_engine import (
     _try_ollama,
     check_ollama_available,
 )
+from igris.core.chat_personality import (
+    IGRIS_SYSTEM_PROMPT,
+    detect_intent,
+    get_grounded_response,
+)
 from igris.core.safety import redact_secrets
 from igris.models.config import CONFIG
 
@@ -101,19 +106,39 @@ def chat_stream_sync(
     tier = _current_tier.tier
     chunks: List[StreamChunk] = []
 
+    t0 = time.monotonic()
+
+    # IGRIS personality: check for known operational intents first
+    intent = detect_intent(message)
+    if intent is not None:
+        grounded = get_grounded_response(intent)
+        if grounded is not None:
+            latency_ms = int((time.monotonic() - t0) * 1000)
+            response_text = redact_secrets(grounded)
+            chunk_size = 80
+            for i in range(0, len(response_text), chunk_size):
+                chunks.append(StreamChunk(type="content", text=response_text[i:i + chunk_size]))
+            chunks.append(StreamChunk(
+                type="done",
+                text="",
+                metadata={
+                    "provider": "igris_personality",
+                    "model": "capability_grounding",
+                    "fallback_used": False,
+                    "latency_ms": latency_ms,
+                    "routing_reason": f"IGRIS-aware grounded response for intent: {intent}",
+                    "tier": tier,
+                    "intent_detected": intent,
+                },
+            ))
+            return chunks
+
     # Build messages
     messages: List[Dict[str, str]] = []
     if system_prompt:
         messages.append({"role": "system", "content": system_prompt})
     else:
-        messages.append({
-            "role": "system",
-            "content": (
-                "You are IGRIS_GPT, an AI engineering agent. "
-                "You help with code, testing, task management, and project operations. "
-                "Be concise and actionable."
-            ),
-        })
+        messages.append({"role": "system", "content": IGRIS_SYSTEM_PROMPT})
     messages.extend(history)
     messages.append({"role": "user", "content": message})
 
@@ -123,8 +148,6 @@ def chat_stream_sync(
     fallback_used = False
     routing_reason = ""
     response_text = None
-
-    t0 = time.monotonic()
 
     if tier in ("auto", "local"):
         response_text = _try_ollama(messages, model, base_url)
