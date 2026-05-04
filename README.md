@@ -261,6 +261,9 @@ Routes tasks to the cheapest suitable provider:
 | `/api/project-state/family/{family}` | GET | Check family availability/cooldown |
 | `/api/project-state/family/{family}/reset-cooldown` | POST | Reset family cooldown |
 | `/api/project-state/fingerprints` | GET | Recent task fingerprints |
+| `/api/decision-reports` | GET | List recent decision reports |
+| `/api/decision-reports/{id}` | GET | Get specific decision report |
+| `/api/decision-reports` | POST | Create decision report for loop step |
 | `/api/diagnostics` | GET | Full operational diagnostics report |
 | `/api/diagnostics/summary` | GET | Quick diagnostics summary |
 
@@ -339,6 +342,7 @@ See [docs/SYSTEMD_SERVICE.md](docs/SYSTEMD_SERVICE.md) for production deployment
 - [OPERATIONAL_DIAGNOSTICS.md](docs/OPERATIONAL_DIAGNOSTICS.md)
 - [STRICT_SAFETY_EXPLAINABLE_SELECTION.md](docs/STRICT_SAFETY_EXPLAINABLE_SELECTION.md)
 - [PROJECT_STATE_COOLDOWN.md](docs/PROJECT_STATE_COOLDOWN.md)
+- [DECISION_REPORTS.md](docs/DECISION_REPORTS.md)
 
 ## License
 
