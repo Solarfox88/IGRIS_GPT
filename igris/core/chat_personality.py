@@ -215,17 +215,18 @@ _GROUNDED_RESPONSES: Dict[str, str] = {
         "Posso mostrarti lo stato visibile da IGRIS.\n"
         "Non uso shell libera, ma posso usare endpoint e command_id sicuri.\n\n"
         "Disponibile ora:\n"
+        "- /api/system/info — OS, CPU, RAM, disco, uptime, Ollama, container detection\n"
         "- /api/status — stato del server\n"
         "- /api/readiness — readiness con provider/model check\n"
         "- /api/routing/explain — routing e disponibilità provider\n"
         "- /api/git/status — stato del repository\n"
-        "- command_id: git_status, git_log, run_tests, list_files\n\n"
-        "Per info OS/CPU/RAM/GPU complete serve un endpoint dedicato `system_info`.\n"
-        "Posso creare una task per implementarlo in modo sicuro."
+        "- command_id: git_status, git_log, run_tests, list_files, system_info\n\n"
+        "Nessun dato sensibile esposto: no variabili d'ambiente, no IP privati, no segreti."
     ),
     "network_info": (
         "Le informazioni di rete dettagliate non sono esposte per sicurezza.\n\n"
         "Disponibile ora:\n"
+        "- /api/system/info — bind address, external access detection\n"
         "- /api/status — host e porta del server IGRIS\n"
         "- /api/readiness — raggiungibilità Ollama e provider configurati\n"
         "- /api/routing/explain — stato routing e disponibilità endpoint\n\n"
@@ -386,13 +387,11 @@ class SuggestedAction:
 
 _INTENT_ACTIONS: Dict[str, List[SuggestedAction]] = {
     "machine_info": [
+        SuggestedAction("System Info", "OS, CPU, RAM, disco, uptime, Ollama", "/api/system/info"),
         SuggestedAction("Show Status", "Stato corrente del server IGRIS", "/api/status"),
         SuggestedAction("Show Readiness", "Readiness con provider/model check", "/api/readiness"),
         SuggestedAction("Show Project Context", "Contesto progetto corrente", "/api/project/context"),
         SuggestedAction("Show Git Status", "Stato repository Git locale", "/api/git/status"),
-        SuggestedAction("Create system_info task", "Crea task per implementare endpoint system_info",
-                       "/api/tasks", method="POST",
-                       payload={"title": "Add safe system_info endpoint", "family": "code"}),
     ],
     "network_info": [
         SuggestedAction("Show Status", "Host e porta del server", "/api/status"),

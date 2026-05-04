@@ -232,6 +232,19 @@ def create_app() -> FastAPI:
         except ValueError as e:
             raise HTTPException(status_code=400, detail=str(e))
 
+    # ---- System Info ----
+
+    @app.get("/api/system/info")
+    async def api_system_info() -> Dict[str, object]:
+        """Safe, read-only system information."""
+        from igris.core.system_info import get_system_info
+        import os as _os
+        return get_system_info(
+            project_root=str(CONFIG.project_root),
+            host=_os.environ.get("IGRIS_HOST", "127.0.0.1"),
+            port=int(_os.environ.get("IGRIS_PORT", "8000")),
+        )
+
     # ---- Dashboard Summary ----
 
     @app.get("/api/dashboard/summary")

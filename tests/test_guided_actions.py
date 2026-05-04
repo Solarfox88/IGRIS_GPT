@@ -385,4 +385,6 @@ class TestUIActionCards:
                 "index.html", "DASHBOARD_UI.md",
                 "test_integration_v02.py", "test_ui_polish.py",
                 "test_dashboard_tabs.py",
+                "system_info.py", "safe_commands.py",
+                "test_system_info.py", "SYSTEM_INFO.md",
             ]), f"Unexpected changed file: {line}"

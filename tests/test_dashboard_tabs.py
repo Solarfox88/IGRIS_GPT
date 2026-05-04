@@ -317,4 +317,6 @@ class TestDashboardAPI:
                 "test_ui_polish.py", "chat_personality.py",
                 "chat_engine.py", "chat_streaming.py",
                 "GUIDED_ACTIONS.md",
+                "system_info.py", "safe_commands.py",
+                "test_system_info.py", "SYSTEM_INFO.md",
             ]), f"Unexpected changed file: {line}"
