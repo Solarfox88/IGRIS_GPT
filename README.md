@@ -223,6 +223,12 @@ Routes tasks to the cheapest suitable provider:
 | `/api/git/safety-check` | GET | Pre-commit safety analysis |
 | `/api/git/commit-proposal` | POST | Commit proposal (no actual commit) |
 | `/api/git/pr-summary` | GET | PR summary vs base branch |
+| `/api/missions` | GET | List missions |
+| `/api/missions` | POST | Create mission |
+| `/api/missions/{id}` | GET | Mission detail |
+| `/api/missions/{id}/plan` | POST | Generate plan for mission |
+| `/api/missions/{id}/materialize-tasks` | POST | Create tasks from plan |
+| `/api/missions/{id}/graph` | GET | Mission task dependency graph |
 
 ## Web Console
 

@@ -49,6 +49,19 @@
             <div id="mission-health" class="info-block"><span class="loading">Loading health...</span></div>
             <div id="mission-readiness" class="info-block"></div>
             <div id="mission-context" class="info-block"></div>
+            <h4>Missions</h4>
+            <button type="button" id="btn-refresh-missions" class="action-btn">Refresh</button>
+            <div id="mission-list" class="info-block"></div>
+            <h4>New Mission</h4>
+            <form id="mission-form" class="patch-form">
+              <input type="text" id="mission-title" placeholder="Mission title" aria-label="Mission title" />
+              <textarea id="mission-desc" placeholder="Mission description (use numbered steps for multi-step plan)" aria-label="Mission description"></textarea>
+              <button type="submit" class="action-btn">Create Mission</button>
+            </form>
+            <h4>Mission Detail</h4>
+            <div id="mission-detail" class="info-block"></div>
+            <h4>Mission Graph</h4>
+            <div id="mission-graph" class="info-block"></div>
           </div>
 
           <!-- Terminal -->
