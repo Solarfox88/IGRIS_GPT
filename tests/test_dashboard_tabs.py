@@ -319,4 +319,5 @@ class TestDashboardAPI:
                 "GUIDED_ACTIONS.md",
                 "system_info.py", "safe_commands.py",
                 "test_system_info.py", "SYSTEM_INFO.md",
+                "README.md", "PREPARED_NOT_IMPLEMENTED.md",
             ]), f"Unexpected changed file: {line}"
