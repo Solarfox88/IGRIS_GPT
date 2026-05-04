@@ -15,7 +15,7 @@ def test_chat_without_ollama_does_not_crash():
 
 def test_chat_response_has_routing_metadata():
     result = chat("what can you do?")
-    assert result["provider"] in ("ollama", "deterministic", "openai")
+    assert result["provider"] in ("ollama", "deterministic", "openai", "igris_personality")
     assert isinstance(result["latency_ms"], int)
     assert "routing_reason" in result
 

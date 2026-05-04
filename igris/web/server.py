@@ -230,6 +230,28 @@ def create_app() -> FastAPI:
         except ValueError as e:
             raise HTTPException(status_code=400, detail=str(e))
 
+    # ---- Chat Personality / Capabilities ----
+
+    @app.get("/api/chat/capabilities")
+    async def api_chat_capabilities() -> Dict[str, object]:
+        from igris.core.chat_personality import get_capability_summary
+        return get_capability_summary()
+
+    @app.post("/api/chat/intent")
+    async def api_chat_intent(request: Request) -> Dict[str, object]:
+        from igris.core.chat_personality import detect_intent, get_grounded_response
+        content = await request.json()
+        message = content.get("message", "")
+        if not message:
+            raise HTTPException(status_code=400, detail="message required")
+        intent = detect_intent(message)
+        response = get_grounded_response(intent) if intent else None
+        return {
+            "intent": intent,
+            "grounded_response": response,
+            "has_response": response is not None,
+        }
+
     # ---- Git ----
 
     @app.get("/api/git/status", response_model=GitStatusResponse)

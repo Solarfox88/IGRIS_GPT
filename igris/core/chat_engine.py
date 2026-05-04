@@ -12,6 +12,11 @@ import time
 from typing import Any, Dict, Optional
 
 from igris.models.config import CONFIG
+from igris.core.chat_personality import (
+    IGRIS_SYSTEM_PROMPT,
+    detect_intent,
+    get_grounded_response,
+)
 
 # Keyword-based contextual fallback responses
 _FALLBACK_HINTS: list[tuple[list[str], str]] = [
@@ -117,18 +122,30 @@ def chat(
     if history is None:
         history = []
 
+    t0 = time.monotonic()
+
+    # Check if the message matches a known operational intent
+    # If so, return a grounded response directly (IGRIS-aware, not generic)
+    intent = detect_intent(message)
+    if intent is not None:
+        grounded = get_grounded_response(intent)
+        if grounded is not None:
+            latency_ms = int((time.monotonic() - t0) * 1000)
+            return {
+                "text": grounded,
+                "provider": "igris_personality",
+                "model": "capability_grounding",
+                "fallback_used": False,
+                "latency_ms": latency_ms,
+                "routing_reason": f"IGRIS-aware grounded response for intent: {intent}",
+                "intent_detected": intent,
+            }
+
     messages: list[dict[str, str]] = []
     if system_prompt:
         messages.append({"role": "system", "content": system_prompt})
     else:
-        messages.append({
-            "role": "system",
-            "content": (
-                "You are IGRIS_GPT, an AI engineering agent. "
-                "You help with code, testing, task management, and project operations. "
-                "Be concise and actionable."
-            ),
-        })
+        messages.append({"role": "system", "content": IGRIS_SYSTEM_PROMPT})
     messages.extend(history)
     messages.append({"role": "user", "content": message})
 
@@ -137,8 +154,6 @@ def chat(
     base_url = CONFIG.local_llm.base_url or "http://127.0.0.1:11434"
     fallback_used = False
     routing_reason = "local LLM available"
-
-    t0 = time.monotonic()
 
     # Try local Ollama
     response_text = _try_ollama(messages, model, base_url)
