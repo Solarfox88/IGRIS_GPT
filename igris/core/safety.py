@@ -101,7 +101,7 @@ _SECRET_PATTERNS = [
     # OpenAI keys
     re.compile(r"sk-[A-Za-z0-9]{20,}"),
     # GitHub tokens
-    re.compile(r"gh[pos]_[A-Za-z0-9]{20,}"),
+    re.compile(r"gh[pos]_[A-Za-z0-9]{10,}"),
     re.compile(r"github_pat_[A-Za-z0-9_]{20,}"),
     # Bearer tokens
     re.compile(r"Bearer\s+[A-Za-z0-9\-._~+/]{20,}"),
@@ -110,7 +110,7 @@ _SECRET_PATTERNS = [
     # VAST/generic API keys
     re.compile(r"(?:VAST|VASTAI)[A-Za-z0-9_]{8,}"),
     # Generic KEY= / TOKEN= / SECRET= lines
-    re.compile(r"(?:API_KEY|SECRET|TOKEN|PASSWORD|PRIVATE_KEY)\s*[=:]\s*\S{8,}"),
+    re.compile(r"(?:API_KEY|SECRET|TOKEN|PASSWORD|PRIVATE_KEY)\s*[=:]\s*\S{8,}", re.IGNORECASE),
     # Long hex-like tokens (40+ chars)
     re.compile(r"[A-Fa-f0-9]{40,}"),
 ]

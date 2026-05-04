@@ -10,6 +10,7 @@ from __future__ import annotations
 from typing import Dict, List, Optional
 
 from igris.core import anti_loop, semantic_dedup
+from igris.core.decision_memory import get_memory_constraints_for_teacher
 
 
 def build_teacher_payload(
@@ -19,6 +20,7 @@ def build_teacher_payload(
     last_execution_report: Optional[Dict] = None,
     blocked_families: Optional[List[str]] = None,
     project_snapshot: Optional[Dict] = None,
+    project_root: Optional[str] = None,
 ) -> Dict[str, object]:
     """Assemble a rich payload summarising the state for the teacher."""
     recent_tasks = tasks[-20:]
@@ -39,6 +41,8 @@ def build_teacher_payload(
         is_dup, explanation = semantic_dedup.explain_duplicate(tasks[-1], tasks[:-1])
         duplicate_info = {"is_duplicate": is_dup, "explanation": explanation}
 
+    memory_constraints = get_memory_constraints_for_teacher(project_root)
+
     return {
         "recent_tasks": recent_tasks,
         "family_counts": counts,
@@ -51,9 +55,12 @@ def build_teacher_payload(
         "last_test_result": last_test_result,
         "last_execution_report": last_execution_report,
         "project_snapshot": project_snapshot,
+        "memory_constraints": memory_constraints.get("memory_constraints"),
+        "memory_avoid_families": memory_constraints.get("avoid_families", []),
         "policy": (
             "If a family is saturated and no concrete differentiator exists, "
-            "the teacher MUST shift to a different family."
+            "the teacher MUST shift to a different family. "
+            "Also respect memory_constraints — avoid families with repeated failures."
         ),
     }
 

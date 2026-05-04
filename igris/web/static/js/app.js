@@ -750,6 +750,85 @@
     container.innerHTML = html;
   }
 
+  // ---- Memory ----
+  async function loadMemory() {
+    var cEl = $("#memory-constraints");
+    var dEl = $("#memory-decisions");
+    var fEl = $("#memory-failures");
+    var cr = await api("GET", "/api/memory/saturation");
+    if (cr.ok && cEl) {
+      var c = cr.data.constraints || {};
+      var h = "<strong>Recommendation:</strong> " + esc(c.recommendation || "No constraints");
+      h += "<br><small>Saturated: " + (c.saturated_families || []).map(esc).join(", ");
+      h += " | Failures: " + (c.recent_failure_count || 0);
+      h += " | Decisions: " + (c.recent_decision_count || 0);
+      h += " | Remediations: " + (c.remediation_count || 0) + "</small>";
+      if ((c.avoid_families || []).length) {
+        h += '<br><span class="task-status blocked">Avoid: ' + c.avoid_families.map(esc).join(", ") + "</span>";
+      }
+      cEl.innerHTML = h;
+    }
+    var dr = await api("GET", "/api/memory/decisions?limit=10");
+    if (dr.ok && dEl) {
+      var evts = dr.data.events || [];
+      if (!evts.length) { dEl.innerHTML = "<em>No decisions yet</em>"; }
+      else {
+        var h2 = "";
+        evts.forEach(function (e) {
+          h2 += '<div class="info-block" style="margin:.2rem 0;padding:.3rem .5rem">';
+          h2 += statusBadge(e.outcome || "pending") + " <strong>" + esc(e.title) + "</strong>";
+          h2 += " <small>[" + esc(e.family || "—") + "]</small>";
+          if (e.reason) h2 += "<br><small>" + esc(e.reason) + "</small>";
+          h2 += "</div>";
+        });
+        dEl.innerHTML = h2;
+      }
+    }
+    var fr = await api("GET", "/api/memory/failures?limit=10");
+    if (fr.ok && fEl) {
+      var fevts = fr.data.events || [];
+      if (!fevts.length) { fEl.innerHTML = "<em>No failures recorded</em>"; }
+      else {
+        var h3 = "";
+        fevts.forEach(function (e) {
+          h3 += '<div class="info-block" style="margin:.2rem 0;padding:.3rem .5rem">';
+          h3 += '<span class="task-status blocked">failure</span> <strong>' + esc(e.title) + "</strong>";
+          h3 += " <small>[" + esc(e.family || "—") + "]</small>";
+          if (e.reason) h3 += "<br><small>" + esc(e.reason) + "</small>";
+          h3 += "</div>";
+        });
+        fEl.innerHTML = h3;
+      }
+    }
+  }
+
+  (function () {
+    var loaded = false;
+    $$('.tab[data-tab="memory"]').forEach(function (btn) {
+      btn.addEventListener("click", function () {
+        if (!loaded) { loaded = true; loadMemory(); }
+      });
+    });
+    var refreshBtn = $("#btn-refresh-memory");
+    if (refreshBtn) refreshBtn.addEventListener("click", loadMemory);
+
+    var form = $("#memory-event-form");
+    if (form) {
+      form.addEventListener("submit", async function (e) {
+        e.preventDefault();
+        var evType = $("#memory-event-type").value;
+        var title = $("#memory-event-title").value.trim();
+        var family = $("#memory-event-family").value.trim();
+        var desc = $("#memory-event-desc").value.trim();
+        var r = await api("POST", "/api/memory/events", {
+          event_type: evType, title: title, family: family, description: desc
+        });
+        if (r.ok) { form.reset(); loadMemory(); }
+        else alert("Error: " + (r.data.detail || "unknown"));
+      });
+    }
+  })();
+
   // ---- Patches ----
   (function () {
     var loaded = false;

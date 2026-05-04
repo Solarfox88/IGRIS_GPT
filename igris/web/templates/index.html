@@ -39,6 +39,7 @@
           <button type="button" class="tab" data-tab="safety" role="tab" aria-label="Safety">Safety</button>
           <button type="button" class="tab" data-tab="cost" role="tab" aria-label="Cost">Cost</button>
           <button type="button" class="tab" data-tab="a2a" role="tab" aria-label="A2A">A2A</button>
+          <button type="button" class="tab" data-tab="memory" role="tab" aria-label="Memory">Memory</button>
           <button type="button" class="tab" data-tab="patches" role="tab" aria-label="Patches">Patches</button>
         </nav>
 
@@ -165,6 +166,31 @@
             <h3>A2A Protocol</h3>
             <div id="a2a-card" class="info-block"></div>
             <div id="a2a-capabilities" class="info-block"></div>
+          </div>
+
+          <!-- Memory -->
+          <div id="tab-memory" class="tab-pane" role="tabpanel">
+            <h3>Decision &amp; Failure Memory</h3>
+            <button type="button" id="btn-refresh-memory" class="action-btn" aria-label="Refresh memory">Refresh</button>
+            <h4>Constraints</h4>
+            <div id="memory-constraints" class="info-block"></div>
+            <h4>Recent Decisions</h4>
+            <div id="memory-decisions" class="info-block"></div>
+            <h4>Recent Failures</h4>
+            <div id="memory-failures" class="info-block"></div>
+            <h4>Record Event</h4>
+            <form id="memory-event-form" class="patch-form">
+              <select id="memory-event-type" aria-label="Event type">
+                <option value="decision">Decision</option>
+                <option value="failure">Failure</option>
+                <option value="saturation">Saturation</option>
+                <option value="remediation">Remediation</option>
+              </select>
+              <input type="text" id="memory-event-title" placeholder="Title" aria-label="Event title" />
+              <input type="text" id="memory-event-family" placeholder="Family" aria-label="Family" />
+              <textarea id="memory-event-desc" placeholder="Description" aria-label="Description"></textarea>
+              <button type="submit" class="action-btn">Record Event</button>
+            </form>
           </div>
 
           <!-- Patches -->
