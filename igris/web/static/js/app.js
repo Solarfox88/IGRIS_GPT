@@ -749,6 +749,7 @@
           latency_ms: r.data.latency_ms,
           fallback_used: r.data.fallback_used,
           intent: r.data.intent_detected || null,
+          actions: r.data.suggested_actions || [],
         };
         addMsg("assistant", r.data.response, null, meta);
       } else {
@@ -825,6 +826,25 @@
       if (role === "assistant" && !cls) {
         // Render markdown for assistant messages
         d.innerHTML = renderMarkdown(text);
+        // Add suggested action buttons if available
+        if (meta && meta.actions && meta.actions.length > 0) {
+          var actionsDiv = document.createElement("div");
+          actionsDiv.className = "suggested-actions";
+          for (var ai = 0; ai < meta.actions.length; ai++) {
+            var act = meta.actions[ai];
+            var btn = document.createElement("button");
+            btn.className = "action-card" + (act.approval_required ? " action-gated" : "");
+            btn.innerHTML = '<span class="action-label">' + escapeHtml(act.label) + '</span>' +
+              '<span class="action-desc">' + escapeHtml(act.description) + '</span>' +
+              (act.approval_required ? '<span class="action-lock">requires approval</span>' : '');
+            btn.dataset.endpoint = act.endpoint;
+            btn.dataset.method = act.method || "GET";
+            btn.dataset.payload = act.payload ? JSON.stringify(act.payload) : "";
+            btn.addEventListener("click", handleActionClick);
+            actionsDiv.appendChild(btn);
+          }
+          d.appendChild(actionsDiv);
+        }
         // Add metadata line if available
         if (meta && meta.provider) {
           var metaDiv = document.createElement("div");
@@ -849,6 +869,35 @@
 
     function escapeHtml(str) {
       return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+    }
+
+    async function handleActionClick(e) {
+      var btn = e.currentTarget;
+      var endpoint = btn.dataset.endpoint;
+      var method = btn.dataset.method || "GET";
+      var payloadStr = btn.dataset.payload;
+
+      btn.disabled = true;
+      btn.classList.add("action-loading");
+
+      var payload = payloadStr ? JSON.parse(payloadStr) : null;
+      var r;
+      if (method === "POST") {
+        r = await api("POST", endpoint, payload || {});
+      } else {
+        r = await api("GET", endpoint);
+      }
+
+      btn.disabled = false;
+      btn.classList.remove("action-loading");
+
+      if (r.ok) {
+        var resultText = JSON.stringify(r.data, null, 2);
+        if (resultText.length > 2000) resultText = resultText.substring(0, 2000) + "\n...";
+        addMsg("assistant", "```json\n" + resultText + "\n```");
+      } else {
+        addMsg("assistant", "Error: " + (r.data.detail || "request failed"));
+      }
     }
 
     function removeTyping() {
