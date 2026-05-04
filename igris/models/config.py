@@ -16,6 +16,23 @@ from typing import Optional
 from pydantic import BaseModel, Field
 
 
+# Model alias normalization (common misspellings / shorthand)
+MODEL_ALIASES: dict[str, str] = {
+    "phi4mini": "phi4-mini",
+    "phi4_mini": "phi4-mini",
+    "phi-4-mini": "phi4-mini",
+    "phi4": "phi4-mini",
+    "llama3": "llama3.2",
+    "llama32": "llama3.2",
+    "llama3_2": "llama3.2",
+}
+
+
+def normalize_model_name(model: str) -> str:
+    """Normalize model name via alias table."""
+    return MODEL_ALIASES.get(model.strip().lower(), model.strip())
+
+
 class LLMConfig(BaseModel):
     provider: str
     model: str
@@ -41,12 +58,12 @@ class Config(BaseModel):
         """Load configuration from environment variables with defaults."""
         local_llm = LLMConfig(
             provider=os.getenv("LOCAL_LLM_PROVIDER", "ollama"),
-            model=os.getenv("LOCAL_LLM_MODEL", "phi4-mini"),
+            model=normalize_model_name(os.getenv("LOCAL_LLM_MODEL", "phi4-mini")),
             base_url=os.getenv("LOCAL_LLM_BASE_URL", "http://127.0.0.1:11434"),
         )
         fallback_llm = LLMConfig(
             provider=os.getenv("FALLBACK_LLM_PROVIDER", "openai"),
-            model=os.getenv("FALLBACK_LLM_MODEL", "gpt-4o-mini"),
+            model=normalize_model_name(os.getenv("FALLBACK_LLM_MODEL", "gpt-4o-mini")),
             api_key=os.getenv("OPENAI_API_KEY"),
         )
         vastai = VastAIConfig(api_key=os.getenv("VASTAI_API_KEY"))

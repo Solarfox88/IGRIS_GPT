@@ -34,7 +34,7 @@ class TestAvailability:
 
     def test_ollama_has_model(self) -> None:
         avail = provider_router.check_availability()
-        assert "model" in avail["ollama"]
+        assert "model_configured" in avail["ollama"]
 
     def test_openai_key_bool_not_exposed(self) -> None:
         avail = provider_router.check_availability()
