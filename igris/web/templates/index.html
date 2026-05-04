@@ -95,16 +95,23 @@
           <div id="tab-tasks" class="tab-pane" role="tabpanel">
             <h3>Tasks</h3>
             <form id="task-form" class="inline-form">
-              <input type="text" id="task-input" placeholder="New task description..." aria-label="Task description" />
+              <input type="text" id="task-title-input" placeholder="Task title (optional)" aria-label="Task title" />
+              <input type="text" id="task-input" placeholder="Task description..." aria-label="Task description" />
               <button type="submit" aria-label="Create task">Create</button>
             </form>
             <div id="task-list" class="task-list"></div>
+            <h4>Teacher Remediation</h4>
+            <button type="button" id="btn-teacher-remediate" class="action-btn" aria-label="Ask teacher for remediation">Ask Teacher</button>
+            <div id="teacher-output" class="output-box"></div>
           </div>
 
           <!-- Safety -->
           <div id="tab-safety" class="tab-pane" role="tabpanel">
             <h3>Safety Status</h3>
             <div id="safety-info" class="info-block"><span class="loading">Loading...</span></div>
+            <h4>Execution Reports</h4>
+            <button type="button" id="btn-refresh-reports" class="action-btn" aria-label="Refresh reports">Refresh Reports</button>
+            <div id="reports-list" class="info-block"></div>
           </div>
 
           <!-- Cost -->

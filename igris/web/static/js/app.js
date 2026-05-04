@@ -2,15 +2,14 @@
 (function () {
   "use strict";
 
-  // Helpers
   function $(sel) { return document.querySelector(sel); }
   function $$(sel) { return document.querySelectorAll(sel); }
 
   async function api(method, url, body) {
-    const opts = { method, headers: { "Content-Type": "application/json" } };
+    var opts = { method: method, headers: { "Content-Type": "application/json" } };
     if (body) opts.body = JSON.stringify(body);
     try {
-      const r = await fetch(url, opts);
+      var r = await fetch(url, opts);
       return { ok: r.ok, status: r.status, data: await r.json() };
     } catch (e) {
       return { ok: false, status: 0, data: { error: e.message } };
@@ -18,18 +17,25 @@
   }
 
   function esc(s) {
-    const d = document.createElement("div");
+    var d = document.createElement("div");
     d.textContent = String(s);
     return d.innerHTML;
   }
 
   function kvTable(obj) {
-    let h = "<table>";
-    for (const [k, v] of Object.entries(obj)) {
-      const val = typeof v === "object" ? JSON.stringify(v) : String(v);
+    var h = "<table>";
+    for (var k in obj) {
+      if (!obj.hasOwnProperty(k)) continue;
+      var v = obj[k];
+      var val = typeof v === "object" ? JSON.stringify(v) : String(v);
       h += "<tr><th>" + esc(k) + "</th><td>" + esc(val) + "</td></tr>";
     }
     return h + "</table>";
+  }
+
+  function statusBadge(status) {
+    var cls = status === "completed" ? "completed" : status === "blocked" ? "blocked" : status === "running" ? "running" : "pending";
+    return '<span class="task-status ' + cls + '">' + esc(status) + "</span>";
   }
 
   // Tab switching
@@ -44,20 +50,32 @@
       });
     });
 
-    // Load initial data
     loadStatus();
     loadMission();
+
+    // Auto-refresh Mission Control and Timeline every 15s
+    setInterval(function () {
+      var activeTab = $(".tab.active");
+      if (activeTab && activeTab.dataset.tab === "mission") loadMission();
+      if (activeTab && activeTab.dataset.tab === "agent") loadTimeline();
+    }, 15000);
   });
 
   // Status header
   async function loadStatus() {
     var r = await api("GET", "/api/status");
+    var rd = await api("GET", "/api/readiness");
     if (r.ok) {
       $("#header-status").textContent = "Online";
-      $("#header-provider").textContent = r.data.provider + " / " + r.data.model;
+      $("#header-status").className = "";
+      var providerText = r.data.provider + " / " + r.data.model;
+      if (rd.ok && !rd.data.ollama_available) {
+        providerText += " (fallback mode)";
+      }
+      $("#header-provider").textContent = providerText;
     } else {
       $("#header-status").textContent = "Offline";
-      $("#header-status").classList.add("error");
+      $("#header-status").className = "error";
     }
   }
 
@@ -156,7 +174,7 @@
     if (r.ok) {
       out.textContent = r.data.preview || "(empty)";
     } else {
-      out.textContent = "Error: " + (r.data.detail || "unknown");
+      out.textContent = "Error " + r.status + ": " + (r.data.detail || "Access denied or file not found");
     }
   }
 
@@ -185,12 +203,15 @@
     if (btn) {
       btn.addEventListener("click", async function () {
         btn.disabled = true;
+        btn.textContent = "Running...";
         var out = $("#test-output");
         out.textContent = "Running tests...";
         var r = await api("POST", "/api/tests/run");
         btn.disabled = false;
+        btn.textContent = "Run Tests";
         if (r.ok) {
-          out.textContent = (r.data.success ? "PASSED\n" : "FAILED\n") + (r.data.stdout || "") + (r.data.stderr ? "\nSTDERR:\n" + r.data.stderr : "");
+          var prefix = r.data.success ? "PASSED\n" : "FAILED\n";
+          out.textContent = prefix + (r.data.stdout || "") + (r.data.stderr ? "\nSTDERR:\n" + r.data.stderr : "");
         } else {
           out.textContent = "Error: " + (r.data.detail || "unknown");
         }
@@ -230,10 +251,19 @@
     var events = r.data.timeline || [];
     if (!events.length) { container.innerHTML = "<em>No events yet.</em>"; return; }
     container.innerHTML = "";
-    events.forEach(function (ev) {
+    events.reverse().forEach(function (ev) {
       var d = document.createElement("div");
       d.className = "timeline-event";
-      d.innerHTML = '<span class="te-time">' + esc(ev.timestamp || "") + "</span> " + esc(ev.event || JSON.stringify(ev));
+      var severity = ev.severity || "info";
+      var icon = severity === "warning" ? "\u26A0" : severity === "error" ? "\u274C" : "\u2022";
+      var typeLabel = ev.type ? "[" + ev.type + "] " : "";
+      var title = ev.title || ev.event || "";
+      var detail = ev.detail || "";
+      d.innerHTML = '<span class="te-icon">' + icon + '</span> ' +
+        '<span class="te-type">' + esc(typeLabel) + '</span>' +
+        '<strong>' + esc(title) + '</strong>' +
+        (detail ? ' <span class="te-detail">' + esc(detail) + '</span>' : '') +
+        (ev.timestamp ? ' <span class="te-time">' + esc(ev.timestamp) + '</span>' : '');
       container.appendChild(d);
     });
   }
@@ -243,7 +273,7 @@
     var loaded = false;
     $$('.tab[data-tab="tasks"]').forEach(function (btn) {
       btn.addEventListener("click", function () {
-        if (!loaded) { loaded = true; }
+        if (!loaded) loaded = true;
         loadTasks();
       });
     });
@@ -251,11 +281,14 @@
     if (form) {
       form.addEventListener("submit", async function (e) {
         e.preventDefault();
-        var inp = $("#task-input");
-        var desc = inp.value.trim();
+        var desc = $("#task-input").value.trim();
+        var title = $("#task-title-input") ? $("#task-title-input").value.trim() : "";
         if (!desc) return;
-        await api("POST", "/api/tasks", { description: desc });
-        inp.value = "";
+        var body = { description: desc };
+        if (title) body.title = title;
+        await api("POST", "/api/tasks", body);
+        if ($("#task-input")) $("#task-input").value = "";
+        if ($("#task-title-input")) $("#task-title-input").value = "";
         loadTasks();
       });
     }
@@ -272,20 +305,21 @@
     tasks.forEach(function (t) {
       var d = document.createElement("div");
       d.className = "task-item";
-      var statusCls = t.status || "pending";
       d.innerHTML =
-        '<div><span class="task-status ' + esc(statusCls) + '">' + esc(t.status) + '</span> ' +
-        esc(t.title || t.description) + '</div>' +
+        '<div class="task-header">' + statusBadge(t.status) +
+        ' <strong>' + esc(t.title || t.description) + '</strong>' +
+        ' <span class="task-meta">#' + t.id + ' | ' + esc(t.family || "other") + ' | ' + esc(t.source || "user") + '</span></div>' +
+        (t.description && t.title ? '<div class="task-desc">' + esc(t.description) + '</div>' : '') +
         '<div class="task-actions">' +
-        (t.status === "pending" ? '<button type="button" data-action="complete" data-id="' + t.id + '">Complete</button><button type="button" data-action="block" data-id="' + t.id + '">Block</button>' : "") +
+        (t.status === "pending" || t.status === "running" ?
+          '<button type="button" class="btn-sm" data-action="complete" data-id="' + t.id + '" aria-label="Complete task">Complete</button>' +
+          '<button type="button" class="btn-sm btn-warn" data-action="block" data-id="' + t.id + '" aria-label="Block task">Block</button>' : "") +
         '</div>';
       container.appendChild(d);
     });
     container.querySelectorAll("button[data-action]").forEach(function (btn) {
       btn.addEventListener("click", async function () {
-        var action = btn.dataset.action;
-        var id = btn.dataset.id;
-        await api("POST", "/api/tasks/" + id + "/" + action, {});
+        await api("POST", "/api/tasks/" + btn.dataset.id + "/" + btn.dataset.action, {});
         loadTasks();
       });
     });
@@ -301,7 +335,17 @@
   async function loadSafety() {
     var r = await api("GET", "/api/safety/status");
     if (r.ok) {
-      $("#safety-info").innerHTML = kvTable(r.data);
+      var html = "<strong>Anti-Loop Status</strong>" + kvTable(r.data);
+      // Add outcome router info
+      var outcomes = await api("GET", "/api/outcome/recent");
+      if (outcomes.ok && outcomes.data.outcomes && outcomes.data.outcomes.length) {
+        html += "<strong>Recent Outcomes</strong><table><tr><th>Action</th><th>Reason</th></tr>";
+        outcomes.data.outcomes.forEach(function (o) {
+          html += "<tr><td>" + esc(o.next_action || "none") + "</td><td>" + esc(o.reason || "") + "</td></tr>";
+        });
+        html += "</table>";
+      }
+      $("#safety-info").innerHTML = html;
     }
   }
 
@@ -320,7 +364,17 @@
     var h = await api("GET", "/api/routing/history");
     if (h.ok) {
       var hist = h.data.history || [];
-      $("#routing-history").innerHTML = "<strong>Routing History</strong><br>" + (hist.length ? hist.map(function (e) { return esc(e.provider + " / " + e.model); }).join("<br>") : "<em>No history.</em>");
+      if (hist.length) {
+        var html = "<strong>Routing History</strong><table><tr><th>Provider</th><th>Model</th><th>Reason</th><th>Latency</th></tr>";
+        hist.slice(-20).reverse().forEach(function (e) {
+          html += "<tr><td>" + esc(e.provider) + "</td><td>" + esc(e.model) +
+            "</td><td>" + esc(e.reason || "") + "</td><td>" + esc(e.latency_ms ? e.latency_ms + "ms" : "-") + "</td></tr>";
+        });
+        html += "</table>";
+        $("#routing-history").innerHTML = html;
+      } else {
+        $("#routing-history").innerHTML = "<em>No routing history yet.</em>";
+      }
     }
     var e = await api("GET", "/api/routing/explain");
     if (e.ok) {
@@ -343,9 +397,9 @@
     var caps = await api("GET", "/api/a2a/capabilities");
     if (caps.ok) {
       var list = caps.data.capabilities || [];
-      var h = "<strong>Capabilities</strong><table><tr><th>ID</th><th>Name</th><th>Risk</th></tr>";
+      var h = "<strong>Capabilities</strong><table><tr><th>ID</th><th>Name</th><th>Risk</th><th>Safe</th></tr>";
       list.forEach(function (c) {
-        h += "<tr><td>" + esc(c.id) + "</td><td>" + esc(c.name) + "</td><td>" + esc(c.risk) + "</td></tr>";
+        h += "<tr><td>" + esc(c.id) + "</td><td>" + esc(c.name) + "</td><td>" + esc(c.risk) + "</td><td>" + esc(c.safe) + "</td></tr>";
       });
       h += "</table>";
       $("#a2a-capabilities").innerHTML = h;
@@ -369,21 +423,96 @@
         if (s.ok) sessionId = s.data.id;
       }
       if (!sessionId) { addMsg("assistant", "Failed to create session"); return; }
+      addMsg("assistant", "...", "typing");
       var r = await api("POST", "/api/sessions/" + sessionId + "/messages", { message: msg });
+      removeTyping();
       if (r.ok) {
-        addMsg("assistant", r.data.response);
+        var providerInfo = r.data.provider && r.data.provider !== "deterministic"
+          ? " [" + r.data.provider + "/" + r.data.model + " " + r.data.latency_ms + "ms]"
+          : r.data.fallback_used ? " [fallback mode]" : "";
+        addMsg("assistant", r.data.response + providerInfo);
       } else {
         addMsg("assistant", "Error: " + (r.data.detail || "unknown"));
       }
     });
 
-    function addMsg(role, text) {
+    function addMsg(role, text, cls) {
       var container = $("#chat-messages");
       var d = document.createElement("div");
-      d.className = "msg msg-" + role;
+      d.className = "msg msg-" + role + (cls ? " " + cls : "");
       d.textContent = text;
       container.appendChild(d);
       container.scrollTop = container.scrollHeight;
     }
+
+    function removeTyping() {
+      var el = $(".msg.typing");
+      if (el) el.remove();
+    }
   })();
+
+  // Teacher Remediation button
+  (function () {
+    var btn = $("#btn-teacher-remediate");
+    if (!btn) return;
+    btn.addEventListener("click", async function () {
+      btn.disabled = true;
+      btn.textContent = "Analyzing...";
+      var out = $("#teacher-output");
+      out.textContent = "Building teacher payload...";
+      var r = await api("POST", "/api/teacher/remediate", { create: false });
+      btn.disabled = false;
+      btn.textContent = "Ask Teacher";
+      if (!r.ok) {
+        out.textContent = "Error: " + (r.data.detail || "unknown");
+        return;
+      }
+      var d = r.data;
+      var html = "<strong>Proposed Task</strong>" + kvTable(d.proposed_task || {});
+      if (d.validation) {
+        html += "<strong>Validation</strong>" + kvTable(d.validation);
+      }
+      html += '<br><button type="button" id="btn-teacher-create" class="cmd-btn" aria-label="Create remediation task">Create This Task</button>';
+      out.innerHTML = html;
+
+      var createBtn = $("#btn-teacher-create");
+      if (createBtn) {
+        createBtn.addEventListener("click", async function () {
+          createBtn.disabled = true;
+          var cr = await api("POST", "/api/teacher/remediate", { create: true });
+          if (cr.ok && cr.data.created_task_id) {
+            out.innerHTML += '<br><span style="color:#4caf50">Task #' + cr.data.created_task_id + ' created!</span>';
+          } else {
+            out.innerHTML += '<br><span class="error">Could not create task (validation failed or no proposal)</span>';
+          }
+        });
+      }
+    });
+  })();
+
+  // Reports (in Safety tab)
+  (function () {
+    var btn = $("#btn-refresh-reports");
+    if (!btn) return;
+    btn.addEventListener("click", loadReports);
+  })();
+
+  async function loadReports() {
+    var container = $("#reports-list");
+    if (!container) return;
+    container.innerHTML = '<span class="loading">Loading...</span>';
+    var r = await api("GET", "/api/reports/recent");
+    if (!r.ok) { container.innerHTML = '<span class="error">Failed</span>'; return; }
+    var reports = r.data.reports || [];
+    if (!reports.length) { container.innerHTML = "<em>No reports yet.</em>"; return; }
+    var html = "<table><tr><th>Command</th><th>Success</th><th>Duration</th><th>Time</th></tr>";
+    reports.reverse().forEach(function (rp) {
+      html += "<tr><td>" + esc(rp.command_id) + "</td><td>" +
+        (rp.success ? "Yes" : "No") + "</td><td>" +
+        esc(rp.duration_ms + "ms") + "</td><td>" +
+        esc(rp.started_at || "") + "</td></tr>";
+    });
+    html += "</table>";
+    container.innerHTML = html;
+  }
 })();

@@ -75,8 +75,26 @@ header h1{margin:0;font-size:1.2rem;font-weight:700;letter-spacing:.5px}
 
 /* Timeline */
 .timeline-list{font-size:.82rem}
-.timeline-event{background:#161b22;border:1px solid #30363d;border-radius:6px;padding:.4rem .6rem;margin-bottom:.3rem}
+.timeline-event{background:#161b22;border:1px solid #30363d;border-radius:6px;padding:.4rem .6rem;margin-bottom:.3rem;display:flex;align-items:baseline;gap:.4rem;flex-wrap:wrap}
 .timeline-event .te-time{color:#8b949e;font-size:.72rem}
+.timeline-event .te-type{color:#58a6ff;font-size:.72rem;font-weight:600}
+.timeline-event .te-detail{color:#8b949e;font-size:.78rem}
+.timeline-event .te-icon{font-size:.72rem}
+
+/* Task extra */
+.task-item{flex-direction:column;align-items:flex-start;gap:.25rem}
+.task-header{display:flex;align-items:center;gap:.4rem;flex-wrap:wrap}
+.task-meta{color:#8b949e;font-size:.72rem}
+.task-desc{color:#8b949e;font-size:.78rem;margin-left:1.5rem}
+.btn-sm{font-size:.72rem;padding:2px 8px;border-radius:4px;border:1px solid #30363d;background:#21262d;color:#c9d1d9;cursor:pointer}
+.btn-sm:hover{background:#30363d}
+.btn-warn{border-color:#f85149;color:#f85149}
+.btn-warn:hover{background:#2d0000}
+.cmd-btn{background:#21262d;color:#c9d1d9;border:1px solid #30363d;padding:.35rem .7rem;border-radius:4px;cursor:pointer;font-size:.78rem;font-family:monospace}
+.cmd-btn:hover{background:#30363d}
+
+/* Typing indicator */
+.msg.typing{color:#8b949e;font-style:italic}
 
 /* Inline form */
 .inline-form{display:flex;gap:.4rem;margin-bottom:.5rem}
