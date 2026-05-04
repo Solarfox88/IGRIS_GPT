@@ -36,6 +36,7 @@ from igris.a2a.agent_card import build_agent_card
 from igris.core.project_context import build_project_snapshot
 from igris.core.memory import recent_memory_events, append_memory_event
 from igris.core import mission_planner
+from igris.core import decision_memory
 
 MODULE_DIR = Path(__file__).resolve().parent
 TEMPLATES_DIR = MODULE_DIR / "templates"
@@ -354,6 +355,74 @@ def create_app() -> FastAPI:
     async def api_memory_recent(namespace: str, limit: int = 20) -> Dict[str, object]:
         events = recent_memory_events(namespace, limit)
         return {"events": events}
+
+    # ---- Decision Memory ----
+
+    @app.get("/api/memory/failures")
+    async def api_memory_failures(limit: int = 20) -> Dict[str, object]:
+        events = decision_memory.get_recent_failures(limit, project_root=str(CONFIG.project_root))
+        return {"events": events}
+
+    @app.get("/api/memory/decisions")
+    async def api_memory_decisions(limit: int = 20) -> Dict[str, object]:
+        events = decision_memory.get_recent_decisions(limit, project_root=str(CONFIG.project_root))
+        return {"events": events}
+
+    @app.get("/api/memory/saturation")
+    async def api_memory_saturation() -> Dict[str, object]:
+        families = decision_memory.get_saturated_families(project_root=str(CONFIG.project_root))
+        constraints = decision_memory.explain_memory_constraints(project_root=str(CONFIG.project_root))
+        return {
+            "saturated_families": families,
+            "constraints": constraints,
+        }
+
+    @app.post("/api/memory/events")
+    async def api_memory_record_event(request: Request) -> Dict[str, object]:
+        content = await request.json()
+        event_type = content.get("event_type", "")
+        if event_type not in ("decision", "failure", "saturation", "remediation"):
+            raise HTTPException(status_code=400, detail="event_type must be decision|failure|saturation|remediation")
+        title = content.get("title", "")
+        if not title and event_type != "saturation":
+            raise HTTPException(status_code=400, detail="title is required")
+        pr = str(CONFIG.project_root)
+        if event_type == "decision":
+            event = decision_memory.record_decision(
+                title=title, family=content.get("family", ""),
+                task_id=content.get("task_id", ""),
+                description=content.get("description", ""),
+                outcome=content.get("outcome", "success"),
+                reason=content.get("reason", ""), project_root=pr,
+            )
+        elif event_type == "failure":
+            event = decision_memory.record_failure(
+                title=title, family=content.get("family", ""),
+                task_id=content.get("task_id", ""),
+                description=content.get("description", ""),
+                reason=content.get("reason", ""), project_root=pr,
+            )
+        elif event_type == "saturation":
+            family = content.get("family", "")
+            if not family:
+                raise HTTPException(status_code=400, detail="family is required for saturation")
+            event = decision_memory.record_saturation(
+                family=family, reason=content.get("reason", ""), project_root=pr,
+            )
+        else:
+            event = decision_memory.record_remediation_attempt(
+                title=title, family=content.get("family", ""),
+                task_id=content.get("task_id", ""),
+                description=content.get("description", ""),
+                outcome=content.get("outcome", "pending"),
+                reason=content.get("reason", ""), project_root=pr,
+            )
+        task_engine.append_timeline_event({
+            "type": "memory", "title": f"Memory event: {_redact(title or event_type)}",
+            "detail": _redact(content.get("description", "")[:200]),
+            "severity": "info",
+        })
+        return event.to_dict()
 
     # ---- Missions ----
 

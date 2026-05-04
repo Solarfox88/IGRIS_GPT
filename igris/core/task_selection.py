@@ -11,6 +11,7 @@ from dataclasses import dataclass, field
 from typing import Dict, List, Optional
 
 from igris.core import anti_loop, semantic_dedup
+from igris.core.decision_memory import get_blocked_families_from_memory
 from igris.models.task import Task, TaskStatus
 
 
@@ -34,6 +35,7 @@ def select_next_task(
     advisory_next_task_file: Optional[str] = None,
     history: Optional[List[str]] = None,
     blocked_families: Optional[List[str]] = None,
+    project_root: Optional[str] = None,
 ) -> SelectionResult:
     """Select the next task to execute.
 
@@ -42,7 +44,11 @@ def select_next_task(
     the function falls back to picking the best candidate.
     """
     history = history or []
-    blocked_families = blocked_families or []
+    blocked_families = list(blocked_families or [])
+    memory_blocked = get_blocked_families_from_memory(project_root)
+    for fam in memory_blocked:
+        if fam not in blocked_families:
+            blocked_families.append(fam)
     result = SelectionResult()
 
     pending = [t for t in candidate_tasks if t.status == TaskStatus.pending]

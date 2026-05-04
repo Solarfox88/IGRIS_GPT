@@ -229,6 +229,10 @@ Routes tasks to the cheapest suitable provider:
 | `/api/missions/{id}/plan` | POST | Generate plan for mission |
 | `/api/missions/{id}/materialize-tasks` | POST | Create tasks from plan |
 | `/api/missions/{id}/graph` | GET | Mission task dependency graph |
+| `/api/memory/decisions` | GET | Recent decision events |
+| `/api/memory/failures` | GET | Recent failure events |
+| `/api/memory/saturation` | GET | Saturated families + constraints |
+| `/api/memory/events` | POST | Record decision/failure/saturation/remediation |
 
 ## Web Console
 
