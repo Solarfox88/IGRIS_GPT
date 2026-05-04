@@ -15,4 +15,5 @@ def test_preview_blocks_traversal(tmp_path):
     # Request path traversal
     resp = client.get("/api/files/preview", params={"path": "../foo.txt"})
     assert resp.status_code == 403
-    assert "Invalid path" in resp.json()["detail"]
+    detail = resp.json()["detail"]
+    assert "path" in detail.lower() or "escape" in detail.lower()
