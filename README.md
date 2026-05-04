@@ -210,10 +210,16 @@ Routes tasks to the cheapest suitable provider:
 | `/.well-known/agent-card.json` | GET | A2A agent card |
 | `/api/logs` | GET | Application logs |
 | `/api/memory/recent` | GET | Recent memory events |
+| `/api/patches` | GET | List patch proposals |
+| `/api/patches/propose` | POST | Create patch proposal |
+| `/api/patches/{id}` | GET | Patch proposal detail + diff |
+| `/api/patches/{id}/validate` | POST | Safety validation |
+| `/api/patches/{id}/apply` | POST | Apply validated patch |
+| `/api/patches/{id}/reject` | POST | Reject proposal |
 
 ## Web Console
 
-11-tab agentic console:
+12-tab agentic console:
 - **Mission Control** — health, readiness, project context (auto-refresh)
 - **Terminal** — safe command execution by ID
 - **Files** — file tree and preview
@@ -225,6 +231,7 @@ Routes tasks to the cheapest suitable provider:
 - **Safety** — anti-loop status + execution reports
 - **Cost** — routing history with latency and provider details
 - **A2A** — agent card and capabilities
+- **Patches** — propose, validate, diff preview, apply/reject code changes
 
 ## What Works
 

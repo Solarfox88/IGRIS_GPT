@@ -22,6 +22,7 @@ from igris.core.teacher import build_teacher_payload, validate_teacher_assignmen
 from igris.core import execution_report
 from igris.core.chat_engine import chat as chat_llm, check_ollama_available
 from igris.core.outcome_router import route_outcome
+from igris.core import patch_proposal as patch_mod
 from igris.layers.advisory import router as provider_router
 from igris.layers.execution import runner as execution_runner
 from igris.layers.execution.safe_commands import ALLOWED_COMMANDS
@@ -533,6 +534,97 @@ def create_app() -> FastAPI:
             rec = route_outcome(r)
             outcomes.append(rec)
         return {"outcomes": outcomes}
+
+    # ---- Patch Proposals ----
+
+    @app.get("/api/patches")
+    async def api_list_patches() -> Dict[str, object]:
+        patches = patch_mod.list_patch_proposals(project_root=str(CONFIG.project_root))
+        return {"patches": patches}
+
+    @app.post("/api/patches/propose")
+    async def api_propose_patch(request: Request) -> Dict[str, object]:
+        content = await request.json()
+        title = content.get("title", "Untitled patch")
+        description = content.get("description", "")
+        task_id = content.get("task_id")
+        files = content.get("files", [])
+        if not files:
+            raise HTTPException(status_code=400, detail="No files provided")
+        proposal = patch_mod.create_patch_proposal(
+            title=title,
+            description=description,
+            files=files,
+            task_id=task_id,
+            project_root=str(CONFIG.project_root),
+        )
+        task_engine.append_timeline_event({
+            "type": "patch", "title": f"Patch proposed: {title}",
+            "detail": f"{len(files)} file(s)", "severity": "info",
+            "related_task_id": task_id,
+            "related_patch_id": proposal.id,
+        })
+        return patch_mod._proposal_to_dict(proposal)
+
+    @app.get("/api/patches/{proposal_id}")
+    async def api_get_patch(proposal_id: str) -> Dict[str, object]:
+        proposal = patch_mod.load_patch_proposal(proposal_id, project_root=str(CONFIG.project_root))
+        if proposal is None:
+            raise HTTPException(status_code=404, detail="Proposal not found")
+        return patch_mod._proposal_to_dict(proposal)
+
+    @app.post("/api/patches/{proposal_id}/validate")
+    async def api_validate_patch(proposal_id: str) -> Dict[str, object]:
+        proposal = patch_mod.load_patch_proposal(proposal_id, project_root=str(CONFIG.project_root))
+        if proposal is None:
+            raise HTTPException(status_code=404, detail="Proposal not found")
+        result = patch_mod.validate_patch_proposal(proposal, project_root=str(CONFIG.project_root))
+        severity = "info" if result.valid else "warning"
+        task_engine.append_timeline_event({
+            "type": "patch", "title": f"Patch validated: {proposal.title}",
+            "detail": f"valid={result.valid}, risk={result.risk}",
+            "severity": severity,
+            "related_patch_id": proposal.id,
+        })
+        return {
+            "proposal_id": proposal_id,
+            "status": proposal.status,
+            "validation": {
+                "valid": result.valid,
+                "reasons": result.reasons,
+                "blocked_paths": result.blocked_paths,
+                "secret_findings": result.secret_findings,
+                "risk": result.risk,
+            },
+        }
+
+    @app.post("/api/patches/{proposal_id}/apply")
+    async def api_apply_patch(proposal_id: str) -> Dict[str, object]:
+        result = patch_mod.apply_patch_proposal(proposal_id, project_root=str(CONFIG.project_root))
+        if not result.get("success"):
+            raise HTTPException(status_code=400, detail=result.get("error", "Apply failed"))
+        task_engine.append_timeline_event({
+            "type": "patch", "title": f"Patch applied: {proposal_id}",
+            "detail": f"{len(result.get('applied_files', []))} file(s) modified",
+            "severity": "info",
+            "related_patch_id": proposal_id,
+        })
+        return result
+
+    @app.post("/api/patches/{proposal_id}/reject")
+    async def api_reject_patch(proposal_id: str, request: Request) -> Dict[str, object]:
+        content = await request.json()
+        reason = content.get("reason", "")
+        result = patch_mod.reject_patch_proposal(proposal_id, reason=reason, project_root=str(CONFIG.project_root))
+        if not result.get("success"):
+            raise HTTPException(status_code=400, detail=result.get("error", "Reject failed"))
+        task_engine.append_timeline_event({
+            "type": "patch", "title": f"Patch rejected: {proposal_id}",
+            "detail": reason or "No reason given",
+            "severity": "warning",
+            "related_patch_id": proposal_id,
+        })
+        return result
 
     return app
 

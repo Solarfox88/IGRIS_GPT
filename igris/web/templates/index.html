@@ -39,6 +39,7 @@
           <button type="button" class="tab" data-tab="safety" role="tab" aria-label="Safety">Safety</button>
           <button type="button" class="tab" data-tab="cost" role="tab" aria-label="Cost">Cost</button>
           <button type="button" class="tab" data-tab="a2a" role="tab" aria-label="A2A">A2A</button>
+          <button type="button" class="tab" data-tab="patches" role="tab" aria-label="Patches">Patches</button>
         </nav>
 
         <div class="tab-content">
@@ -127,6 +128,29 @@
             <h3>A2A Protocol</h3>
             <div id="a2a-card" class="info-block"></div>
             <div id="a2a-capabilities" class="info-block"></div>
+          </div>
+
+          <!-- Patches -->
+          <div id="tab-patches" class="tab-pane" role="tabpanel">
+            <h3>Patch Proposals</h3>
+            <button type="button" id="btn-refresh-patches" class="action-btn" aria-label="Refresh patches">Refresh</button>
+            <div id="patches-list" class="info-block"></div>
+            <h4>New Proposal</h4>
+            <form id="patch-form" class="patch-form">
+              <input type="text" id="patch-title" placeholder="Patch title" aria-label="Patch title" />
+              <input type="text" id="patch-desc" placeholder="Description" aria-label="Patch description" />
+              <input type="text" id="patch-path" placeholder="File path (e.g. docs/example.md)" aria-label="File path" />
+              <select id="patch-action" aria-label="Action">
+                <option value="create">Create</option>
+                <option value="modify">Modify</option>
+              </select>
+              <textarea id="patch-content" rows="6" placeholder="File content (after)" aria-label="File content"></textarea>
+              <button type="submit" class="action-btn">Propose Patch</button>
+            </form>
+            <h4>Proposal Detail</h4>
+            <div id="patch-detail" class="info-block"></div>
+            <div id="patch-diff" class="output-box"></div>
+            <div id="patch-actions"></div>
           </div>
         </div>
       </section>
