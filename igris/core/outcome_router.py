@@ -81,3 +81,23 @@ def decide_next_after_result(
     recommendation["reason"] = "Unable to determine next step; deferring to teacher."
     recommendation["should_call_teacher"] = True
     return recommendation
+
+
+def route_outcome(report: Dict[str, Any], task_description: str = "",
+                  history: Optional[Iterable[str]] = None) -> Dict[str, Any]:
+    """Route an execution report outcome and return recommendation.
+
+    Wraps ``decide_next_after_result`` with report-specific fields and adds
+    ``report_id`` to the returned recommendation.
+    """
+    result = {
+        "success": report.get("success", False),
+        "failure_type": report.get("failure_type"),
+        "stdout": report.get("stdout_truncated", ""),
+        "stderr": report.get("stderr_truncated", ""),
+    }
+    recommendation = decide_next_after_result(
+        result, task_description, list(history or []),
+    )
+    recommendation["report_id"] = report.get("report_id")
+    return recommendation

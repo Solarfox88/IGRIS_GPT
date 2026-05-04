@@ -2,7 +2,7 @@
 name = "igris_gpt"
 version = "0.1.0"
 description = "Clean, installable AI engineering agent derived from the original IGRIS project."
-authors = [ { name = "Solarfox88", email = "noreply@example.com" } ]
+authors = [ { name = "Solarfox88", email = "cricci.solarfox@gmail.com" } ]
 readme = "README.md"
 requires-python = ">=3.11"
 
@@ -30,7 +30,7 @@ dev = [
 package-dir = { "" = "." }
 
 [tool.setuptools.packages.find]
-where = ["igris"]
+where = ["."]
 exclude = ["tests"]
 
 [tool.setuptools.package-data]

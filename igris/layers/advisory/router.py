@@ -72,6 +72,29 @@ def explain_routing() -> str:
     return "Unknown provider choice."
 
 
+def record_chat_routing(
+    provider: str, model: str, reason: str,
+    latency_ms: int = 0, fallback_used: bool = False,
+    estimated_cost: float = 0.0, task_id: Optional[str] = None,
+    session_id: Optional[str] = None,
+) -> None:
+    """Record a chat routing decision in the history."""
+    global _last_provider
+    import time as _time
+    _last_provider = (provider, model)
+    _provider_history.append({
+        "provider": provider,
+        "model": model,
+        "reason": reason,
+        "latency_ms": latency_ms,
+        "fallback_used": fallback_used,
+        "estimated_cost": estimated_cost,
+        "task_id": task_id,
+        "session_id": session_id,
+        "timestamp": _time.strftime("%Y-%m-%dT%H:%M:%SZ", _time.gmtime()),
+    })
+
+
 def get_history() -> List[Dict[str, Any]]:
     """Return a copy of the provider history.
 
@@ -81,19 +104,30 @@ def get_history() -> List[Dict[str, Any]]:
 
 
 def cost_summary() -> Dict[str, Any]:
-    """Return a simple summary of provider usage.
-
-    The summary includes the count of calls per provider, the last provider used,
-    and a total call count.  It does not include actual costs because these
-    depend on external pricing which is not available to the agent.
-    """
-    summary = {
-        "total_calls": len(_provider_history),
-        "providers": {},
-        "last_provider": _last_provider[0] if _last_provider else None,
-    }
+    """Return a summary of provider usage with cost estimates."""
+    providers: Dict[str, int] = {}
+    local_calls = 0
+    fallback_calls = 0
+    estimated_cost_total = 0.0
     for entry in _provider_history:
-        provider = entry["provider"]
-        summary["providers"].setdefault(provider, 0)
-        summary["providers"][provider] += 1
-    return summary
+        p = entry["provider"]
+        providers.setdefault(p, 0)
+        providers[p] += 1
+        if p in ("local", "ollama", "deterministic"):
+            local_calls += 1
+        else:
+            fallback_calls += 1
+        estimated_cost_total += entry.get("estimated_cost", 0.0)
+
+    from igris.core.chat_engine import check_ollama_available
+    return {
+        "total_calls": len(_provider_history),
+        "providers": providers,
+        "local_calls": local_calls,
+        "fallback_calls": fallback_calls,
+        "estimated_cost_total": round(estimated_cost_total, 6),
+        "last_provider": _last_provider[0] if _last_provider else None,
+        "fallback_available": bool(CONFIG.fallback_llm.api_key),
+        "ollama_available": check_ollama_available(),
+        "vast_available": False,
+    }

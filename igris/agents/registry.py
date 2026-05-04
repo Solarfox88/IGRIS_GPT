@@ -87,7 +87,6 @@ def build_default_registry() -> None:
     from igris.layers.git_layer.git_status import get_git_info
     from igris.layers.execution.runner import run_tests, run_safe_command
     from igris.layers.execution.safe_commands import ALLOWED_COMMANDS
-    from igris.web.server import create_app  # type: ignore
 
     class GitAgent(BaseAgent):
         def __init__(self) -> None:
