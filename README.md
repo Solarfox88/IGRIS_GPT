@@ -113,7 +113,7 @@ See [docs/CHAT_BEHAVIOR.md](docs/CHAT_BEHAVIOR.md) for details.
 ## Tests
 
 ```bash
-python -m pytest -q     # 988 tests
+python -m pytest -q     # 1207 tests
 ```
 
 ---
@@ -132,7 +132,7 @@ See [docs/SECURITY_MODEL.md](docs/SECURITY_MODEL.md).
 
 The terminal accepts only commands from a fixed allowlist identified by
 `command_id`. Available commands: `git_status`, `git_log`, `run_tests`,
-`list_files`.
+`list_files`, `system_info`.
 
 ## File Browser
 
@@ -280,56 +280,60 @@ Routes tasks to the cheapest suitable provider:
 | `/api/chat/context/summary` | GET | Concise context summary |
 | `/api/diagnostics` | GET | Full operational diagnostics report |
 | `/api/diagnostics/summary` | GET | Quick diagnostics summary |
+| `/api/system/info` | GET | Safe system info (OS, CPU, RAM, disk, Ollama) |
+| `/api/dashboard/summary` | GET | Aggregated dashboard view |
 
 ## Web Console
 
-14-tab agentic console:
-- **Mission Control** — health, readiness, project context (auto-refresh)
-- **Terminal** — safe command execution by ID
-- **Files** — file tree and preview
-- **Git** — diff viewer, branch management, safety check, commit proposals, PR summary
-- **Tests** — run pytest with output
-- **Logs** — application log viewer
-- **Agent** — timeline events with type/severity (auto-refresh)
-- **Tasks** — create/complete/block tasks + teacher remediation
-- **Safety** — anti-loop status + execution reports (unified refresh)
-- **Cost** — provider availability cards, budget bar, route estimate, cost summary (auto-refresh)
-- **A2A** — agent card, capabilities, A2A store tasks
-- **Memory** — decision/failure memory, constraints, record events
-- **Loop** — autonomous execution loop controls (1/3/5 steps), status, recent steps (auto-refresh)
-- **Patches** — propose, validate, diff preview, apply/reject code changes
+7-tab human-usable console (grouped from 14 original tabs with sub-tab navigation):
 
-## What Works (v0.2)
+- **Dashboard** — system health, readiness, diagnostics, loop status (2x2 card grid, auto-refresh)
+- **Code** — Files + Git + Patches (sub-tabs)
+- **Tasks** — Tasks + Loop (sub-tabs)
+- **Terminal** — Commands + Tests (sub-tabs)
+- **Memory** — Memory + Timeline (sub-tabs)
+- **Safety** — Safety + Cost & Routing (sub-tabs)
+- **Advanced** — A2A + Logs (sub-tabs)
 
-- Full FastAPI backend with 55+ endpoints
-- Ollama chat engine with deterministic fallback
-- Persistent task engine and execution reports
-- Safety module: path access, secret detection, output truncation
+All original element IDs preserved for backward compatibility.
+
+## What Works (v0.6)
+
+- Full FastAPI backend with 80+ endpoints
+- **Human-usable 7-tab console** with sub-tab navigation and dashboard (Sprint 34)
+- **IGRIS-aware chat personality** — answers as a local engineering agent, not generic ChatGPT (Sprint 31)
+- **Readable chat UI** with Markdown rendering, code syntax highlighting (Sprint 32)
+- **Guided actions** — suggested safe actions for operational intents (Sprint 33)
+- **Safe system info** — OS, CPU, RAM, disk, Ollama status without free shell (Sprint 35)
+- Ollama chat engine with multi-tier fallback and context enrichment
+- Persistent task engine with explainable selection
+- Safety module: path access, secret detection, output truncation, strict policy
 - A2A protocol: agent card, task lifecycle, messages, artifacts, cancel, events
 - Teacher governance with remediation proposals
-- Outcome router with recommendations
-- Anti-loop heuristics with family saturation
+- Autonomous execution loop with diagnostics and decision reports
 - Cost-aware routing with latency tracking, budget management
-- Patch proposals: propose, validate, diff preview, apply/reject
-- Controlled git workflow: diff, branches, safety check, commit proposals, PR summary
-- Mission planner: create missions, generate plans, materialize tasks, dependency graph
-- Decision/failure memory: record, query, constraints, teacher/task_selection integration
-- Autonomous execution loop: safety-first semi-autonomous step execution
-- Validation layer: success criteria, definition of done, manual override
-- A2A store: extended status lifecycle, artifacts, cancel, events
-- Provider availability checks, route estimation, per-session budget tracking
-- Mobile-responsive UI with 14 tabs and auto-refresh
-- 393 passing tests
+- Patch proposals: propose, validate, diff preview, apply/reject + LLM generation (proposal-only)
+- Controlled git workflow + gated GitHub PR workflow
+- Mission planner: deterministic + LLM-based (safe schema) planning
+- Decision/failure memory with LLM analysis (advisory only)
+- ProjectState, saturation cooldown, recovery escalation
+- Vast.ai gated/mock-safe GPU management
+- Human acceptance verification + sandbox benchmarks
+- Mobile-responsive UI with auto-refresh
+- **1207 passing tests**
 - Ubuntu install scripts with lifecycle management
 - Systemd service example
 
-## What's Placeholder
+## What's Placeholder / Gated
 
-- VAST.ai integration (routing logic present, no real API calls or provisioning)
-- LLM-based mission planning (currently deterministic keyword-based)
-- LLM-based memory analysis
-- WebSocket live updates
-- Memory cleanup/archival
+- VAST.ai real API (framework gated, `I_APPROVE_VASTAI_COSTS` required)
+- WebSocket live updates (currently 15s polling)
+- Vector search memory
+- Multi-repo management
+- Benchmarks on real public repositories
+- Automated benchmark runner with reporting dashboard
+
+See [docs/PREPARED_NOT_IMPLEMENTED.md](docs/PREPARED_NOT_IMPLEMENTED.md) for details.
 
 ## Systemd Service
 
@@ -370,6 +374,10 @@ See [docs/SYSTEMD_SERVICE.md](docs/SYSTEMD_SERVICE.md) for production deployment
 - [EXTERNAL_REPO_BENCHMARK.md](docs/EXTERNAL_REPO_BENCHMARK.md)
 - [LLM_PATCH_GENERATION.md](docs/LLM_PATCH_GENERATION.md)
 - [GITHUB_PR_DRY_RUN_BENCHMARK.md](docs/GITHUB_PR_DRY_RUN_BENCHMARK.md)
+- [CHAT_BEHAVIOR.md](docs/CHAT_BEHAVIOR.md)
+- [GUIDED_ACTIONS.md](docs/GUIDED_ACTIONS.md)
+- [DASHBOARD_UI.md](docs/DASHBOARD_UI.md)
+- [SYSTEM_INFO.md](docs/SYSTEM_INFO.md)
 
 ## License
 

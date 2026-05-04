@@ -349,4 +349,5 @@ class TestGitStatus:
                 "index.html", "app.js", "style.css",
                 "test_integration_v02.py", "test_ui_polish.py",
                 "DASHBOARD_UI.md", "GUIDED_ACTIONS.md",
+                "README.md", "PREPARED_NOT_IMPLEMENTED.md",
             ]), f"Unexpected changed file: {line}"

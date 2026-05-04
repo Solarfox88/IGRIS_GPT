@@ -4,24 +4,28 @@ This document tracks the IGRIS_GPT capabilities that are intentionally prepared,
 
 The goal is to make future work easy to rediscover and to avoid confusing an installable/safe baseline with a fully autonomous, cost-incurring, production-grade agent.
 
-Last updated: 2026-05-04 (v0.5-real-world-candidate)
+Last updated: 2026-05-04 (v0.6-human-usable-console)
 
 ---
 
 ## Current Baseline
 
-IGRIS_GPT v0.5 provides an installable, safety-first, real-world-validated engineering loop:
+IGRIS_GPT v0.6 provides a human-usable, installable, safety-first engineering console:
 
 - Ubuntu install scripts and server lifecycle scripts
 - FastAPI backend with 80+ API endpoints
-- Web console with 14+ operational tabs
+- **Human-usable 7-tab console** with sub-tab navigation and dashboard (v0.6)
+- **IGRIS-aware chat personality** — answers as a local agent, not generic ChatGPT (v0.6)
+- **Readable chat UI** with Markdown rendering and code syntax highlighting (v0.6)
+- **Guided actions** — suggested safe actions for operational intents (v0.6)
+- **Safe system info** — OS, CPU, RAM, disk, Ollama without free shell (v0.6)
 - Local-first chat with phi4-mini, streaming, tier selector, context enrichment
 - Mission planner with deterministic + LLM-based planning (safe schema)
 - Persistent task engine with explainable selection
 - Patch proposal, diff preview, validation and safe apply
-- **LLM patch generation (proposal-only, never auto-applies)**
+- LLM patch generation (proposal-only, never auto-applies)
 - Controlled Git workflow + gated GitHub PR workflow
-- **GitHub PR dry-run benchmark (full workflow without side effects)**
+- GitHub PR dry-run benchmark (full workflow without side effects)
 - Decision/failure memory with LLM analysis
 - Autonomous loop MVP with bounded steps, diagnostics, decision reports
 - Validation/definition-of-done layer
@@ -31,11 +35,10 @@ IGRIS_GPT v0.5 provides an installable, safety-first, real-world-validated engin
 - Operational diagnostics (starvation, blocked, family health)
 - ProjectState + saturation cooldown
 - Strict safety policy + safe command policy
-- Timeline/reports/safety/cost visibility
-- **Human acceptance verification (21-step checklist + automated script)**
-- **External repo sandbox benchmarks (5 scenarios on sandbox project)**
-- Operational benchmarks (5 workflow scenarios documented)
-- **928 tests passing**
+- Human acceptance verification (21-step checklist + automated script)
+- External repo sandbox benchmarks (5 scenarios)
+- Operational benchmarks (5 workflow scenarios)
+- **1207 tests passing**
 
 The sections below list the parts that are intentionally **not yet complete**.
 
