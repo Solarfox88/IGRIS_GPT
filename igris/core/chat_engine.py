@@ -16,6 +16,7 @@ from igris.core.chat_personality import (
     IGRIS_SYSTEM_PROMPT,
     detect_intent,
     get_grounded_response,
+    get_suggested_actions,
 )
 
 # Keyword-based contextual fallback responses
@@ -139,6 +140,7 @@ def chat(
                 "latency_ms": latency_ms,
                 "routing_reason": f"IGRIS-aware grounded response for intent: {intent}",
                 "intent_detected": intent,
+                "suggested_actions": get_suggested_actions(intent),
             }
 
     messages: list[dict[str, str]] = []

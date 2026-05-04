@@ -23,6 +23,7 @@ from igris.core.chat_personality import (
     IGRIS_SYSTEM_PROMPT,
     detect_intent,
     get_grounded_response,
+    get_suggested_actions,
 )
 from igris.core.safety import redact_secrets
 from igris.models.config import CONFIG
@@ -129,6 +130,7 @@ def chat_stream_sync(
                     "routing_reason": f"IGRIS-aware grounded response for intent: {intent}",
                     "tier": tier,
                     "intent_detected": intent,
+                    "suggested_actions": get_suggested_actions(intent),
                 },
             ))
             return chunks

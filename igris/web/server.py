@@ -149,6 +149,8 @@ def create_app() -> FastAPI:
             "model": result["model"],
             "fallback_used": result["fallback_used"],
             "latency_ms": result["latency_ms"],
+            "intent_detected": result.get("intent_detected"),
+            "suggested_actions": result.get("suggested_actions", []),
         }
 
     # ---- Chat Streaming + Tier ----
@@ -239,18 +241,35 @@ def create_app() -> FastAPI:
 
     @app.post("/api/chat/intent")
     async def api_chat_intent(request: Request) -> Dict[str, object]:
-        from igris.core.chat_personality import detect_intent, get_grounded_response
+        from igris.core.chat_personality import (
+            detect_intent, get_grounded_response, get_suggested_actions,
+        )
         content = await request.json()
         message = content.get("message", "")
         if not message:
             raise HTTPException(status_code=400, detail="message required")
         intent = detect_intent(message)
         response = get_grounded_response(intent) if intent else None
+        actions = get_suggested_actions(intent) if intent else []
         return {
             "intent": intent,
             "grounded_response": response,
             "has_response": response is not None,
+            "suggested_actions": actions,
         }
+
+    @app.get("/api/chat/actions")
+    async def api_chat_actions() -> Dict[str, object]:
+        from igris.core.chat_personality import get_all_safe_actions
+        return {"actions": get_all_safe_actions()}
+
+    @app.get("/api/chat/actions/{intent_name}")
+    async def api_chat_actions_by_intent(intent_name: str) -> Dict[str, object]:
+        from igris.core.chat_personality import get_suggested_actions
+        actions = get_suggested_actions(intent_name)
+        if not actions:
+            raise HTTPException(status_code=404, detail=f"No actions for intent: {intent_name}")
+        return {"intent": intent_name, "actions": actions}
 
     # ---- Git ----
 

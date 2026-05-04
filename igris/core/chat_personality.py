@@ -12,6 +12,7 @@ rather than sounding like generic ChatGPT. Provides:
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import Dict, List, Optional, Any
 
 # ---------------------------------------------------------------------------
@@ -349,6 +350,120 @@ def get_capability_summary() -> Dict[str, Any]:
             "no_auto_push": True,
         },
     }
+
+
+# ---------------------------------------------------------------------------
+# Suggested Actions per Intent
+# ---------------------------------------------------------------------------
+
+@dataclass
+class SuggestedAction:
+    """A safe action that IGRIS can suggest to the user."""
+    label: str
+    description: str
+    endpoint: str
+    method: str = "GET"
+    risk: str = "safe"
+    approval_required: bool = False
+    command_id: Optional[str] = None
+    payload: Optional[Dict[str, Any]] = None
+
+    def to_dict(self) -> Dict[str, Any]:
+        d: Dict[str, Any] = {
+            "label": self.label,
+            "description": self.description,
+            "endpoint": self.endpoint,
+            "method": self.method,
+            "risk": self.risk,
+            "approval_required": self.approval_required,
+        }
+        if self.command_id:
+            d["command_id"] = self.command_id
+        if self.payload:
+            d["payload"] = self.payload
+        return d
+
+
+_INTENT_ACTIONS: Dict[str, List[SuggestedAction]] = {
+    "machine_info": [
+        SuggestedAction("Show Status", "Stato corrente del server IGRIS", "/api/status"),
+        SuggestedAction("Show Readiness", "Readiness con provider/model check", "/api/readiness"),
+        SuggestedAction("Show Project Context", "Contesto progetto corrente", "/api/project/context"),
+        SuggestedAction("Show Git Status", "Stato repository Git locale", "/api/git/status"),
+        SuggestedAction("Create system_info task", "Crea task per implementare endpoint system_info",
+                       "/api/tasks", method="POST",
+                       payload={"title": "Add safe system_info endpoint", "family": "code"}),
+    ],
+    "network_info": [
+        SuggestedAction("Show Status", "Host e porta del server", "/api/status"),
+        SuggestedAction("Show Readiness", "Raggiungibilità provider", "/api/readiness"),
+        SuggestedAction("Show Routing", "Stato routing e provider", "/api/routing/explain"),
+    ],
+    "github_access": [
+        SuggestedAction("Show Git Status", "Stato working directory", "/api/git/status"),
+        SuggestedAction("Show Git Diff", "Diff con redazione segreti", "/api/git/diff"),
+        SuggestedAction("Generate PR Summary", "Summary vs base branch", "/api/git/pr-summary"),
+        SuggestedAction("Prepare PR Dry Run", "Prepara PR senza effetti remoti",
+                       "/api/github/pr/prepare", method="POST", risk="gated",
+                       approval_required=True),
+    ],
+    "capabilities": [
+        SuggestedAction("Show Capabilities", "Lista completa capacità IGRIS", "/api/chat/capabilities"),
+        SuggestedAction("Show Status", "Stato server", "/api/status"),
+        SuggestedAction("Show Readiness", "Provider e model check", "/api/readiness"),
+    ],
+    "testing": [
+        SuggestedAction("Run Tests", "Esegui pytest tramite command_id sicuro",
+                       "/api/commands/run_tests/run", method="POST", command_id="run_tests"),
+        SuggestedAction("Show Recent Reports", "Ultimi risultati test", "/api/reports/recent"),
+        SuggestedAction("Show Diagnostics", "Health delle task families", "/api/diagnostics/summary"),
+    ],
+    "git_local": [
+        SuggestedAction("Show Git Status", "Stato working directory", "/api/git/status"),
+        SuggestedAction("Show Git Diff", "Diff con redazione segreti", "/api/git/diff"),
+        SuggestedAction("Show Branches", "Lista branch", "/api/git/branches"),
+        SuggestedAction("Safety Check", "Analisi pre-commit", "/api/git/safety-check"),
+    ],
+    "patching": [
+        SuggestedAction("List Patches", "Proposte patch esistenti", "/api/patches"),
+        SuggestedAction("Generate Patch", "Genera patch con LLM (proposta)",
+                       "/api/patches/generate", method="POST", risk="safe"),
+        SuggestedAction("Show Git Diff", "Diff corrente", "/api/git/diff"),
+    ],
+    "missions": [
+        SuggestedAction("List Missions", "Missioni esistenti", "/api/missions"),
+        SuggestedAction("Show Decision Reports", "Decision reports recenti", "/api/decision-reports"),
+        SuggestedAction("Show Loop Status", "Stato del loop autonomo", "/api/loop/status"),
+    ],
+    "memory": [
+        SuggestedAction("Show Failures", "Fallimenti recenti", "/api/memory/failures"),
+        SuggestedAction("Show Decisions", "Decisioni recenti", "/api/memory/decisions"),
+        SuggestedAction("Show Saturation", "Famiglie saturate", "/api/memory/saturation"),
+        SuggestedAction("Analyze Memory", "Analisi pattern (advisory)",
+                       "/api/memory/analyze", method="POST"),
+    ],
+    "shell_request": [
+        SuggestedAction("Show Available Commands", "Command_id sicuri disponibili",
+                       "/api/commands"),
+        SuggestedAction("Show Git Status", "Stato repo tramite API sicura", "/api/git/status"),
+        SuggestedAction("Run Tests", "Esegui test tramite command_id",
+                       "/api/commands/run_tests/run", method="POST", command_id="run_tests"),
+        SuggestedAction("Create Task", "Crea task per nuova capability",
+                       "/api/tasks", method="POST",
+                       payload={"title": "Add safe command_id", "family": "code"}),
+    ],
+}
+
+
+def get_suggested_actions(intent: str) -> List[Dict[str, Any]]:
+    """Get suggested safe actions for a detected intent."""
+    actions = _INTENT_ACTIONS.get(intent, [])
+    return [a.to_dict() for a in actions]
+
+
+def get_all_safe_actions() -> Dict[str, List[Dict[str, Any]]]:
+    """Get all available suggested actions grouped by intent."""
+    return {k: [a.to_dict() for a in v] for k, v in _INTENT_ACTIONS.items()}
 
 
 def enrich_chat_response(message: str, base_response: str) -> str:
