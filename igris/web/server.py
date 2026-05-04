@@ -42,6 +42,7 @@ from igris.core import diagnostics as diagnostics_mod
 from igris.core import safe_policy
 from igris.core import task_selection_explain
 from igris.core import project_state as project_state_mod
+from igris.core import decision_report as decision_report_mod
 from igris.core import autonomous_loop
 from igris.models.task import TaskStatus
 from igris.layers.validation import validator as task_validator
@@ -856,6 +857,42 @@ def create_app() -> FastAPI:
     async def api_recent_fingerprints() -> Dict[str, object]:
         fps = project_state_mod.get_recent_fingerprints(limit=20, project_root=str(CONFIG.project_root))
         return {"fingerprints": fps}
+
+    # ---- Decision Reports ----
+
+    @app.get("/api/decision-reports")
+    async def api_list_decision_reports() -> Dict[str, object]:
+        reports = decision_report_mod.list_decision_reports(
+            limit=20, project_root=str(CONFIG.project_root),
+        )
+        return {"reports": reports}
+
+    @app.get("/api/decision-reports/{report_id}")
+    async def api_get_decision_report(report_id: str) -> Dict[str, object]:
+        report = decision_report_mod.get_decision_report(
+            report_id, project_root=str(CONFIG.project_root),
+        )
+        if not report:
+            raise HTTPException(status_code=404, detail="Decision report not found")
+        return report
+
+    @app.post("/api/decision-reports")
+    async def api_create_decision_report(request: Request) -> Dict[str, object]:
+        content = await request.json()
+        tasks = task_engine.list_tasks()
+        report = decision_report_mod.create_decision_report(
+            step_number=content.get("step_number", 0),
+            tasks=tasks,
+            action_type=content.get("action_type", ""),
+            action_detail=content.get("action_detail", ""),
+            outcome=content.get("outcome", ""),
+            outcome_reason=content.get("outcome_reason", ""),
+            next_action=content.get("next_action", ""),
+            next_action_reason=content.get("next_action_reason", ""),
+            safety_decisions=content.get("safety_decisions", []),
+            project_root=str(CONFIG.project_root),
+        )
+        return report.to_dict()
 
     # ---- Diagnostics ----
 
