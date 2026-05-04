@@ -16,4 +16,5 @@ ALLOWED_COMMANDS: Dict[str, List[str]] = {
     "git_log": ["git", "log", "--oneline", "-10"],
     "run_tests": [sys.executable, "-m", "pytest", "-q"],
     "list_files": [sys.executable, "-c", "import os; print('\\n'.join(sorted(os.listdir('.'))))"],
+    "system_info": [sys.executable, "-c", "from igris.core.system_info import get_system_info; import json; print(json.dumps(get_system_info(), indent=2))"],
 }
