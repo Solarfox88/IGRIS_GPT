@@ -716,6 +716,17 @@
     var sessionId = null;
     var form = $("#chat-form");
     if (!form) return;
+    var chatContainer = $("#chat-messages");
+    var userNearBottom = true;
+
+    // Track scroll position for auto-scroll
+    if (chatContainer) {
+      chatContainer.addEventListener("scroll", function () {
+        var threshold = 60;
+        userNearBottom = (chatContainer.scrollHeight - chatContainer.scrollTop - chatContainer.clientHeight) < threshold;
+      });
+    }
+
     form.addEventListener("submit", async function (e) {
       e.preventDefault();
       var inp = $("#chat-input");
@@ -732,22 +743,112 @@
       var r = await api("POST", "/api/sessions/" + sessionId + "/messages", { message: msg });
       removeTyping();
       if (r.ok) {
-        var providerInfo = r.data.provider && r.data.provider !== "deterministic"
-          ? " [" + r.data.provider + "/" + r.data.model + " " + r.data.latency_ms + "ms]"
-          : r.data.fallback_used ? " [fallback mode]" : "";
-        addMsg("assistant", r.data.response + providerInfo);
+        var meta = {
+          provider: r.data.provider,
+          model: r.data.model,
+          latency_ms: r.data.latency_ms,
+          fallback_used: r.data.fallback_used,
+          intent: r.data.intent_detected || null,
+        };
+        addMsg("assistant", r.data.response, null, meta);
       } else {
         addMsg("assistant", "Error: " + (r.data.detail || "unknown"));
       }
     });
 
-    function addMsg(role, text, cls) {
+    // Safe markdown renderer — no raw HTML injection
+    function renderMarkdown(text) {
+      if (!text) return "";
+      // Escape HTML first to prevent XSS
+      var escaped = text
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;");
+
+      // Code blocks (```...```)
+      escaped = escaped.replace(/```(\w*)\n?([\s\S]*?)```/g, function (m, lang, code) {
+        return '<pre><code class="lang-' + lang + '">' + code.trim() + '</code><button class="copy-btn" onclick="igrisCopyCode(this)">copy</button></pre>';
+      });
+
+      // Inline code (`...`)
+      escaped = escaped.replace(/`([^`\n]+)`/g, '<code>$1</code>');
+
+      // Bold (**...**)
+      escaped = escaped.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+
+      // Split into blocks by double newline
+      var blocks = escaped.split(/\n\n+/);
+      var html = "";
+      for (var i = 0; i < blocks.length; i++) {
+        var block = blocks[i].trim();
+        if (!block) continue;
+        if (block.startsWith("<pre>")) {
+          html += block;
+        } else if (/^[-*]\s/.test(block) || /^\n?[-*]\s/.test(block)) {
+          // Bullet list
+          var items = block.split(/\n/).filter(function (l) { return l.trim(); });
+          html += "<ul>";
+          for (var j = 0; j < items.length; j++) {
+            html += "<li>" + items[j].replace(/^[-*]\s+/, "") + "</li>";
+          }
+          html += "</ul>";
+        } else if (/^\d+\.\s/.test(block)) {
+          // Numbered list
+          var items2 = block.split(/\n/).filter(function (l) { return l.trim(); });
+          html += "<ol>";
+          for (var k = 0; k < items2.length; k++) {
+            html += "<li>" + items2[k].replace(/^\d+\.\s+/, "") + "</li>";
+          }
+          html += "</ol>";
+        } else {
+          // Handle single newlines as line items within a paragraph-like block
+          var lines = block.split(/\n/);
+          if (lines.length > 1 && lines.every(function (l) { return /^[-*]\s/.test(l.trim()); })) {
+            html += "<ul>";
+            for (var m = 0; m < lines.length; m++) {
+              html += "<li>" + lines[m].replace(/^[-*]\s+/, "") + "</li>";
+            }
+            html += "</ul>";
+          } else {
+            html += "<p>" + block.replace(/\n/g, "<br>") + "</p>";
+          }
+        }
+      }
+      return html;
+    }
+
+    function addMsg(role, text, cls, meta) {
       var container = $("#chat-messages");
       var d = document.createElement("div");
       d.className = "msg msg-" + role + (cls ? " " + cls : "");
-      d.textContent = text;
+
+      if (role === "assistant" && !cls) {
+        // Render markdown for assistant messages
+        d.innerHTML = renderMarkdown(text);
+        // Add metadata line if available
+        if (meta && meta.provider) {
+          var metaDiv = document.createElement("div");
+          metaDiv.className = "msg-meta";
+          var provLabel = meta.provider === "igris_personality" ? "IGRIS" :
+                          meta.provider === "deterministic" ? "fallback" :
+                          meta.provider + "/" + meta.model;
+          metaDiv.innerHTML = '<span class="meta-provider">' + escapeHtml(provLabel) + '</span>' +
+            (meta.latency_ms != null ? '<span>' + meta.latency_ms + 'ms</span>' : '') +
+            (meta.intent ? '<span>intent: ' + escapeHtml(meta.intent) + '</span>' : '');
+          d.appendChild(metaDiv);
+        }
+      } else {
+        d.textContent = text;
+      }
+
       container.appendChild(d);
-      container.scrollTop = container.scrollHeight;
+      if (userNearBottom) {
+        container.scrollTop = container.scrollHeight;
+      }
+    }
+
+    function escapeHtml(str) {
+      return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
     }
 
     function removeTyping() {
@@ -755,6 +856,18 @@
       if (el) el.remove();
     }
   })();
+
+  // Global copy function for code blocks
+  window.igrisCopyCode = function (btn) {
+    var pre = btn.parentElement;
+    var code = pre.querySelector("code");
+    if (code) {
+      navigator.clipboard.writeText(code.textContent).then(function () {
+        btn.textContent = "copied!";
+        setTimeout(function () { btn.textContent = "copy"; }, 1500);
+      });
+    }
+  };
 
   // Teacher Remediation button
   (function () {
