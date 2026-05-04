@@ -18,8 +18,10 @@ from jinja2 import Environment, FileSystemLoader, select_autoescape
 
 from igris.core import anti_loop
 from igris.core.task_engine import TaskEngine
-from igris.core.teacher import build_teacher_payload
+from igris.core.teacher import build_teacher_payload, validate_teacher_assignment, propose_remediation_task
 from igris.core import execution_report
+from igris.core.chat_engine import chat as chat_llm, check_ollama_available
+from igris.core.outcome_router import route_outcome
 from igris.layers.advisory import router as provider_router
 from igris.layers.execution import runner as execution_runner
 from igris.layers.execution.safe_commands import ALLOWED_COMMANDS
@@ -78,7 +80,7 @@ def create_app() -> FastAPI:
     async def api_config_safe() -> Dict[str, object]:
         return CONFIG.safe_dict()
 
-    # ---- Sessions ----
+    # ---- Sessions / Chat ----
 
     @app.post("/api/sessions")
     async def create_session() -> Dict[str, str]:
@@ -87,15 +89,37 @@ def create_app() -> FastAPI:
         return {"id": session_id}
 
     @app.post("/api/sessions/{session_id}/messages")
-    async def post_message(session_id: str, content: Dict[str, str] = Body(...)) -> Dict[str, str]:
+    async def post_message(session_id: str, content: Dict[str, str] = Body(...)) -> Dict[str, object]:
         if session_id not in sessions:
             raise HTTPException(status_code=404, detail="Session not found")
         message = content.get("message", "")
         sessions[session_id].append({"role": "user", "content": message})
-        provider_router.choose_provider(for_task="chat")
-        response_text = "This is a placeholder response."
+
+        # Use real chat engine
+        result = chat_llm(message, history=sessions[session_id][:-1])
+        response_text = _redact(result["text"])
+
         sessions[session_id].append({"role": "assistant", "content": response_text})
-        return {"response": response_text}
+
+        # Record routing decision
+        provider_router.record_chat_routing(
+            provider=result["provider"], model=result["model"],
+            reason=result["routing_reason"], latency_ms=result["latency_ms"],
+            fallback_used=result["fallback_used"],
+        )
+
+        task_engine.append_timeline_event({
+            "type": "chat", "title": "Chat message",
+            "detail": f"User: {message[:80]}",
+        })
+
+        return {
+            "response": response_text,
+            "provider": result["provider"],
+            "model": result["model"],
+            "fallback_used": result["fallback_used"],
+            "latency_ms": result["latency_ms"],
+        }
 
     # ---- Git ----
 
@@ -198,15 +222,19 @@ def create_app() -> FastAPI:
             success = result["returncode"] == 0
             stdout = _redact(result.get("stdout", ""))
             stderr = _redact(result.get("stderr", ""))
-            execution_report.create_report(
+            report = execution_report.create_report(
                 command_id="run_tests", capability_id="validation.run_tests",
                 returncode=result["returncode"], stdout=result.get("stdout", ""),
                 stderr=result.get("stderr", ""),
                 started_at=started, finished_at=finished, duration_ms=duration_ms,
             )
+            # Route outcome
+            recommendation = route_outcome(report, "run tests")
             task_engine.append_timeline_event({
-                "event": "test_run", "success": success,
-                "duration_ms": duration_ms,
+                "type": "test", "title": "Test run",
+                "detail": f"{'Passed' if success else 'Failed'} in {duration_ms}ms",
+                "related_report_id": report.get("report_id"),
+                "severity": "info" if success else "warning",
             })
             return TestRunResponse(success=success, stdout=stdout, stderr=stderr)
         finally:
@@ -255,6 +283,7 @@ def create_app() -> FastAPI:
         checks["static"] = STATIC_DIR.exists()
         from igris.agents import list_agents
         checks["agents_registered"] = len(list_agents()) > 0
+        checks["ollama_available"] = check_ollama_available()
         return checks
 
     # ---- Project Context ----
@@ -288,6 +317,11 @@ def create_app() -> FastAPI:
         title = content.get("title")
         source = content.get("source", "user")
         task = task_engine.create_task(description, title=title, source=source)
+        task_engine.append_timeline_event({
+            "type": "task", "title": f"Task created: {title or description[:40]}",
+            "detail": description[:100], "related_task_id": task.id,
+            "severity": "info",
+        })
         return task.to_dict()
 
     @app.get("/api/tasks/{task_id}")
@@ -303,6 +337,11 @@ def create_app() -> FastAPI:
         task = task_engine.complete_task(task_id, result_text)
         if not task:
             raise HTTPException(status_code=404, detail="Task not found")
+        task_engine.append_timeline_event({
+            "type": "task", "title": f"Task completed: #{task_id}",
+            "detail": result_text or "", "related_task_id": task_id,
+            "severity": "info",
+        })
         return task.to_dict()
 
     @app.post("/api/tasks/{task_id}/block")
@@ -340,15 +379,19 @@ def create_app() -> FastAPI:
             duration_ms = int((time.monotonic() - t0) * 1000)
             stdout = _redact(result.get("stdout", ""))
             stderr = _redact(result.get("stderr", ""))
-            execution_report.create_report(
+            report = execution_report.create_report(
                 command_id=cmd_id, capability_id="execution.run_safe_command",
                 returncode=result.get("returncode", 1),
                 stdout=result.get("stdout", ""), stderr=result.get("stderr", ""),
                 started_at=started, finished_at=finished, duration_ms=duration_ms,
             )
+            # Route outcome
+            recommendation = route_outcome(report, f"terminal {cmd_id}")
             task_engine.append_timeline_event({
-                "event": "command_run", "command_id": cmd_id,
-                "returncode": result.get("returncode"),
+                "type": "action", "title": f"Command: {cmd_id}",
+                "detail": f"exit={result.get('returncode', 1)}, {duration_ms}ms",
+                "related_report_id": report.get("report_id"),
+                "severity": "info" if result.get("returncode") == 0 else "warning",
             })
             return {"command_id": cmd_id, "stdout": stdout, "stderr": stderr, "returncode": result.get("returncode")}
         finally:
@@ -422,6 +465,74 @@ def create_app() -> FastAPI:
         from igris.agents import list_capabilities
         caps = list_capabilities()
         return {"capabilities": [{"id": c.id, "name": c.name, "description": c.description, "safe": c.safe, "risk": c.risk} for c in caps]}
+
+    # ---- Teacher Remediation ----
+
+    @app.post("/api/teacher/remediate")
+    async def api_teacher_remediate(body: Dict[str, object] = Body(default={})) -> Dict[str, object]:
+        task_id = body.get("task_id") if isinstance(body, dict) else None
+        create = body.get("create", False) if isinstance(body, dict) else False
+
+        # Build teacher payload
+        recent_tasks = task_engine.list_tasks()
+        history = [t.description for t in recent_tasks]
+        payload = build_teacher_payload(tasks=history)
+
+        # Propose remediation
+        proposed = propose_remediation_task(payload)
+
+        # Validate if we have enough info
+        validation = None
+        if proposed.get("task_description"):
+            assignment = {
+                "diagnosis": proposed.get("reason", ""),
+                "selected_family": proposed.get("family", "other"),
+                "why_this_family": proposed.get("reason", ""),
+                "differentiator": proposed.get("differentiator", ""),
+                "task_title": proposed.get("task_title", ""),
+                "task_description": proposed.get("task_description", ""),
+                "success_criteria": proposed.get("success_criteria", []),
+                "safe_command_ids": proposed.get("safe_command_ids", []),
+                "expected_next_state": proposed.get("expected_next_state", ""),
+                "fallback_if_blocked": proposed.get("fallback_if_blocked", ""),
+            }
+            validation = validate_teacher_assignment(assignment, history)
+
+        result: Dict[str, object] = {
+            "payload": payload,
+            "proposed_task": proposed,
+            "validation": validation,
+            "created_task_id": None,
+        }
+
+        # Create the task if requested and valid
+        if create and proposed.get("task_description"):
+            if validation and validation.get("valid", False):
+                created = task_engine.create_task(
+                    description=proposed["task_description"],
+                    title=proposed.get("task_title"),
+                    family=proposed.get("family"),
+                    source="teacher",
+                )
+                result["created_task_id"] = created.id
+                task_engine.append_timeline_event({
+                    "type": "teacher", "title": "Teacher remediation",
+                    "detail": f"Created task: {proposed.get('task_title', '')}",
+                    "related_task_id": created.id,
+                })
+
+        return result
+
+    # ---- Outcome Router ----
+
+    @app.get("/api/outcome/recent")
+    async def api_outcome_recent() -> Dict[str, object]:
+        reports = execution_report.recent_reports(limit=10)
+        outcomes = []
+        for r in reports:
+            rec = route_outcome(r)
+            outcomes.append(rec)
+        return {"outcomes": outcomes}
 
     return app
 

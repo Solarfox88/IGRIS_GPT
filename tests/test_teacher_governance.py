@@ -50,7 +50,7 @@ def test_remediation_changes_family():
         "required_strategy_shift": "editing",
     }
     remediation = propose_remediation_task(payload)
-    assert remediation["selected_family"] == "editing"
+    assert remediation.get("family") == "editing" or remediation.get("selected_family") == "editing"
     assert "switch" in remediation["task_description"].lower() or "shift" in remediation["task_description"].lower()
 
 

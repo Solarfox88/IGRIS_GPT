@@ -110,6 +110,21 @@ def propose_remediation_task(payload: Dict) -> Dict:
     saturated = payload.get("saturated_families", [])
     current = payload.get("current_family")
     shift = payload.get("required_strategy_shift")
+    last_test = payload.get("last_test_result")
+
+    # If tests are failing, propose validation
+    if last_test and not last_test.get("success", True):
+        return {
+            "task_title": "Remediation: fix failing tests",
+            "task_description": "Tests are failing. Review test output and fix the issues.",
+            "family": "testing",
+            "reason": "Last test run failed",
+            "differentiator": "Focus on failing test cases from last report",
+            "success_criteria": ["All tests pass"],
+            "safe_command_ids": ["run_tests"],
+            "expected_next_state": "Tests green",
+            "fallback_if_blocked": "Manual review of test output",
+        }
 
     if shift:
         return {
@@ -118,16 +133,39 @@ def propose_remediation_task(payload: Dict) -> Dict:
                 f"The current family '{current}' is saturated. "
                 f"Switch strategy to the '{shift}' family."
             ),
-            "selected_family": shift,
+            "family": shift,
+            "reason": f"Family '{current}' is saturated",
             "differentiator": "Strategy shift due to saturation",
             "success_criteria": [f"Perform a task in the '{shift}' family"],
+            "safe_command_ids": [],
+            "expected_next_state": f"Active in '{shift}' family",
+            "fallback_if_blocked": "Teacher manual review",
+        }
+
+    # If there are duplicate tasks, propose materialization
+    dup_info = payload.get("duplicate")
+    if dup_info and dup_info.get("is_duplicate"):
+        return {
+            "task_title": "Remediation: materialize unique task",
+            "task_description": "Recent task appears to be a duplicate. Create a task with distinct goals.",
+            "family": "other",
+            "reason": "Duplicate task detected",
+            "differentiator": "Must have concrete, unique success criteria",
+            "success_criteria": ["Task has unique goals not covered by existing tasks"],
+            "safe_command_ids": [],
+            "expected_next_state": "New unique task created",
+            "fallback_if_blocked": "Teacher assigns manually",
         }
 
     # Default: suggest a review
     return {
         "task_title": "Remediation: teacher review required",
         "task_description": "Unable to determine next step automatically. Teacher review needed.",
-        "selected_family": "other",
+        "family": "other",
+        "reason": "No specific issue detected",
         "differentiator": "Manual teacher intervention",
         "success_criteria": ["Teacher provides new direction"],
+        "safe_command_ids": [],
+        "expected_next_state": "Teacher provides guidance",
+        "fallback_if_blocked": "Wait for teacher input",
     }
