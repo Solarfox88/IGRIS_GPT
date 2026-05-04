@@ -264,6 +264,9 @@ Routes tasks to the cheapest suitable provider:
 | `/api/decision-reports` | GET | List recent decision reports |
 | `/api/decision-reports/{id}` | GET | Get specific decision report |
 | `/api/decision-reports` | POST | Create decision report for loop step |
+| `/api/chat/stream` | POST | SSE streaming chat response |
+| `/api/chat/tiers` | GET | Tier availability and current tier |
+| `/api/chat/tiers` | POST | Set session tier (auto/local/fallback) |
 | `/api/diagnostics` | GET | Full operational diagnostics report |
 | `/api/diagnostics/summary` | GET | Quick diagnostics summary |
 
@@ -343,6 +346,7 @@ See [docs/SYSTEMD_SERVICE.md](docs/SYSTEMD_SERVICE.md) for production deployment
 - [STRICT_SAFETY_EXPLAINABLE_SELECTION.md](docs/STRICT_SAFETY_EXPLAINABLE_SELECTION.md)
 - [PROJECT_STATE_COOLDOWN.md](docs/PROJECT_STATE_COOLDOWN.md)
 - [DECISION_REPORTS.md](docs/DECISION_REPORTS.md)
+- [CHAT_STREAMING.md](docs/CHAT_STREAMING.md)
 
 ## License
 
