@@ -241,6 +241,14 @@ Routes tasks to the cheapest suitable provider:
 | `/api/tasks/{id}/validations` | GET | List validations for a task |
 | `/api/validations/{id}` | GET | Get specific validation result |
 | `/api/tasks/{id}/complete` | POST | Complete task (requires validation or manual reason) |
+| `/api/a2a/store/tasks` | POST | Create A2A task |
+| `/api/a2a/store/tasks` | GET | List A2A tasks |
+| `/api/a2a/store/tasks/{id}` | GET | Get A2A task detail |
+| `/api/a2a/store/tasks/{id}/status` | POST | Update A2A task status |
+| `/api/a2a/tasks/{id}/artifacts` | GET | List task artifacts |
+| `/api/a2a/tasks/{id}/artifacts` | POST | Add artifact to task |
+| `/api/a2a/tasks/{id}/cancel` | POST | Cancel A2A task |
+| `/api/a2a/tasks/{id}/events` | GET | Get task events |
 
 ## Web Console
 

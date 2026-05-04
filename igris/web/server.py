@@ -33,6 +33,7 @@ from igris.models.config import CONFIG
 from igris.models.report import GitStatusResponse, TestRunResponse
 from igris.agents import build_default_registry
 from igris.a2a.agent_card import build_agent_card
+from igris.a2a import task_store as a2a_store
 from igris.core.project_context import build_project_snapshot
 from igris.core.memory import recent_memory_events, append_memory_event
 from igris.core import mission_planner
@@ -772,6 +773,102 @@ def create_app() -> FastAPI:
         from igris.agents import list_capabilities
         caps = list_capabilities()
         return {"capabilities": [{"id": c.id, "name": c.name, "description": c.description, "safe": c.safe, "risk": c.risk} for c in caps]}
+
+    # ---- A2A Task Store (artifacts, events, cancel) ----
+
+    @app.post("/api/a2a/store/tasks")
+    async def api_a2a_store_create(body: Dict[str, object] = Body(...)) -> Dict[str, object]:
+        title = body.get("title", "")
+        description = body.get("description", "")
+        if not title and not description:
+            raise HTTPException(status_code=400, detail="title or description required")
+        task = a2a_store.create_a2a_task(
+            title=str(title), description=str(description),
+            project_root=str(CONFIG.project_root),
+        )
+        task_engine.append_timeline_event({
+            "type": "a2a", "title": f"A2A task created: {_redact(str(title)[:80])}",
+            "severity": "info",
+        })
+        return task
+
+    @app.get("/api/a2a/store/tasks")
+    async def api_a2a_store_list() -> Dict[str, object]:
+        tasks = a2a_store.list_a2a_tasks(project_root=str(CONFIG.project_root))
+        return {"tasks": tasks}
+
+    @app.get("/api/a2a/store/tasks/{task_id}")
+    async def api_a2a_store_get(task_id: str) -> Dict[str, object]:
+        task = a2a_store.get_a2a_task(task_id, project_root=str(CONFIG.project_root))
+        if not task:
+            raise HTTPException(status_code=404, detail="A2A task not found")
+        return task
+
+    @app.post("/api/a2a/store/tasks/{task_id}/status")
+    async def api_a2a_store_update_status(task_id: str, body: Dict[str, object] = Body(...)) -> Dict[str, object]:
+        status = body.get("status", "")
+        if not status or status not in a2a_store.VALID_STATUSES:
+            raise HTTPException(status_code=400, detail=f"Invalid status. Valid: {sorted(a2a_store.VALID_STATUSES)}")
+        detail = str(body.get("detail", ""))
+        result = a2a_store.update_a2a_task_status(
+            task_id, str(status), detail=detail,
+            project_root=str(CONFIG.project_root),
+        )
+        if not result:
+            raise HTTPException(status_code=404, detail="Task not found or cannot transition")
+        return result
+
+    @app.get("/api/a2a/tasks/{task_id}/artifacts")
+    async def api_a2a_artifacts_list(task_id: str) -> Dict[str, object]:
+        artifacts = a2a_store.get_artifacts(task_id, project_root=str(CONFIG.project_root))
+        if artifacts is None:
+            raise HTTPException(status_code=404, detail="A2A task not found")
+        return {"artifacts": artifacts}
+
+    @app.post("/api/a2a/tasks/{task_id}/artifacts")
+    async def api_a2a_artifacts_add(task_id: str, body: Dict[str, object] = Body(...)) -> Dict[str, object]:
+        name = body.get("name", "")
+        content = body.get("content", "")
+        if not name:
+            raise HTTPException(status_code=400, detail="name is required")
+        if not content:
+            raise HTTPException(status_code=400, detail="content is required")
+        mime_type = str(body.get("mime_type", "text/plain"))
+        result = a2a_store.add_artifact(
+            task_id, name=str(name), content=str(content),
+            mime_type=mime_type, project_root=str(CONFIG.project_root),
+        )
+        if result is None:
+            raise HTTPException(status_code=404, detail="A2A task not found")
+        if "error" in result:
+            raise HTTPException(status_code=400, detail=result["error"])
+        task_engine.append_timeline_event({
+            "type": "a2a", "title": f"A2A artifact added: {_redact(str(name)[:80])}",
+            "severity": "info",
+        })
+        return result
+
+    @app.post("/api/a2a/tasks/{task_id}/cancel")
+    async def api_a2a_cancel(task_id: str, body: Dict[str, object] = Body(default={})) -> Dict[str, object]:
+        reason = str(body.get("reason", "")) if isinstance(body, dict) else ""
+        result = a2a_store.cancel_a2a_task(
+            task_id, reason=reason,
+            project_root=str(CONFIG.project_root),
+        )
+        if not result:
+            raise HTTPException(status_code=404, detail="A2A task not found or already terminal")
+        task_engine.append_timeline_event({
+            "type": "a2a", "title": f"A2A task canceled: {task_id}",
+            "severity": "warning",
+        })
+        return result
+
+    @app.get("/api/a2a/tasks/{task_id}/events")
+    async def api_a2a_events(task_id: str) -> Dict[str, object]:
+        events = a2a_store.get_events(task_id, project_root=str(CONFIG.project_root))
+        if events is None:
+            raise HTTPException(status_code=404, detail="A2A task not found")
+        return {"events": events}
 
     # ---- Teacher Remediation ----
 

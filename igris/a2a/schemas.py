@@ -68,12 +68,14 @@ class A2AAgentCard:
 
 
 class A2ATaskStatus(str, Enum):
-    """Basic task statuses for A2A tasks."""
+    """Task statuses for A2A tasks (extended for long-running support)."""
 
     submitted = "submitted"
     working = "working"
+    input_required = "input_required"
     completed = "completed"
     failed = "failed"
+    canceled = "canceled"
 
 
 @dataclass
