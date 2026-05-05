@@ -188,20 +188,15 @@ class TestGovernorEvaluate:
         assert decision.action != "approve"
 
     def test_escalate_all_saturated(self, tmp_path):
-        gov = TeacherGovernor(project_root=str(tmp_path), threshold=2)
-        # Saturate "other" and its alternatives ("observation", "code_patch")
-        # plus any second-level alternatives
-        target_families = {"other", "observation", "code_patch", "synthesis",
-                           "documentation", "test_repair", "review_gate",
-                           "stabilization_audit", "grading_diagnosis",
-                           "security_audit", "branch_pr_plan"}
-        for fam_name in target_families:
-            for i in range(2):
-                gov.record_task(f"{fam_name} task {i}", family=fam_name)
-        # Block any remaining unsaturated alternatives
+        gov = TeacherGovernor(project_root=str(tmp_path), threshold=1)
+        # "other" shifts to ["observation", "code_patch"]
+        # Block ALL families except the ones we'll saturate
         for fam in TASK_FAMILIES:
-            if fam not in target_families:
-                gov.block_family(fam)
+            gov.block_family(fam)
+        # Unblock and saturate "other" + its shift targets
+        for fam in ("other", "observation", "code_patch"):
+            gov.unblock_family(fam)
+            gov.record_task(f"{fam} task", family=fam)
         decision = gov.evaluate_task(
             description="do something new",
             family="other",
