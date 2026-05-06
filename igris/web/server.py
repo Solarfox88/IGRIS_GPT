@@ -1656,6 +1656,191 @@ def create_app() -> FastAPI:
             raise HTTPException(status_code=404, detail=f"Crash report {crash_id} not found")
         return report
 
+    # ---- Mission Controller (Epic #40) ----
+
+    @app.post("/api/controller/missions")
+    async def api_controller_create_mission(request: Request) -> Dict[str, object]:
+        """Create a controlled mission."""
+        from igris.core.mission_controller import MissionController
+        ctrl = MissionController(project_root=str(CONFIG.project_root))
+        content = await request.json()
+        title = content.get("title", "")
+        goal = content.get("goal", "")
+        if not title or not goal:
+            raise HTTPException(status_code=400, detail="title and goal required")
+        mission = ctrl.create_mission(
+            title=title,
+            goal=goal,
+            description=content.get("description", ""),
+            workspace=content.get("workspace", str(CONFIG.project_root)),
+            target_hosts=content.get("target_hosts", []),
+            constraints=content.get("constraints", []),
+            success_criteria=content.get("success_criteria", []),
+            risk_level=content.get("risk_level", "low"),
+            rollback_plan=content.get("rollback_plan"),
+        )
+        task_engine.append_timeline_event({
+            "type": "mission", "title": f"Mission created: {title}",
+            "detail": goal[:200], "severity": "info",
+            "mission_id": mission.id, "trace_id": mission.trace_id,
+        })
+        return mission.to_dict()
+
+    @app.get("/api/controller/missions")
+    async def api_controller_list_missions() -> Dict[str, object]:
+        """List all controlled missions."""
+        from igris.core.mission_controller import list_controlled_missions
+        missions = list_controlled_missions(project_root=str(CONFIG.project_root))
+        return {"missions": [m.to_dict() for m in missions], "count": len(missions)}
+
+    @app.get("/api/controller/missions/{mission_id}")
+    async def api_controller_get_mission(mission_id: str) -> Dict[str, object]:
+        """Get a controlled mission by ID."""
+        from igris.core.mission_controller import load_controlled_mission
+        mission = load_controlled_mission(mission_id, project_root=str(CONFIG.project_root))
+        if not mission:
+            raise HTTPException(status_code=404, detail="Mission not found")
+        return mission.to_dict()
+
+    @app.get("/api/controller/missions/{mission_id}/explain")
+    async def api_controller_explain(mission_id: str) -> Dict[str, object]:
+        """Explain current mission state and next action."""
+        from igris.core.mission_controller import load_controlled_mission
+        mission = load_controlled_mission(mission_id, project_root=str(CONFIG.project_root))
+        if not mission:
+            raise HTTPException(status_code=404, detail="Mission not found")
+        return mission.explain_state()
+
+    @app.post("/api/controller/missions/{mission_id}/plan")
+    async def api_controller_plan(mission_id: str) -> Dict[str, object]:
+        """Generate plan for a controlled mission."""
+        from igris.core.mission_controller import MissionController
+        ctrl = MissionController(project_root=str(CONFIG.project_root))
+        mission = ctrl.plan_mission(mission_id)
+        if not mission:
+            raise HTTPException(status_code=404, detail="Mission not found")
+        task_engine.append_timeline_event({
+            "type": "mission", "title": f"Mission planned: {mission.title}",
+            "detail": f"{mission.total_steps} steps", "severity": "info",
+            "mission_id": mission.id, "trace_id": mission.trace_id,
+        })
+        return mission.to_dict()
+
+    @app.post("/api/controller/missions/{mission_id}/execute-next")
+    async def api_controller_execute_next(mission_id: str) -> Dict[str, object]:
+        """Execute the next step in the mission."""
+        from igris.core.mission_controller import MissionController
+        ctrl = MissionController(project_root=str(CONFIG.project_root))
+        result = ctrl.execute_next_step(mission_id)
+        if not result:
+            raise HTTPException(status_code=404, detail="Mission not found")
+        if "error" in result:
+            raise HTTPException(status_code=400, detail=result["error"])
+        return result
+
+    @app.post("/api/controller/missions/{mission_id}/report-outcome")
+    async def api_controller_report_outcome(mission_id: str, request: Request) -> Dict[str, object]:
+        """Report step outcome."""
+        from igris.core.mission_controller import MissionController
+        ctrl = MissionController(project_root=str(CONFIG.project_root))
+        content = await request.json()
+        step_index = content.get("step_index", 0)
+        outcome = content.get("outcome", "success")
+        detail = content.get("detail", "")
+        mission = ctrl.report_step_outcome(mission_id, step_index, outcome, detail)
+        if not mission:
+            raise HTTPException(status_code=404, detail="Mission not found")
+        return mission.to_dict()
+
+    @app.post("/api/controller/missions/{mission_id}/pause")
+    async def api_controller_pause(mission_id: str, request: Request) -> Dict[str, object]:
+        """Pause a mission."""
+        from igris.core.mission_controller import MissionController
+        ctrl = MissionController(project_root=str(CONFIG.project_root))
+        content = await request.json() if await request.body() else {}
+        mission = ctrl.pause_mission(mission_id, content.get("reason", ""))
+        if not mission:
+            raise HTTPException(status_code=404, detail="Mission not found")
+        return mission.to_dict()
+
+    @app.post("/api/controller/missions/{mission_id}/resume")
+    async def api_controller_resume(mission_id: str) -> Dict[str, object]:
+        """Resume a paused mission."""
+        from igris.core.mission_controller import MissionController
+        ctrl = MissionController(project_root=str(CONFIG.project_root))
+        mission = ctrl.resume_mission(mission_id)
+        if not mission:
+            raise HTTPException(status_code=404, detail="Mission not found")
+        return mission.to_dict()
+
+    @app.post("/api/controller/missions/{mission_id}/block")
+    async def api_controller_block(mission_id: str, request: Request) -> Dict[str, object]:
+        """Block a mission."""
+        from igris.core.mission_controller import MissionController
+        ctrl = MissionController(project_root=str(CONFIG.project_root))
+        content = await request.json()
+        reason = content.get("reason", "blocked")
+        mission = ctrl.block_mission(mission_id, reason)
+        if not mission:
+            raise HTTPException(status_code=404, detail="Mission not found")
+        return mission.to_dict()
+
+    @app.post("/api/controller/missions/{mission_id}/unblock")
+    async def api_controller_unblock(mission_id: str) -> Dict[str, object]:
+        """Unblock a mission."""
+        from igris.core.mission_controller import MissionController
+        ctrl = MissionController(project_root=str(CONFIG.project_root))
+        mission = ctrl.unblock_mission(mission_id)
+        if not mission:
+            raise HTTPException(status_code=404, detail="Mission not found")
+        return mission.to_dict()
+
+    @app.post("/api/controller/missions/{mission_id}/verify")
+    async def api_controller_verify(mission_id: str) -> Dict[str, object]:
+        """Verify mission success criteria."""
+        from igris.core.mission_controller import MissionController
+        ctrl = MissionController(project_root=str(CONFIG.project_root))
+        result = ctrl.verify_mission(mission_id)
+        if not result:
+            raise HTTPException(status_code=404, detail="Mission not found")
+        return result
+
+    @app.get("/api/controller/missions/{mission_id}/report")
+    async def api_controller_report(mission_id: str) -> Dict[str, object]:
+        """Generate final report for a mission."""
+        from igris.core.mission_controller import MissionController
+        ctrl = MissionController(project_root=str(CONFIG.project_root))
+        report = ctrl.generate_final_report(mission_id)
+        if not report:
+            raise HTTPException(status_code=404, detail="Mission not found")
+        return report
+
+    @app.get("/api/controller/missions/{mission_id}/context")
+    async def api_controller_context(mission_id: str) -> Dict[str, object]:
+        """Reconstruct mission context (for restart recovery)."""
+        from igris.core.mission_controller import MissionController
+        ctrl = MissionController(project_root=str(CONFIG.project_root))
+        ctx = ctrl.reconstruct_context(mission_id)
+        if not ctx:
+            raise HTTPException(status_code=404, detail="Mission not found")
+        return ctx
+
+    @app.post("/api/controller/missions/{mission_id}/artifacts")
+    async def api_controller_add_artifact(mission_id: str, request: Request) -> Dict[str, object]:
+        """Add an artifact to a mission."""
+        from igris.core.mission_controller import MissionController
+        ctrl = MissionController(project_root=str(CONFIG.project_root))
+        content = await request.json()
+        mission = ctrl.add_artifact(
+            mission_id,
+            artifact_type=content.get("type", "file"),
+            path=content.get("path", ""),
+            description=content.get("description", ""),
+        )
+        if not mission:
+            raise HTTPException(status_code=404, detail="Mission not found")
+        return mission.to_dict()
+
     return app
 
 
