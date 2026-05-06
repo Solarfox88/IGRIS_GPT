@@ -2696,6 +2696,36 @@ def create_app() -> FastAPI:
         from igris.core.command_risk_engine import RISK_LEVELS
         return {"risk_levels": list(RISK_LEVELS)}
 
+    # ------------------------------------------------------------------
+    # Benchmark /api/ping — Epic #64
+    # ------------------------------------------------------------------
+
+    @app.get("/api/ping")
+    async def api_ping() -> Dict[str, object]:
+        """Simple ping endpoint — benchmark target."""
+        return {"pong": True}
+
+    @app.post("/api/benchmark/run")
+    async def api_benchmark_run(request: Request) -> Dict[str, object]:
+        """Run the /api/ping operational benchmark."""
+        from igris.core.benchmark_ping import BenchmarkRunner
+        content = await request.json()
+        runner = BenchmarkRunner(project_root=str(CONFIG.project_root))
+        mode = content.get("mode", "deterministic")
+        if mode == "integration":
+            result = runner.run_integration(
+                max_steps=content.get("max_steps", 10),
+            )
+        else:
+            result = runner.run_deterministic()
+        return result.to_dict()
+
+    @app.get("/api/benchmark/phases")
+    async def api_benchmark_phases() -> Dict[str, object]:
+        """List benchmark phases."""
+        from igris.core.benchmark_ping import BENCHMARK_PHASES, BENCHMARK_GOAL
+        return {"phases": BENCHMARK_PHASES, "goal": BENCHMARK_GOAL}
+
     return app
 
 
