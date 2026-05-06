@@ -2646,6 +2646,56 @@ def create_app() -> FastAPI:
             "terminal": ["finish", "blocked"],
         }}
 
+    # ------------------------------------------------------------------
+    # Command Risk Engine v2 — Epic #63
+    # ------------------------------------------------------------------
+
+    @app.post("/api/risk/evaluate")
+    async def api_risk_evaluate(request: Request) -> Dict[str, object]:
+        """Evaluate a raw shell command through the risk engine."""
+        from igris.core.command_risk_engine import CommandRiskEngine
+        content = await request.json()
+        engine = CommandRiskEngine(
+            project_root=str(CONFIG.project_root),
+            use_llm_reviewer=content.get("use_llm_reviewer", True),
+        )
+        event, review = engine.evaluate_command(
+            command=content.get("command", ""),
+            context=content.get("context", ""),
+            mission_id=content.get("mission_id", ""),
+        )
+        return {"event": event.to_dict(), "review": review.to_dict()}
+
+    @app.post("/api/risk/evaluate-template")
+    async def api_risk_evaluate_template(request: Request) -> Dict[str, object]:
+        """Evaluate a parametrized shell template."""
+        from igris.core.command_risk_engine import CommandRiskEngine
+        content = await request.json()
+        engine = CommandRiskEngine(
+            project_root=str(CONFIG.project_root),
+            use_llm_reviewer=content.get("use_llm_reviewer", True),
+        )
+        event, review = engine.evaluate_template(
+            template_id=content.get("template_id", ""),
+            parameters=content.get("parameters", {}),
+            mission_id=content.get("mission_id", ""),
+        )
+        return {"event": event.to_dict(), "review": review.to_dict()}
+
+    @app.post("/api/risk/parse")
+    async def api_risk_parse(request: Request) -> Dict[str, object]:
+        """Parse a shell command into its components."""
+        from igris.core.command_risk_engine import parse_command
+        content = await request.json()
+        parsed = parse_command(content.get("command", ""))
+        return parsed.to_dict()
+
+    @app.get("/api/risk/levels")
+    async def api_risk_levels() -> Dict[str, object]:
+        """Get all risk levels."""
+        from igris.core.command_risk_engine import RISK_LEVELS
+        return {"risk_levels": list(RISK_LEVELS)}
+
     return app
 
 
