@@ -2240,6 +2240,97 @@ def create_app() -> FastAPI:
         planner.save_plan(new_plan)
         return new_plan.to_dict()
 
+    # ---- Teacher/Governor (Epic #46) ----
+
+    @app.post("/api/governor/evaluate")
+    async def api_governor_evaluate(request: Request) -> Dict[str, object]:
+        """Evaluate a proposed task against governance rules."""
+        from igris.core.teacher_governor import TeacherGovernor, TaskFingerprint
+        gov = TeacherGovernor(project_root=str(CONFIG.project_root))
+        gov.load_state()
+        content = await request.json()
+        fp = None
+        if content.get("fingerprint"):
+            fp = TaskFingerprint(**content["fingerprint"])
+        decision = gov.evaluate_task(
+            description=content.get("description", ""),
+            family=content.get("family", ""),
+            differentiator=content.get("differentiator", ""),
+            success_criteria=content.get("success_criteria"),
+            fingerprint=fp,
+            trace_id=content.get("trace_id", ""),
+        )
+        return decision.to_dict()
+
+    @app.get("/api/governor/summary")
+    async def api_governor_summary() -> Dict[str, object]:
+        """Get governor state summary."""
+        from igris.core.teacher_governor import TeacherGovernor
+        gov = TeacherGovernor(project_root=str(CONFIG.project_root))
+        gov.load_state()
+        return gov.get_summary()
+
+    @app.get("/api/governor/saturated")
+    async def api_governor_saturated() -> Dict[str, object]:
+        """Get saturated families."""
+        from igris.core.teacher_governor import TeacherGovernor
+        gov = TeacherGovernor(project_root=str(CONFIG.project_root))
+        gov.load_state()
+        return {
+            "saturated": gov.get_saturated_families(),
+            "counts": gov.get_family_counts(),
+        }
+
+    @app.post("/api/governor/block-family")
+    async def api_governor_block(request: Request) -> Dict[str, object]:
+        """Block a family from future selection."""
+        from igris.core.teacher_governor import TeacherGovernor
+        gov = TeacherGovernor(project_root=str(CONFIG.project_root))
+        gov.load_state()
+        content = await request.json()
+        decision = gov.block_family(
+            family=content.get("family", ""),
+            reason=content.get("reason", ""),
+        )
+        gov.save_state()
+        return decision.to_dict()
+
+    @app.post("/api/governor/materialize-alternative")
+    async def api_governor_materialize(request: Request) -> Dict[str, object]:
+        """Materialize an alternative task."""
+        from igris.core.teacher_governor import TeacherGovernor
+        gov = TeacherGovernor(project_root=str(CONFIG.project_root))
+        gov.load_state()
+        content = await request.json()
+        decision = gov.materialize_alternative(
+            original_family=content.get("family", ""),
+            mission_id=content.get("mission_id", ""),
+            trace_id=content.get("trace_id", ""),
+        )
+        return decision.to_dict()
+
+    @app.get("/api/governor/escalation-report")
+    async def api_governor_escalation(trace_id: str = "") -> Dict[str, object]:
+        """Generate escalation report."""
+        from igris.core.teacher_governor import TeacherGovernor
+        gov = TeacherGovernor(project_root=str(CONFIG.project_root))
+        gov.load_state()
+        return gov.generate_escalation_report(trace_id=trace_id)
+
+    @app.post("/api/governor/record-task")
+    async def api_governor_record(request: Request) -> Dict[str, object]:
+        """Record a task execution."""
+        from igris.core.teacher_governor import TeacherGovernor
+        gov = TeacherGovernor(project_root=str(CONFIG.project_root))
+        gov.load_state()
+        content = await request.json()
+        gov.record_task(
+            description=content.get("description", ""),
+            family=content.get("family", ""),
+        )
+        gov.save_state()
+        return {"recorded": True, "history_length": len(gov.get_history())}
+
     return app
 
 
