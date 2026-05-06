@@ -2502,6 +2502,58 @@ def create_app() -> FastAPI:
         )
         return result.to_dict()
 
+    # ------------------------------------------------------------------
+    # Context Manager — Epic #60
+    # ------------------------------------------------------------------
+
+    @app.post("/api/context/build")
+    async def api_context_build(request: Request) -> Dict[str, object]:
+        """Build a context packet for the reasoning loop."""
+        from igris.core.context_manager import ContextManager
+        content = await request.json()
+        ctx = ContextManager(project_root=str(CONFIG.project_root))
+        packet = ctx.build_context(
+            goal=content.get("goal", ""),
+            role=content.get("role", "coder"),
+            profile=content.get("profile", "default"),
+            mission_id=content.get("mission_id", ""),
+            mission_status=content.get("mission_status", ""),
+            world_state=content.get("world_state"),
+            recent_actions=content.get("recent_actions"),
+            recent_errors=content.get("recent_errors"),
+            memory_items=content.get("memory_items"),
+            relevant_files=content.get("relevant_files"),
+            file_snippets=content.get("file_snippets"),
+            keywords=content.get("keywords"),
+        )
+        return packet.to_dict()
+
+    @app.get("/api/context/budgets")
+    async def api_context_budgets() -> Dict[str, object]:
+        """Get token budget information for all profiles."""
+        from igris.core.context_manager import ContextManager, TOKEN_BUDGETS
+        ctx = ContextManager(project_root=str(CONFIG.project_root))
+        return {
+            profile: ctx.get_budget_info(profile)
+            for profile in TOKEN_BUDGETS
+        }
+
+    @app.post("/api/context/score-files")
+    async def api_context_score_files(request: Request) -> Dict[str, object]:
+        """Score file relevance for a given task."""
+        from igris.core.context_manager import score_file_relevance
+        content = await request.json()
+        files = content.get("files", [])
+        keywords = content.get("keywords", [])
+        recent_files = content.get("recent_files", [])
+        error_files = content.get("error_files", [])
+        scored = []
+        for f in files:
+            s = score_file_relevance(f, keywords, recent_files, error_files)
+            scored.append({"path": f, "score": s})
+        scored.sort(key=lambda x: x["score"], reverse=True)
+        return {"files": scored}
+
     return app
 
 
