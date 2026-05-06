@@ -2598,6 +2598,54 @@ def create_app() -> FastAPI:
         from igris.core.agent_reasoning_loop import STOP_REASONS
         return {"stop_reasons": list(STOP_REASONS)}
 
+    # ------------------------------------------------------------------
+    # Integration Layer — Epic #62
+    # ------------------------------------------------------------------
+
+    @app.post("/api/integration/run-mission")
+    async def api_integration_run_mission(request: Request) -> Dict[str, object]:
+        """Run a full governed mission through the integration pipeline."""
+        from igris.core.integration_layer import IntegrationLayer
+        content = await request.json()
+        layer = IntegrationLayer(
+            project_root=str(CONFIG.project_root),
+            max_steps=content.get("max_steps", 50),
+            role=content.get("role", "coder"),
+        )
+        report = layer.run_mission(
+            goal=content.get("goal", ""),
+            title=content.get("title", ""),
+            description=content.get("description", ""),
+            constraints=content.get("constraints"),
+            success_criteria=content.get("success_criteria"),
+        )
+        return report.to_dict()
+
+    @app.get("/api/integration/pipeline-status")
+    async def api_integration_pipeline_status() -> Dict[str, object]:
+        """Get status of all pipeline components."""
+        from igris.core.integration_layer import IntegrationLayer
+        layer = IntegrationLayer(project_root=str(CONFIG.project_root))
+        return layer.get_pipeline_status()
+
+    @app.get("/api/integration/action-families")
+    async def api_integration_action_families() -> Dict[str, object]:
+        """Get action type to family mapping."""
+        from igris.core.integration_layer import IntegrationLayer
+        return {"families": {
+            "code_nav": ["search_code", "find_files", "list_directory",
+                        "read_file_range", "repo_map", "find_symbol"],
+            "code_edit": ["write_file", "propose_patch", "apply_patch"],
+            "test": ["run_tests"],
+            "git": ["git_status", "git_diff"],
+            "shell": ["shell_template", "raw_shell_proposal"],
+            "http": ["http_check"],
+            "planning": ["update_plan"],
+            "memory": ["record_memory"],
+            "human": ["ask_user"],
+            "terminal": ["finish", "blocked"],
+        }}
+
     return app
 
 
