@@ -4,15 +4,17 @@ Questa roadmap è il riferimento operativo per portare **IGRIS_GPT** alla versio
 
 La roadmap integra le migliori idee osservate da tre fonti di ispirazione:
 
-- **Ruflo / Claude Flow**: orchestrazione, agenti specializzati, router, memoria, hook, plugin, provider routing, doctor/verify, dashboard, security hardening.
 - **Devin**: comportamento operativo end-to-end: capire un task, esplorare, pianificare, modificare, eseguire, correggere, testare e consegnare.
-- **OpenHands**: workspace operativo, terminale, file editing, loop observe-act, ambiente di esecuzione controllato; da non ereditare invece crash, fragilità e accoppiamento eccessivo.
+- **Ruflo / Claude Flow**: orchestrazione, agenti specializzati, router, memoria, hook, plugin, provider routing, doctor/verify, dashboard, security hardening.
+- **OpenHands**: workspace operativo, terminale, file editing, browser, loop observe-act, ambiente di esecuzione controllato; da non ereditare invece crash, fragilità e accoppiamento eccessivo.
 
 ---
 
 ## 0. Visione finale
 
-IGRIS_GPT deve diventare un **AI Engineering Operator** personale, installabile su Ubuntu/VPS/local machine, capace di ricevere un obiettivo come:
+IGRIS_GPT deve diventare un **AI Engineering Operator personale**, installabile su Ubuntu, VM, VPS o macchina locale, capace di ricevere un obiettivo e lavorare come sostituto operativo dell'utente su repo, siti, server, deploy, debugging, test, GitHub, manutenzione e report finale.
+
+Esempi di missioni target:
 
 - "crea questo sito e mettilo online su questa VPS";
 - "sistema questa repo, testa e apri una PR";
@@ -40,808 +42,686 @@ Safety → Cost Control → Rollback → Anti-loop → Teacher/Governor → Audi
 ### 1.1 Autonomia reale
 IGRIS non deve limitarsi a suggerire. Deve poter eseguire compiti concreti sulla macchina dove è installato o su server autorizzati.
 
-### 1.2 Stabilità superiore a OpenHands
-Ogni componente deve degradare in modo controllato. Nessun crash non diagnosticato deve interrompere missioni lunghe senza report e recovery.
+### 1.2 Potenza governata
+IGRIS deve poter agire liberamente, ma non ciecamente. Ogni azione passa da policy, rischio, rollback, audit e verifica.
 
-### 1.3 Potenza governata, non limitazione sterile
-IGRIS deve poter agire liberamente, ma con policy, rischio, rollback e audit. La sicurezza deve abilitare l'autonomia, non bloccarla.
+### 1.3 Local-first e server-capable
+IGRIS deve funzionare localmente, ma deve anche operare su VPS/server tramite SSH, Docker, nginx, systemd, browser testing, GitHub e provider cloud.
 
-### 1.4 Local-first, server-capable
-Il sistema deve funzionare localmente, ma deve essere capace di operare su VPS/server tramite SSH, Docker, nginx, systemd, GitHub e provider cloud.
+### 1.4 Provider-agnostic
+IGRIS non deve dipendere da un solo LLM o provider. Ogni uso di LLM passa dal **Model Orchestrator**. DeepSeek può essere un provider consigliato per costo/qualità, ma non è l'architettura. L'architettura è l'orchestratore.
 
 ### 1.5 Anti-loop strutturale
-Dopo 3 ripetizioni della stessa famiglia di remediation, IGRIS deve cambiare strategia o richiedere un differenziatore concreto e verificabile.
+Dopo ripetizioni semantiche, IGRIS deve cambiare strategia o richiedere un differenziatore concreto e verificabile.
 
 ### 1.6 Deliverable eccellente
-Ogni missione conclusa deve produrre risultato, verifiche, report, modifiche tracciate, eventuale rollback e memoria riusabile.
+Ogni missione conclusa deve produrre risultato, prove, report, modifiche tracciate, eventuale rollback e memoria riusabile.
+
+### 1.7 Stabilità superiore a OpenHands
+Ogni componente deve degradare in modo controllato. Nessun crash non diagnosticato deve interrompere missioni lunghe senza report e recovery.
 
 ---
 
-## 2. Architettura target: il sistema nervoso di IGRIS
+## 2. Stato post-bootstrap
 
-IGRIS_GPT non deve basarsi su un sistema nervoso esterno come Claude Code. Deve avere un proprio **Operational Nervous System**, composto da:
+I 6 epic bootstrap fondamentali sono stati proposti/completati tramite PR dedicate:
+
+| Epic | PR | Capacità |
+|---|---:|---|
+| #39 Doctor/Verify/Crash Recovery | #52 | diagnostica, verify, config validation, crash reports |
+| #40 Mission Controller | #53 | missioni persistenti multi-step |
+| #42 Safety/Rollback/Autonomy Policy | #54 | risk, approval modes, rollback, safety event log |
+| #41 Real Local/Server Tool Runtime | #55 | shell/fs/git/docker/nginx/systemd/http/test/hosts governati |
+| #43 GOAP-like Planner | #56 | precondizioni, effetti, world state, replanning |
+| #46 Teacher/Governor Anti-Loop | #57 | family saturation, dedup, forced strategy shift |
+
+Questi componenti costruiscono il corpo operativo di IGRIS: missioni, safety, rollback, tool, planner, governor e diagnostica. Il prossimo gap critico è il **loop cognitivo operativo**: un ciclo in cui IGRIS costruisce contesto, invoca un LLM tramite Model Orchestrator, riceve azioni strutturate, le valida, le esegue tramite tool governati, osserva risultati, aggiorna stato/memoria e continua finché la missione è verificata o bloccata con diagnosi.
+
+---
+
+## 3. Architettura definitiva di IGRIS
+
+IGRIS_GPT deve prevedere da subito l'architettura completa della versione definitiva, anche se l'implementazione procede per fasi. Non vogliamo un sistema minimo che poi diventa incoerente. Vogliamo una mappa completa e uno sviluppo incrementale.
 
 ```text
-Goal Intake
+Goal Intake / User Mission
   ↓
 Mission Controller
   ↓
-State Inspector
+Agent Registry + Coordinator
   ↓
-Goal Planner / GOAP-like Planner
+State Inspector + Context Manager + Code Navigation
   ↓
-Task Router
+GOAP Planner + Agent Reasoning Loop
   ↓
-Specialist Agents
+Model Orchestrator
   ↓
-Tool Runtime
+Structured Action Proposal
   ↓
-Safety / Policy / Rollback Layer
+Command Risk Engine + Safety Policy + Rollback Resolver
   ↓
-Execution / Observation / Verification
+Tool Runtime / DevOps Runtime / GitHub Runtime / Browser Runtime
   ↓
-Memory / Lessons / Decision Reports
+Verifier + Postcheck + Healthcheck
+  ↓
+Memory / Lessons / Outcome Store
   ↓
 Teacher / Governor / Replanner
+  ↓
+Final Reporter / Dashboard / Artifacts
 ```
 
-### 2.1 Componenti principali
+### 3.1 Componenti definitivi
 
 | Componente | Responsabilità |
 |---|---|
-| Mission Controller | Mantiene obiettivo, stato, piano, progressi e stop conditions |
-| State Inspector | Legge repo, file, test, server, processi, logs, Git, ambiente |
-| Planner | Trasforma obiettivi in azioni con precondizioni/effetti |
-| Task Router | Sceglie agenti/tool/azioni evitando loop e duplicati |
-| Agent Registry | Definisce ruoli, permessi, responsabilità e tool consentiti |
-| Tool Runtime | Esegue shell, filesystem, git, ssh, docker, http, browser, GitHub |
-| Safety Layer | Classifica rischio, blocca comandi pericolosi, richiede rollback |
-| Verification Layer | Test, lint, healthcheck, browser test, deploy validation |
-| Memory Layer | Salva outcome, errori, fix, pattern, decisioni, lezioni |
-| Teacher/Governor | Interviene su loop, blocchi, saturazione, piani deboli |
-| Dashboard | Mostra stato, log, comandi, costi, rischi, risultati |
+| Mission Controller | Mantiene obiettivo, stato, piano, progressi, pause/resume, stop conditions, report finale |
+| Agent Registry | Definisce agenti/ruoli, permessi, tool, rischi, responsabilità, escalation e futura evoluzione multi-agent |
+| Coordinator | Mantiene focus, assegna modalità/ruolo, previene drift e valida allineamento al goal |
+| Agent Reasoning Loop | Ciclo cognitivo: contesto → LLM → azione strutturata → safety → tool → osservazione → memoria → prossimo step |
+| Context Manager | Decide cosa vede il modello: goal, stato, file rilevanti, errori, memoria, azioni recenti, token budget |
+| Code Navigation | Cerca codice, file, simboli, range di file, repo map, riferimenti e contesto tecnico |
+| GOAP Planner | Fornisce stato, precondizioni, effetti, success criteria e replanning strutturale |
+| Model Orchestrator | Sceglie modello/provider per reasoning, risk review, chat, memory, review, coding, fallback e cost control |
+| Command Risk Engine | Classifica comandi/azioni, riconosce rischio, usa regole + LLM reviewer, applica policy e precheck |
+| Safety / Policy Layer | Blocca o consente azioni in base a rischio, mode, host, path, secrets, approval e policy |
+| Rollback Manager | Prepara backup, diff snapshot, restore, rollback command e verifica rollback |
+| Tool Runtime | Esegue azioni locali/server: shell, filesystem, git, docker, nginx, systemd, http, test, ssh |
+| GitHub Delivery | Branch, commit, PR, CI reading, issue updates, review gate, no unsafe push |
+| DevOps/VPS Manager | Server registry, deploy patterns, nginx, Docker, systemd, SSL, logs, healthcheck, rollback |
+| Browser/UI Testing | Playwright/browser checks, screenshot, console errors, user-flow smoke tests |
+| Verifier | Verifica success criteria: test, lint, health, HTTP, SSL, logs, PR, artifacts |
+| Memory / Learning | Salva outcome, failure, decisions, lessons, server facts, repo facts, deployment patterns |
+| Teacher/Governor | Rileva loop, saturazioni, duplicati, fallback incoerenti, impone strategy shift |
+| Dashboard / Control Room | Stato missione, piano, step corrente, rischio, rollback, logs, costi, memory, artifacts |
+| Benchmark System | Misura capacità reali: bugfix, feature, test repair, deploy, rollback, PR, browser, server recovery |
+| Plugin/Capability System | Estensibilità futura senza rendere monolitico il core |
 
 ---
 
-## 3. Roadmap per fasi
+## 4. Agent Registry definitivo
 
-## Fase 1 — Hardening della base esistente
+IGRIS deve prevedere un **Agent Registry** completo già nell'architettura definitiva. Questo non significa introdurre subito uno swarm parallelo complesso. Significa definire ruoli, responsabilità, tool, limiti e possibilità di evoluzione.
 
-Obiettivo: rendere la base attuale affidabile, diagnosticabile e pronta per autonomia più libera.
+### 4.1 Implementazione iniziale
 
-### 1.1 Baseline doctor/verify
-- Implementare/rafforzare `igris doctor`.
-- Verificare Python, venv, dipendenze, Ollama, OpenAI key, Git, Docker, SSH, porte, permessi.
-- Generare report JSON/Markdown.
-- Suggerire fix applicabili.
-- Exit codes chiari.
-
-### 1.2 Crash recovery
-- Ogni loop/missing provider/error deve produrre report.
-- Nessun fallimento deve sparire senza timeline event.
-- Salvare stacktrace redatto.
-- Introdurre `last_known_good_state`.
-
-### 1.3 Test baseline permanente
-- Mantenere e aumentare test esistenti.
-- Separare unit/integration/e2e/server.
-- Aggiungere smoke test reale per installazione Ubuntu.
-
-### 1.4 Config validation
-- Validare `.env`, `config.json`, paths, provider, budget, safety policy.
-- Diagnosticare configurazioni incomplete.
-
-### 1.5 Operational logs unificati
-- Standardizzare timeline, execution logs, decision reports, safety events.
-- Ogni azione deve avere `trace_id`, `mission_id`, `task_id`.
-
-**Definition of Done Fase 1**
-- `igris doctor` dà diagnosi utile.
-- Un crash produce report utile.
-- Test e smoke test passano.
-- Installazione Ubuntu verificata.
-
----
-
-## Fase 2 — Mission Controller definitivo
-
-Obiettivo: passare da task isolate a missioni end-to-end.
-
-### 2.1 Mission schema
-Ogni missione deve includere:
-
-```json
-{
-  "id": "mission_x",
-  "goal": "Deploy site on VPS",
-  "status": "planning|executing|blocked|verifying|done|failed",
-  "workspace": "...",
-  "target_hosts": [],
-  "constraints": [],
-  "success_criteria": [],
-  "risk_level": "low|medium|high|critical",
-  "plan": [],
-  "artifacts": [],
-  "rollback_plan": null,
-  "final_report": null
-}
-```
-
-### 2.2 Mission lifecycle
-- Create mission.
-- Inspect state.
-- Generate plan.
-- Materialize tasks.
-- Execute next action.
-- Observe result.
-- Replan on failure.
-- Verify success criteria.
-- Deliver final report.
-
-### 2.3 Long-running task resilience
-- Pause/resume.
-- Persistent state.
-- Reconstruct context after restart.
-- Prevent duplicate execution.
-
-### 2.4 Mission dashboard
-- Active mission.
-- Current step.
-- Reason for selected action.
-- Risk/rollback.
-- Recent command outputs.
-- Verification status.
-
-**Definition of Done Fase 2**
-- Una missione può durare più step e sopravvivere a restart.
-- Stato e prossima azione sono sempre spiegabili.
-- L'utente può vedere perché IGRIS sta facendo qualcosa.
-
----
-
-## Fase 3 — Planner GOAP-like con precondizioni/effetti
-
-Obiettivo: rendere il piano più simile a Devin: non solo task list, ma percorso verso stato desiderato.
-
-### 3.1 Action model
-Ogni azione deve dichiarare:
-
-```json
-{
-  "id": "configure_nginx_reverse_proxy",
-  "family": "devops_deploy",
-  "preconditions": ["service_running", "domain_known"],
-  "effects": ["http_route_configured", "nginx_config_tested"],
-  "risk": 7,
-  "cost": 2,
-  "requires_rollback": true,
-  "tools": ["ssh", "filesystem", "shell"]
-}
-```
-
-### 3.2 State model
-Rappresentare stato corrente:
-
-- repo clean/dirty;
-- tests pass/fail;
-- service running/stopped;
-- Docker available;
-- nginx available;
-- domain resolves;
-- SSL present;
-- task families saturated;
-- blocked actions;
-- known failures.
-
-### 3.3 Planner
-- Generare piano iniziale.
-- Calcolare azioni eleggibili.
-- Evitare azioni con precondizioni mancanti.
-- Penalizzare famiglie sature.
-- Replan dopo fallimento.
-
-### 3.4 Success criteria mapping
-Ogni missione deve avere criteri verificabili:
-
-- endpoint risponde 200;
-- test passano;
-- servizio systemd attivo;
-- container healthy;
-- PR creata;
-- diff review passato;
-- report generato.
-
-**Definition of Done Fase 3**
-- IGRIS può spiegare piano, precondizioni, effetti e motivo della prossima azione.
-- Un fallimento cambia il piano invece di ripetere lo stesso passo.
-
----
-
-## Fase 4 — Agent Registry e agenti specialistici
-
-Obiettivo: trasformare il sistema da monolite a squadra coordinata.
-
-### 4.1 Agent registry
-Creare `agent/agents/registry.py` o equivalente.
-
-Agenti minimi:
-
-| Agente | Compito |
-|---|---|
-| Coordinator | Mantiene focus e obiettivo |
-| Planner | Scompone obiettivi e aggiorna piani |
-| Researcher | Esplora repo, docs, log, server |
-| Coder | Modifica codice |
-| Tester | Test, lint, bug reproduction |
-| DevOps | VPS, Docker, nginx, systemd, deploy |
-| Reviewer | Diff review, regressioni, qualità |
-| Security Guard | Policy, segreti, rischio, path guard |
-| Teacher/Governor | Anti-loop, recovery, escalation |
-| Memory Manager | Outcome, lezioni, retrieval |
-| Cost Guardian | Provider, budget, costi |
-
-### 4.2 Agent contract
-Ogni agente dichiara:
-
-- ruolo;
-- input accettato;
-- output atteso;
-- tool consentiti;
-- rischi;
-- escalation.
-
-### 4.3 Coordinator pattern
-Per evitare drift, ogni missione complessa deve avere un Coordinator che valida:
-
-- allineamento al goal;
-- step corrente;
-- qualità output;
-- necessità di replan.
-
-**Definition of Done Fase 4**
-- Ogni step viene assegnato a un agente con ruolo chiaro.
-- Nessun agente può usare tool fuori dal proprio profilo senza escalation.
-
----
-
-## Fase 5 — Tool Runtime operativo reale
-
-Obiettivo: dare a IGRIS capacità operative reali su macchina locale e server.
-
-### 5.1 Tool da implementare/rafforzare
-
-| Tool | Capacità |
-|---|---|
-| shell | Comandi locali con policy e timeout |
-| filesystem | Lettura/scrittura sicura, diff, backup |
-| git | status, diff, branch, commit, push, PR prep |
-| github | issue, PR, review, workflow, release |
-| ssh | Connessione server autorizzati |
-| docker | build, compose, logs, ps, health |
-| systemd | status, restart, logs, enable |
-| nginx | config test, reload, sites-enabled |
-| http_check | healthcheck, SSL, response body |
-| browser | Playwright/browser testing |
-| package_manager | pip/npm/apt con policy |
-| secrets | env validation, redaction, no leak |
-
-### 5.2 Command policy evoluta
-Superare il modello solo `command_id`, mantenendo sicurezza:
-
-- allowlist dinamica per missione;
-- template di comando con parametri validati;
-- classificazione rischio;
-- obbligo rollback per high risk;
-- dry-run se disponibile;
-- timeout e output truncation.
-
-### 5.3 Remote host registry
-Definire host autorizzati:
-
-```json
-{
-  "name": "prod-vps-1",
-  "host": "example.com",
-  "user": "deploy",
-  "allowed_paths": ["/var/www", "/etc/nginx/sites-available"],
-  "allowed_services": ["nginx", "myapp"],
-  "requires_backup": true
-}
-```
-
-**Definition of Done Fase 5**
-- IGRIS può eseguire operazioni reali local/server con policy, log e rollback.
-- Le azioni high risk non sono cieche.
-
----
-
-## Fase 6 — Safety, rollback e autonomia governata
-
-Obiettivo: abilitare libertà operativa senza distruttività.
-
-### 6.1 Risk classifier
-Classificare azioni:
-
-- low: lettura, status, test;
-- medium: scrittura workspace, install locale, restart dev;
-- high: deploy, nginx/systemd, docker down, push;
-- critical: delete, db migration, DNS, firewall, secrets, production destructive.
-
-### 6.2 Rollback manager
-Prima di azioni high risk:
-
-- backup file config;
-- snapshot diff;
-- docker compose config backup;
-- export DB se applicabile;
-- comando di rollback documentato;
-- verifica rollback applicabile.
-
-### 6.3 Approval policy configurabile
-Modalità:
-
-- `safe`: solo low/medium automatiche;
-- `operator`: high automatiche se rollback presente;
-- `trusted`: più autonomia su host autorizzati;
-- `manual-critical`: critical sempre richiede conferma.
-
-### 6.4 Secret guard
-- Bloccare preview `.env`.
-- Redigere output.
-- Rilevare API keys.
-- Evitare commit di secrets.
-
-**Definition of Done Fase 6**
-- IGRIS può operare liberamente entro policy esplicite.
-- Ogni modifica rischiosa ha rollback o escalation.
-
----
-
-## Fase 7 — Memoria outcome-driven e learning loop
-
-Obiettivo: IGRIS deve migliorare nel tempo.
-
-### 7.1 Memory stores
+La prima implementazione può usare un solo Agent Reasoning Loop attivo, che assume ruoli/modalità dal registry.
 
 ```text
-.igris/memory/
-  decisions.jsonl
-  failures.jsonl
-  outcomes.jsonl
-  lessons.jsonl
-  server_facts.jsonl
-  repo_facts.jsonl
-  deployment_patterns.jsonl
-  saturated_families.json
+Single Agent Reasoning Loop
+  + ruolo corrente dal registry
+  + tool permessi dal ruolo
+  + policy per rischio/host/path
+  + prompt specifico per modalità
 ```
 
-### 7.2 Cosa salvare
-- Task eseguite.
-- Comandi e outcome.
-- Errori e root cause.
-- Fix efficaci.
-- Pattern di deploy.
-- Scelte di modello/provider.
-- Famiglie sature.
-- Success criteria riusciti/falliti.
+### 4.2 Evoluzione futura
 
-### 7.3 Retrieval
-Prima di una missione:
+L'architettura deve già prevedere la possibilità di evolvere verso multi-agent controllato:
 
-- cercare casi simili;
-- caricare lezioni rilevanti;
-- evitare errori già fatti;
-- applicare pattern riusciti.
+- Coder separato da Reviewer;
+- DevOps separato da Security Guard;
+- Memory Manager come servizio dedicato;
+- Cost Guardian come gate trasversale;
+- Coordinator che orchestra agenti specialistici;
+- task delegation per missioni lunghe;
+- audit su quale agente/ruolo ha proposto o validato una decisione.
 
-### 7.4 Vector search futura
-Fase iniziale JSONL + keyword/fingerprint.
-Fase avanzata embeddings locali + HNSW/SQLite/FAISS/Chroma.
+### 4.3 Agenti/ruoli minimi definitivi
 
-**Definition of Done Fase 7**
-- IGRIS ricorda fallimenti/fix e li usa per piani futuri.
-- I report non sono solo archivi, ma memoria operativa.
-
----
-
-## Fase 8 — Teacher/Governor anti-loop definitivo
-
-Obiettivo: impedire loop semantici e recovery sterile.
-
-### 8.1 Family saturation
-Le famiglie da tracciare includono:
-
-- observation;
-- synthesis;
-- repo_diff_discovery;
-- patch_strategy;
-- branch_pr_plan;
-- review_gate;
-- candidate_materialization;
-- mastery_cycle;
-- mastery_gate;
-- school_report;
-- grading_diagnosis;
-- stabilization_audit;
-- devops_deploy;
-- server_diagnosis;
-- test_repair;
-- code_patch;
-- documentation;
-- security_audit;
-- other.
-
-### 8.2 Regola delle 3 ripetizioni
-Dopo 3 ripetizioni recenti:
-
-- famiglia satura;
-- selettore la penalizza/esclude;
-- teacher deve scegliere famiglia diversa;
-- eccezione solo con differenziatore verificabile.
-
-### 8.3 Semantic deduplication
-Non basta cambiare titolo. Fingerprint deve considerare:
-
-- famiglia;
-- intent;
-- file target;
-- effetto atteso;
-- causa del blocco;
-- success criteria.
-
-### 8.4 Forced strategy shift
-Se tutte le famiglie utili sono sature:
-
-- attivare stabilization audit;
-- chiedere missing information;
-- generare diagnostic task;
-- cambiare livello: da patch a planning, da planning a execution, da execution a diagnosis.
-
-**Definition of Done Fase 8**
-- IGRIS non ripete task semanticamente uguali.
-- Dopo 3 ripetizioni cambia strategia davvero.
+| Agente/Ruolo | Responsabilità | Tool preferiti | Note di safety |
+|---|---|---|---|
+| Coordinator | Tiene focus, missione, piano, step corrente | mission, plan, state, report | può bloccare drift |
+| Planner | Scompone obiettivi, aggiorna piano, valuta precondizioni | goap, state, memory | non esegue azioni rischiose |
+| Researcher | Esplora repo, docs, log, server facts | search, read, grep, logs | read-only di default |
+| Coder | Modifica codice e file workspace | read, write, patch, test | no system/server tools |
+| Tester | Esegue test, interpreta failure, propone verifiche | run_tests, logs, read | write solo se autorizzato |
+| Reviewer | Controlla diff, qualità, regressioni, secrets | git_diff, tests, secret_scan | può bloccare delivery |
+| DevOps | Deploy, server, nginx, Docker, systemd, SSL | ssh, docker, nginx, systemd, http | rollback obbligatorio high risk |
+| Security Guard | Valuta rischio, segreti, policy, path, comandi | risk, secrets, policy | può bloccare qualsiasi azione |
+| Memory Manager | Salva/recupera lezioni, failure, pattern | memory, retrieval | non esegue shell |
+| Cost Guardian | Seleziona provider, budget, escalation | routing, cost | può bloccare modelli costosi |
+| Reporter | Produce report finale, artifacts, next steps | reports, logs, artifacts | no execution |
 
 ---
 
-## Fase 9 — Devin-like autonomous work sessions
+## 5. Model Orchestrator
 
-Obiettivo: comportamento operativo simile a Devin.
+Tutti gli usi di LLM devono passare dal **Model Orchestrator**. Nessun componente deve chiamare direttamente DeepSeek, OpenAI, Anthropic, Ollama o altro provider.
 
-### 9.1 Sessione di lavoro autonoma
-Per ogni obiettivo:
+### 5.1 Compiti del Model Orchestrator
 
-1. comprendere richiesta;
-2. creare piano;
-3. esplorare repo/server;
-4. eseguire step;
-5. leggere errori;
-6. correggere;
-7. testare;
-8. ripetere finché criteria passano o blocco reale;
-9. consegnare report.
+- scegliere modello/provider in base a task type, ruolo, rischio, budget, privacy, context size e qualità richiesta;
+- usare modelli locali quando sufficienti;
+- usare provider economici cloud quando conveniente;
+- usare modelli forti per architecture, debugging difficile, deploy critico, security review;
+- degradare in modo onesto se nessun modello adatto è disponibile;
+- registrare costo, latenza, provider, fallback, outcome;
+- supportare provider OpenAI-compatible.
 
-### 9.2 Workspace tracking
-- File modificati.
-- Comandi eseguiti.
-- Errori incontrati.
-- Tentativi falliti.
-- Ipotesi formulate.
-- Decisioni importanti.
+### 5.2 Profili modello
 
-### 9.3 Stop conditions
-IGRIS si ferma solo se:
+| Profilo | Uso | Esempi |
+|---|---|---|
+| deterministic | safety, policy, routing banale, checks | nessun LLM |
+| local_light | chat, sintesi, classificazione semplice | Ollama phi/qwen/llama |
+| local_coder | code reasoning locale se hardware basta | qwen-coder/deepseek-coder locale |
+| cheap_cloud_reasoning | reasoning/coding economico | DeepSeek API o provider equivalente |
+| strong_cloud_reasoning | debugging difficile, architettura, review critica | OpenAI/Anthropic/Gemini forte |
+| risk_reviewer | analisi rischio medium/high/unknown | scelto dal Model Orchestrator |
+| embedding_memory | retrieval semantico | embeddings locali/cloud |
 
-- successo verificato;
-- policy blocca azione necessaria;
-- credenziali/permessi mancanti;
-- rischio critical richiede conferma;
-- costo supera budget;
-- impossibile avanzare con diagnosi documentata.
-
-### 9.4 Final report
-Report finale deve includere:
-
-- obiettivo;
-- cosa è stato fatto;
-- file modificati;
-- comandi importanti;
-- test/verifiche;
-- deployment/URL;
-- problemi e fix;
-- rischi residui;
-- prossimi passi;
-- rollback.
-
-**Definition of Done Fase 9**
-- IGRIS può completare task lunghi con report professionale.
-- Non richiede supervisione continua per ogni micro-step.
+DeepSeek può essere un provider consigliato per il profilo `cheap_cloud_reasoning`, ma l'architettura resta provider-agnostic.
 
 ---
 
-## Fase 10 — DevOps/VPS/Siti web
+## 6. Command Risk Engine definitivo
 
-Obiettivo: IGRIS deve operare su server e siti reali.
+IGRIS deve supportare shell completa governata. L'agente può proporre comandi non previsti, ma nessun comando raw viene eseguito direttamente. Tutte le azioni passano da normalizzazione, parsing, rischio, policy, rollback, approval, guarded execution e postcheck.
 
-### 10.1 Server diagnosis
-- OS, CPU, RAM, disk.
-- Processi e porte.
-- Docker status.
-- nginx/apache status.
-- systemd services.
-- certbot/SSL.
-- logs applicativi.
+### 6.1 Politica tool-first
 
-### 10.2 Deploy patterns
-Supportare:
+Ordine preferito per ogni azione:
 
-- static site;
-- Node/React/Vite;
-- Python/FastAPI;
-- Docker Compose;
-- WordPress/PHP;
-- reverse proxy nginx;
-- systemd service;
-- SSL certbot.
+1. **Tool strutturato**: `run_tests`, `read_file_range`, `write_file`, `git_status`, `http_check`, ecc.
+2. **Template parametrizzato**: `python_pytest`, `npm_install`, `docker_compose_logs`, ecc.
+3. **Raw shell proposal**: permessa come escape hatch, mai eseguita senza risk engine.
 
-### 10.3 Healthcheck
-- HTTP 200.
-- SSL valid.
-- response time.
-- container healthy.
-- logs no fatal.
-- service enabled/running.
+### 6.2 Pipeline del Command Risk Engine
 
-### 10.4 Backup/rollback
-- backup config nginx;
-- backup compose/env template;
-- rollback symlink release;
-- restart previous service;
-- restore previous config.
+```text
+Action Proposal
+  ↓
+Action Normalizer
+  ↓
+Structured Tool available?
+  ├─ yes → Tool Policy
+  └─ no  → Shell Parser
+            ↓
+Deterministic Risk Classifier
+  ↓
+Contextual Policy Engine
+  ↓
+LLM Risk Reviewer when needed
+  ↓
+Rollback Requirement Resolver
+  ↓
+Approval Gate
+  ↓
+Guarded Executor
+  ↓
+Postcheck / Verifier
+  ↓
+Safety Event Log + Memory
+```
 
-**Definition of Done Fase 10**
-- IGRIS può fare deploy e manutenzione su VPS autorizzata con verifica e rollback.
+### 6.3 Parsing e segnali da riconoscere
 
----
+Il parser deve riconoscere almeno:
 
-## Fase 11 — GitHub e delivery professionale
+- `sudo`, `su`, privilege escalation;
+- `rm`, `delete`, `unlink`, `git clean`, `git reset --hard`;
+- `chmod`, `chown`, permission changes;
+- `systemctl`, `service`, `journalctl`;
+- `docker`, `docker compose`, `kubectl` futuro;
+- `nginx`, `apache`, `certbot`;
+- `apt`, `pip`, `npm`, `pnpm`, `yarn`;
+- `git push`, `git force`, branch main/master;
+- `curl | bash`, `wget | sh`, remote script execution;
+- pipes, redirection, subshell, `&&`, `||`;
+- absolute paths, paths outside workspace, wildcards;
+- network calls;
+- database commands and migrations;
+- firewall/DNS commands;
+- `.env`, secrets, keys, tokens.
 
-Obiettivo: consegna tracciata come collaboratore tecnico.
+### 6.4 Risk classes
 
-### 11.1 Git workflow
-- Branch per missione.
-- Commit piccoli e descrittivi.
-- Pre-commit safety check.
-- Pull/rebase prima push.
-- PR summary.
+| Classe | Esempi | Default |
+|---|---|---|
+| LOW | ls, pwd, grep, git status, file read, focused test | auto se policy ok |
+| MEDIUM | workspace write, dependency install, git commit, test scripts | auto or LLM reviewer if ambiguous/raw |
+| HIGH | service restart, deploy, docker down/up, nginx config, git push | rollback + reviewer + policy |
+| CRITICAL | delete production, DB drop, firewall/DNS, secrets write, force push | block or explicit approval |
+| UNKNOWN | parse incerto, comando complesso/ambiguo | reviewer + restrictive policy |
 
-### 11.2 GitHub issues/PR
-- Leggere issue.
-- Creare branch da issue.
-- Aprire PR.
-- Aggiornare issue con report.
-- Leggere CI.
-- Correggere CI failure.
+### 6.5 LLM Risk Reviewer
 
-### 11.3 Review gate
-Prima di consegnare:
+L'LLM reviewer è un secondo parere, non il decisore finale. La decisione finale resta alla policy di IGRIS.
 
-- diff review;
-- test pass;
-- secrets check;
-- rollback note;
-- docs update se necessario.
+Usarlo per:
 
-**Definition of Done Fase 11**
-- IGRIS consegna lavoro via PR/commit con qualità controllabile.
+- MEDIUM se comando raw, ambiguo, modifica dipendenze/config, usa network, o esce dai tool strutturati;
+- HIGH sempre salvo casi già bloccati deterministicamente;
+- CRITICAL per spiegazione/mitigazione, ma non per autorizzare automaticamente;
+- UNKNOWN sempre.
 
----
-
-## Fase 12 — Browser/UI testing
-
-Obiettivo: verificare siti/app come utente reale.
-
-### 12.1 Browser automation
-- Aprire URL.
-- Screenshot.
-- Controllare testo/elementi.
-- Form submit.
-- Login flow se credenziali fornite.
-- Console errors.
-
-### 12.2 Visual evidence
-- Salvare screenshot prima/dopo.
-- Allegare al report.
-
-### 12.3 UI regression smoke
-- Homepage.
-- Navigation.
-- Main CTA.
-- Login/logout.
-- Dashboard.
-
-**Definition of Done Fase 12**
-- IGRIS può dimostrare che il sito funziona, non solo che il server risponde.
-
----
-
-## Fase 13 — Cost/model routing avanzato
-
-Obiettivo: usare il modello giusto al costo giusto.
-
-### 13.1 Provider tiers
-- Deterministic/no LLM.
-- Local Ollama.
-- Cheap cloud model.
-- Strong model.
-- Specialist model.
-
-### 13.2 Routing policy
-- Task semplice: deterministic/local.
-- Code patch media: cheap/standard.
-- Architecture/security/deploy critical: strong model + review.
-- Repeated failure: escalate model.
-
-### 13.3 Budget
-- Costo per missione.
-- Costo giornaliero/mensile.
-- Stop/escalation sopra soglia.
-- Report costi.
-
-**Definition of Done Fase 13**
-- IGRIS controlla costi senza perdere qualità sui task critici.
-
----
-
-## Fase 14 — Dashboard Control Room
-
-Obiettivo: rendere IGRIS osservabile e controllabile.
-
-### 14.1 Vista missione
-- Goal.
-- Stato.
-- Piano.
-- Step corrente.
-- Perché questa azione.
-- Rischio.
-- Rollback.
-- Ultimi output.
-
-### 14.2 Vista server
-- Hosts autorizzati.
-- Health.
-- Servizi.
-- Deploy recenti.
-
-### 14.3 Vista memory
-- Lezioni recenti.
-- Fallimenti.
-- Saturazioni.
-- Pattern efficaci.
-
-### 14.4 Vista safety/cost
-- Azioni bloccate.
-- Policy.
-- Budget.
-- Provider usati.
-
-**Definition of Done Fase 14**
-- L'utente può capire in 30 secondi cosa sta facendo IGRIS e perché.
-
----
-
-## Fase 15 — Plugin/capability system
-
-Obiettivo: rendere IGRIS estendibile senza monolite fragile.
-
-### 15.1 Capability manifest
-Ogni plugin dichiara:
+Output JSON atteso:
 
 ```json
 {
-  "name": "docker_ops",
-  "capabilities": ["docker_ps", "docker_logs", "docker_compose_up"],
-  "risk": "medium|high",
-  "tools": [],
-  "requires": ["docker_available"],
-  "tests": []
+  "risk_assessment": "medium|high|critical|unknown",
+  "reasons": [],
+  "affected_paths": [],
+  "affected_services": [],
+  "requires_rollback": true,
+  "recommended_prechecks": [],
+  "recommended_postchecks": [],
+  "safer_alternative": null,
+  "should_execute": false
 }
 ```
 
-### 15.2 Plugin iniziali
-- core;
-- git_ops;
-- github_ops;
-- devops_ops;
-- docker_ops;
-- nginx_ops;
-- browser_ops;
-- memory_ops;
-- safety_ops;
-- cost_ops;
-- docs_ops.
+### 6.6 Precheck e postcheck
 
-### 15.3 Plugin health
-- Ogni plugin ha doctor check.
-- Ogni plugin può essere disabilitato senza rompere core.
+Esempi obbligatori:
 
-**Definition of Done Fase 15**
-- Nuove capacità si aggiungono senza modificare l'orchestratore centrale.
+- nginx/systemd: backup config, config test, service existence, rollback command;
+- git push: no main/master, secret scan, diff review, branch status;
+- docker compose: `docker compose config`, logs, healthcheck, rollback plan;
+- dependency install: lockfile handling, workspace scope, package manager detection;
+- file overwrite: backup/diff snapshot;
+- server action: host registry, allowed paths/services, environment classification.
 
 ---
 
-## Fase 16 — Benchmark realistici
+## 7. Agent Action Schema & Prompt Contract
 
-Obiettivo: misurare IGRIS contro task reali.
+Prima di implementare il loop cognitivo, serve un contratto stabile fra LLM e IGRIS.
 
-### 16.1 Benchmark categories
-- Bug fix repo piccola.
-- Test repair.
-- Add feature.
-- Deploy static site.
-- Deploy FastAPI app.
-- Debug nginx 502.
-- Fix Docker Compose.
-- Open PR.
-- Generate docs.
+### 7.1 Principi
 
-### 16.2 Metrics
-- Success rate.
-- Time to completion.
-- Number of loops.
-- Cost.
-- Test pass.
-- Human intervention count.
-- Rollback availability.
-- Report quality.
+- L'LLM non esegue: propone azioni strutturate.
+- IGRIS valida, classifica, esegue, verifica e registra.
+- Ogni azione deve avere motivo, expected effect, confidence, fallback, success check.
+- Il prompt deve mostrare solo il contesto utile, non rumore.
+- Il modello deve poter dire `ask_user`, `blocked`, `need_more_context`, `finish`.
 
-### 16.3 Regression gates
-Una nuova feature non deve peggiorare stabilità.
+### 7.2 Action types minimi
 
-**Definition of Done Fase 16**
-- IGRIS ha benchmark ripetibili e score confrontabile nel tempo.
+- `search_code`
+- `find_files`
+- `list_directory`
+- `read_file_range`
+- `write_file`
+- `propose_patch`
+- `apply_patch`
+- `run_tests`
+- `git_status`
+- `git_diff`
+- `shell_template`
+- `raw_shell_proposal`
+- `http_check`
+- `update_plan`
+- `record_memory`
+- `ask_user`
+- `finish`
+- `blocked`
+
+### 7.3 Schema concettuale
+
+```json
+{
+  "mode": "coder|tester|reviewer|devops|planner|security|reporter",
+  "action_type": "read_file_range",
+  "reason": "Need to inspect existing FastAPI route pattern",
+  "parameters": {},
+  "expected_effect": "Find correct place to add /api/ping",
+  "risk_hint": "low|medium|high|critical|unknown",
+  "confidence": 0.82,
+  "required_preconditions": [],
+  "success_check": {},
+  "fallback_if_blocked": null
+}
+```
 
 ---
 
-## 4. Epic backlog sintetico
+## 8. Nuova fase P0 post-bootstrap: accendere il loop cognitivo
 
-| Priorità | Epic | Fonte ispirazione | Impatto |
+Dopo i 6 epic bootstrap, la priorità non è aggiungere altra architettura decorativa. La priorità è collegare i pezzi esistenti con un cervello operativo governato.
+
+### Epic P0-A — Agent Action Schema, Prompt Contract and definitive architecture alignment
+
+**Obiettivo:** definire il contratto completo fra LLM, Agent Registry, Model Orchestrator, tool runtime, risk engine, safety, rollback, memory e governor.
+
+**Include:**
+
+- action schema JSON;
+- prompt template per reasoning loop;
+- modalità/agenti dal Agent Registry;
+- policy tool-first/template/raw shell;
+- stop conditions;
+- error handling;
+- finish criteria;
+- ask_user/escalation;
+- esempi per almeno 10 scenari;
+- design del Command Risk Engine v2;
+- design del Model Orchestrator per reasoning/risk review.
+
+**Definition of Done:**
+
+- documento tecnico approvabile;
+- schema validabile;
+- esempi reali: read file, search, patch, test, shell template, raw shell blocked, devops high risk, finish;
+- nessuna implementazione rischiosa ancora richiesta.
+
+### Epic P0-B — Code Navigation Tools
+
+**Obiettivo:** dare occhi all'agente.
+
+**Tool minimi:**
+
+- `search_code(pattern, path)`;
+- `find_files(pattern)`;
+- `list_directory(path, depth)`;
+- `read_file_range(path, start, end)`;
+- `repo_map()`;
+- eventuale `find_symbol` semplice.
+
+**Definition of Done:**
+
+- l'agente può trovare file e codice rilevante senza leggere tutto il repo;
+- secret/path guard sempre attivo;
+- test unitari e integration API;
+- output adatto a Context Manager.
+
+### Epic P0-C — Context Manager
+
+**Obiettivo:** decidere cosa vede il modello a ogni step.
+
+**Include:**
+
+- token budget;
+- file relevance scoring;
+- recent actions;
+- recent errors;
+- memory retrieval;
+- test output summarization;
+- history condenser;
+- context packets per ruolo;
+- privacy/cost constraints.
+
+**Definition of Done:**
+
+- dato goal + repo + errore, costruisce contesto utile e limitato;
+- non include segreti;
+- degrada senza LLM;
+- supporta benchmark `/api/ping`.
+
+### Epic P0-D — Agent Reasoning Loop
+
+**Obiettivo:** introdurre il ciclo cognitivo operativo.
+
+**Loop:**
+
+```text
+build_context
+  → model_orchestrator.decide_action
+  → validate action schema
+  → risk/safety/rollback
+  → tool_runtime.execute
+  → observe result
+  → update state/memory/mission
+  → governor check
+  → next step or finish
+```
+
+**Definition of Done:**
+
+- esegue una missione semplice con più step;
+- usa tool reali, non mock;
+- registra decisioni, azioni, risultati;
+- rispetta safety e rollback;
+- può fermarsi con `finish`, `ask_user`, `blocked`, `budget_exceeded`.
+
+### Epic P0-E — Integration Layer: old loop, Mission Controller, GOAP, Tool Runtime, Governor
+
+**Obiettivo:** evitare sistemi paralleli scollegati.
+
+**Include:**
+
+- autonomous loop usa Mission Controller;
+- Mission Controller può delegare a Agent Reasoning Loop;
+- GOAP planner alimenta azioni/precondizioni/success criteria;
+- Tool Runtime è l'unico executor;
+- Governor opera sul loop reale;
+- Memory registra azioni reali;
+- Decision reports includono action schema, risk, tool, outcome.
+
+**Definition of Done:**
+
+- non esiste più un loop operativo principale basato solo sui 5 command_id;
+- il nuovo loop è il percorso primario controllato;
+- vecchi endpoint restano compatibili come wrapper/fallback.
+
+### Epic P0-F — Command Risk Engine v2 with LLM Risk Reviewer
+
+**Obiettivo:** supportare shell completa governata e azioni non previste senza sacrificare sicurezza.
+
+**Include:**
+
+- shell parser;
+- deterministic classifier;
+- contextual policy engine;
+- LLM risk reviewer tramite Model Orchestrator;
+- MEDIUM reviewer quando raw/ambiguous/config/network/deps;
+- HIGH/UNKNOWN reviewer;
+- rollback resolver;
+- precheck/postcheck;
+- safety event log;
+- test con comandi safe, medium, high, critical, unknown.
+
+**Definition of Done:**
+
+- raw shell proposal non viene mai eseguita senza risk engine;
+- `curl | bash`, `rm -rf`, force push, secret access sono bloccati o gated;
+- medium ambiguo viene analizzato;
+- high richiede rollback/policy;
+- output spiega la decisione.
+
+### Epic P0-G — Real Operational Benchmark: `/api/ping` with tests
+
+**Obiettivo:** primo benchmark reale end-to-end.
+
+**Missione:**
+
+```text
+Aggiungi endpoint /api/ping che ritorna {"pong": true}, aggiungi test, esegui pytest, correggi errori, produci report.
+```
+
+**Definition of Done:**
+
+- IGRIS naviga repo;
+- trova il punto giusto nel server/router;
+- modifica codice;
+- aggiunge test;
+- esegue test;
+- corregge eventuali errori;
+- produce final report con file modificati, comandi, risultati, rischi residui.
+
+---
+
+## 9. Roadmap definitiva aggiornata
+
+### Fase 0 — Bootstrap completato / in merge
+
+- Doctor/Verify/Crash Recovery
+- Mission Controller
+- Safety/Rollback/Autonomy Policy
+- Tool Runtime
+- GOAP Planner
+- Teacher/Governor
+
+**Risultato:** corpo operativo, safety, missioni, tool e governance.
+
+### Fase 1 — Contratto cognitivo e architettura completa
+
+- Epic P0-A Agent Action Schema, Prompt Contract and definitive architecture alignment
+- Agent Registry definitivo dichiarato
+- Model Orchestrator rules
+- Command Risk contract
+
+**Risultato:** sappiamo esattamente come LLM, ruoli, tool, safety e orchestrator comunicano.
+
+### Fase 2 — Occhi e memoria di lavoro
+
+- Epic P0-B Code Navigation Tools
+- Epic P0-C Context Manager
+
+**Risultato:** IGRIS può vedere repo, trovare codice e costruire contesto utile.
+
+### Fase 3 — Cervello operativo
+
+- Epic P0-D Agent Reasoning Loop
+- Epic P0-E Integration Layer
+- Epic P0-F Command Risk Engine v2
+
+**Risultato:** IGRIS ragiona, propone azioni, esegue tramite tool governati, osserva, corregge e aggiorna stato.
+
+### Fase 4 — Primo benchmark reale
+
+- Epic P0-G `/api/ping` with tests
+- benchmark reporting
+- failure mode analysis
+
+**Risultato:** prova reale che IGRIS può completare una micro-feature.
+
+### Fase 5 — Auto-sviluppo controllato
+
+- bugfix benchmark;
+- feature + test;
+- docs update;
+- patch multi-file;
+- PR proposal;
+- CI reading/fix loop;
+- memory reuse.
+
+**Risultato:** IGRIS può sviluppare parti semplici di sé con supervisione.
+
+### Fase 6 — DevOps/VPS reale
+
+- DevOps/VPS Manager;
+- server registry;
+- deploy patterns;
+- nginx/Docker/systemd/SSL;
+- browser verification;
+- rollback reale;
+- production safety profiles.
+
+**Risultato:** IGRIS opera su server autorizzati.
+
+### Fase 7 — Delivery professionale
+
+- GitHub Delivery completo;
+- PR, CI, review gates;
+- final reports professionali;
+- artifacts;
+- cost reports.
+
+**Risultato:** IGRIS consegna come collaboratore tecnico.
+
+### Fase 8 — Memory avanzata e apprendimento
+
+- outcome-driven memory;
+- vector retrieval;
+- repo facts/server facts;
+- deployment pattern reuse;
+- lessons scoring.
+
+**Risultato:** IGRIS migliora col tempo sui tuoi progetti.
+
+### Fase 9 — Dashboard Control Room
+
+- mission live status;
+- action reasoning;
+- risk/rollback cards;
+- server health;
+- memory;
+- costs;
+- artifacts;
+- approve/block controls.
+
+**Risultato:** controllo umano chiaro e rapido.
+
+### Fase 10 — Plugin/Capability system e multi-agent controllato
+
+- plugin manifest;
+- capability registry;
+- optional MCP adapter;
+- optional Ruflo-inspired adapters;
+- multi-agent role delegation controllata;
+- plugin doctor checks.
+
+**Risultato:** IGRIS diventa estendibile senza perdere governance.
+
+### Fase 11 — Benchmark maturità definitiva
+
+- bug fix repo piccola;
+- test repair;
+- feature + test;
+- deploy static site;
+- deploy FastAPI;
+- nginx 502;
+- Docker Compose rotto;
+- PR + CI;
+- rollback;
+- browser UI;
+- server recovery;
+- memory reuse.
+
+**Risultato:** score misurabile e regressioni controllate.
+
+---
+
+## 10. Backlog epic aggiornato
+
+| Priorità | Epic | Stato | Impatto |
 |---|---|---|---|
-| P0 | Doctor/verify e crash recovery | Ruflo/OpenHands lessons | Stabilità |
-| P0 | Mission Controller | Devin | Autonomia end-to-end |
-| P0 | Tool Runtime locale/server | Devin/OpenHands | Azioni reali |
-| P0 | Safety/Rollback | Ruflo + necessità VPS | Libertà governata |
-| P1 | GOAP-like Planner | Ruflo/Devin | Piani robusti |
-| P1 | Agent Registry | Ruflo | Specializzazione |
-| P1 | Memory Learning Loop | Ruflo/IGRIS storico | Miglioramento continuo |
-| P1 | Teacher/Governor anti-loop | IGRIS storico | Evita loop semantici |
-| P1 | DevOps/VPS manager | Obiettivo utente | Siti/server reali |
-| P2 | Browser testing | Devin/OpenHands | Verifica reale UI |
-| P2 | GitHub delivery | Devin | PR/CI/review |
-| P2 | Dashboard Control Room | Ruflo | Osservabilità |
-| P3 | Plugin system | Ruflo | Estensibilità |
-| P3 | Advanced cost routing | Ruflo | Efficienza |
-| P3 | Benchmarks | Devin quality target | Misurazione |
+| P0 | Doctor/Verify/Crash Recovery | PR #52 | Stabilità |
+| P0 | Mission Controller | PR #53 | Missioni persistenti |
+| P0 | Safety/Rollback/Autonomy Policy | PR #54 | Libertà governata |
+| P0 | Tool Runtime locale/server | PR #55 | Azioni reali |
+| P0 | GOAP-like Planner | PR #56 | Piani robusti |
+| P0 | Teacher/Governor anti-loop | PR #57 | Evita loop |
+| P0 | Agent Action Schema & Prompt Contract | nuovo | Contratto LLM↔IGRIS |
+| P0 | Code Navigation Tools | nuovo | Occhi sul repo |
+| P0 | Context Manager | nuovo | Memoria di lavoro del modello |
+| P0 | Agent Reasoning Loop | nuovo | Cervello operativo |
+| P0 | Integration Layer | nuovo | Collega corpo/cervello |
+| P0 | Command Risk Engine v2 + LLM reviewer | nuovo | Shell completa governata |
+| P0 | Real Benchmark `/api/ping` | nuovo | Prima prova reale |
+| P1 | Agent Registry definitivo | esistente da rafforzare | Ruoli, capability, evoluzione multi-agent |
+| P1 | Memory Learning Loop avanzato | da fare | Miglioramento continuo |
+| P1 | DevOps/VPS Manager | da fare | Siti/server reali |
+| P2 | Browser/UI Testing | da fare | Verifica reale UI |
+| P2 | GitHub Delivery workflow | da fare | PR/CI/review |
+| P2 | Dashboard Control Room | da fare | Osservabilità |
+| P3 | Plugin/Capability System | futuro | Estensibilità |
+| P3 | Advanced Cost/Model Routing | da rafforzare | Efficienza |
+| P3 | Benchmark Suite definitiva | futuro | Misurazione qualità |
 
 ---
 
-## 5. Prompt operativo per Devin / ChatGPT / IGRIS
+## 11. Prompt operativo aggiornato per Devin / ChatGPT / IGRIS
 
-### 5.1 Prompt breve
+### 11.1 Prompt breve
 
-> Implementa la prossima voce P0/P1 della roadmap `docs/IGRIS_GPT_MASTER_ROADMAP.md`. Mantieni compatibilità con la base esistente, aggiungi test, aggiorna documentazione, non introdurre esecuzione arbitraria non governata, salva report/diagnostica, e rispetta il modello Safety/Rollback/Memory/Teacher.
+> Implementa la prossima voce P0/P1 della roadmap `docs/IGRIS_GPT_MASTER_ROADMAP.md`. Mantieni compatibilità con la base esistente, aggiungi test, aggiorna documentazione, non introdurre shell cieca, salva report/diagnostica, e rispetta il modello Model Orchestrator → Agent Action Schema → Command Risk Engine → Safety/Rollback → Tool Runtime → Verifier → Memory/Governor.
 
-### 5.2 Prompt per task complesso
+### 11.2 Prompt per task complesso
 
-> Agisci come principal engineer su IGRIS_GPT. Leggi `README.md`, `docs/IGRIS_GPT_MASTER_ROADMAP.md` e i documenti collegati. Implementa l'epic indicato seguendo: problema, design, schema dati, API, UI se necessaria, test, sicurezza, rollback, docs. Non fare modifiche cosmetiche. Ogni nuova capacità deve essere verificabile con test e deve degradare senza crash.
+> Agisci come principal engineer su IGRIS_GPT. Leggi `README.md`, `docs/IGRIS_GPT_MASTER_ROADMAP.md` e i documenti collegati. Implementa l'epic indicato seguendo: problema, design, schema dati, API, UI se necessaria, test, sicurezza, rollback, docs. Non fare modifiche cosmetiche. Ogni nuova capacità deve essere verificabile con test e deve degradare senza crash. Ogni uso di LLM deve passare dal Model Orchestrator. Ogni comando raw deve passare dal Command Risk Engine.
 
-### 5.3 Prompt per IGRIS stesso
+### 11.3 Prompt per IGRIS stesso
 
-> Crea una missione interna per implementare l'epic selezionato dalla roadmap. Ispeziona lo stato del repo, genera piano con precondizioni/effetti, materializza task, esegui solo azioni consentite dalla safety policy, verifica con test, salva decision report, aggiorna memory e produci final report.
+> Crea una missione interna per implementare l'epic selezionato dalla roadmap. Ispeziona lo stato del repo, genera piano con precondizioni/effetti, costruisci contesto, proponi azioni strutturate, usa solo tool consentiti dalla safety policy, verifica con test, salva decision report, aggiorna memory e produci final report.
 
 ---
 
-## 6. Criterio finale di successo
+## 12. Criterio finale di successo
 
-IGRIS_GPT sarà considerato vicino alla versione definitiva quando potrà completare con successo missioni come:
+IGRIS_GPT sarà vicino alla versione definitiva quando potrà completare con successo missioni come:
 
 1. clonare repo nuova, installarla, diagnosticare problemi e far passare test;
 2. creare feature piccola, testarla e aprire PR;
@@ -854,10 +734,19 @@ IGRIS_GPT sarà considerato vicino alla versione definitiva quando potrà comple
 9. controllare costi e usare provider appropriati;
 10. mostrare tutto in dashboard operativa.
 
+Primo benchmark reale:
+
+```text
+IGRIS riceve: "aggiungi endpoint /api/ping con test".
+IGRIS trova il codice, modifica, testa, corregge e produce report.
+```
+
 ---
 
-## 7. Regola guida
+## 13. Regola guida
 
 Aggiungere tutto ciò che aumenta autonomia reale, qualità, stabilità, sicurezza, capacità server/deploy e consegna.
 
 Evitare tutto ciò che aggiunge dipendenze fragili, magia opaca, crash surface, tool non governati o complessità senza impatto operativo.
+
+Architettura completa prevista da subito; implementazione incrementale, verificabile e misurata da benchmark reali.
