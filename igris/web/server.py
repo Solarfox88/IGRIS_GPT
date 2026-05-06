@@ -2563,6 +2563,22 @@ def create_app() -> FastAPI:
         """Run the agent reasoning loop for a goal."""
         from igris.core.agent_reasoning_loop import AgentReasoningLoop
         content = await request.json()
+
+        # Validate and normalise initial_context
+        raw_ctx = content.get("initial_context")
+        if raw_ctx is not None and not isinstance(raw_ctx, dict):
+            if isinstance(raw_ctx, str):
+                raw_ctx = {"note": raw_ctx}
+            else:
+                from fastapi.responses import JSONResponse
+                return JSONResponse(
+                    status_code=400,
+                    content={
+                        "error": "initial_context must be a dict or string",
+                        "received_type": type(raw_ctx).__name__,
+                    },
+                )
+
         loop = AgentReasoningLoop(
             project_root=str(CONFIG.project_root),
             max_steps=content.get("max_steps", 50),
@@ -2572,7 +2588,7 @@ def create_app() -> FastAPI:
         result = loop.run(
             goal=content.get("goal", ""),
             mission_id=content.get("mission_id", ""),
-            initial_context=content.get("initial_context"),
+            initial_context=raw_ctx,
         )
         return result.to_dict()
 

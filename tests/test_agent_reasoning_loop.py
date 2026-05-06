@@ -372,15 +372,21 @@ class TestRunWithMockedLLM:
 
     def test_max_steps_enforced(self):
         loop = self._make_loop(max_steps=3)
-        search_action = AgentAction(
-            mode="researcher",
-            action_type="search_code",
-            reason="keep searching",
-            parameters={"pattern": "test"},
-            risk_hint="low",
-            confidence=0.5,
-        )
-        with patch.object(loop, "_decide_action", return_value=(search_action, [])):
+        call_count = [0]
+
+        def mock_decide(ctx):
+            call_count[0] += 1
+            # Use different parameters each step to avoid anti-repeat guard
+            return AgentAction(
+                mode="researcher",
+                action_type="search_code",
+                reason="keep searching",
+                parameters={"pattern": f"test_{call_count[0]}"},
+                risk_hint="low",
+                confidence=0.5,
+            ), []
+
+        with patch.object(loop, "_decide_action", side_effect=mock_decide):
             result = loop.run(goal="Infinite search")
         assert result.status == "stopped"
         assert result.stop_reason == "max_steps"

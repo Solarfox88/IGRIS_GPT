@@ -77,11 +77,12 @@ class LoopStep:
     confidence: float = 0.5
     outcome: str = ""  # success | failure | blocked | skipped
     result_summary: str = ""
+    result_data: Optional[Any] = None  # structured result for downstream consumption
     error: str = ""
     duration_ms: int = 0
 
     def to_dict(self) -> Dict[str, Any]:
-        return {
+        d: Dict[str, Any] = {
             "step_number": self.step_number,
             "timestamp": self.timestamp,
             "action_type": self.action_type,
@@ -96,6 +97,9 @@ class LoopStep:
             "error": redact_secrets(self.error),
             "duration_ms": self.duration_ms,
         }
+        if self.result_data is not None:
+            d["result_data"] = self.result_data
+        return d
 
 
 # ---------------------------------------------------------------------------
@@ -174,6 +178,10 @@ class AgentReasoningLoop:
         self._consecutive_errors = 0
         self._stop_reason = ""
 
+        # Anti-repeat guard: tracks (action_type, params_key) -> count
+        self._action_history: List[Dict[str, Any]] = []
+        self._repeat_threshold = 2  # block after 2 identical successes without consumption
+
     def run(
         self,
         goal: str = "",
@@ -206,8 +214,13 @@ class AgentReasoningLoop:
             status="running",
         )
 
-        if initial_context:
-            self._world_state.update(initial_context)
+        if initial_context is not None:
+            if isinstance(initial_context, dict):
+                self._world_state.update(initial_context)
+            elif isinstance(initial_context, str):
+                self._world_state["note"] = initial_context
+            else:
+                self._world_state["note"] = str(initial_context)
 
         for step_num in range(1, self.max_steps + 1):
             # Check stop conditions before each step
@@ -250,6 +263,134 @@ class AgentReasoningLoop:
 
         return result
 
+    # ------------------------------------------------------------------
+    # Anti-repeat helpers
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _action_signature(action_type: str, params: Dict[str, Any]) -> str:
+        """Produce a deterministic key for an action+params pair."""
+        import json
+        try:
+            params_key = json.dumps(params, sort_keys=True, default=str)
+        except (TypeError, ValueError):
+            params_key = str(sorted(params.items()))
+        return f"{action_type}::{params_key}"
+
+    def _check_anti_repeat(self, action_type: str, params: Dict[str, Any]) -> Optional[str]:
+        """Return a diagnosis string if this action repeats a previous
+        successful action without its results having been consumed.
+
+        Consumption is detected when a later action uses data produced
+        by the earlier one (e.g. find_files results fed to read_file_range).
+        """
+        sig = self._action_signature(action_type, params)
+
+        # Count how many times this exact action already succeeded
+        repeat_count = 0
+        for prev in self._action_history:
+            if prev.get("signature") == sig and prev.get("outcome") == "success":
+                repeat_count += 1
+
+        if repeat_count < self._repeat_threshold:
+            return None
+
+        # Check if results were consumed by a downstream action
+        last_result_data = None
+        for prev in reversed(self._action_history):
+            if prev.get("signature") == sig and prev.get("outcome") == "success":
+                last_result_data = prev.get("result_data")
+                break
+
+        if last_result_data and self._was_result_consumed(last_result_data):
+            return None
+
+        return (
+            f"Anti-repeat guard: '{action_type}' with identical parameters "
+            f"already succeeded {repeat_count} time(s) without its results "
+            f"being consumed by a downstream action. Strategy shift required."
+        )
+
+    def _was_result_consumed(self, result_data: Any) -> bool:
+        """Check if a previous tool's result data was used by a later action."""
+        if not result_data:
+            return False
+
+        # Extract paths/data from result_data
+        paths: List[str] = []
+        if isinstance(result_data, list):
+            for item in result_data:
+                if isinstance(item, str):
+                    paths.append(item)
+                elif isinstance(item, dict):
+                    for v in item.values():
+                        if isinstance(v, str):
+                            paths.append(v)
+        elif isinstance(result_data, dict):
+            for v in result_data.values():
+                if isinstance(v, str):
+                    paths.append(v)
+
+        if not paths:
+            return False
+
+        # Check if any later action references these paths in its parameters
+        for prev in self._action_history:
+            p = prev.get("parameters", {})
+            for v in p.values():
+                if isinstance(v, str) and any(path in v for path in paths):
+                    return True
+        return False
+
+    def _record_action_history(
+        self,
+        action_type: str,
+        params: Dict[str, Any],
+        outcome: str,
+        result_data: Any = None,
+    ) -> None:
+        """Record an action execution for anti-repeat tracking."""
+        self._action_history.append({
+            "signature": self._action_signature(action_type, params),
+            "action_type": action_type,
+            "parameters": params,
+            "outcome": outcome,
+            "result_data": result_data,
+        })
+
+    # ------------------------------------------------------------------
+    # Tool result storage
+    # ------------------------------------------------------------------
+
+    def _store_tool_result(
+        self,
+        action_type: str,
+        result_data: Any,
+    ) -> None:
+        """Store structured tool results in world_state for downstream use."""
+        self._world_state["last_tool_result"] = {
+            "action_type": action_type,
+            "data": result_data,
+        }
+        # Maintain a rolling list of recent tool results (max 5)
+        history = self._world_state.setdefault("tool_result_history", [])
+        history.append({"action_type": action_type, "data": result_data})
+        if len(history) > 5:
+            self._world_state["tool_result_history"] = history[-5:]
+
+        # Specifically for find_files: store discovered paths for easy access
+        if action_type == "find_files" and isinstance(result_data, list):
+            self._world_state["discovered_files"] = result_data
+
+        # For search_code: store matched files
+        if action_type == "search_code" and isinstance(result_data, list):
+            matched_files = list({
+                m.get("file", "") if isinstance(m, dict) else ""
+                for m in result_data
+            })
+            matched_files = [f for f in matched_files if f]
+            self._world_state["search_matched_files"] = matched_files
+
     def _execute_step(
         self,
         step_num: int,
@@ -285,6 +426,23 @@ class AgentReasoningLoop:
             step.risk_hint = action.risk_hint
             step.confidence = action.confidence
 
+            # 2b. Anti-repeat guard
+            repeat_diagnosis = self._check_anti_repeat(
+                action.action_type, action.parameters
+            )
+            if repeat_diagnosis:
+                step.outcome = "blocked"
+                step.error = repeat_diagnosis
+                step.result_summary = (
+                    "Governor anti-repeat: identical action repeated without "
+                    "consuming previous results. Use the results from the "
+                    "previous execution or choose a different action."
+                )
+                self._world_state["anti_repeat_triggered"] = True
+                self._world_state["anti_repeat_diagnosis"] = repeat_diagnosis
+                step.duration_ms = int((time.monotonic() - t0) * 1000)
+                return step
+
             # 3. Validate action
             validation = self._validate_action(action)
             if not validation.valid:
@@ -302,6 +460,21 @@ class AgentReasoningLoop:
 
             step.outcome = "success" if exec_result.get("success", False) else "failure"
             step.result_summary = exec_result.get("summary", "")
+
+            # 4b. Store structured result data
+            result_data = exec_result.get("result_data")
+            if result_data is not None:
+                step.result_data = result_data
+                self._store_tool_result(action.action_type, result_data)
+
+            # 4c. Record for anti-repeat tracking
+            self._record_action_history(
+                action.action_type,
+                action.parameters,
+                step.outcome,
+                result_data=result_data,
+            )
+
             if not exec_result.get("success", False):
                 step.error = exec_result.get("error", "Execution failed")
                 self._recent_errors.append({
@@ -462,7 +635,11 @@ class AgentReasoningLoop:
             }
 
     def _execute_navigation(self, action) -> Dict[str, Any]:
-        """Execute a code navigation action."""
+        """Execute a code navigation action.
+
+        Returns structured result_data alongside the standard success/summary
+        so the loop can store results for downstream consumption.
+        """
         from igris.core.code_navigation import CodeNavigator
         nav = CodeNavigator(project_root=self.project_root)
 
@@ -492,10 +669,40 @@ class AgentReasoningLoop:
             else:
                 return {"success": False, "error": f"Unknown nav action: {action.action_type}"}
 
+            # Extract structured data for downstream consumption
+            result_data = None
+            if result.success and result.data is not None:
+                if action.action_type == "find_files":
+                    # data is a list of relative file paths
+                    result_data = result.data
+                elif action.action_type == "search_code":
+                    # data is a list of SearchMatch — convert to dicts
+                    result_data = [
+                        m.to_dict() if hasattr(m, "to_dict") else m
+                        for m in result.data
+                    ]
+                elif action.action_type == "list_directory":
+                    result_data = result.data
+                elif action.action_type == "read_file_range":
+                    result_data = result.data
+
+            summary_parts = [f"{action.action_type}: {result.total_count} results"]
+            if action.action_type == "find_files" and result.data:
+                # Include discovered paths in summary for LLM visibility
+                paths_preview = result.data[:10]
+                summary_parts.append(f"files: {paths_preview}")
+            elif action.action_type == "search_code" and result.data:
+                matched_files = list({
+                    m.file if hasattr(m, "file") else m.get("file", "")
+                    for m in result.data
+                })[:5]
+                summary_parts.append(f"in files: {matched_files}")
+
             return {
                 "success": result.success,
-                "summary": f"{action.action_type}: {result.total_count} results",
+                "summary": "; ".join(summary_parts),
                 "error": result.error or "",
+                "result_data": result_data,
             }
         except Exception as e:
             return {"success": False, "error": str(e)}
