@@ -2331,6 +2331,99 @@ def create_app() -> FastAPI:
         gov.save_state()
         return {"recorded": True, "history_length": len(gov.get_history())}
 
+    # ------------------------------------------------------------------
+    # Agent Action Schema / Prompt Contract / Model Orchestrator — Epic #58
+    # ------------------------------------------------------------------
+
+    @app.get("/api/agent/schema")
+    async def api_agent_schema() -> Dict[str, object]:
+        """Return the Agent Action JSON schema."""
+        from igris.core.agent_action_schema import ACTION_JSON_SCHEMA
+        return {"schema": ACTION_JSON_SCHEMA}
+
+    @app.get("/api/agent/roles")
+    async def api_agent_roles() -> Dict[str, object]:
+        """List all registered agent roles."""
+        from igris.core.agent_action_schema import list_registry
+        return {"roles": list_registry()}
+
+    @app.get("/api/agent/action-types")
+    async def api_agent_action_types() -> Dict[str, object]:
+        """List all available action types."""
+        from igris.core.agent_action_schema import (
+            ACTION_TYPES, ACTION_ROUTING,
+            READ_ONLY_ACTIONS, WRITE_ACTIONS, RISK_GATED_ACTIONS,
+        )
+        return {
+            "action_types": list(ACTION_TYPES),
+            "routing": dict(ACTION_ROUTING),
+            "read_only": sorted(READ_ONLY_ACTIONS),
+            "write": sorted(WRITE_ACTIONS),
+            "risk_gated": sorted(RISK_GATED_ACTIONS),
+        }
+
+    @app.get("/api/agent/examples")
+    async def api_agent_examples() -> Dict[str, object]:
+        """Return example scenarios for the action schema."""
+        from igris.core.prompt_contract import get_example_scenarios
+        return {"examples": get_example_scenarios()}
+
+    @app.post("/api/agent/validate")
+    async def api_agent_validate(request: Request) -> Dict[str, object]:
+        """Validate an action against the schema."""
+        from igris.core.agent_action_schema import AgentAction, validate_action
+        content = await request.json()
+        action = AgentAction.from_dict(content)
+        result = validate_action(action)
+        return result.to_dict()
+
+    @app.post("/api/agent/parse")
+    async def api_agent_parse(request: Request) -> Dict[str, object]:
+        """Parse raw LLM output into a validated action."""
+        from igris.core.agent_action_schema import parse_llm_action
+        content = await request.json()
+        raw = content.get("raw_output", "")
+        action, issues = parse_llm_action(raw)
+        return {
+            "parsed": action.to_dict() if action else None,
+            "issues": issues,
+            "valid": action is not None,
+        }
+
+    @app.get("/api/orchestrator/providers")
+    async def api_orchestrator_providers() -> Dict[str, object]:
+        """List configured LLM providers (no secrets)."""
+        from igris.core.model_orchestrator import ModelOrchestrator
+        orch = ModelOrchestrator()
+        return {"providers": orch.list_providers()}
+
+    @app.get("/api/orchestrator/profiles")
+    async def api_orchestrator_profiles() -> Dict[str, object]:
+        """List task type to profile mappings."""
+        from igris.core.model_orchestrator import ModelOrchestrator
+        orch = ModelOrchestrator()
+        return {"profiles": orch.get_profiles()}
+
+    @app.get("/api/orchestrator/cost")
+    async def api_orchestrator_cost() -> Dict[str, object]:
+        """Get cost tracking summary."""
+        from igris.core.model_orchestrator import ModelOrchestrator
+        orch = ModelOrchestrator()
+        return orch.get_cost_summary()
+
+    @app.get("/api/agent/prompt-contract")
+    async def api_agent_prompt_contract(role: str = "coder") -> Dict[str, object]:
+        """Get the reasoning loop prompt contract for a role."""
+        from igris.core.prompt_contract import build_reasoning_prompt
+        prompt = build_reasoning_prompt(
+            role=role,
+            mission_context="Example: Add /api/ping endpoint with tests",
+            state_context="repo_clean: true, tests_pass: true",
+            recent_actions="No recent actions.",
+            file_context="No files loaded.",
+        )
+        return {"role": role, "prompt": prompt}
+
     return app
 
 
