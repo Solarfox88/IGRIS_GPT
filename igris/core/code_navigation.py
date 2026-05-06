@@ -611,6 +611,86 @@ class CodeNavigator:
             returned_count=len(matches),
         )
 
+    def discover_fastapi_routes(
+        self,
+        max_results: int = MAX_SEARCH_RESULTS,
+    ) -> NavResult:
+        """Discover FastAPI route files and endpoints.
+
+        Prioritises files containing FastAPI(), @app.get, @app.post,
+        @app.put, @app.delete, @router, APIRouter and similar patterns.
+        Also gives bonus score to known conventional paths like
+        ``igris/web/server.py``, ``app/main.py``, etc.
+
+        Returns:
+            NavResult with list of dicts:
+                {"file": str, "routes": [{"line": int, "content": str}], "score": float}
+        """
+        fastapi_patterns = re.compile(
+            r"(FastAPI\s*\(|APIRouter\s*\(|@app\.(get|post|put|delete|patch|options)"
+            r"|@router\.(get|post|put|delete|patch|options)"
+            r"|\.include_router|\.add_api_route)",
+            re.IGNORECASE,
+        )
+
+        # Known conventional FastAPI file paths (relative)
+        preferred_paths = {
+            "igris/web/server.py",
+            "app/main.py",
+            "app/server.py",
+            "main.py",
+            "server.py",
+        }
+
+        discoveries: List[Dict[str, Any]] = []
+
+        for fpath in self._walk_code_files(self.root):
+            if fpath.suffix != ".py":
+                continue
+
+            try:
+                lines = fpath.read_text(encoding="utf-8", errors="replace").splitlines()
+            except (OSError, PermissionError):
+                continue
+
+            route_hits: List[Dict[str, Any]] = []
+            for i, line in enumerate(lines):
+                if fastapi_patterns.search(line):
+                    route_hits.append({
+                        "line": i + 1,
+                        "content": redact_secrets(line.strip()),
+                    })
+
+            if not route_hits:
+                continue
+
+            rel = str(fpath.relative_to(self.root))
+            score = len(route_hits) * 0.1  # more routes = higher score
+            if rel in preferred_paths:
+                score += 1.0
+            if "server" in rel.lower() or "router" in rel.lower():
+                score += 0.3
+
+            discoveries.append({
+                "file": rel,
+                "routes": route_hits[:20],  # cap per file
+                "score": round(score, 2),
+            })
+
+        # Sort by score descending
+        discoveries.sort(key=lambda d: d["score"], reverse=True)
+        total = len(discoveries)
+        discoveries = discoveries[:max_results]
+
+        return NavResult(
+            tool="discover_fastapi_routes",
+            success=True,
+            data=discoveries,
+            truncated=total > max_results,
+            total_count=total,
+            returned_count=len(discoveries),
+        )
+
     # -- Internal helpers --
 
     def _walk_code_files(self, start: Path) -> List[Path]:
