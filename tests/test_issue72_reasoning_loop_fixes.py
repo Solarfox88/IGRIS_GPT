@@ -189,6 +189,19 @@ class TestAntiRepeatGuard:
         diag = loop._check_anti_repeat("find_files", {"pattern": "*.py"})
         assert diag is None
 
+    def test_repeated_read_file_range_does_not_self_consume(self):
+        """Identical reads should not consume their own result path."""
+        loop = AgentReasoningLoop(max_steps=5)
+        params = {"path": "igris/web/server.py", "start": 50, "end": 100}
+        result_data = {"path": "igris/web/server.py", "content": "def create_app():\n"}
+        loop._record_action_history("read_file_range", params, "success", result_data=result_data)
+        loop._record_action_history("read_file_range", params, "success", result_data=result_data)
+
+        diag = loop._check_anti_repeat("read_file_range", params)
+
+        assert diag is not None
+        assert "Anti-repeat guard" in diag
+
 
 # ---------------------------------------------------------------------------
 # 3. Consuming find_files results into read_file_range
