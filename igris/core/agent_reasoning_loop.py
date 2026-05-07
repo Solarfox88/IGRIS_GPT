@@ -1306,6 +1306,19 @@ class AgentReasoningLoop:
                     existing = f.read()
             except OSError as exc:
                 return {"success": False, "error": str(exc)}
+        if (
+            file_path.endswith(".py")
+            and existing.strip()
+            and self._looks_like_complete_python_module(new_content)
+        ):
+            return {
+                "success": False,
+                "error": (
+                    "append_file: refusing to append complete Python module content "
+                    f"to existing file: {file_path}; use write_file for new files "
+                    "or replace_range/insert_after/insert_before for existing files"
+                ),
+            }
         nl = "\n"
         sep = "" if (not existing or existing.endswith(nl)) else nl
         merged = existing + sep + new_content
@@ -1326,6 +1339,23 @@ class AgentReasoningLoop:
             "summary": f"Appended {len(new_content)} chars to {file_path}",
             "result_data": {"path": file_path, "appended_chars": len(new_content)},
         }
+
+    @staticmethod
+    def _looks_like_complete_python_module(content: str) -> bool:
+        """Heuristic for full-module Python content accidentally used as an append."""
+        stripped = content.lstrip()
+        if not (stripped.startswith("import ") or stripped.startswith("from ")):
+            return False
+        probe = "\n" + stripped
+        module_body_markers = (
+            "\ndef ",
+            "\nasync def ",
+            "\nclass ",
+            "\n@pytest.fixture",
+            "\napp = ",
+            "\nclient = ",
+        )
+        return any(marker in probe for marker in module_body_markers)
 
     def _execute_plan_update(self, action) -> Dict[str, Any]:
         """Execute a plan update action."""
