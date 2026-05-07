@@ -1081,6 +1081,35 @@ class AgentReasoningLoop:
 
     # ------------------------------------------------------------------
     # Safe edit actions (#76) — patch-first policy
+    def _commit_safe_edit(self, full_path: str, merged: str, insertion: str) -> Dict[str, Any]:
+        """Write merged content for a safe edit.
+
+        Secret check applies only to the *insertion* (new content), not the
+        entire merged file.  Pre-existing code that happens to match a secret
+        pattern (e.g. ``token=content.get(...)`` in server.py) must not block
+        legitimate edits — that code was already committed and is not a secret.
+        """
+        from igris.core.safety import detect_secret_like_content
+        from igris.core.rollback_manager import RollbackManager
+        import pathlib
+
+        if detect_secret_like_content(insertion):
+            return {"success": False, "error": "Safe edit blocked: insertion contains secret-like patterns"}
+
+        target = pathlib.Path(full_path)
+        rollback_id = ""
+        if target.exists():
+            mgr = RollbackManager(project_root=str(self.project_root))
+            entry = mgr.backup_file(str(target))
+            if entry:
+                rollback_id = entry.id
+
+        try:
+            target.write_text(merged, encoding="utf-8")
+            return {"success": True, "rollback_id": rollback_id}
+        except OSError as exc:
+            return {"success": False, "error": str(exc)}
+
     def _execute_insert_after(self, rt, action) -> Dict[str, Any]:
         """Insert content after anchor line. Params: path, anchor, content."""
         import hashlib
@@ -1112,9 +1141,9 @@ class AgentReasoningLoop:
         hash_new = hashlib.sha256(merged.encode()).hexdigest()
         if hash_before == hash_new:
             return {"success": True, "summary": "insert_after: no change"}
-        tr = rt.fs_write(path=full_path, content=merged)
-        if not tr.success:
-            return {"success": False, "error": tr.error}
+        wr = self._commit_safe_edit(full_path, merged, insertion)
+        if not wr["success"]:
+            return {"success": False, "error": wr["error"]}
         self._files_modified.append(file_path)
         return {
             "success": True,
@@ -1153,9 +1182,9 @@ class AgentReasoningLoop:
         hash_new = hashlib.sha256(merged.encode()).hexdigest()
         if hash_before == hash_new:
             return {"success": True, "summary": "insert_before: no change"}
-        tr = rt.fs_write(path=full_path, content=merged)
-        if not tr.success:
-            return {"success": False, "error": tr.error}
+        wr = self._commit_safe_edit(full_path, merged, insertion)
+        if not wr["success"]:
+            return {"success": False, "error": wr["error"]}
         self._files_modified.append(file_path)
         return {
             "success": True,
@@ -1200,9 +1229,9 @@ class AgentReasoningLoop:
         hash_new = hashlib.sha256(merged.encode()).hexdigest()
         if hash_before == hash_new:
             return {"success": True, "summary": "replace_range: no change"}
-        tr = rt.fs_write(path=full_path, content=merged)
-        if not tr.success:
-            return {"success": False, "error": tr.error}
+        wr = self._commit_safe_edit(full_path, merged, replacement)
+        if not wr["success"]:
+            return {"success": False, "error": wr["error"]}
         self._files_modified.append(file_path)
         return {
             "success": True,
@@ -1236,9 +1265,9 @@ class AgentReasoningLoop:
         hash_new = hashlib.sha256(merged.encode()).hexdigest()
         if hash_before == hash_new:
             return {"success": True, "summary": "append_file: no change"}
-        tr = rt.fs_write(path=full_path, content=merged)
-        if not tr.success:
-            return {"success": False, "error": tr.error}
+        wr = self._commit_safe_edit(full_path, merged, new_content)
+        if not wr["success"]:
+            return {"success": False, "error": wr["error"]}
         self._files_modified.append(file_path)
         return {
             "success": True,

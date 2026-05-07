@@ -144,10 +144,10 @@ class TestSearchCode:
         assert len(match.context_after) >= 1  # line after def hello
 
     def test_search_invalid_regex(self, sandbox):
+        # Invalid regex now falls back to literal string search (#78).
         nav = CodeNavigator(str(sandbox))
         result = nav.search_code("[invalid")
-        assert result.success is False
-        assert "Invalid regex" in result.error
+        assert result.success is True  # literal fallback — never errors
 
     def test_search_outside_root(self, sandbox):
         nav = CodeNavigator(str(sandbox))
@@ -541,5 +541,40 @@ class TestRealRepoNavigation:
         """Can find real symbols in the repo."""
         nav = CodeNavigator(str(Path(__file__).parent.parent))
         result = nav.find_symbol("create_app")
+        assert result.success is True
+        assert result.total_count >= 1
+
+
+# ---------------------------------------------------------------------------
+# Issue #78 — search_code with unescaped regex characters must not error
+# ---------------------------------------------------------------------------
+
+class TestSearchCodeLiteralFallback:
+    """search_code must fall back to literal string search when pattern is not
+    valid regex (e.g. ``FastAPI(`` contains an unmatched parenthesis)."""
+
+    def test_search_code_with_unescaped_paren(self, tmp_path):
+        """Pattern 'FastAPI(' must not raise — it must match literally."""
+        from igris.core.code_navigation import CodeNavigator
+
+        (tmp_path / "server.py").write_text(
+            'from fastapi import FastAPI\napp = FastAPI(title="Test")\n',
+            encoding="utf-8",
+        )
+        nav = CodeNavigator(str(tmp_path))
+        result = nav.search_code("FastAPI(")
+        assert result.success is True, f"Expected success, got: {result.error}"
+        assert result.total_count >= 1
+
+    def test_search_code_with_valid_regex_still_works(self, tmp_path):
+        """A valid regex pattern still works normally."""
+        from igris.core.code_navigation import CodeNavigator
+
+        (tmp_path / "app.py").write_text(
+            "@app.get('/api/ping')\nasync def ping():\n    return {'pong': True}\n",
+            encoding="utf-8",
+        )
+        nav = CodeNavigator(str(tmp_path))
+        result = nav.search_code(r"@app\.get")
         assert result.success is True
         assert result.total_count >= 1

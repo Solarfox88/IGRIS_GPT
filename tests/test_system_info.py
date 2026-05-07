@@ -353,6 +353,9 @@ class TestGitStatus:
                 # Files modified by #76:
                 "agent_action_schema.py", "agent_reasoning_loop.py",
                 "prompt_contract.py", "test_write_guard.py",
+                # Files modified by #78:
+                "code_navigation.py", "test_code_navigation.py",
+                "test_code_navigation_api.py",
                 "test_agent_action_schema.py", "test_issue74_toolruntime_dispatcher.py",
                 "test_doctor.py",
             ]), f"Unexpected changed file: {line}"

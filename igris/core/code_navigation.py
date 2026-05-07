@@ -227,12 +227,9 @@ class CodeNavigator:
         """
         try:
             compiled = re.compile(pattern, re.IGNORECASE)
-        except re.error as e:
-            return NavResult(
-                tool="search_code",
-                success=False,
-                error=f"Invalid regex pattern: {e}",
-            )
+        except re.error:
+            # Pattern is not valid regex — treat it as a literal string search.
+            compiled = re.compile(re.escape(pattern), re.IGNORECASE)
 
         search_root = self.root
         if path:
