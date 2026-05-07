@@ -357,5 +357,5 @@ class TestGitStatus:
                 "code_navigation.py", "test_code_navigation.py",
                 "test_code_navigation_api.py",
                 "test_agent_action_schema.py", "test_issue74_toolruntime_dispatcher.py",
-                "test_doctor.py",
+                "test_doctor.py", "test_issue72_reasoning_loop_fixes.py",
             ]), f"Unexpected changed file: {line}"

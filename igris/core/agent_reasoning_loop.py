@@ -306,12 +306,15 @@ class AgentReasoningLoop:
 
         # Check if results were consumed by a downstream action
         last_result_data = None
-        for prev in reversed(self._action_history):
+        producer_index = -1
+        for idx in range(len(self._action_history) - 1, -1, -1):
+            prev = self._action_history[idx]
             if prev.get("signature") == sig and prev.get("outcome") == "success":
                 last_result_data = prev.get("result_data")
+                producer_index = idx
                 break
 
-        if last_result_data and self._was_result_consumed(last_result_data):
+        if last_result_data and self._was_result_consumed(last_result_data, after_index=producer_index):
             return None
 
         return (
@@ -320,7 +323,7 @@ class AgentReasoningLoop:
             f"being consumed by a downstream action. Strategy shift required."
         )
 
-    def _was_result_consumed(self, result_data: Any) -> bool:
+    def _was_result_consumed(self, result_data: Any, after_index: Optional[int] = None) -> bool:
         """Check if a previous tool's result data was used by a later action."""
         if not result_data:
             return False
@@ -344,7 +347,11 @@ class AgentReasoningLoop:
             return False
 
         # Check if any later action references these paths in its parameters
-        for prev in self._action_history:
+        history = self._action_history
+        if after_index is not None:
+            history = history[after_index + 1:]
+
+        for prev in history:
             p = prev.get("parameters", {})
             for v in p.values():
                 if isinstance(v, str) and any(path in v for path in paths):
