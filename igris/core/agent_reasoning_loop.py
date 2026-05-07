@@ -919,6 +919,28 @@ class AgentReasoningLoop:
         # Extra guard for the server module — must keep create_app / run_app
         basename = _os.path.basename(path)
         if basename == "server.py" or path.endswith("web/server.py"):
+            has_global_app_assignment = any(
+                isinstance(node, _ast.Assign)
+                and any(isinstance(target, _ast.Name) and target.id == "app" for target in node.targets)
+                for node in tree.body
+            )
+            for node in tree.body:
+                if not isinstance(node, (_ast.FunctionDef, _ast.AsyncFunctionDef)):
+                    continue
+                for decorator in node.decorator_list:
+                    target = decorator.func if isinstance(decorator, _ast.Call) else decorator
+                    if (
+                        not has_global_app_assignment
+                        and isinstance(target, _ast.Attribute)
+                        and isinstance(target.value, _ast.Name)
+                        and target.value.id == "app"
+                    ):
+                        return (
+                            f"Server route guard: '{path}' defines top-level "
+                            f"@app.{target.attr} route '{node.name}'. Routes must "
+                            f"be registered inside create_app() where app is defined."
+                        )
+
             defined_names = {
                 node.name
                 for node in _ast.walk(tree)
