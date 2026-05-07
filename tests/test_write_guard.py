@@ -437,6 +437,27 @@ class TestReplaceRange:
 # ---------------------------------------------------------------------------
 
 class TestAppendFile:
+    VERSION_INFO_TEST = textwrap.dedent("""\
+        import pytest
+        from fastapi.testclient import TestClient
+
+        from igris.web.server import create_app
+
+
+        app = create_app()
+
+
+        @pytest.fixture
+        def client():
+            return TestClient(app)
+
+
+        def test_version_info(client):
+            response = client.get("/api/version-info")
+            assert response.status_code == 200
+            assert response.json() == {"app": "IGRIS_GPT", "status": "ok"}
+    """)
+
     def test_append_adds_to_end(self, tmp_path):
         _write_tmp(str(tmp_path), "app.py", "x = 1  # existing\n")
         loop = _make_loop(str(tmp_path))
@@ -466,6 +487,34 @@ class TestAppendFile:
         action = _action("append_file", path="aast.py", content="def bar(:\n    x\n")
         result = loop._execute_append_file(rt, action)
         assert result["success"] is False
+
+    def test_append_file_allows_new_python_module(self, tmp_path):
+        os.makedirs(os.path.join(str(tmp_path), "tests"), exist_ok=True)
+        loop = _make_loop(str(tmp_path))
+        rt = _mock_rt()
+        action = _action(
+            "append_file",
+            path="tests/test_version_info.py",
+            content=self.VERSION_INFO_TEST,
+        )
+        result = loop._execute_append_file(rt, action)
+        assert result["success"] is True, result.get("error", "")
+        with open(os.path.join(str(tmp_path), "tests/test_version_info.py")) as f:
+            text = f.read()
+        assert "def test_version_info" in text
+
+    def test_append_file_blocks_module_content_on_existing_python(self, tmp_path):
+        _write_tmp(str(tmp_path), "tests/test_version_info.py", self.VERSION_INFO_TEST)
+        loop = _make_loop(str(tmp_path))
+        rt = _mock_rt()
+        action = _action(
+            "append_file",
+            path="tests/test_version_info.py",
+            content=self.VERSION_INFO_TEST,
+        )
+        result = loop._execute_append_file(rt, action)
+        assert result["success"] is False
+        assert "complete Python module" in result["error"]
 
 
 class TestWriteGuardInLoop:
