@@ -1183,6 +1183,8 @@ class AgentReasoningLoop:
             return {"success": False, "error": f"insert_after: anchor not found: {repr(anchor)}"}
         nl = "\n"
         insertion = new_content if new_content.endswith(nl) else new_content + nl
+        if self._insertion_already_near_anchor(file_lines, idx, insertion, after=True):
+            return {"success": True, "summary": "insert_after: no change; content already present near anchor"}
         merged_lines = file_lines[: idx + 1] + [insertion] + file_lines[idx + 1 :]
         merged = "".join(merged_lines)
         if file_path.endswith(".py"):
@@ -1224,6 +1226,8 @@ class AgentReasoningLoop:
             return {"success": False, "error": f"insert_before: anchor not found: {repr(anchor)}"}
         nl = "\n"
         insertion = new_content if new_content.endswith(nl) else new_content + nl
+        if self._insertion_already_near_anchor(file_lines, idx, insertion, after=False):
+            return {"success": True, "summary": "insert_before: no change; content already present near anchor"}
         merged_lines = file_lines[:idx] + [insertion] + file_lines[idx:]
         merged = "".join(merged_lines)
         if file_path.endswith(".py"):
@@ -1243,6 +1247,26 @@ class AgentReasoningLoop:
             "summary": f"Inserted {len(insertion)} chars before line {idx+1} in {file_path}",
             "result_data": {"path": file_path, "before_line": idx + 1},
         }
+
+    @staticmethod
+    def _insertion_already_near_anchor(
+        file_lines: List[str],
+        anchor_idx: int,
+        insertion: str,
+        *,
+        after: bool,
+    ) -> bool:
+        wanted = insertion.strip()
+        if not wanted:
+            return False
+        insertion_line_count = max(1, len(insertion.splitlines()))
+        window_size = insertion_line_count + 4
+        if after:
+            window = "".join(file_lines[anchor_idx + 1 : anchor_idx + 1 + window_size])
+        else:
+            start = max(0, anchor_idx - window_size)
+            window = "".join(file_lines[start:anchor_idx])
+        return wanted in window.strip()
 
     def _execute_replace_range(self, rt, action) -> Dict[str, Any]:
         """Replace line range. Params: path, start (1-based), end (1-based), content."""

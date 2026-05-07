@@ -357,6 +357,42 @@ class TestInsertAfter:
         assert "def bar():" in text
         assert "# inserted" in text
 
+    def test_insert_after_repeated_route_is_no_change(self, tmp_path):
+        original = textwrap.dedent("""\
+            from fastapi import FastAPI
+
+
+            def create_app() -> FastAPI:
+                app = FastAPI(title="IGRIS_GPT", version="0.1.0")
+
+                return app
+        """)
+        route = (
+            "\n"
+            "    @app.get('/api/version-info')\n"
+            "    async def version_info():\n"
+            "        return {\"app\": \"IGRIS_GPT\", \"status\": \"ok\"}\n"
+        )
+        _write_tmp(str(tmp_path), "server.py", original)
+        loop = _make_loop(str(tmp_path))
+        rt = _mock_rt()
+        action = _action(
+            "insert_after",
+            path="server.py",
+            anchor='app = FastAPI(title="IGRIS_GPT", version="0.1.0")',
+            content=route,
+        )
+
+        first = loop._execute_insert_after(rt, action)
+        second = loop._execute_insert_after(rt, action)
+
+        assert first["success"] is True
+        assert second["success"] is True
+        assert "no change" in second["summary"]
+        with open(os.path.join(str(tmp_path), "server.py")) as f:
+            text = f.read()
+        assert text.count("@app.get('/api/version-info')") == 1
+
 
 # ---------------------------------------------------------------------------
 # 5. insert_before
@@ -374,6 +410,22 @@ class TestInsertBefore:
             text = f.read()
         assert text.index("between") < text.index("line2")
         assert "line1" in text and "line3" in text
+
+    def test_insert_before_repeated_content_is_no_change(self, tmp_path):
+        _write_tmp(str(tmp_path), "f.py", "line1\nline2\nline3\n")
+        loop = _make_loop(str(tmp_path))
+        rt = _mock_rt()
+        action = _action("insert_before", path="f.py", anchor="line2", content="between\n")
+
+        first = loop._execute_insert_before(rt, action)
+        second = loop._execute_insert_before(rt, action)
+
+        assert first["success"] is True
+        assert second["success"] is True
+        assert "no change" in second["summary"]
+        with open(os.path.join(str(tmp_path), "f.py")) as f:
+            text = f.read()
+        assert text.count("between") == 1
 
 
 # ---------------------------------------------------------------------------
