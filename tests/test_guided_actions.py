@@ -392,4 +392,5 @@ class TestUIActionCards:
                 "agent_action_schema.py", "agent_reasoning_loop.py",
                 "prompt_contract.py", "test_write_guard.py",
                 "test_agent_action_schema.py", "test_issue74_toolruntime_dispatcher.py",
+                "test_doctor.py",
             ]), f"Unexpected changed file: {line}"
