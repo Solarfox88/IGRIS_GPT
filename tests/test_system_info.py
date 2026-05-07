@@ -350,4 +350,8 @@ class TestGitStatus:
                 "test_integration_v02.py", "test_ui_polish.py",
                 "DASHBOARD_UI.md", "GUIDED_ACTIONS.md",
                 "README.md", "PREPARED_NOT_IMPLEMENTED.md",
+                # Files modified by #76:
+                "agent_action_schema.py", "agent_reasoning_loop.py",
+                "prompt_contract.py", "test_write_guard.py",
+                "test_agent_action_schema.py", "test_issue74_toolruntime_dispatcher.py",
             ]), f"Unexpected changed file: {line}"
