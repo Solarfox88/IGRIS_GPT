@@ -325,4 +325,7 @@ class TestDashboardAPI:
                 "prompt_contract.py", "test_write_guard.py",
                 "test_agent_action_schema.py", "test_issue74_toolruntime_dispatcher.py",
                 "test_doctor.py",
+                # Files modified by #78:
+                "code_navigation.py", "test_code_navigation.py",
+                "test_code_navigation_api.py",
             ]), f"Unexpected changed file: {line}"

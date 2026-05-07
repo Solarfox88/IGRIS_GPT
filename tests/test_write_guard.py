@@ -500,3 +500,140 @@ class TestWriteGuardInLoop:
 
         assert result.status == "finished"
         assert "new_endpoint.py" in result.files_modified
+
+
+# ---------------------------------------------------------------------------
+# Issue #78 — False-positive secret guard on safe edit methods
+# ---------------------------------------------------------------------------
+
+TOKEN_PY = textwrap.dedent("""\
+    \"\"\"Module with token variable (legitimate code, not a secret).\"\"\"
+    from fastapi import FastAPI
+
+    app = FastAPI(title="IGRIS_GPT", version="0.1.0")
+
+
+    def create_app():
+        return app
+
+
+    def run_app():
+        import uvicorn
+        uvicorn.run(app, host="0.0.0.0", port=8000)
+
+
+    @app.get("/api/approval")
+    async def approval(content: dict):
+        token = content.get("approval_token", "")
+        return {"approved": bool(token)}
+""")
+
+ENDPOINT_INSERTION = (
+    "\n\n@app.get('/api/version-info')\n"
+    "async def version_info():\n"
+    "    return {'app': 'IGRIS_GPT', 'status': 'ok'}\n"
+)
+
+
+class TestSafeEditSecretFalsePositive:
+    """insert_after / insert_before / replace_range / append_file must not be
+    blocked by pre-existing code that happens to match secret-like patterns
+    (e.g. ``token=content.get(...)`` already in the file)."""
+
+    def test_insert_after_not_blocked_by_existing_token(self, tmp_path):
+        """insert_after on a file with 'token=' variable must succeed."""
+        src = tmp_path / "server.py"
+        src.write_text(TOKEN_PY, encoding="utf-8")
+
+        loop = AgentReasoningLoop(project_root=str(tmp_path), max_steps=3)
+        action = _action(
+            "insert_after",
+            path="server.py",
+            anchor="app = FastAPI",
+            content=ENDPOINT_INSERTION,
+            success_criteria="endpoint added",
+        )
+        result = loop._execute_insert_after(loop._get_tool_runtime(), action)
+
+        assert result.get("success"), f"Expected success, got error: {result.get('error')}"
+        text = src.read_text(encoding="utf-8")
+        assert "version-info" in text
+        assert "approval_token" in text  # pre-existing code intact
+
+    def test_insert_before_not_blocked_by_existing_token(self, tmp_path):
+        """insert_before on a file with 'token=' variable must succeed."""
+        src = tmp_path / "server.py"
+        src.write_text(TOKEN_PY, encoding="utf-8")
+
+        loop = AgentReasoningLoop(project_root=str(tmp_path), max_steps=3)
+        action = _action(
+            "insert_before",
+            path="server.py",
+            anchor="@app.get(\"/api/approval\")",
+            content=ENDPOINT_INSERTION,
+            success_criteria="endpoint added",
+        )
+        result = loop._execute_insert_before(loop._get_tool_runtime(), action)
+
+        assert result.get("success"), f"Expected success, got error: {result.get('error')}"
+        text = src.read_text(encoding="utf-8")
+        assert "version-info" in text
+
+    def test_append_file_not_blocked_by_existing_token(self, tmp_path):
+        """append_file on a file with 'token=' variable must succeed."""
+        src = tmp_path / "server.py"
+        src.write_text(TOKEN_PY, encoding="utf-8")
+
+        loop = AgentReasoningLoop(project_root=str(tmp_path), max_steps=3)
+        action = _action(
+            "append_file",
+            path="server.py",
+            content=ENDPOINT_INSERTION,
+            success_criteria="endpoint appended",
+        )
+        result = loop._execute_append_file(loop._get_tool_runtime(), action)
+
+        assert result.get("success"), f"Expected success, got error: {result.get('error')}"
+        text = src.read_text(encoding="utf-8")
+        assert "version-info" in text
+
+    def test_replace_range_not_blocked_by_existing_token(self, tmp_path):
+        """replace_range on a file with 'token=' variable must succeed."""
+        src = tmp_path / "server.py"
+        src.write_text(TOKEN_PY, encoding="utf-8")
+        lines = TOKEN_PY.splitlines()
+        # Replace last line (a comment) with the new endpoint
+        last = len(lines)
+
+        loop = AgentReasoningLoop(project_root=str(tmp_path), max_steps=3)
+        action = _action(
+            "replace_range",
+            path="server.py",
+            start=last,
+            end=last,
+            content=ENDPOINT_INSERTION,
+            success_criteria="range replaced",
+        )
+        result = loop._execute_replace_range(loop._get_tool_runtime(), action)
+
+        assert result.get("success"), f"Expected success, got error: {result.get('error')}"
+        text = src.read_text(encoding="utf-8")
+        assert "version-info" in text
+
+    def test_actual_secret_in_insertion_still_blocked(self, tmp_path):
+        """insert_after must still block a real secret in the new content."""
+        src = tmp_path / "server.py"
+        src.write_text(TOKEN_PY, encoding="utf-8")
+
+        loop = AgentReasoningLoop(project_root=str(tmp_path), max_steps=3)
+        action = _action(
+            "insert_after",
+            path="server.py",
+            anchor="app = FastAPI",
+            content="\n# sk-ABCDEF1234567890ABCDEF12345678901234567890\n",
+            success_criteria="should be blocked",
+        )
+        result = loop._execute_insert_after(loop._get_tool_runtime(), action)
+
+        assert not result.get("success"), "Should have been blocked by secret guard"
+        assert "secret" in result.get("error", "").lower()

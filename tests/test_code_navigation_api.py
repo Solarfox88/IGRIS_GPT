@@ -29,11 +29,11 @@ class TestNavSearchCodeAPI:
         assert isinstance(data["returned_count"], int)
 
     def test_search_invalid_regex(self, client):
+        # Invalid regex now falls back to literal string search (#78).
         resp = client.post("/api/nav/search-code", json={"pattern": "[invalid"})
         assert resp.status_code == 200
         data = resp.json()
-        assert data["success"] is False
-        assert "Invalid regex" in data["error"]
+        assert data["success"] is True  # literal fallback — never errors
 
 
 class TestNavFindFilesAPI:
