@@ -270,6 +270,32 @@ class TestPythonASTValidation:
         result = loop._execute_write_file(rt, action)
         assert result["success"] is True
 
+    def test_server_route_guard_blocks_top_level_route_without_global_app(self, tmp_path):
+        server_py = textwrap.dedent("""\
+            from fastapi import FastAPI
+
+            def create_app() -> FastAPI:
+                app = FastAPI(title="IGRIS_GPT", version="0.1.0")
+                return app
+
+            def run_app():
+                pass
+        """)
+        loop = _make_loop(str(tmp_path))
+        _write_tmp(str(tmp_path), "server.py", server_py)
+        rt = _mock_rt()
+        action = _action(
+            "insert_after",
+            path="server.py",
+            anchor='app = FastAPI(title="IGRIS_GPT", version="0.1.0")',
+            content='\n@app.get("/api/version-info")\nasync def get_version_info():\n    return {"app": "IGRIS_GPT", "status": "ok"}\n',
+        )
+
+        result = loop._execute_insert_after(rt, action)
+
+        assert result["success"] is False
+        assert "Server route guard" in result["error"]
+
 
 # ---------------------------------------------------------------------------
 # 4. insert_after
