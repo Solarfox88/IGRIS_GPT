@@ -290,6 +290,48 @@ class TestActionRouting:
         assert "Unknown route" in result["error"]
 
 
+class TestRankTaskTestCreationPolicy:
+    """Controlled rank tasks should consume test discovery into test creation."""
+
+    def test_repeated_test_discovery_creates_requested_rank_test(self, tmp_path):
+        (tmp_path / "tests").mkdir()
+        loop = AgentReasoningLoop(project_root=str(tmp_path), max_steps=3)
+        loop._world_state["must_create_test_file"] = "tests/test_rank_status.py"
+
+        loop._record_action_history(
+            "find_files",
+            {"pattern": "test_rank_status.py"},
+            "success",
+            result_data=[],
+        )
+        mock_action = AgentAction(
+            action_type="find_files",
+            reason="Look for the requested dedicated test again",
+            parameters={"pattern": "test_rank_status.py"},
+        )
+        goal = (
+            "Rank A controlled task. Add GET /api/rank/status returning "
+            "{\"rank_system\":\"E-D-C-B-A-S\",\"current_rank\":\"B\","
+            "\"last_passed\":\"B\",\"next_rank\":\"A\","
+            "\"status\":\"ready_for_rank_a\"}. "
+            "Create dedicated test file tests/test_rank_status.py."
+        )
+
+        with patch.object(loop, "_decide_action", return_value=(mock_action, [])):
+            with patch.object(loop, "_build_context", return_value=MagicMock()):
+                step = loop._execute_step(2, goal, "")
+
+        test_path = tmp_path / "tests" / "test_rank_status.py"
+        assert step.outcome == "success"
+        assert step.action_type == "write_file"
+        assert "tests/test_rank_status.py" in loop._files_modified
+        assert test_path.exists()
+        content = test_path.read_text()
+        assert 'response = client.get("/api/rank/status")' in content
+        assert "ready_for_rank_a" in content
+        assert loop._world_state["rank_test_creation_redirected"]["from_action"] == "find_files"
+
+
 # ---------------------------------------------------------------------------
 # Run — LLM unavailable (deterministic fallback)
 # ---------------------------------------------------------------------------
