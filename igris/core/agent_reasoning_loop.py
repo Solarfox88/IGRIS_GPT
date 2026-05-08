@@ -1215,13 +1215,13 @@ class AgentReasoningLoop:
             return {"success": False, "error": f"insert_after: anchor not found: {repr(anchor)}"}
         nl = "\n"
         insertion = new_content if new_content.endswith(nl) else new_content + nl
-        if self._inserts_app_route_after_definition_header(file_lines[idx], insertion):
+        if self._inserts_app_route_after_block_header(file_lines[idx], insertion):
             return {
                 "success": False,
                 "error": (
                     "insert_after: refusing to insert @app route immediately after "
-                    "a function/class definition header; use an anchor after "
-                    "app = FastAPI(...) or after the complete previous route block; "
+                    "a Python block header; use an anchor after app = FastAPI(...) "
+                    "or after the complete previous route/block; "
                     "route would be before app = FastAPI initialization"
                 ),
             }
@@ -1348,15 +1348,11 @@ class AgentReasoningLoop:
         return "app = FastAPI" not in prior_text
 
     @staticmethod
-    def _inserts_app_route_after_definition_header(anchor_line: str, insertion: str) -> bool:
+    def _inserts_app_route_after_block_header(anchor_line: str, insertion: str) -> bool:
         if "@app." not in insertion:
             return False
         stripped = anchor_line.strip()
-        return stripped.endswith(":") and (
-            stripped.startswith("def ")
-            or stripped.startswith("async def ")
-            or stripped.startswith("class ")
-        )
+        return stripped.endswith(":") and not stripped.startswith("@")
 
     @staticmethod
     def _inserts_app_route_after_decorator_line(anchor_line: str, insertion: str) -> bool:
