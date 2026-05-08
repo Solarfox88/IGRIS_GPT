@@ -1447,7 +1447,11 @@ class AgentReasoningLoop:
             exclude_start=start - 1,
             exclude_end=end,
         ):
-            return {"success": False, "error": self._duplicate_app_route_error("replace_range")}
+            return {
+                "success": True,
+                "summary": "replace_range: FastAPI route already present; no change",
+                "result_data": {"path": file_path, "start": start, "end": end, "noop": True},
+            }
         merged_lines = file_lines[: start - 1] + [replacement] + file_lines[end:]
         merged = "".join(merged_lines)
         if file_path.endswith(".py"):

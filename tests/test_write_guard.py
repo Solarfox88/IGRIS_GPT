@@ -740,7 +740,7 @@ class TestReplaceRange:
         result = loop._execute_replace_range(rt, action)
         assert result["success"] is False
 
-    def test_replace_range_same_fastapi_route_is_retryable_failure(self, tmp_path):
+    def test_replace_range_same_fastapi_route_is_noop(self, tmp_path):
         original = textwrap.dedent("""\
             from fastapi import FastAPI
 
@@ -772,9 +772,9 @@ class TestReplaceRange:
 
         result = loop._execute_replace_range(rt, action)
 
-        assert result["success"] is False
-        assert "FastAPI route already present" in result["error"]
-        assert "Python AST validation failed" not in result["error"]
+        assert result["success"] is True, result.get("error", "")
+        assert result["summary"] == "replace_range: FastAPI route already present; no change"
+        assert result["result_data"]["noop"] is True
         with open(os.path.join(str(tmp_path), "server.py")) as f:
             text = f.read()
         assert text.startswith("from fastapi import FastAPI")
