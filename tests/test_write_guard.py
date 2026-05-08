@@ -459,6 +459,44 @@ class TestInsertAfter:
             text = f.read()
         assert "@app.get('/api/version-info')" in text
 
+    def test_insert_after_app_route_after_function_header_is_retryable_failure(self, tmp_path):
+        original = textwrap.dedent("""\
+            from fastapi import FastAPI
+
+
+            def create_app() -> FastAPI:
+                app = FastAPI(title="IGRIS_GPT", version="0.1.0")
+                @app.get('/api/version-info')
+                async def version_info():
+                    return {'app': 'IGRIS_GPT', 'status': 'ok'}
+
+                return app
+        """)
+        route = (
+            "\n"
+            "    @app.get('/api/rank/status')\n"
+            "    async def rank_status():\n"
+            "        return {'current_rank': 'B', 'next_rank': 'A'}\n"
+        )
+        _write_tmp(str(tmp_path), "server.py", original)
+        loop = _make_loop(str(tmp_path))
+        rt = _mock_rt()
+        action = _action(
+            "insert_after",
+            path="server.py",
+            anchor="async def version_info():",
+            content=route,
+        )
+
+        result = loop._execute_insert_after(rt, action)
+
+        assert result["success"] is False
+        assert "function/class definition header" in result["error"]
+        assert "Python AST validation failed" not in result["error"]
+        with open(os.path.join(str(tmp_path), "server.py")) as f:
+            text = f.read()
+        assert "/api/rank/status" not in text
+
     def test_insert_after_same_route_different_quotes_is_no_change(self, tmp_path):
         original = textwrap.dedent("""\
             from fastapi import FastAPI
