@@ -314,6 +314,24 @@ def test_supervisor_completes_by_verification_when_reasoning_blocks_after_change
     assert not any(event.phase == "failure" for event in run.events)
 
 
+def test_supervisor_completes_by_verification_when_reasoning_timeout_has_diff():
+    backend = FakeBackend()
+    backend.reasoning_results = [{
+        "status": "blocked",
+        "stop_reason": "reasoning_timeout",
+        "files_modified": [],
+        "final_summary": "Command timed out",
+        "goal": "rank task with tests",
+    }]
+    run = SelfRepairSupervisor("/tmp/project", backend=backend).run(
+        _config(max_repair_cycles=1)
+    )
+
+    assert run.status == "completed"
+    assert "issue" not in backend.commands
+    assert not any(event.phase == "failure" for event in run.events)
+
+
 def test_supervisor_runs_baseline_diagnostics_before_blocking():
     backend = FakeBackend()
     backend.full_tests = [CommandResult(False, "progress dots", "", 1)]
