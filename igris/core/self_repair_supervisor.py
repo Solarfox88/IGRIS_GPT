@@ -572,9 +572,11 @@ class SelfRepairSupervisor:
         full: CommandResult,
         smoke: CommandResult,
     ) -> bool:
+        delivered_changes = bool(reasoning.get("files_modified"))
+        reasoning_finished = reasoning.get("status") == "finished"
         return (
-            reasoning.get("status") == "finished"
-            and reasoning.get("files_modified")
+            (reasoning_finished or delivered_changes)
+            and delivered_changes
             and bool(diff_stat.output.strip())
             and targeted.success
             and full.success

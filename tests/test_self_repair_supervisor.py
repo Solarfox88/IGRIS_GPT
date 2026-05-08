@@ -296,6 +296,24 @@ def test_supervisor_blocks_merge_when_full_pytest_fails():
     assert "merge" not in backend.commands
 
 
+def test_supervisor_completes_by_verification_when_reasoning_blocks_after_changes():
+    backend = FakeBackend()
+    backend.reasoning_results = [{
+        "status": "blocked",
+        "stop_reason": "blocked",
+        "files_modified": ["igris/web/server.py", "tests/test_rank_status.py"],
+        "final_summary": "changed files but final report blocked",
+        "goal": "rank task with tests",
+    }]
+    run = SelfRepairSupervisor("/tmp/project", backend=backend).run(
+        _config(max_repair_cycles=1)
+    )
+
+    assert run.status == "completed"
+    assert "issue" not in backend.commands
+    assert not any(event.phase == "failure" for event in run.events)
+
+
 def test_supervisor_runs_baseline_diagnostics_before_blocking():
     backend = FakeBackend()
     backend.full_tests = [CommandResult(False, "progress dots", "", 1)]
