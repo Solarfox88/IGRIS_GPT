@@ -2618,6 +2618,35 @@ def create_app() -> FastAPI:
         return {"stop_reasons": list(STOP_REASONS)}
 
     # ------------------------------------------------------------------
+    # Rank Self-Repair Supervisor
+    # ------------------------------------------------------------------
+
+    @app.post("/api/rank/run-supervised")
+    async def api_rank_run_supervised(request: Request) -> Dict[str, object]:
+        """Run a controlled rank mission through the self-repair supervisor."""
+        from igris.core.self_repair_supervisor import start_supervised_rank
+        content = await request.json()
+        if not content.get("goal"):
+            raise HTTPException(status_code=400, detail="goal required")
+        run = start_supervised_rank(content, project_root=str(CONFIG.project_root))
+        return run.to_dict()
+
+    @app.get("/api/rank/runs/{run_id}")
+    async def api_rank_run_detail(run_id: str) -> Dict[str, object]:
+        """Return one supervised rank run."""
+        from igris.core.self_repair_supervisor import get_supervised_run
+        run = get_supervised_run(run_id)
+        if run is None:
+            raise HTTPException(status_code=404, detail="rank run not found")
+        return run.to_dict()
+
+    @app.get("/api/rank/runs")
+    async def api_rank_runs() -> Dict[str, object]:
+        """List supervised rank runs held in memory."""
+        from igris.core.self_repair_supervisor import list_supervised_runs
+        return {"runs": [run.to_dict() for run in list_supervised_runs()]}
+
+    # ------------------------------------------------------------------
     # Integration Layer — Epic #62
     # ------------------------------------------------------------------
 
