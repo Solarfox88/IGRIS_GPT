@@ -356,11 +356,10 @@ class TestFastAPIRouteDiscovery:
 # ---------------------------------------------------------------------------
 
 class TestAntiRepeatInLoop:
-    """The anti-repeat guard should block the step and expose diagnosis
-    in world_state when the same action repeats without consumption."""
+    """The anti-repeat guard exposes diagnosis when actions repeat."""
 
-    def test_loop_step_blocked_on_repeat(self):
-        """Simulate 3 identical find_files — third should be blocked."""
+    def test_loop_step_retryable_failure_on_repeated_read_only_action(self):
+        """Repeated read-only navigation should not terminally block the loop."""
         loop = AgentReasoningLoop(max_steps=5, project_root="/tmp")
 
         # Simulate two successful find_files in history
@@ -385,9 +384,32 @@ class TestAntiRepeatInLoop:
             with patch.object(loop, "_build_context", return_value=MagicMock()):
                 step = loop._execute_step(3, "test goal", "")
 
+        assert step.outcome == "failure"
+        assert "Anti-repeat guard" in step.error
+        assert loop._world_state.get("anti_repeat_triggered") is True
+        assert loop._world_state.get("anti_repeat_retryable") is True
+
+    def test_loop_step_blocked_on_repeated_write_action(self):
+        """Repeated successful writes still block to avoid unsafe edit loops."""
+        loop = AgentReasoningLoop(max_steps=5, project_root="/tmp")
+        params = {"path": "server.py", "anchor": "x", "content": "y"}
+        loop._record_action_history("insert_after", params, "success")
+        loop._record_action_history("insert_after", params, "success")
+
+        mock_action = AgentAction(
+            action_type="insert_after",
+            parameters=params,
+            reason="Repeating edit",
+        )
+
+        with patch.object(loop, "_decide_action", return_value=(mock_action, [])):
+            with patch.object(loop, "_build_context", return_value=MagicMock()):
+                step = loop._execute_step(3, "test goal", "")
+
         assert step.outcome == "blocked"
         assert "Anti-repeat guard" in step.error
         assert loop._world_state.get("anti_repeat_triggered") is True
+        assert loop._world_state.get("anti_repeat_retryable") is not True
 
     def test_anti_repeat_world_state_diagnosis(self):
         """World state should contain anti_repeat_diagnosis."""

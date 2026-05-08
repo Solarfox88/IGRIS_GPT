@@ -66,6 +66,14 @@ WRITE_ACTIONS = {
     "append_file",
     "apply_patch",
 }
+READ_ONLY_REPEAT_ACTIONS = {
+    "find_files",
+    "search_code",
+    "read_file_range",
+    "list_dir",
+    "git_status",
+    "git_diff",
+}
 
 
 # ---------------------------------------------------------------------------
@@ -447,7 +455,8 @@ class AgentReasoningLoop:
                 action.action_type, action.parameters
             )
             if repeat_diagnosis:
-                step.outcome = "blocked"
+                retryable_read_only = action.action_type in READ_ONLY_REPEAT_ACTIONS
+                step.outcome = "failure" if retryable_read_only else "blocked"
                 step.error = repeat_diagnosis
                 step.result_summary = (
                     "Governor anti-repeat: identical action repeated without "
@@ -456,6 +465,8 @@ class AgentReasoningLoop:
                 )
                 self._world_state["anti_repeat_triggered"] = True
                 self._world_state["anti_repeat_diagnosis"] = repeat_diagnosis
+                if retryable_read_only:
+                    self._world_state["anti_repeat_retryable"] = True
                 step.duration_ms = int((time.monotonic() - t0) * 1000)
                 return step
 
