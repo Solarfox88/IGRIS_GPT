@@ -67,6 +67,7 @@ class RankSupervisorConfig:
     targeted_tests: List[str] = field(default_factory=list)
     dry_run: bool = True
     defer_service_restart: bool = False
+    test_timeout_seconds: int = 240
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "RankSupervisorConfig":
@@ -82,6 +83,7 @@ class RankSupervisorConfig:
             targeted_tests=list(data.get("targeted_tests", [])),
             dry_run=bool(data.get("dry_run", True)),
             defer_service_restart=bool(data.get("defer_service_restart", False)),
+            test_timeout_seconds=max(30, int(data.get("test_timeout_seconds", 240))),
         )
 
 
@@ -139,7 +141,7 @@ class SupervisorBackend(Protocol):
     def run_reasoning(self, goal: str, max_steps: int, initial_context: Dict[str, Any]) -> Dict[str, Any]: ...
     def git_diff_stat(self) -> CommandResult: ...
     def git_diff(self) -> CommandResult: ...
-    def run_tests(self, targets: Optional[List[str]] = None) -> CommandResult: ...
+    def run_tests(self, targets: Optional[List[str]] = None, timeout: int = 240) -> CommandResult: ...
     def smoke(self, endpoints: List[str], restart_command: str = "") -> CommandResult: ...
     def commit(self, message: str, files: Optional[List[str]] = None) -> CommandResult: ...
     def push_branch(self, branch: str) -> CommandResult: ...
@@ -202,11 +204,11 @@ class LocalSupervisorBackend:
     def git_diff(self) -> CommandResult:
         return self._run(["git", "diff"], timeout=10)
 
-    def run_tests(self, targets: Optional[List[str]] = None) -> CommandResult:
+    def run_tests(self, targets: Optional[List[str]] = None, timeout: int = 240) -> CommandResult:
         cmd = [str(self.project_root / ".venv/bin/python"), "-m", "pytest", "-q"]
         if targets:
             cmd.extend(targets)
-        return self._run(cmd, timeout=600)
+        return self._run(cmd, timeout=timeout)
 
     def smoke(self, endpoints: List[str], restart_command: str = "") -> CommandResult:
         if restart_command:
@@ -346,11 +348,18 @@ class SelfRepairSupervisor:
         head = self.backend.git_log_head()
         run.add("git_head", "success" if head.success else "failure", head.output or head.error)
 
-        baseline = self.backend.run_tests()
+        run.add(
+            "baseline_tests",
+            "running",
+            "Running baseline pytest",
+            timeout_seconds=config.test_timeout_seconds,
+        )
+        baseline = self.backend.run_tests(timeout=config.test_timeout_seconds)
         run.add("baseline_tests", "success" if baseline.success else "failure", baseline.output or baseline.error)
         if not baseline.success:
             return self._blocked(run, "pytest_failure", "Baseline tests failed")
 
+        run.add("baseline_smoke", "running", "Running baseline smoke")
         smoke = self.backend.smoke(config.required_smoke_endpoints, restart_command)
         run.add("baseline_smoke", "success" if smoke.success else "failure", smoke.output or smoke.error)
         if not smoke.success:
@@ -388,8 +397,28 @@ class SelfRepairSupervisor:
                 self.backend.restore_dangerous_diff()
                 failure = "destructive_diff"
             else:
-                targeted = self.backend.run_tests(config.targeted_tests) if config.targeted_tests else CommandResult(True, "No targeted tests configured")
-                full = self.backend.run_tests()
+                if config.targeted_tests:
+                    run.add(
+                        "targeted_tests",
+                        "running",
+                        "Running targeted pytest",
+                        targets=" ".join(config.targeted_tests),
+                        timeout_seconds=config.test_timeout_seconds,
+                    )
+                    targeted = self.backend.run_tests(
+                        config.targeted_tests,
+                        timeout=config.test_timeout_seconds,
+                    )
+                else:
+                    targeted = CommandResult(True, "No targeted tests configured")
+                run.add(
+                    "full_pytest",
+                    "running",
+                    "Running full pytest",
+                    timeout_seconds=config.test_timeout_seconds,
+                )
+                full = self.backend.run_tests(timeout=config.test_timeout_seconds)
+                run.add("smoke", "running", "Running final smoke")
                 final_smoke = self.backend.smoke(config.required_smoke_endpoints, restart_command)
                 run.add("targeted_tests", "success" if targeted.success else "failure", targeted.output or targeted.error)
                 run.add("full_pytest", "success" if full.success else "failure", full.output or full.error)
@@ -444,7 +473,13 @@ class SelfRepairSupervisor:
             initial_context={"repair_cycle": cycle, "failure_class": failure, "supervised_repair": True},
         )
         run.add("repair_reasoning", str(result.get("status", "")), result.get("final_summary", ""))
-        tests = self.backend.run_tests()
+        run.add(
+            "repair_tests",
+            "running",
+            "Running repair validation pytest",
+            timeout_seconds=config.test_timeout_seconds,
+        )
+        tests = self.backend.run_tests(timeout=config.test_timeout_seconds)
         run.add("repair_tests", "success" if tests.success else "failure", tests.output or tests.error)
 
     def _complete_rank(self, run: SupervisorRun, config: RankSupervisorConfig, branch: str) -> SupervisorRun:

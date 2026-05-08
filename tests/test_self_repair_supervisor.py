@@ -33,6 +33,7 @@ class FakeBackend:
         self.diff_stat = CommandResult(True, " igris/web/server.py | 2 ++")
         self.diff = CommandResult(True, "+safe")
         self.commands = []
+        self.test_timeouts = []
 
     def git_status(self):
         self.commands.append("git_status")
@@ -63,8 +64,9 @@ class FakeBackend:
     def git_diff(self):
         return self.diff
 
-    def run_tests(self, targets=None):
+    def run_tests(self, targets=None, timeout=240):
         self.commands.append(f"tests:{targets or 'full'}")
+        self.test_timeouts.append(timeout)
         if targets:
             return self.targeted
         if self.full_tests:
@@ -217,6 +219,25 @@ def test_supervisor_defers_restart_when_configured():
     assert run.status == "completed"
     assert any(event.phase == "service_restart" and event.status == "deferred" for event in run.events)
     assert all(not command.endswith(":sudo -n systemctl restart igris") for command in backend.commands)
+
+
+def test_supervisor_records_running_events_and_test_timeout():
+    backend = FakeBackend()
+    run = SelfRepairSupervisor("/tmp/project", backend=backend).run(
+        _config(test_timeout_seconds=45)
+    )
+
+    assert run.status == "completed"
+    running_phases = [
+        event.phase for event in run.events
+        if event.status == "running"
+    ]
+    assert "baseline_tests" in running_phases
+    assert "baseline_smoke" in running_phases
+    assert "targeted_tests" in running_phases
+    assert "full_pytest" in running_phases
+    assert "smoke" in running_phases
+    assert backend.test_timeouts == [45, 45, 45]
 
 
 def test_async_supervisor_start_is_observable_before_work_finishes(monkeypatch):
