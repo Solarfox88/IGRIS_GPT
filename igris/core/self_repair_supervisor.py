@@ -7,11 +7,12 @@ backend runs fixed argv commands only, and tests can inject a fake backend.
 
 from __future__ import annotations
 
+import json
+import os
 import subprocess
 import threading
 import time
 import uuid
-import os
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Protocol
@@ -90,6 +91,7 @@ class RankSupervisorConfig:
     dry_run: bool = True
     defer_service_restart: bool = False
     test_timeout_seconds: int = 240
+    reasoning_timeout_seconds: int = 300
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "RankSupervisorConfig":
@@ -106,6 +108,7 @@ class RankSupervisorConfig:
             dry_run=bool(data.get("dry_run", True)),
             defer_service_restart=bool(data.get("defer_service_restart", False)),
             test_timeout_seconds=max(30, int(data.get("test_timeout_seconds", 240))),
+            reasoning_timeout_seconds=max(30, int(data.get("reasoning_timeout_seconds", 300))),
         )
 
 
@@ -160,7 +163,7 @@ class SupervisorBackend(Protocol):
     def git_status(self) -> CommandResult: ...
     def git_log_head(self) -> CommandResult: ...
     def create_branch(self, branch: str) -> CommandResult: ...
-    def run_reasoning(self, goal: str, max_steps: int, initial_context: Dict[str, Any]) -> Dict[str, Any]: ...
+    def run_reasoning(self, goal: str, max_steps: int, initial_context: Dict[str, Any], timeout: int = 300) -> Dict[str, Any]: ...
     def git_diff_stat(self) -> CommandResult: ...
     def git_diff(self) -> CommandResult: ...
     def run_tests(self, targets: Optional[List[str]] = None, timeout: int = 240) -> CommandResult: ...
@@ -182,7 +185,13 @@ class LocalSupervisorBackend:
     def __init__(self, project_root: str):
         self.project_root = Path(project_root)
 
-    def _subprocess_env(self) -> Dict[str, str]:
+    def _subprocess_env(self, *, clean_for_tests: bool = False) -> Dict[str, str]:
+        if not clean_for_tests:
+            env = os.environ.copy()
+            env["IGRIS_SUPERVISOR_CHILD"] = "1"
+            env["PYTHONUNBUFFERED"] = "1"
+            env.pop("PYTEST_CURRENT_TEST", None)
+            return env
         allowlist = {
             "HOME",
             "LANG",
@@ -207,12 +216,20 @@ class LocalSupervisorBackend:
         env["PYTHONUNBUFFERED"] = "1"
         return env
 
-    def _run(self, cmd: List[str], timeout: int = 120) -> CommandResult:
+    def _run(
+        self,
+        cmd: List[str],
+        timeout: int = 120,
+        *,
+        input_text: Optional[str] = None,
+        clean_env: bool = False,
+    ) -> CommandResult:
         try:
             proc = subprocess.run(
                 cmd,
                 cwd=str(self.project_root),
-                env=self._subprocess_env(),
+                env=self._subprocess_env(clean_for_tests=clean_env),
+                input=input_text,
                 text=True,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
@@ -245,11 +262,40 @@ class LocalSupervisorBackend:
             return CommandResult(False, "", "Refusing unsafe branch name", 2)
         return self._run(["git", "checkout", "-b", branch], timeout=30)
 
-    def run_reasoning(self, goal: str, max_steps: int, initial_context: Dict[str, Any]) -> Dict[str, Any]:
-        from igris.core.agent_reasoning_loop import AgentReasoningLoop
-
-        loop = AgentReasoningLoop(project_root=str(self.project_root), max_steps=max_steps)
-        return loop.run(goal=goal, initial_context=initial_context).to_dict()
+    def run_reasoning(
+        self,
+        goal: str,
+        max_steps: int,
+        initial_context: Dict[str, Any],
+        timeout: int = 300,
+    ) -> Dict[str, Any]:
+        payload = json.dumps({
+            "project_root": str(self.project_root),
+            "goal": goal,
+            "max_steps": max_steps,
+            "initial_context": initial_context,
+        })
+        result = self._run(
+            [str(self.project_root / ".venv/bin/python"), "-m", "igris.core.supervisor_reasoning_worker"],
+            timeout=timeout,
+            input_text=payload,
+        )
+        if result.success:
+            try:
+                return json.loads(result.output)
+            except json.JSONDecodeError:
+                return {
+                    "status": "blocked",
+                    "stop_reason": "invalid_reasoning_output",
+                    "files_modified": [],
+                    "final_summary": _command_detail(result) or "Reasoning worker returned invalid JSON",
+                }
+        return {
+            "status": "blocked",
+            "stop_reason": "reasoning_timeout" if result.returncode == 124 else "blocked",
+            "files_modified": [],
+            "final_summary": _command_detail(result) or "Reasoning worker failed",
+        }
 
     def git_diff_stat(self) -> CommandResult:
         return self._run(["git", "diff", "--stat"], timeout=10)
@@ -261,7 +307,7 @@ class LocalSupervisorBackend:
         cmd = [str(self.project_root / ".venv/bin/python"), "-m", "pytest", "-q"]
         if targets:
             cmd.extend(targets)
-        return self._run(cmd, timeout=timeout)
+        return self._run(cmd, timeout=timeout, clean_env=True)
 
     def run_test_diagnostics(self, timeout: int = 120) -> CommandResult:
         cmd = [
@@ -271,7 +317,7 @@ class LocalSupervisorBackend:
             "-x",
             "-vv",
         ]
-        return self._run(cmd, timeout=timeout)
+        return self._run(cmd, timeout=timeout, clean_env=True)
 
     def smoke(self, endpoints: List[str], restart_command: str = "") -> CommandResult:
         if restart_command:
@@ -350,6 +396,8 @@ def classify_failure(
     if reasoning_result:
         stop = str(reasoning_result.get("stop_reason", ""))
         status = str(reasoning_result.get("status", ""))
+        if stop == "reasoning_timeout":
+            return "reasoning_loop_blocked"
         if stop == "max_steps":
             return "max_steps"
         if stop == "ask_user":
@@ -451,6 +499,12 @@ class SelfRepairSupervisor:
             if not branch_result.success:
                 return self._blocked(run, "infrastructure_bug", "Could not create rank branch")
 
+            run.add(
+                "rank_reasoning",
+                "running",
+                "Running supervised rank reasoning",
+                timeout_seconds=config.reasoning_timeout_seconds,
+            )
             reasoning = self.backend.run_reasoning(
                 config.goal,
                 max_steps=220,
@@ -462,6 +516,7 @@ class SelfRepairSupervisor:
                     "suppress_human_gate": True,
                     "supervised": True,
                 },
+                timeout=config.reasoning_timeout_seconds,
             )
             run.add("rank_reasoning", str(reasoning.get("status", "")), reasoning.get("final_summary", ""), loop_id=reasoning.get("loop_id", ""))
 
@@ -548,6 +603,7 @@ class SelfRepairSupervisor:
             repair_goal,
             max_steps=160,
             initial_context={"repair_cycle": cycle, "failure_class": failure, "supervised_repair": True},
+            timeout=config.reasoning_timeout_seconds,
         )
         run.add("repair_reasoning", str(result.get("status", "")), result.get("final_summary", ""))
         run.add(

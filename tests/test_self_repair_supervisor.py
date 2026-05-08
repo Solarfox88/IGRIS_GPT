@@ -1,3 +1,5 @@
+import json
+import subprocess
 import threading
 import time
 
@@ -48,8 +50,9 @@ class FakeBackend:
         self.commands.append(f"branch:{branch}")
         return CommandResult(True, branch)
 
-    def run_reasoning(self, goal, max_steps, initial_context):
+    def run_reasoning(self, goal, max_steps, initial_context, timeout=300):
         self.commands.append(f"reasoning:{initial_context}")
+        self.commands.append(f"reasoning_timeout:{timeout}")
         if self.reasoning_results:
             return self.reasoning_results.pop(0)
         return {
@@ -135,6 +138,11 @@ def test_failure_classifier_detects_max_steps_as_repairable_infrastructure_failu
     assert failure == "max_steps"
 
 
+def test_failure_classifier_detects_reasoning_timeout_as_blocked_loop():
+    failure = classify_failure({"status": "blocked", "stop_reason": "reasoning_timeout", "files_modified": []})
+    assert failure == "reasoning_loop_blocked"
+
+
 def test_failure_classifier_detects_pytest_failure():
     failure = classify_failure(full_tests=CommandResult(False, "FAILED tests/test_x.py", "", 1))
     assert failure == "pytest_failure"
@@ -186,6 +194,67 @@ def test_local_backend_runs_commands_in_isolated_child_process(monkeypatch, tmp_
     assert "OPENAI_API_KEY" not in captured["env"]
     assert "VASTAI_API_KEY" not in captured["env"]
     assert "PROJECT_ROOT" not in captured["env"]
+
+
+def test_local_backend_runs_reasoning_in_bounded_worker(monkeypatch, tmp_path):
+    captured = {}
+
+    class Proc:
+        returncode = 0
+        stdout = json.dumps({
+            "status": "finished",
+            "stop_reason": "finish",
+            "files_modified": ["tests/test_rank_status.py"],
+        })
+        stderr = ""
+
+    def fake_run(cmd, **kwargs):
+        captured["cmd"] = cmd
+        captured.update(kwargs)
+        return Proc()
+
+    import igris.core.self_repair_supervisor as mod
+
+    monkeypatch.setattr(mod.subprocess, "run", fake_run)
+    result = LocalSupervisorBackend(str(tmp_path)).run_reasoning(
+        "rank goal",
+        max_steps=7,
+        initial_context={"rank_test": "A"},
+        timeout=42,
+    )
+
+    payload = json.loads(captured["input"])
+    assert result["status"] == "finished"
+    assert captured["cmd"][-2:] == ["-m", "igris.core.supervisor_reasoning_worker"]
+    assert captured["timeout"] == 42
+    assert captured["start_new_session"] is True
+    assert payload["goal"] == "rank goal"
+    assert payload["max_steps"] == 7
+    assert payload["initial_context"]["rank_test"] == "A"
+
+
+def test_local_backend_classifies_reasoning_timeout(monkeypatch, tmp_path):
+    def fake_run(cmd, **kwargs):
+        raise subprocess.TimeoutExpired(
+            cmd=cmd,
+            timeout=kwargs["timeout"],
+            output=b"partial",
+            stderr=b"timed out",
+        )
+
+    import igris.core.self_repair_supervisor as mod
+
+    monkeypatch.setattr(mod.subprocess, "run", fake_run)
+    result = LocalSupervisorBackend(str(tmp_path)).run_reasoning(
+        "rank goal",
+        max_steps=7,
+        initial_context={},
+        timeout=42,
+    )
+
+    assert result["status"] == "blocked"
+    assert result["stop_reason"] == "reasoning_timeout"
+    assert "timed out" in result["final_summary"]
 
 
 def test_supervisor_event_serializes_bytes_safely():
@@ -337,6 +406,17 @@ def test_supervisor_records_running_events_and_test_timeout():
     assert "full_pytest" in running_phases
     assert "smoke" in running_phases
     assert backend.test_timeouts == [45, 45, 45]
+
+
+def test_supervisor_records_rank_reasoning_running_and_timeout_budget():
+    backend = FakeBackend()
+    run = SelfRepairSupervisor("/tmp/project", backend=backend).run(
+        _config(reasoning_timeout_seconds=55)
+    )
+
+    assert run.status == "completed"
+    assert any(event.phase == "rank_reasoning" and event.status == "running" for event in run.events)
+    assert "reasoning_timeout:55" in backend.commands
 
 
 def test_async_supervisor_start_is_observable_before_work_finishes(monkeypatch):
