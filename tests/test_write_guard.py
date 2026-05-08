@@ -357,7 +357,7 @@ class TestInsertAfter:
         assert "def bar():" in text
         assert "# inserted" in text
 
-    def test_insert_after_repeated_route_is_no_change(self, tmp_path):
+    def test_insert_after_repeated_route_is_retryable_failure(self, tmp_path):
         original = textwrap.dedent("""\
             from fastapi import FastAPI
 
@@ -387,8 +387,8 @@ class TestInsertAfter:
         second = loop._execute_insert_after(rt, action)
 
         assert first["success"] is True
-        assert second["success"] is True
-        assert "no change" in second["summary"]
+        assert second["success"] is False
+        assert "FastAPI route already present" in second["error"]
         with open(os.path.join(str(tmp_path), "server.py")) as f:
             text = f.read()
         assert text.count("@app.get('/api/version-info')") == 1
@@ -536,7 +536,7 @@ class TestInsertAfter:
         assert "/api/rank/status" not in text
         assert text.count("/api/version-info") == 1
 
-    def test_insert_after_same_route_different_quotes_is_no_change(self, tmp_path):
+    def test_insert_after_same_route_different_quotes_is_retryable_failure(self, tmp_path):
         original = textwrap.dedent("""\
             from fastapi import FastAPI
 
@@ -568,8 +568,9 @@ class TestInsertAfter:
 
         result = loop._execute_insert_after(rt, action)
 
-        assert result["success"] is True
-        assert "no change" in result["summary"]
+        assert result["success"] is False
+        assert "FastAPI route already present" in result["error"]
+        assert "Python AST validation failed" not in result["error"]
         with open(os.path.join(str(tmp_path), "server.py")) as f:
             text = f.read()
         assert text.count("/api/version-info") == 1
@@ -664,7 +665,7 @@ class TestReplaceRange:
         result = loop._execute_replace_range(rt, action)
         assert result["success"] is False
 
-    def test_replace_range_same_fastapi_route_is_no_change(self, tmp_path):
+    def test_replace_range_same_fastapi_route_is_retryable_failure(self, tmp_path):
         original = textwrap.dedent("""\
             from fastapi import FastAPI
 
@@ -696,8 +697,9 @@ class TestReplaceRange:
 
         result = loop._execute_replace_range(rt, action)
 
-        assert result["success"] is True
-        assert "no change" in result["summary"]
+        assert result["success"] is False
+        assert "FastAPI route already present" in result["error"]
+        assert "Python AST validation failed" not in result["error"]
         with open(os.path.join(str(tmp_path), "server.py")) as f:
             text = f.read()
         assert text.startswith("from fastapi import FastAPI")
