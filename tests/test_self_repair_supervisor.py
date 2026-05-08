@@ -39,6 +39,7 @@ class FakeBackend:
         self.commands = []
         self.test_timeouts = []
         self.restore_result = CommandResult(True, "restored")
+        self.last_reasoning_context = None
 
     def git_status(self):
         self.commands.append("git_status")
@@ -54,6 +55,7 @@ class FakeBackend:
     def run_reasoning(self, goal, max_steps, initial_context, timeout=300):
         self.commands.append(f"reasoning:{initial_context}")
         self.commands.append(f"reasoning_timeout:{timeout}")
+        self.last_reasoning_context = initial_context
         if self.reasoning_results:
             return self.reasoning_results.pop(0)
         return {
@@ -480,6 +482,19 @@ def test_supervisor_records_rank_reasoning_running_and_timeout_budget():
     assert run.status == "completed"
     assert any(event.phase == "rank_reasoning" and event.status == "running" for event in run.events)
     assert "reasoning_timeout:55" in backend.commands
+
+
+def test_supervisor_passes_requested_rank_test_file_to_reasoning_context():
+    backend = FakeBackend()
+    run = SelfRepairSupervisor("/tmp/project", backend=backend).run(
+        _config(targeted_tests=["tests/test_rank_status.py"])
+    )
+
+    assert run.status == "completed"
+    assert backend.last_reasoning_context["must_create_test_file"] == "tests/test_rank_status.py"
+    assert backend.last_reasoning_context["expected_endpoint_file"] == "igris/web/server.py"
+    assert backend.last_reasoning_context["must_not_ask_user"] is True
+    assert "Create tests/test_rank_status.py directly" in backend.last_reasoning_context["anti_loop_instruction"]
 
 
 def test_async_supervisor_start_is_observable_before_work_finishes(monkeypatch):

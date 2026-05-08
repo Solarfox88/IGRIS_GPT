@@ -508,14 +508,7 @@ class SelfRepairSupervisor:
             reasoning = self.backend.run_reasoning(
                 config.goal,
                 max_steps=220,
-                initial_context={
-                    "rank_test": config.rank_id,
-                    "project_root": self.project_root,
-                    "must_not_push_directly_to_main": True,
-                    "must_not_merge_if_tests_fail": True,
-                    "suppress_human_gate": True,
-                    "supervised": True,
-                },
+                initial_context=self._rank_initial_context(config),
                 timeout=config.reasoning_timeout_seconds,
             )
             run.add("rank_reasoning", str(reasoning.get("status", "")), reasoning.get("final_summary", ""), loop_id=reasoning.get("loop_id", ""))
@@ -587,6 +580,31 @@ class SelfRepairSupervisor:
             and full.success
             and smoke.success
         )
+
+    def _rank_initial_context(self, config: RankSupervisorConfig) -> Dict[str, Any]:
+        context: Dict[str, Any] = {
+            "rank_test": config.rank_id,
+            "project_root": self.project_root,
+            "must_not_push_directly_to_main": True,
+            "must_not_merge_if_tests_fail": True,
+            "suppress_human_gate": True,
+            "must_not_ask_user": True,
+            "supervised": True,
+            "expected_endpoint_file": "igris/web/server.py",
+            "safe_edit_policy": (
+                "For existing large files use insert_after, insert_before, "
+                "replace_range or append_file. Never full-file write server.py."
+            ),
+        }
+        for target in config.targeted_tests:
+            if target.startswith("tests/test_") and target.endswith(".py"):
+                context["must_create_test_file"] = target
+                context["anti_loop_instruction"] = (
+                    f"Do not repeat test discovery after tests/ is known. "
+                    f"Create {target} directly."
+                )
+                break
+        return context
 
     def _repair_cycle(self, run: SupervisorRun, config: RankSupervisorConfig, failure: str, cycle: int) -> bool:
         title = f"{config.rank_id}: supervised repair for {failure}"
