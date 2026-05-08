@@ -1214,6 +1214,15 @@ class AgentReasoningLoop:
                     "route would be before app = FastAPI initialization"
                 ),
             }
+        if self._inserts_app_route_after_decorator_line(file_lines[idx], insertion):
+            return {
+                "success": False,
+                "error": (
+                    "insert_after: refusing to insert @app route immediately after "
+                    "a decorator line; use an anchor after the complete decorated "
+                    "function block or after app = FastAPI(...)"
+                ),
+            }
         if self._app_route_already_exists(file_lines, insertion):
             return {"success": True, "summary": "insert_after: no change; FastAPI route already present"}
         if self._inserts_app_route_before_app_init(file_lines, idx, insertion, after=True):
@@ -1337,6 +1346,10 @@ class AgentReasoningLoop:
             or stripped.startswith("async def ")
             or stripped.startswith("class ")
         )
+
+    @staticmethod
+    def _inserts_app_route_after_decorator_line(anchor_line: str, insertion: str) -> bool:
+        return "@app." in insertion and anchor_line.strip().startswith("@")
 
     @staticmethod
     def _app_routes_in_content(content: str) -> set[tuple[str, str]]:
