@@ -11,6 +11,7 @@ import subprocess
 import threading
 import time
 import uuid
+import os
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Protocol
@@ -48,6 +49,15 @@ def _safe_text(value: Any) -> str:
 
 def _safe_redact(value: Any) -> str:
     return redact_secrets(_safe_text(value))
+
+
+def _command_detail(result: "CommandResult") -> str:
+    parts = []
+    if result.output:
+        parts.append(_safe_text(result.output).rstrip())
+    if result.error:
+        parts.append(_safe_text(result.error).rstrip())
+    return "\n".join(part for part in parts if part)
 
 
 @dataclass
@@ -172,16 +182,26 @@ class LocalSupervisorBackend:
     def __init__(self, project_root: str):
         self.project_root = Path(project_root)
 
+    def _subprocess_env(self) -> Dict[str, str]:
+        env = os.environ.copy()
+        env["IGRIS_SUPERVISOR_CHILD"] = "1"
+        env["PYTHONUNBUFFERED"] = "1"
+        env.pop("PYTEST_CURRENT_TEST", None)
+        return env
+
     def _run(self, cmd: List[str], timeout: int = 120) -> CommandResult:
         try:
             proc = subprocess.run(
                 cmd,
                 cwd=str(self.project_root),
+                env=self._subprocess_env(),
                 text=True,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 timeout=timeout,
                 check=False,
+                start_new_session=True,
+                close_fds=True,
             )
             return CommandResult(
                 success=proc.returncode == 0,
@@ -364,14 +384,14 @@ class SelfRepairSupervisor:
             restart_command = ""
 
         status = self.backend.git_status()
-        run.add("git_status", "success" if status.success else "failure", status.output or status.error)
+        run.add("git_status", "success" if status.success else "failure", _command_detail(status))
         if not status.success:
             return self._blocked(run, "infrastructure_bug", "Unable to read git status")
         if status.output.strip():
             return self._blocked(run, "workspace_dirty", "Workspace is not clean")
 
         head = self.backend.git_log_head()
-        run.add("git_head", "success" if head.success else "failure", head.output or head.error)
+        run.add("git_head", "success" if head.success else "failure", _command_detail(head))
 
         run.add(
             "baseline_tests",
@@ -380,7 +400,7 @@ class SelfRepairSupervisor:
             timeout_seconds=config.test_timeout_seconds,
         )
         baseline = self.backend.run_tests(timeout=config.test_timeout_seconds)
-        run.add("baseline_tests", "success" if baseline.success else "failure", baseline.output or baseline.error)
+        run.add("baseline_tests", "success" if baseline.success else "failure", _command_detail(baseline))
         if not baseline.success:
             run.add(
                 "baseline_diagnostics",
@@ -394,13 +414,13 @@ class SelfRepairSupervisor:
             run.add(
                 "baseline_diagnostics",
                 "success" if diagnostics.success else "failure",
-                diagnostics.output or diagnostics.error,
+                _command_detail(diagnostics),
             )
             return self._blocked(run, "pytest_failure", "Baseline tests failed")
 
         run.add("baseline_smoke", "running", "Running baseline smoke")
         smoke = self.backend.smoke(config.required_smoke_endpoints, restart_command)
-        run.add("baseline_smoke", "success" if smoke.success else "failure", smoke.output or smoke.error)
+        run.add("baseline_smoke", "success" if smoke.success else "failure", _command_detail(smoke))
         if not smoke.success:
             return self._blocked(run, "infrastructure_bug", "Baseline smoke failed")
 
@@ -409,7 +429,7 @@ class SelfRepairSupervisor:
             branch = f"rank-{config.rank_id.lower()}-{int(time.time())}-{attempt}"
             run.branch = branch
             branch_result = self.backend.create_branch(branch)
-            run.add("rank_branch", "success" if branch_result.success else "failure", branch_result.output or branch_result.error, branch=branch)
+            run.add("rank_branch", "success" if branch_result.success else "failure", _command_detail(branch_result), branch=branch)
             if not branch_result.success:
                 return self._blocked(run, "infrastructure_bug", "Could not create rank branch")
 
@@ -429,7 +449,7 @@ class SelfRepairSupervisor:
 
             diff_stat = self.backend.git_diff_stat()
             diff = self.backend.git_diff()
-            run.add("diff_stat", "success" if diff_stat.success else "failure", diff_stat.output or diff_stat.error)
+            run.add("diff_stat", "success" if diff_stat.success else "failure", _command_detail(diff_stat))
 
             if _has_destructive_diff(diff.output):
                 run.add("safety", "blocked", "Destructive diff detected")
@@ -459,9 +479,9 @@ class SelfRepairSupervisor:
                 full = self.backend.run_tests(timeout=config.test_timeout_seconds)
                 run.add("smoke", "running", "Running final smoke")
                 final_smoke = self.backend.smoke(config.required_smoke_endpoints, restart_command)
-                run.add("targeted_tests", "success" if targeted.success else "failure", targeted.output or targeted.error)
-                run.add("full_pytest", "success" if full.success else "failure", full.output or full.error)
-                run.add("smoke", "success" if final_smoke.success else "failure", final_smoke.output or final_smoke.error)
+                run.add("targeted_tests", "success" if targeted.success else "failure", _command_detail(targeted))
+                run.add("full_pytest", "success" if full.success else "failure", _command_detail(full))
+                run.add("smoke", "success" if final_smoke.success else "failure", _command_detail(final_smoke))
                 if self._rank_passed(reasoning, diff_stat, targeted, full, final_smoke):
                     return self._complete_rank(run, config, branch)
                 failure = classify_failure(reasoning, diff.output, targeted, full, final_smoke)
@@ -499,7 +519,7 @@ class SelfRepairSupervisor:
         body = f"Supervisor detected {failure} during run {run.run_id}."
         if config.allow_github_pr and not config.dry_run:
             issue = self.backend.create_issue(title, body)
-            run.add("repair_issue", "success" if issue.success else "failure", issue.output or issue.error)
+            run.add("repair_issue", "success" if issue.success else "failure", _command_detail(issue))
         else:
             run.add("repair_issue", "dry_run", title)
         repair_goal = (
@@ -519,28 +539,28 @@ class SelfRepairSupervisor:
             timeout_seconds=config.test_timeout_seconds,
         )
         tests = self.backend.run_tests(timeout=config.test_timeout_seconds)
-        run.add("repair_tests", "success" if tests.success else "failure", tests.output or tests.error)
+        run.add("repair_tests", "success" if tests.success else "failure", _command_detail(tests))
 
     def _complete_rank(self, run: SupervisorRun, config: RankSupervisorConfig, branch: str) -> SupervisorRun:
         if config.dry_run:
             run.add("github", "dry_run", "Commit/PR/merge skipped by dry_run")
         else:
             commit = self.backend.commit(f"feat: complete supervised {config.rank_id}", ["igris", "tests"])
-            run.add("commit", "success" if commit.success else "failure", commit.output or commit.error)
+            run.add("commit", "success" if commit.success else "failure", _command_detail(commit))
             if not commit.success:
                 return self._blocked(run, "infrastructure_bug", "Commit failed")
             if config.allow_github_pr:
                 push = self.backend.push_branch(branch)
-                run.add("push", "success" if push.success else "failure", push.output or push.error)
+                run.add("push", "success" if push.success else "failure", _command_detail(push))
                 pr = self.backend.open_pr(branch, f"feat: supervised {config.rank_id}", self._pr_body(run))
-                run.add("pr", "success" if pr.success else "failure", pr.output or pr.error)
+                run.add("pr", "success" if pr.success else "failure", _command_detail(pr))
                 ci = self.backend.wait_ci()
-                run.add("ci", "success" if ci.success else "failure", ci.output or ci.error)
+                run.add("ci", "success" if ci.success else "failure", _command_detail(ci))
                 if config.allow_merge_if_green and ci.success:
                     merge = self.backend.merge_pr()
-                    run.add("merge", "success" if merge.success else "failure", merge.output or merge.error)
+                    run.add("merge", "success" if merge.success else "failure", _command_detail(merge))
                     pull = self.backend.pull_main()
-                    run.add("pull_main", "success" if pull.success else "failure", pull.output or pull.error)
+                    run.add("pull_main", "success" if pull.success else "failure", _command_detail(pull))
         run.status = "completed"
         run.outcome = "Completed"
         run.report = {"autonomous": True, "manual_remaining": "real GitHub merge is gated unless enabled"}
