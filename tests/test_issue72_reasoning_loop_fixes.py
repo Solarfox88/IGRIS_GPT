@@ -358,7 +358,7 @@ class TestFastAPIRouteDiscovery:
 class TestAntiRepeatInLoop:
     """The anti-repeat guard exposes diagnosis when actions repeat."""
 
-    def test_loop_step_retryable_failure_on_repeated_read_only_action(self):
+    def test_loop_step_skipped_on_repeated_read_only_action(self):
         """Repeated read-only navigation should not terminally block the loop."""
         loop = AgentReasoningLoop(max_steps=5, project_root="/tmp")
 
@@ -384,7 +384,7 @@ class TestAntiRepeatInLoop:
             with patch.object(loop, "_build_context", return_value=MagicMock()):
                 step = loop._execute_step(3, "test goal", "")
 
-        assert step.outcome == "failure"
+        assert step.outcome == "skipped"
         assert "Anti-repeat guard" in step.error
         assert loop._world_state.get("anti_repeat_triggered") is True
         assert loop._world_state.get("anti_repeat_retryable") is True

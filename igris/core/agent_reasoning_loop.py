@@ -456,7 +456,7 @@ class AgentReasoningLoop:
             )
             if repeat_diagnosis:
                 retryable_read_only = action.action_type in READ_ONLY_REPEAT_ACTIONS
-                step.outcome = "failure" if retryable_read_only else "blocked"
+                step.outcome = "skipped" if retryable_read_only else "blocked"
                 step.error = repeat_diagnosis
                 step.result_summary = (
                     "Governor anti-repeat: identical action repeated without "
