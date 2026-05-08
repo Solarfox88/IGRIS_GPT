@@ -5,6 +5,7 @@ from fastapi.testclient import TestClient
 
 from igris.core.self_repair_supervisor import (
     CommandResult,
+    LocalSupervisorBackend,
     RankSupervisorConfig,
     RUN_STORE,
     SelfRepairSupervisor,
@@ -152,6 +153,35 @@ def test_command_result_serializes_bytes_safely():
     assert data["error"] == "stderr bytes"
 
 
+def test_local_backend_runs_commands_in_isolated_child_process(monkeypatch, tmp_path):
+    captured = {}
+
+    class Proc:
+        returncode = 0
+        stdout = "ok"
+        stderr = ""
+
+    def fake_run(cmd, **kwargs):
+        captured["cmd"] = cmd
+        captured.update(kwargs)
+        return Proc()
+
+    import igris.core.self_repair_supervisor as mod
+
+    monkeypatch.setenv("PYTEST_CURRENT_TEST", "tests/test_x.py::test_y")
+    monkeypatch.setattr(mod.subprocess, "run", fake_run)
+
+    result = LocalSupervisorBackend(str(tmp_path)).run_tests(timeout=31)
+
+    assert result.success
+    assert captured["timeout"] == 31
+    assert captured["start_new_session"] is True
+    assert captured["close_fds"] is True
+    assert captured["env"]["IGRIS_SUPERVISOR_CHILD"] == "1"
+    assert captured["env"]["PYTHONUNBUFFERED"] == "1"
+    assert "PYTEST_CURRENT_TEST" not in captured["env"]
+
+
 def test_supervisor_event_serializes_bytes_safely():
     event = SupervisorEvent(
         phase="baseline_tests",
@@ -199,6 +229,30 @@ def test_supervisor_runs_baseline_diagnostics_before_blocking():
     assert run.failure_class == "pytest_failure"
     assert "diagnostics:90" in backend.commands
     assert any(event.phase == "baseline_diagnostics" for event in run.events)
+
+
+def test_supervisor_records_stdout_and_error_for_failed_diagnostics():
+    backend = FakeBackend()
+    backend.full_tests = [CommandResult(False, "progress dots", "pytest timed out", 124)]
+    backend.run_test_diagnostics = lambda timeout=120: CommandResult(
+        False,
+        "partial verbose output",
+        "Command timed out",
+        124,
+    )
+    run = SelfRepairSupervisor("/tmp/project", backend=backend).run(
+        _config(test_timeout_seconds=90)
+    )
+
+    detail = next(
+        event.detail
+        for event in run.events
+        if event.phase == "baseline_diagnostics" and event.status == "failure"
+    )
+
+    assert run.status == "blocked"
+    assert "partial verbose output" in detail
+    assert "Command timed out" in detail
 
 
 def test_supervisor_produces_blocked_report_after_repair_budget_exhausted():
