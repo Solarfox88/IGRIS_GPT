@@ -1368,9 +1368,21 @@ class AgentReasoningLoop:
         leading_blank = bool(lines and not lines[0].strip())
         content_lines = lines[1:] if leading_blank else lines
         nonblank = [line for line in content_lines if line.strip()]
-        if not nonblank or nonblank[0].startswith(anchor_indent):
+        if not nonblank:
             return insertion
-        normalized = [anchor_indent + line if line.strip() else line for line in content_lines]
+        first_nonblank_index = next(i for i, line in enumerate(content_lines) if line.strip())
+        body_nonblank = [line for line in content_lines[first_nonblank_index + 1 :] if line.strip()]
+        body_base_indent = min((len(line) - len(line.lstrip(" ")) for line in body_nonblank), default=0)
+        normalized = []
+        for i, line in enumerate(content_lines):
+            if not line.strip():
+                normalized.append(line)
+                continue
+            if i == first_nonblank_index:
+                stripped = line.lstrip(" ")
+            else:
+                stripped = line[body_base_indent:] if len(line) >= body_base_indent else line.lstrip(" ")
+            normalized.append(anchor_indent + stripped)
         if leading_blank:
             normalized.insert(0, "")
         return "\n".join(normalized) + ("\n" if insertion.endswith("\n") else "")
