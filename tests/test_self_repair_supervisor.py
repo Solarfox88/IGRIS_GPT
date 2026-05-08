@@ -74,6 +74,10 @@ class FakeBackend:
             return self.full_tests.pop(0)
         return CommandResult(True, "full ok")
 
+    def run_test_diagnostics(self, timeout=120):
+        self.commands.append(f"diagnostics:{timeout}")
+        return CommandResult(False, "FAILED tests/test_example.py::test_x", "", 1)
+
     def smoke(self, endpoints, restart_command=""):
         self.commands.append(f"smoke:{endpoints}:{restart_command}")
         return self.smoke_result
@@ -182,6 +186,19 @@ def test_supervisor_blocks_merge_when_full_pytest_fails():
     assert run.status == "blocked"
     assert run.failure_class == "pytest_failure"
     assert "merge" not in backend.commands
+
+
+def test_supervisor_runs_baseline_diagnostics_before_blocking():
+    backend = FakeBackend()
+    backend.full_tests = [CommandResult(False, "progress dots", "", 1)]
+    run = SelfRepairSupervisor("/tmp/project", backend=backend).run(
+        _config(test_timeout_seconds=90)
+    )
+
+    assert run.status == "blocked"
+    assert run.failure_class == "pytest_failure"
+    assert "diagnostics:90" in backend.commands
+    assert any(event.phase == "baseline_diagnostics" for event in run.events)
 
 
 def test_supervisor_produces_blocked_report_after_repair_budget_exhausted():
