@@ -154,6 +154,7 @@ class SupervisorBackend(Protocol):
     def git_diff_stat(self) -> CommandResult: ...
     def git_diff(self) -> CommandResult: ...
     def run_tests(self, targets: Optional[List[str]] = None, timeout: int = 240) -> CommandResult: ...
+    def run_test_diagnostics(self, timeout: int = 120) -> CommandResult: ...
     def smoke(self, endpoints: List[str], restart_command: str = "") -> CommandResult: ...
     def commit(self, message: str, files: Optional[List[str]] = None) -> CommandResult: ...
     def push_branch(self, branch: str) -> CommandResult: ...
@@ -222,6 +223,16 @@ class LocalSupervisorBackend:
         cmd = [str(self.project_root / ".venv/bin/python"), "-m", "pytest", "-q"]
         if targets:
             cmd.extend(targets)
+        return self._run(cmd, timeout=timeout)
+
+    def run_test_diagnostics(self, timeout: int = 120) -> CommandResult:
+        cmd = [
+            str(self.project_root / ".venv/bin/python"),
+            "-m",
+            "pytest",
+            "-x",
+            "-vv",
+        ]
         return self._run(cmd, timeout=timeout)
 
     def smoke(self, endpoints: List[str], restart_command: str = "") -> CommandResult:
@@ -371,6 +382,20 @@ class SelfRepairSupervisor:
         baseline = self.backend.run_tests(timeout=config.test_timeout_seconds)
         run.add("baseline_tests", "success" if baseline.success else "failure", baseline.output or baseline.error)
         if not baseline.success:
+            run.add(
+                "baseline_diagnostics",
+                "running",
+                "Running first-failure pytest diagnostics",
+                timeout_seconds=min(config.test_timeout_seconds, 180),
+            )
+            diagnostics = self.backend.run_test_diagnostics(
+                timeout=min(config.test_timeout_seconds, 180),
+            )
+            run.add(
+                "baseline_diagnostics",
+                "success" if diagnostics.success else "failure",
+                diagnostics.output or diagnostics.error,
+            )
             return self._blocked(run, "pytest_failure", "Baseline tests failed")
 
         run.add("baseline_smoke", "running", "Running baseline smoke")
