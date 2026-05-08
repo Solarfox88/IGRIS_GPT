@@ -1224,7 +1224,7 @@ class AgentReasoningLoop:
                 ),
             }
         if self._app_route_already_exists(file_lines, insertion):
-            return {"success": True, "summary": "insert_after: no change; FastAPI route already present"}
+            return {"success": False, "error": self._duplicate_app_route_error("insert_after")}
         if self._inserts_app_route_before_app_init(file_lines, idx, insertion, after=True):
             return {
                 "success": False,
@@ -1274,7 +1274,7 @@ class AgentReasoningLoop:
         nl = "\n"
         insertion = new_content if new_content.endswith(nl) else new_content + nl
         if self._app_route_already_exists(file_lines, insertion):
-            return {"success": True, "summary": "insert_before: no change; FastAPI route already present"}
+            return {"success": False, "error": self._duplicate_app_route_error("insert_before")}
         if self._inserts_app_route_before_app_init(file_lines, idx, insertion, after=False):
             return {
                 "success": False,
@@ -1378,6 +1378,14 @@ class AgentReasoningLoop:
         existing_routes = self._app_routes_in_content(existing_text)
         return bool(inserted_routes & existing_routes)
 
+    @staticmethod
+    def _duplicate_app_route_error(action_type: str) -> str:
+        return (
+            f"{action_type}: FastAPI route already present; do not retry this edit. "
+            "Proceed to tests/report or use replace_range only if the existing route "
+            "body needs a targeted update."
+        )
+
     def _execute_replace_range(self, rt, action) -> Dict[str, Any]:
         """Replace line range. Params: path, start (1-based), end (1-based), content."""
         import hashlib
@@ -1411,7 +1419,7 @@ class AgentReasoningLoop:
             exclude_start=start - 1,
             exclude_end=end,
         ):
-            return {"success": True, "summary": "replace_range: no change; FastAPI route already present"}
+            return {"success": False, "error": self._duplicate_app_route_error("replace_range")}
         merged_lines = file_lines[: start - 1] + [replacement] + file_lines[end:]
         merged = "".join(merged_lines)
         if file_path.endswith(".py"):
