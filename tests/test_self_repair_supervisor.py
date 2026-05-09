@@ -362,6 +362,30 @@ def test_supervisor_completes_by_verification_when_reasoning_timeout_has_diff():
     assert run.status == "completed"
     assert "issue" not in backend.commands
     assert not any(event.phase == "failure" for event in run.events)
+    assert run.report["degraded_completion"] is True
+    assert run.report["completion_mode"] == "verified_diff"
+
+
+def test_supervisor_records_post_merge_smoke_and_degraded_completion():
+    backend = FakeBackend()
+    backend.reasoning_results = [{
+        "status": "blocked",
+        "stop_reason": "reasoning_timeout",
+        "files_modified": [],
+        "final_summary": "Command timed out after producing changes",
+        "goal": "rank task with tests",
+    }]
+    run = SelfRepairSupervisor("/tmp/project", backend=backend).run(
+        _config(dry_run=False, allow_github_pr=True, allow_merge_if_green=True, max_repair_cycles=1)
+    )
+
+    assert run.status == "completed"
+    assert any(event.phase == "completion" and event.status == "degraded" for event in run.events)
+    assert any(event.phase == "post_merge_smoke" and event.status == "success" for event in run.events)
+    assert run.report["degraded_completion"] is True
+    assert run.report["completion_mode"] == "verified_diff"
+    assert run.report["post_merge_smoke"] is True
+    assert backend.commands.index("pull") < len(backend.commands) - 1
 
 
 def test_supervisor_runs_baseline_diagnostics_before_blocking():

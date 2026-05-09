@@ -1,4 +1,3 @@
-import pytest
 from fastapi.testclient import TestClient
 from igris.web.server import create_app
 
