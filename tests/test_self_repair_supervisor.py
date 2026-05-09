@@ -40,6 +40,7 @@ class FakeBackend:
         self.test_timeouts = []
         self.restore_result = CommandResult(True, "restored")
         self.last_reasoning_context = None
+        self.reasoning_contexts = []
 
     def git_status(self):
         self.commands.append("git_status")
@@ -56,6 +57,7 @@ class FakeBackend:
         self.commands.append(f"reasoning:{initial_context}")
         self.commands.append(f"reasoning_timeout:{timeout}")
         self.last_reasoning_context = initial_context
+        self.reasoning_contexts.append(initial_context)
         if self.reasoning_results:
             return self.reasoning_results.pop(0)
         return {
@@ -663,6 +665,12 @@ def test_supervisor_requires_ui_visibility_for_ui_goals():
     assert run.failure_class == "missing_ui_visibility" or not run.failure_class
     assert backend.last_reasoning_context["must_add_ui_visibility"] is True
     assert "Backend-only changes are not enough" in backend.last_reasoning_context["ui_visibility_policy"]
+    assert any(
+        context.get("supervised_repair") is True
+        and context.get("must_not_ask_user") is True
+        and context.get("must_add_ui_visibility") is True
+        for context in backend.reasoning_contexts
+    )
     assert any(
         event.phase == "rank_reasoning"
         and event.data.get("ui_visibility_required") is True
