@@ -547,6 +547,55 @@ def test_supervisor_passes_after_one_repair_cycle():
     assert any(event.phase == "repair_reasoning" for event in run.events)
 
 
+def test_supervisor_deduplicates_repair_issue_for_same_failure_in_single_run():
+    backend = FakeBackend()
+    backend.diff = CommandResult(True, "")
+    backend.reasoning_results = [
+        {
+            "status": "stopped",
+            "stop_reason": "max_steps",
+            "files_modified": [],
+            "final_summary": "stopped",
+            "goal": "rank task with tests",
+        },
+        {
+            "status": "blocked",
+            "stop_reason": "ask_user",
+            "files_modified": [],
+            "final_summary": "needs human",
+            "goal": "repair",
+        },
+        {
+            "status": "stopped",
+            "stop_reason": "max_steps",
+            "files_modified": [],
+            "final_summary": "stopped again",
+            "goal": "rank task with tests",
+        },
+        {
+            "status": "blocked",
+            "stop_reason": "ask_user",
+            "files_modified": [],
+            "final_summary": "needs human again",
+            "goal": "repair",
+        },
+    ]
+    run = SelfRepairSupervisor("/tmp/project", backend=backend).run(
+        _config(
+            dry_run=False,
+            allow_github_pr=True,
+            allow_merge_if_green=False,
+            max_rank_attempts=2,
+            max_repair_cycles=2,
+        )
+    )
+
+    assert run.status == "blocked"
+    assert sum(1 for command in backend.commands if command == "issue") == 1
+    assert sum(1 for event in run.events if event.phase == "repair_issue" and event.status == "success") == 1
+    assert sum(1 for event in run.events if event.phase == "repair_issue" and event.status == "skipped") == 1
+
+
 def test_supervisor_blocks_and_restores_when_repair_reasoning_blocks():
     backend = FakeBackend()
     backend.diff = CommandResult(True, "")

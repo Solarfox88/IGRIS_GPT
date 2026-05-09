@@ -582,6 +582,17 @@ class SelfRepairSupervisor:
         self.project_root = project_root
         self.backend = backend or LocalSupervisorBackend(project_root)
 
+    @staticmethod
+    def _repair_issue_already_created(run: SupervisorRun, failure: str) -> bool:
+        for event in run.events:
+            if event.phase != "repair_issue":
+                continue
+            if event.status != "success":
+                continue
+            if str(event.data.get("failure_class", "")) == failure:
+                return True
+        return False
+
     def run(
         self,
         config: RankSupervisorConfig,
@@ -845,10 +856,23 @@ class SelfRepairSupervisor:
         title = f"{config.rank_id}: supervised repair for {failure}"
         body = f"Supervisor detected {failure} during run {run.run_id}."
         if config.allow_github_pr and not config.dry_run:
-            issue = self.backend.create_issue(title, body)
-            run.add("repair_issue", "success" if issue.success else "failure", _command_detail(issue))
+            if self._repair_issue_already_created(run, failure):
+                run.add(
+                    "repair_issue",
+                    "skipped",
+                    "Repair issue already exists for this run/failure",
+                    failure_class=failure,
+                )
+            else:
+                issue = self.backend.create_issue(title, body)
+                run.add(
+                    "repair_issue",
+                    "success" if issue.success else "failure",
+                    _command_detail(issue),
+                    failure_class=failure,
+                )
         else:
-            run.add("repair_issue", "dry_run", title)
+            run.add("repair_issue", "dry_run", title, failure_class=failure)
         repair_goal = (
             f"Fix IGRIS infrastructure failure '{failure}' observed during supervised "
             f"{config.rank_id}. Keep changes minimal, add tests, run pytest, do not push."
