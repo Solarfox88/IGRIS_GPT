@@ -534,7 +534,16 @@ class SelfRepairSupervisor:
                 initial_context=self._rank_initial_context(config),
                 timeout=config.reasoning_timeout_seconds,
             )
-            run.add("rank_reasoning", str(reasoning.get("status", "")), reasoning.get("final_summary", ""), loop_id=reasoning.get("loop_id", ""))
+            reasoning_status = str(reasoning.get("status", ""))
+            stop_reason = str(reasoning.get("stop_reason", ""))
+            run.add(
+                "rank_reasoning",
+                reasoning_status,
+                reasoning.get("final_summary", ""),
+                loop_id=reasoning.get("loop_id", ""),
+                stop_reason=stop_reason,
+                files_modified=list(reasoning.get("files_modified") or []),
+            )
 
             diff_stat = self.backend.git_diff_stat()
             diff = self.backend.git_diff()
@@ -571,9 +580,19 @@ class SelfRepairSupervisor:
                 run.add("targeted_tests", "success" if targeted.success else "failure", _command_detail(targeted))
                 run.add("full_pytest", "success" if full.success else "failure", _command_detail(full))
                 run.add("smoke", "success" if final_smoke.success else "failure", _command_detail(final_smoke))
-                if self._rank_passed(reasoning, diff_stat, targeted, full, final_smoke):
-                    return self._complete_rank(run, config, branch)
-                failure = classify_failure(reasoning, diff.output, targeted, full, final_smoke)
+            if self._rank_passed(reasoning, diff_stat, targeted, full, final_smoke):
+                completion_mode = "direct"
+                if reasoning_status != "finished" or stop_reason != "finish":
+                    completion_mode = "verified_diff"
+                    run.add(
+                        "completion",
+                        "degraded",
+                        "Rank completed by verification after reasoning did not finish cleanly",
+                        mode=completion_mode,
+                        stop_reason=stop_reason,
+                        )
+                return self._complete_rank(run, config, branch, completion_mode=completion_mode)
+            failure = classify_failure(reasoning, diff.output, targeted, full, final_smoke)
 
             run.failure_class = failure
             run.add("failure", "classified", failure)
@@ -676,7 +695,16 @@ class SelfRepairSupervisor:
             return False
         return True
 
-    def _complete_rank(self, run: SupervisorRun, config: RankSupervisorConfig, branch: str) -> SupervisorRun:
+    def _complete_rank(
+        self,
+        run: SupervisorRun,
+        config: RankSupervisorConfig,
+        branch: str,
+        *,
+        completion_mode: str = "direct",
+    ) -> SupervisorRun:
+        restart_command = config.service_restart_command if not config.defer_service_restart else ""
+        post_merge_smoke: Optional[CommandResult] = None
         if config.dry_run:
             run.add("github", "dry_run", "Commit/PR/merge skipped by dry_run")
         else:
@@ -696,9 +724,36 @@ class SelfRepairSupervisor:
                     run.add("merge", "success" if merge.success else "failure", _command_detail(merge))
                     pull = self.backend.pull_main()
                     run.add("pull_main", "success" if pull.success else "failure", _command_detail(pull))
+                    post_merge_smoke = self.backend.smoke(
+                        config.required_smoke_endpoints,
+                        restart_command,
+                    )
+                    run.add(
+                        "post_merge_smoke",
+                        "success" if post_merge_smoke.success else "failure",
+                        _command_detail(post_merge_smoke),
+                    )
+                    if not post_merge_smoke.success:
+                        run.status = "blocked"
+                        run.outcome = "Blocked"
+                        run.failure_class = "infrastructure_bug"
+                        run.report = {
+                            "autonomous": True,
+                            "manual_remaining": "post-merge verification failed",
+                            "completion_mode": completion_mode,
+                            "degraded_completion": completion_mode != "direct",
+                            "post_merge_smoke": False,
+                        }
+                        return run
         run.status = "completed"
         run.outcome = "Completed"
-        run.report = {"autonomous": True, "manual_remaining": "real GitHub merge is gated unless enabled"}
+        run.report = {
+            "autonomous": True,
+            "manual_remaining": "real GitHub merge is gated unless enabled",
+            "completion_mode": completion_mode,
+            "degraded_completion": completion_mode != "direct",
+            "post_merge_smoke": None if post_merge_smoke is None else post_merge_smoke.success,
+        }
         return run
 
     def _blocked(self, run: SupervisorRun, failure: str, detail: str) -> SupervisorRun:
