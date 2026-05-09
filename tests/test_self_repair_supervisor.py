@@ -525,10 +525,10 @@ def test_supervisor_blocks_and_restores_when_repair_reasoning_blocks():
         _config(max_rank_attempts=2, max_repair_cycles=1)
     )
 
-    assert run.status == "blocked"
-    assert run.failure_class == "max_steps"
+    assert run.status == "completed"
+    assert run.repair_cycles_used == 1
     assert "restore" in backend.commands
-    assert sum(1 for command in backend.commands if command.startswith("branch:")) == 1
+    assert sum(1 for command in backend.commands if command.startswith("branch:")) == 2
     assert any(event.phase == "repair_restore" for event in run.events)
 
 
@@ -559,9 +559,10 @@ def test_supervisor_blocks_and_restores_when_repair_tests_fail():
         _config(max_rank_attempts=2, max_repair_cycles=1)
     )
 
-    assert run.status == "blocked"
+    assert run.status == "completed"
+    assert run.repair_cycles_used == 1
     assert "restore" in backend.commands
-    assert sum(1 for command in backend.commands if command.startswith("branch:")) == 1
+    assert sum(1 for command in backend.commands if command.startswith("branch:")) == 2
     assert any(event.phase == "repair_restore" for event in run.events)
 
 
@@ -682,6 +683,52 @@ def test_supervisor_requires_ui_visibility_for_ui_goals():
         and event.data.get("ui_visibility_required") is True
         for event in run.events
     )
+
+
+def test_supervisor_retries_repair_validation_failures_for_rank_reasons():
+    backend = FakeBackend()
+    backend.diff = CommandResult(True, "+ui")
+    backend.reasoning_results = [
+        {
+            "status": "blocked",
+            "stop_reason": "blocked",
+            "files_modified": [],
+            "final_summary": "needs repair",
+            "goal": "rank task with tests",
+        },
+        {
+            "status": "blocked",
+            "stop_reason": "blocked",
+            "files_modified": ["igris/web/static/js/app.js"],
+            "final_summary": "repair produced a diff",
+            "goal": "repair",
+        },
+        {
+            "status": "finished",
+            "stop_reason": "finish",
+            "files_modified": [
+                "igris/web/server.py",
+                "tests/test_rank_ui_card.py",
+                "igris/web/static/js/app.js",
+            ],
+            "final_summary": "rank repaired",
+            "goal": "rank task with tests",
+        },
+    ]
+    backend.full_tests = [
+        CommandResult(True, "baseline ok"),
+        CommandResult(True, "rank full ok"),
+        CommandResult(False, "repair validation failed"),
+        CommandResult(True, "rank full ok"),
+    ]
+
+    run = SelfRepairSupervisor("/tmp/project", backend=backend).run(
+        _config(goal="Add UI-visible rank card", max_rank_attempts=2, max_repair_cycles=1)
+    )
+
+    assert run.status == "completed"
+    assert run.repair_cycles_used == 1
+    assert any(event.phase == "repair_retry" for event in run.events)
 
 
 def test_async_supervisor_start_is_observable_before_work_finishes(monkeypatch):
