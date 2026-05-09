@@ -191,6 +191,14 @@ def test_failure_classifier_detects_destructive_diff():
     assert failure == "destructive_diff"
 
 
+def test_failure_classifier_detects_invalid_bootstrap_smoke_failure():
+    smoke = CommandResult(False, '{"app":"IGRIS_GPT","rank":"A++","status":"ok","capability":"ui-visible-supervised"}', "Invalid bootstrap response for /api/health", 1)
+
+    failure = classify_failure(smoke=smoke)
+
+    assert failure == "invalid_bootstrap"
+
+
 def test_command_result_serializes_bytes_safely():
     result = CommandResult(False, b"stdout bytes", b"stderr bytes", 124)
     data = result.to_dict()
@@ -269,6 +277,42 @@ def test_local_backend_runs_reasoning_in_bounded_worker(monkeypatch, tmp_path):
     assert payload["goal"] == "rank goal"
     assert payload["max_steps"] == 7
     assert payload["initial_context"]["rank_test"] == "A"
+
+
+def test_local_backend_rejects_bootstrap_smoke_payloads(monkeypatch, tmp_path):
+    import igris.core.self_repair_supervisor as mod
+
+    responses = {
+        "http://127.0.0.1:7778/api/health": '{"app":"IGRIS_GPT","rank":"A++","status":"ok","capability":"ui-visible-supervised"}',
+        "http://127.0.0.1:7778/api/readiness": '{"project_root_exists":true,"project_root_is_dir":true,"templates":true,"static":true,"agents_registered":true}',
+        "http://127.0.0.1:7778/api/ping": '{"pong":true}',
+    }
+
+    class Proc:
+        def __init__(self, stdout="", stderr="", returncode=0):
+            self.returncode = returncode
+            self.stdout = stdout
+            self.stderr = stderr
+
+    def fake_run(cmd, **kwargs):
+        if cmd[:3] == ["curl", "-fsS", "http://127.0.0.1:7778/api/health"]:
+            return Proc(stdout=responses["http://127.0.0.1:7778/api/health"])
+        if cmd[:3] == ["curl", "-fsS", "http://127.0.0.1:7778/api/readiness"]:
+            return Proc(stdout=responses["http://127.0.0.1:7778/api/readiness"])
+        if cmd[:3] == ["curl", "-fsS", "http://127.0.0.1:7778/api/ping"]:
+            return Proc(stdout=responses["http://127.0.0.1:7778/api/ping"])
+        return Proc(stdout="ok")
+
+    monkeypatch.setattr(mod.subprocess, "run", fake_run)
+
+    result = LocalSupervisorBackend(str(tmp_path)).smoke([
+        "http://127.0.0.1:7778/api/health",
+        "http://127.0.0.1:7778/api/readiness",
+        "http://127.0.0.1:7778/api/ping",
+    ])
+
+    assert not result.success
+    assert "Invalid bootstrap response for http://127.0.0.1:7778/api/health" in result.error
 
 
 def test_local_backend_classifies_reasoning_timeout(monkeypatch, tmp_path):
@@ -779,6 +823,61 @@ def test_supervisor_rejects_invalid_ui_test_diff_before_validation_pytest():
     assert not any(command.startswith("tests:") for command in backend.commands)
     assert any(
         event.phase == "repair_retry" and event.data.get("failure_class") == "wrong_file_edit"
+        for event in run.events
+    )
+
+
+def test_supervisor_rejects_invalid_fastapi_bootstrap_diff_before_validation_pytest():
+    backend = FakeBackend()
+    backend.diff = CommandResult(
+        True,
+        """diff --git a/igris/web/server.py b/igris/web/server.py
+@@ -56,12 +56,13 @@ def create_app() -> FastAPI:
+     @app.get('/api/rank/ui-card')
+     async def get_rank_ui_card():
+     return {'app': 'IGRIS_GPT', 'rank': 'A++', 'status': 'ok', 'capability': 'ui-visible-supervised'}
+
+-    @app.get('/api/status')
+-    async def api_status() -> Dict[str, object]:
+-        provider, model = provider_router.choose_provider()
+-        return {"provider": provider, "model": model, "safe": True}
++    return JSONResponse(content={'app': 'IGRIS_GPT', 'rank': 'A++', 'status': 'ok', 'capability': 'ui-visible-supervised'})
+@@ -2798,6 +2799,10 @@ def run_app(application: FastAPI, host: str = "0.0.0.0", port: int = 7778) -> No
+     @app.get('/api/rank/ui-card')
+     async def get_rank_ui_card():
+         return {'app': 'IGRIS_GPT', 'rank': 'A++', 'status': 'ok', 'capability': 'ui-visible-supervised'}
++
++    @app.get('/api/rank/ui-card')
++    async def get_rank_ui_card():
++        return {'app': 'IGRIS_GPT', 'rank': 'A++', 'status': 'ok', 'capability': 'ui-visible-supervised'}
+""",
+    )
+    backend.reasoning_results = [
+        {
+            "status": "finished",
+            "stop_reason": "finish",
+            "files_modified": ["igris/web/server.py", "tests/test_rank_ui_card.py"],
+            "final_summary": "ui repair",
+            "goal": "Add UI-visible rank card",
+        }
+    ]
+    backend.full_tests = [CommandResult(True, "baseline ok")]
+
+    supervisor = SelfRepairSupervisor("/tmp/project", backend=backend)
+    run = SupervisorRun(run_id="run-3", rank_id="A")
+
+    result = supervisor._repair_cycle(
+        run,
+        _config(goal="Add UI-visible rank card", max_repair_cycles=1),
+        "missing_ui_visibility",
+        1,
+    )
+
+    assert result is True
+    assert "restore" in backend.commands
+    assert not any(command.startswith("tests:") for command in backend.commands)
+    assert any(
+        event.phase == "repair_retry" and event.data.get("failure_class") == "invalid_bootstrap"
         for event in run.events
     )
 
