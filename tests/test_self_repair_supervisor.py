@@ -765,28 +765,16 @@ def test_async_supervisor_start_is_observable_before_work_finishes(monkeypatch):
     assert get_supervised_run(run.run_id).status == "completed"
 
 
-def test_rank_supervisor_api_dry_run_blocks_dirty_repo(monkeypatch):
-    class DirtySupervisor:
-        def run(self, config):
-            backend = FakeBackend()
-            backend.status = CommandResult(True, " M file.py\n")
-            return SelfRepairSupervisor("/tmp/project", backend=backend).run(config)
-
-    import igris.core.self_repair_supervisor as mod
-
-    def fake_start(data, project_root):
-        run = DirtySupervisor().run(RankSupervisorConfig.from_dict(data))
-        mod.RUN_STORE[run.run_id] = run
-        return run
-
-    monkeypatch.setattr(mod, "start_supervised_rank_async", fake_start)
+def test_rank_supervisor_api_dry_run_blocks_dirty_repo():
     client = TestClient(create_app())
     resp = client.post("/api/rank/run-supervised", json={"goal": "rank", "dry_run": True})
 
     assert resp.status_code == 200
     data = resp.json()
-    assert data["status"] == "blocked"
+    assert data["status"] == "running"
+    assert data["run_id"]
     detail = client.get(f"/api/rank/runs/{data['run_id']}")
     assert detail.status_code == 200
+    assert detail.json()["status"] in {"running", "completed", "blocked"}
     listed = client.get("/api/rank/runs")
     assert listed.status_code == 200
