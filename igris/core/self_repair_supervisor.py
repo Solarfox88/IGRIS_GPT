@@ -30,6 +30,7 @@ REPAIRABLE_FAILURES = {
     "missing_ui_visibility",
     "wrong_file_edit",
     "infrastructure_bug",
+    "invalid_bootstrap",
     "syntax_error",
 }
 
@@ -357,6 +358,13 @@ class LocalSupervisorBackend:
             outputs.append(result.output or result.error)
             if not result.success:
                 return CommandResult(False, "\n".join(outputs), result.error, result.returncode)
+            if not _smoke_output_is_valid(endpoint, result.output):
+                return CommandResult(
+                    False,
+                    "\n".join(outputs),
+                    f"Invalid bootstrap response for {endpoint}",
+                    1,
+                )
         return CommandResult(True, "\n".join(outputs), "", 0)
 
     def commit(self, message: str, files: Optional[List[str]] = None) -> CommandResult:
@@ -438,6 +446,9 @@ def classify_failure(
     if full_tests and not full_tests.success:
         return "pytest_failure"
     if smoke and not smoke.success:
+        smoke_text = "\n".join([smoke.output or "", smoke.error or ""]).lower()
+        if "bootstrap" in smoke_text or "invalid bootstrap" in smoke_text:
+            return "invalid_bootstrap"
         return "infrastructure_bug"
     return "infrastructure_bug"
 
@@ -449,6 +460,27 @@ def _has_destructive_diff(diff: str) -> bool:
     removed_lines = [line for line in diff.splitlines() if line.startswith("-") and not line.startswith("---")]
     critical = ("def create_app", "class ", "import ")
     return any(any(token in line for token in critical) for line in removed_lines)
+
+
+def _has_invalid_fastapi_bootstrap_diff(diff: str) -> bool:
+    lowered = diff.lower()
+    if "return jsonresponse" in lowered and "def create_app" in lowered:
+        return True
+
+    ui_card_route = "@app.get('/api/rank/ui-card')" in lowered or '@app.get("/api/rank/ui-card")' in lowered
+    if "def run_app" in lowered and ui_card_route:
+        return True
+
+    if lowered.count("@app.get('/api/rank/ui-card')") > 1:
+        return True
+    if lowered.count('@app.get("/api/rank/ui-card")') > 1:
+        return True
+
+    bootstrap_routes = ("/api/health", "/api/readiness", "/api/ping")
+    if any(route in lowered for route in bootstrap_routes) and "return jsonresponse" in lowered:
+        return True
+
+    return False
 
 
 def _is_valid_ui_test_diff(diff: str) -> bool:
@@ -488,6 +520,25 @@ def _is_valid_ui_test_diff(diff: str) -> bool:
     if not required_get or not required_factory:
         return False
     return not any(token in lowered for token in forbidden_tokens)
+
+
+def _smoke_output_is_valid(endpoint: str, output: str) -> bool:
+    text = output.strip()
+    if not text:
+        return False
+    try:
+        payload = json.loads(text)
+    except json.JSONDecodeError:
+        return False
+
+    if endpoint.endswith("/api/health"):
+        return payload.get("status") == "ok" and "version" in payload
+    if endpoint.endswith("/api/readiness"):
+        expected = ("project_root_exists", "project_root_is_dir", "templates", "static", "agents_registered")
+        return all(payload.get(key) is True for key in expected)
+    if endpoint.endswith("/api/ping"):
+        return payload.get("pong") is True
+    return True
 
 
 class SelfRepairSupervisor:
@@ -794,6 +845,20 @@ class SelfRepairSupervisor:
             restore = self.backend.restore_dangerous_diff()
             run.add("repair_restore", "success" if restore.success else "failure", _command_detail(restore))
             return False
+        if _has_invalid_fastapi_bootstrap_diff(diff.output):
+            restore = self.backend.restore_dangerous_diff()
+            run.add(
+                "repair_restore",
+                "success" if restore.success else "failure",
+                "Invalid FastAPI bootstrap diff rejected before repair validation",
+            )
+            run.add(
+                "repair_retry",
+                "running",
+                "Invalid FastAPI bootstrap diff was rejected; retrying with remaining budget.",
+                failure_class="invalid_bootstrap",
+            )
+            return True
         if self._goal_requires_ui_visibility(config.goal) and not _is_valid_ui_test_diff(diff.output):
             restore = self.backend.restore_dangerous_diff()
             run.add(
