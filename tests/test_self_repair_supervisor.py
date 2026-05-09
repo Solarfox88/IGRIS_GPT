@@ -618,6 +618,58 @@ def test_supervisor_passes_requested_rank_test_file_to_reasoning_context():
     assert "Create tests/test_rank_status.py directly" in backend.last_reasoning_context["anti_loop_instruction"]
 
 
+def test_supervisor_requires_ui_visibility_for_ui_goals():
+    backend = FakeBackend()
+    backend.reasoning_results = [
+        {
+            "status": "finished",
+            "stop_reason": "finish",
+            "files_modified": ["igris/web/server.py", "tests/test_rank_ui_card.py"],
+            "final_summary": "backend only",
+            "goal": "Add UI-visible rank card",
+        },
+        {
+            "status": "finished",
+            "stop_reason": "finish",
+            "files_modified": ["igris/web/static/js/app.js"],
+            "final_summary": "ui repair",
+            "goal": "repair",
+        },
+        {
+            "status": "finished",
+            "stop_reason": "finish",
+            "files_modified": [
+                "igris/web/server.py",
+                "tests/test_rank_ui_card.py",
+                "igris/web/static/js/app.js",
+            ],
+            "final_summary": "ui plus backend",
+            "goal": "Add UI-visible rank card",
+        },
+    ]
+    backend.full_tests = [
+        CommandResult(True, "baseline ok"),
+        CommandResult(True, "rank full ok"),
+        CommandResult(True, "repair ok"),
+        CommandResult(True, "rank full ok"),
+    ]
+
+    run = SelfRepairSupervisor("/tmp/project", backend=backend).run(
+        _config(goal="Add UI-visible rank card", max_rank_attempts=2, max_repair_cycles=1)
+    )
+
+    assert run.status == "completed"
+    assert run.repair_cycles_used == 1
+    assert run.failure_class == "missing_ui_visibility" or not run.failure_class
+    assert backend.last_reasoning_context["must_add_ui_visibility"] is True
+    assert "Backend-only changes are not enough" in backend.last_reasoning_context["ui_visibility_policy"]
+    assert any(
+        event.phase == "rank_reasoning"
+        and event.data.get("ui_visibility_required") is True
+        for event in run.events
+    )
+
+
 def test_async_supervisor_start_is_observable_before_work_finishes(monkeypatch):
     started = threading.Event()
     release = threading.Event()

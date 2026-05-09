@@ -27,6 +27,7 @@ REPAIRABLE_FAILURES = {
     "max_steps",
     "ask_user",
     "missing_tests",
+    "missing_ui_visibility",
     "wrong_file_edit",
     "infrastructure_bug",
     "syntax_error",
@@ -541,6 +542,8 @@ class SelfRepairSupervisor:
                 str(path).startswith("igris/")
                 for path in modified_files
             )
+            ui_visibility_required = self._goal_requires_ui_visibility(config.goal)
+            ui_visibility_changed = self._has_ui_visibility_change(modified_files)
             run.add(
                 "rank_reasoning",
                 reasoning_status,
@@ -548,6 +551,8 @@ class SelfRepairSupervisor:
                 loop_id=reasoning.get("loop_id", ""),
                 stop_reason=stop_reason,
                 files_modified=modified_files,
+                ui_visibility_required=ui_visibility_required,
+                ui_visibility_changed=ui_visibility_changed,
             )
 
             diff_stat = self.backend.git_diff_stat()
@@ -586,6 +591,14 @@ class SelfRepairSupervisor:
                 run.add("full_pytest", "success" if full.success else "failure", _command_detail(full))
                 run.add("smoke", "success" if final_smoke.success else "failure", _command_detail(final_smoke))
             if self._rank_passed(reasoning, diff_stat, targeted, full, final_smoke):
+                if ui_visibility_required and not ui_visibility_changed:
+                    failure = "missing_ui_visibility"
+                else:
+                    failure = ""
+            else:
+                failure = classify_failure(reasoning, diff.output, targeted, full, final_smoke)
+
+            if not failure and self._rank_passed(reasoning, diff_stat, targeted, full, final_smoke):
                 completion_mode = "direct"
                 if reasoning_status != "finished" or stop_reason != "finish":
                     completion_mode = "verified_diff"
@@ -595,7 +608,7 @@ class SelfRepairSupervisor:
                         "Rank completed by verification after reasoning did not finish cleanly",
                         mode=completion_mode,
                         stop_reason=stop_reason,
-                        )
+                    )
                 return self._complete_rank(
                     run,
                     config,
@@ -603,7 +616,6 @@ class SelfRepairSupervisor:
                     completion_mode=completion_mode,
                     runtime_refresh_required=runtime_refresh_required,
                 )
-            failure = classify_failure(reasoning, diff.output, targeted, full, final_smoke)
 
             run.failure_class = failure
             run.add("failure", "classified", failure)
@@ -659,6 +671,13 @@ class SelfRepairSupervisor:
                 "TestClient(create_app()). Do not import app from igris.web.server."
             ),
         }
+        if self._goal_requires_ui_visibility(config.goal):
+            context["must_add_ui_visibility"] = True
+            context["ui_visibility_policy"] = (
+                "If the goal requires UI/dashboard visibility, modify a UI surface "
+                "such as igris/web/templates/index.html, igris/web/static/js/app.js, "
+                "or igris/web/static/css/style.css. Backend-only changes are not enough."
+            )
         for target in config.targeted_tests:
             if target.startswith("tests/test_") and target.endswith(".py"):
                 context["must_create_test_file"] = target
@@ -668,6 +687,26 @@ class SelfRepairSupervisor:
                 )
                 break
         return context
+
+    @staticmethod
+    def _goal_requires_ui_visibility(goal: str) -> bool:
+        lowered = goal.lower()
+        return any(token in lowered for token in ("ui", "dashboard", "frontend", "visible"))
+
+    @staticmethod
+    def _has_ui_visibility_change(files_modified: List[str]) -> bool:
+        ui_markers = (
+            "igris/web/templates/",
+            "igris/web/static/js/",
+            "igris/web/static/css/",
+            ".html",
+            ".js",
+            ".css",
+        )
+        for path in files_modified:
+            if any(marker in path for marker in ui_markers):
+                return True
+        return False
 
     def _repair_cycle(self, run: SupervisorRun, config: RankSupervisorConfig, failure: str, cycle: int) -> bool:
         title = f"{config.rank_id}: supervised repair for {failure}"
