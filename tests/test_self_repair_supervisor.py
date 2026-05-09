@@ -212,6 +212,27 @@ index 1111111..2222222 100644
     assert failure != "destructive_diff"
 
 
+def test_failure_classifier_allows_test_file_rewrite_without_marking_invalid_bootstrap():
+    diff = """diff --git a/tests/test_rank_ui_card.py b/tests/test_rank_ui_card.py
+index 1111111..2222222 100644
+--- a/tests/test_rank_ui_card.py
++++ b/tests/test_rank_ui_card.py
+@@ -1,8 +1,8 @@
+-from fastapi.testclient import TestClient
+ from fastapi.testclient import TestClient
+
+ from igris.web.server import create_app
+
+
+ def test_rank_ui_card_endpoint_available():
+     client = TestClient(create_app())
+"""
+
+    failure = classify_failure(diff=diff)
+
+    assert failure != "invalid_bootstrap"
+
+
 def test_failure_classifier_detects_invalid_bootstrap_smoke_failure():
     smoke = CommandResult(False, '{"app":"IGRIS_GPT","rank":"A++","status":"ok","capability":"ui-visible-supervised"}', "Invalid bootstrap response for /api/health", 1)
 

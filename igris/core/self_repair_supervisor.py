@@ -466,6 +466,10 @@ def _has_destructive_diff(diff: str) -> bool:
 
 
 def _has_invalid_fastapi_bootstrap_diff(diff: str) -> bool:
+    paths = _diff_changed_paths(diff)
+    if paths and "igris/web/server.py" not in paths:
+        return False
+
     lowered = diff.lower()
     if "return jsonresponse" in lowered and "def create_app" in lowered:
         return True
