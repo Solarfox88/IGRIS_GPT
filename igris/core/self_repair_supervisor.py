@@ -841,9 +841,21 @@ class SelfRepairSupervisor:
         diff_stat = self.backend.git_diff_stat()
         diff = self.backend.git_diff()
         run.add("repair_diff_stat", "success" if diff_stat.success else "failure", _command_detail(diff_stat))
-        if not diff_stat.success or _has_destructive_diff(diff.output):
+        if not diff_stat.success:
             restore = self.backend.restore_dangerous_diff()
             run.add("repair_restore", "success" if restore.success else "failure", _command_detail(restore))
+            return False
+        if _has_destructive_diff(diff.output):
+            restore = self.backend.restore_dangerous_diff()
+            run.add("repair_restore", "success" if restore.success else "failure", _command_detail(restore))
+            if failure in {"reasoning_loop_blocked", "missing_ui_visibility", "max_steps"}:
+                run.add(
+                    "repair_retry",
+                    "running",
+                    "Destructive repair diff was rejected; retrying with remaining budget.",
+                    failure_class="destructive_diff",
+                )
+                return True
             return False
         if _has_invalid_fastapi_bootstrap_diff(diff.output):
             restore = self.backend.restore_dangerous_diff()
