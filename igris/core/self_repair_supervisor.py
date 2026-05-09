@@ -720,10 +720,17 @@ class SelfRepairSupervisor:
             f"Fix IGRIS infrastructure failure '{failure}' observed during supervised "
             f"{config.rank_id}. Keep changes minimal, add tests, run pytest, do not push."
         )
+        repair_context = self._rank_initial_context(config)
+        repair_context.update({
+            "repair_cycle": cycle,
+            "failure_class": failure,
+            "supervised_repair": True,
+            "repair_goal": repair_goal,
+        })
         result = self.backend.run_reasoning(
             repair_goal,
             max_steps=160,
-            initial_context={"repair_cycle": cycle, "failure_class": failure, "supervised_repair": True},
+            initial_context=repair_context,
             timeout=config.reasoning_timeout_seconds,
         )
         run.add("repair_reasoning", str(result.get("status", "")), result.get("final_summary", ""))
