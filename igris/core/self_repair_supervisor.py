@@ -695,6 +695,10 @@ class SelfRepairSupervisor:
             diff_stat = self.backend.git_diff_stat()
             diff = self.backend.git_diff()
             run.add("diff_stat", "success" if diff_stat.success else "failure", _command_detail(diff_stat))
+            targeted = CommandResult(True, "Targeted tests skipped")
+            full = CommandResult(True, "Full pytest skipped")
+            final_smoke = CommandResult(True, "Final smoke skipped")
+            failure = ""
 
             if _has_destructive_diff(diff.output):
                 run.add("safety", "blocked", "Destructive diff detected")
@@ -727,15 +731,15 @@ class SelfRepairSupervisor:
                 run.add("targeted_tests", "success" if targeted.success else "failure", _command_detail(targeted))
                 run.add("full_pytest", "success" if full.success else "failure", _command_detail(full))
                 run.add("smoke", "success" if final_smoke.success else "failure", _command_detail(final_smoke))
-            if self._rank_passed(reasoning, diff_stat, targeted, full, final_smoke):
-                if ui_visibility_required and not ui_visibility_changed:
-                    failure = "missing_ui_visibility"
+            rank_passed = self._rank_passed(reasoning, diff_stat, targeted, full, final_smoke)
+            if not failure:
+                if rank_passed:
+                    if ui_visibility_required and not ui_visibility_changed:
+                        failure = "missing_ui_visibility"
                 else:
-                    failure = ""
-            else:
-                failure = classify_failure(reasoning, diff.output, targeted, full, final_smoke)
+                    failure = classify_failure(reasoning, diff.output, targeted, full, final_smoke)
 
-            if not failure and self._rank_passed(reasoning, diff_stat, targeted, full, final_smoke):
+            if not failure and rank_passed:
                 completion_mode = "direct"
                 if reasoning_status != "finished" or stop_reason != "finish":
                     completion_mode = "verified_diff"
