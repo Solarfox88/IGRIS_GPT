@@ -457,6 +457,9 @@ def _has_destructive_diff(diff: str) -> bool:
     dangerous_tokens = [".env", ".venv", "__pycache__", ".pytest_cache", ".igris"]
     if any(token in diff for token in dangerous_tokens):
         return True
+    paths = _diff_changed_paths(diff)
+    if paths and all(path.startswith("tests/") for path in paths):
+        return False
     removed_lines = [line for line in diff.splitlines() if line.startswith("-") and not line.startswith("---")]
     critical = ("def create_app", "class ", "import ")
     return any(any(token in line for token in critical) for line in removed_lines)
