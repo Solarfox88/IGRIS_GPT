@@ -478,6 +478,12 @@ def _is_valid_ui_test_diff(diff: str) -> bool:
         "json=",
         "data=",
         "from igris.web.server import app",
+        "response.json()['data']",
+        'response.json()["data"]',
+        "response.json().get('data')",
+        'response.json().get("data")',
+        "assert 'data' in response.json()",
+        'assert "data" in response.json()',
     )
     if not required_get or not required_factory:
         return False
@@ -714,7 +720,9 @@ class SelfRepairSupervisor:
             context["ui_test_policy"] = (
                 "UI tests must stay minimal and exact. Do not add placeholder routes, "
                 "commented example paths, or unrelated assertions. Test the exact "
-                "required endpoint plus the minimal UI/dashboard visibility signal."
+                "required endpoint plus the minimal UI/dashboard visibility signal. "
+                "For /api/rank/ui-card, only assert the contract keys app, rank, status, "
+                "and capability. Do not assert extra JSON keys such as data."
             )
         for target in config.targeted_tests:
             if target.startswith("tests/test_") and target.endswith(".py"):
@@ -762,7 +770,8 @@ class SelfRepairSupervisor:
             repair_goal += (
                 " The UI mission must include the exact /api/rank/ui-card contract and "
                 "minimal UI/dashboard visibility. Do not create placeholder routes or "
-                "unrelated UI endpoint assertions in tests/test_rank_ui_card.py."
+                "unrelated UI endpoint assertions in tests/test_rank_ui_card.py. "
+                "Only assert the contract keys app, rank, status, and capability."
             )
         repair_context = self._rank_initial_context(config)
         repair_context.update({
