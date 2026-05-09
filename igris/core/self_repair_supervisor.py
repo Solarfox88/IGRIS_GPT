@@ -536,13 +536,18 @@ class SelfRepairSupervisor:
             )
             reasoning_status = str(reasoning.get("status", ""))
             stop_reason = str(reasoning.get("stop_reason", ""))
+            modified_files = list(reasoning.get("files_modified") or [])
+            runtime_refresh_required = any(
+                str(path).startswith("igris/")
+                for path in modified_files
+            )
             run.add(
                 "rank_reasoning",
                 reasoning_status,
                 reasoning.get("final_summary", ""),
                 loop_id=reasoning.get("loop_id", ""),
                 stop_reason=stop_reason,
-                files_modified=list(reasoning.get("files_modified") or []),
+                files_modified=modified_files,
             )
 
             diff_stat = self.backend.git_diff_stat()
@@ -591,7 +596,13 @@ class SelfRepairSupervisor:
                         mode=completion_mode,
                         stop_reason=stop_reason,
                         )
-                return self._complete_rank(run, config, branch, completion_mode=completion_mode)
+                return self._complete_rank(
+                    run,
+                    config,
+                    branch,
+                    completion_mode=completion_mode,
+                    runtime_refresh_required=runtime_refresh_required,
+                )
             failure = classify_failure(reasoning, diff.output, targeted, full, final_smoke)
 
             run.failure_class = failure
@@ -702,6 +713,7 @@ class SelfRepairSupervisor:
         branch: str,
         *,
         completion_mode: str = "direct",
+        runtime_refresh_required: bool = False,
     ) -> SupervisorRun:
         restart_command = config.service_restart_command if not config.defer_service_restart else ""
         post_merge_smoke: Optional[CommandResult] = None
@@ -724,35 +736,45 @@ class SelfRepairSupervisor:
                     run.add("merge", "success" if merge.success else "failure", _command_detail(merge))
                     pull = self.backend.pull_main()
                     run.add("pull_main", "success" if pull.success else "failure", _command_detail(pull))
-                    post_merge_smoke = self.backend.smoke(
-                        config.required_smoke_endpoints,
-                        restart_command,
-                    )
-                    run.add(
-                        "post_merge_smoke",
-                        "success" if post_merge_smoke.success else "failure",
-                        _command_detail(post_merge_smoke),
-                    )
-                    if not post_merge_smoke.success:
-                        run.status = "blocked"
-                        run.outcome = "Blocked"
-                        run.failure_class = "infrastructure_bug"
-                        run.report = {
-                            "autonomous": True,
-                            "manual_remaining": "post-merge verification failed",
-                            "completion_mode": completion_mode,
-                            "degraded_completion": completion_mode != "direct",
-                            "post_merge_smoke": False,
-                        }
-                        return run
+                    if config.defer_service_restart and runtime_refresh_required:
+                        run.add(
+                            "post_merge_smoke",
+                            "deferred",
+                            "Post-merge smoke deferred until the runtime is restarted and refreshed.",
+                            runtime_refresh_required=True,
+                        )
+                    else:
+                        post_merge_smoke = self.backend.smoke(
+                            config.required_smoke_endpoints,
+                            restart_command,
+                        )
+                        run.add(
+                            "post_merge_smoke",
+                            "success" if post_merge_smoke.success else "failure",
+                            _command_detail(post_merge_smoke),
+                        )
+                        if not post_merge_smoke.success:
+                            run.status = "blocked"
+                            run.outcome = "Blocked"
+                            run.failure_class = "infrastructure_bug"
+                            run.report = {
+                                "autonomous": True,
+                                "manual_remaining": "post-merge verification failed",
+                                "completion_mode": completion_mode,
+                                "degraded_completion": completion_mode != "direct" or runtime_refresh_required,
+                                "post_merge_smoke": False,
+                                "runtime_refresh_required": runtime_refresh_required,
+                            }
+                            return run
         run.status = "completed"
         run.outcome = "Completed"
         run.report = {
             "autonomous": True,
             "manual_remaining": "real GitHub merge is gated unless enabled",
             "completion_mode": completion_mode,
-            "degraded_completion": completion_mode != "direct",
-            "post_merge_smoke": None if post_merge_smoke is None else post_merge_smoke.success,
+            "degraded_completion": completion_mode != "direct" or runtime_refresh_required,
+            "post_merge_smoke": False if post_merge_smoke is None else post_merge_smoke.success,
+            "runtime_refresh_required": runtime_refresh_required,
         }
         return run
 
