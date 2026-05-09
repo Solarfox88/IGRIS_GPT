@@ -678,6 +678,11 @@ class SelfRepairSupervisor:
                 "such as igris/web/templates/index.html, igris/web/static/js/app.js, "
                 "or igris/web/static/css/style.css. Backend-only changes are not enough."
             )
+            context["ui_test_policy"] = (
+                "UI tests must stay minimal and exact. Do not add placeholder routes, "
+                "commented example paths, or unrelated assertions. Test the exact "
+                "required endpoint plus the minimal UI/dashboard visibility signal."
+            )
         for target in config.targeted_tests:
             if target.startswith("tests/test_") and target.endswith(".py"):
                 context["must_create_test_file"] = target
@@ -720,6 +725,12 @@ class SelfRepairSupervisor:
             f"Fix IGRIS infrastructure failure '{failure}' observed during supervised "
             f"{config.rank_id}. Keep changes minimal, add tests, run pytest, do not push."
         )
+        if self._goal_requires_ui_visibility(config.goal):
+            repair_goal += (
+                " The UI mission must include the exact /api/rank/ui-card contract and "
+                "minimal UI/dashboard visibility. Do not create placeholder routes or "
+                "unrelated UI endpoint assertions in tests/test_rank_ui_card.py."
+            )
         repair_context = self._rank_initial_context(config)
         repair_context.update({
             "repair_cycle": cycle,
