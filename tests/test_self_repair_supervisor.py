@@ -388,6 +388,33 @@ def test_supervisor_records_post_merge_smoke_and_degraded_completion():
     assert backend.commands.index("pull") < len(backend.commands) - 1
 
 
+def test_supervisor_defers_post_merge_smoke_when_runtime_refresh_is_required():
+    backend = FakeBackend()
+    backend.reasoning_results = [{
+        "status": "blocked",
+        "stop_reason": "reasoning_timeout",
+        "files_modified": ["igris/web/server.py", "tests/test_rank_summary_card.py"],
+        "final_summary": "Command timed out after producing changes",
+        "goal": "rank task with tests",
+    }]
+    run = SelfRepairSupervisor("/tmp/project", backend=backend).run(
+        _config(
+            dry_run=False,
+            allow_github_pr=True,
+            allow_merge_if_green=True,
+            defer_service_restart=True,
+            max_repair_cycles=1,
+        )
+    )
+
+    assert run.status == "completed"
+    assert any(event.phase == "post_merge_smoke" and event.status == "deferred" for event in run.events)
+    assert run.report["runtime_refresh_required"] is True
+    assert run.report["post_merge_smoke"] is False
+    assert run.report["degraded_completion"] is True
+    assert sum(1 for command in backend.commands if command.startswith("smoke:")) == 2
+
+
 def test_supervisor_runs_baseline_diagnostics_before_blocking():
     backend = FakeBackend()
     backend.full_tests = [CommandResult(False, "progress dots", "", 1)]
