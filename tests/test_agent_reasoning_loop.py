@@ -407,6 +407,10 @@ class TestRunWithMockedLLM:
             result = loop.run(goal="Fix bug")
         assert result.status == "blocked"
         assert result.stop_reason == "blocked"
+        assert "Blocked detail:" in result.final_summary
+        assert "action=blocked" in result.final_summary
+        assert "Cannot find server.py" in result.final_summary
+        assert "File not found" in result.final_summary
 
     def test_ask_user_stops_loop(self):
         loop = self._make_loop()

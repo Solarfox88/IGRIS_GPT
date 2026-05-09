@@ -1743,6 +1743,19 @@ class AgentReasoningLoop:
             lines.append(f"Files: {', '.join(result.files_modified)}")
         if result.errors:
             lines.append(f"Errors: {len(result.errors)}")
+        if result.steps and result.status == "blocked":
+            terminal = result.steps[-1]
+            details = []
+            if terminal.action_type:
+                details.append(f"action={terminal.action_type}")
+            if terminal.reason:
+                details.append(f"reason={terminal.reason}")
+            if terminal.result_summary:
+                details.append(f"result={terminal.result_summary}")
+            if terminal.error:
+                details.append(f"error={terminal.error}")
+            if details:
+                lines.append(f"Blocked detail: {redact_secrets('; '.join(details))[:500]}")
         return "\n".join(lines)
 
     # -- Public API --
