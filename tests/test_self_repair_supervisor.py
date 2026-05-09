@@ -515,6 +515,20 @@ def test_supervisor_produces_blocked_report_after_repair_budget_exhausted():
     assert run.report["blocked_reason"]
 
 
+def test_supervisor_handles_destructive_diff_without_unbound_local_exception():
+    backend = FakeBackend()
+    backend.diff = CommandResult(True, "-def create_app():\n+def removed():\n")
+    backend.diff_stat = CommandResult(True, " igris/web/server.py | 2 +-")
+    run = SelfRepairSupervisor("/tmp/project", backend=backend).run(
+        _config(max_rank_attempts=1, max_repair_cycles=0)
+    )
+
+    assert run.status == "blocked"
+    assert run.failure_class == "destructive_diff"
+    assert any(event.phase == "safety" and event.status == "blocked" for event in run.events)
+    assert all(event.phase != "exception" for event in run.events)
+
+
 def test_supervisor_passes_after_one_repair_cycle():
     backend = FakeBackend()
     backend.reasoning_results = [
