@@ -955,7 +955,11 @@ class SelfRepairSupervisor:
             )
             return True
         if self._goal_requires_ui_visibility(config.goal) and _is_product_only_ui_task_diff(diff.output):
-            if not (failure == "missing_ui_visibility" and _has_ui_surface_change(diff.output)):
+            allow_safe_ui_repair = (
+                _has_ui_surface_change(diff.output)
+                and failure in {"missing_ui_visibility", "reasoning_loop_blocked"}
+            )
+            if not allow_safe_ui_repair:
                 restore = self.backend.restore_dangerous_diff()
                 run.add(
                     "repair_restore",

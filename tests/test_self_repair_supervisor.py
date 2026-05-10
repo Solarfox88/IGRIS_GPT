@@ -1030,6 +1030,46 @@ index 1111111..2222222 100644
     assert not any(event.phase == "repair_retry" for event in run.events)
 
 
+def test_supervisor_accepts_safe_ui_surface_repair_for_reasoning_loop_blocked():
+    backend = FakeBackend()
+    backend.diff = CommandResult(
+        True,
+        """diff --git a/igris/web/templates/index.html b/igris/web/templates/index.html
+index 1111111..2222222 100644
+--- a/igris/web/templates/index.html
++++ b/igris/web/templates/index.html
+@@ -20,6 +20,7 @@
+ <main id="dashboard-root">
++  <div id="rank-ui-card-visibility" hidden></div>
+ </main>
+""",
+    )
+    backend.reasoning_results = [
+        {
+            "status": "finished",
+            "stop_reason": "finish",
+            "files_modified": ["igris/web/templates/index.html"],
+            "final_summary": "ui visibility repair",
+            "goal": "repair",
+        }
+    ]
+    backend.full_tests = [CommandResult(True, "repair validation passed")]
+
+    supervisor = SelfRepairSupervisor("/tmp/project", backend=backend)
+    run = SupervisorRun(run_id="run-ui-accept-reasoning", rank_id="A")
+
+    result = supervisor._repair_cycle(
+        run,
+        _config(goal="Add UI-visible rank card", max_repair_cycles=1),
+        "reasoning_loop_blocked",
+        1,
+    )
+
+    assert result is True
+    assert any(command.startswith("tests:") for command in backend.commands)
+    assert not any(event.phase == "repair_retry" for event in run.events)
+
+
 def test_supervisor_rejects_missing_ui_visibility_repair_when_only_tests_change():
     backend = FakeBackend()
     backend.diff = CommandResult(
