@@ -37,6 +37,7 @@ REPAIRABLE_FAILURES = {
 RETRYABLE_REPAIR_FAILURES = {
     "reasoning_loop_blocked",
     "missing_ui_visibility",
+    "missing_tests",
     "max_steps",
     "syntax_error",
     "pytest_failure",
@@ -441,6 +442,8 @@ def classify_failure(
     if _has_destructive_diff(diff):
         return "destructive_diff"
     if targeted_tests and not targeted_tests.success:
+        if _is_missing_test_target_error(targeted_tests):
+            return "missing_tests"
         return "pytest_failure"
     if full_tests and not full_tests.success:
         return "pytest_failure"
@@ -530,6 +533,13 @@ def _has_invalid_fastapi_bootstrap_diff(diff: str) -> bool:
         return True
 
     return False
+
+
+def _is_missing_test_target_error(result: Optional["CommandResult"]) -> bool:
+    if not result:
+        return False
+    text = "\n".join([result.output or "", result.error or ""]).lower()
+    return "file or directory not found" in text and "tests/test_" in text
 
 
 def _is_valid_ui_test_diff(diff: str) -> bool:
@@ -724,7 +734,9 @@ class SelfRepairSupervisor:
             return self._blocked(run, "infrastructure_bug", "Baseline smoke failed")
 
         repair_cycles = 0
-        for attempt in range(1, config.max_rank_attempts + 1):
+        attempt = 1
+        attempt_limit = config.max_rank_attempts
+        while attempt <= attempt_limit:
             branch = f"rank-{config.rank_id.lower()}-{int(time.time())}-{attempt}"
             run.branch = branch
             branch_result = self.backend.create_branch(branch)
@@ -903,6 +915,16 @@ class SelfRepairSupervisor:
             run.repair_cycles_used = repair_cycles
             if not self._repair_cycle(run, config, failure, repair_cycles):
                 return self._blocked(run, failure, "Repair cycle failed validation")
+            if attempt == attempt_limit and repair_cycles < config.max_repair_cycles:
+                attempt_limit += 1
+                run.add(
+                    "rank_attempt_extension",
+                    "running",
+                    "Extending rank attempts after successful repair on final configured attempt.",
+                    attempt_limit=attempt_limit,
+                    repair_cycles_used=repair_cycles,
+                )
+            attempt += 1
 
         return self._blocked(run, run.failure_class or "max_rank_attempts", "Rank attempts exhausted")
 
@@ -1124,6 +1146,11 @@ class SelfRepairSupervisor:
                     "requested endpoint and matching tests. Keep edits mission-owned and "
                     "avoid placeholder routes or unrelated assertions."
                 )
+        if failure == "missing_tests" and config.targeted_tests:
+            repair_goal += (
+                " Create or update the required targeted pytest file(s): "
+                f"{' '.join(config.targeted_tests)}."
+            )
         repair_context = self._rank_initial_context(config)
         repair_context.update({
             "repair_cycle": cycle,
@@ -1148,7 +1175,7 @@ class SelfRepairSupervisor:
         if _has_destructive_diff(diff.output):
             restore = self.backend.restore_dangerous_diff()
             run.add("repair_restore", "success" if restore.success else "failure", _command_detail(restore))
-            if failure in {"reasoning_loop_blocked", "missing_ui_visibility", "max_steps"}:
+            if failure in {"reasoning_loop_blocked", "missing_ui_visibility", "missing_tests", "max_steps"}:
                 run.add(
                     "repair_retry",
                     "running",

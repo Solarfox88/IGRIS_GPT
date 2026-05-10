@@ -209,6 +209,18 @@ def test_failure_classifier_detects_pytest_failure():
     assert failure == "pytest_failure"
 
 
+def test_failure_classifier_detects_missing_targeted_test_file():
+    failure = classify_failure(
+        targeted_tests=CommandResult(
+            False,
+            "ERROR: file or directory not found: tests/test_rank_s_dashboard.py",
+            "",
+            4,
+        )
+    )
+    assert failure == "missing_tests"
+
+
 def test_failure_classifier_detects_destructive_diff():
     failure = classify_failure(diff="-def create_app():\n+def removed():\n")
     assert failure == "destructive_diff"
@@ -661,6 +673,48 @@ def test_supervisor_passes_after_one_repair_cycle():
     assert run.status == "completed"
     assert run.repair_cycles_used == 1
     assert any(event.phase == "repair_reasoning" for event in run.events)
+
+
+def test_supervisor_extends_attempts_after_repair_on_final_configured_attempt():
+    backend = FakeBackend()
+    backend.reasoning_results = [
+        {
+            "status": "stopped",
+            "stop_reason": "max_steps",
+            "files_modified": [],
+            "final_summary": "stopped",
+            "goal": "rank task with tests",
+        },
+        {
+            "status": "finished",
+            "stop_reason": "finish",
+            "files_modified": ["igris/core/fix.py"],
+            "final_summary": "repair ok",
+            "goal": "repair",
+        },
+        {
+            "status": "finished",
+            "stop_reason": "finish",
+            "files_modified": ["igris/web/server.py", "tests/test_rank_status.py"],
+            "final_summary": "rank ok after repair",
+            "goal": "rank task with tests",
+        },
+    ]
+    backend.full_tests = [
+        CommandResult(True, "baseline ok"),
+        CommandResult(True, "rank full failed attempt"),
+        CommandResult(True, "repair validation ok"),
+        CommandResult(True, "rank full final"),
+    ]
+
+    run = SelfRepairSupervisor("/tmp/project", backend=backend).run(
+        _config(max_rank_attempts=1, max_repair_cycles=2)
+    )
+
+    assert run.status == "completed"
+    assert run.repair_cycles_used == 1
+    assert sum(1 for command in backend.commands if command.startswith("branch:")) == 2
+    assert any(event.phase == "rank_attempt_extension" for event in run.events)
 
 
 def test_supervisor_deduplicates_repair_issue_for_same_failure_in_single_run():
