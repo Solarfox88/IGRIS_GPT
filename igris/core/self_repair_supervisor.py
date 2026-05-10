@@ -1185,6 +1185,41 @@ class SelfRepairSupervisor:
             lines.append("\\ No newline at end of file")
         return "\n".join(lines) + "\n"
 
+    def _re_scaffold_targeted_test_if_missing(
+        self,
+        run: SupervisorRun,
+        config: RankSupervisorConfig,
+    ) -> bool:
+        target = self._targeted_test_file(config)
+        if not target:
+            return False
+        target_path = Path(self.project_root) / target
+        if target_path.exists():
+            return False
+
+        scaffold = self._scaffold_missing_tests_target(config)
+        run.add("repair_scaffold", "success" if scaffold.success else "failure", _command_detail(scaffold))
+        if not scaffold.success:
+            return False
+
+        synthetic_diff = self._synthetic_missing_tests_diff(config)
+        if not synthetic_diff or not _is_valid_missing_tests_repair_diff(synthetic_diff, config.goal):
+            restore = self.backend.restore_dangerous_diff()
+            run.add(
+                "repair_restore",
+                "success" if restore.success else "failure",
+                "Post-restore targeted test scaffold was invalid; restored.",
+            )
+            return False
+
+        run.add(
+            "repair_scaffold_diff",
+            "success",
+            "Synthesized missing-tests diff from post-restore scaffold file.",
+            synthesized_untracked=True,
+        )
+        return True
+
     def _scaffold_missing_tests_target(self, config: RankSupervisorConfig) -> CommandResult:
         target = self._targeted_test_file(config)
         if not target:
@@ -1418,6 +1453,13 @@ class SelfRepairSupervisor:
                 return True
             restore = self.backend.restore_dangerous_diff()
             run.add("repair_restore", "success" if restore.success else "failure", _command_detail(restore))
+            if failure == "pytest_failure" and self._re_scaffold_targeted_test_if_missing(run, config):
+                run.add(
+                    "repair_completion",
+                    "degraded",
+                    "Restored failed pytest repair and re-scaffolded targeted tests to preserve mission progress.",
+                )
+                return True
             if failure in RETRYABLE_REPAIR_FAILURES:
                 run.add(
                     "repair_retry",
