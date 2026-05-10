@@ -835,6 +835,44 @@ def test_supervisor_requires_ui_visibility_for_ui_goals():
     )
 
 
+def test_supervisor_infers_ui_visibility_from_diff_when_reasoning_metadata_is_empty():
+    backend = FakeBackend()
+    backend.reasoning_results = [
+        {
+            "status": "blocked",
+            "stop_reason": "reasoning_timeout",
+            "files_modified": [],
+            "final_summary": "timed out after partial edits",
+            "goal": "Add UI-visible rank card",
+        }
+    ]
+    backend.diff_stat = CommandResult(True, " igris/web/static/js/app.js | 1 +")
+    backend.diff = CommandResult(
+        True,
+        """diff --git a/igris/web/static/js/app.js b/igris/web/static/js/app.js
+@@ -10,6 +10,7 @@
++const rankUiVisible = true;
+""",
+    )
+    backend.full_tests = [
+        CommandResult(True, "baseline ok"),
+        CommandResult(True, "rank full ok"),
+    ]
+
+    run = SelfRepairSupervisor("/tmp/project", backend=backend).run(
+        _config(goal="Add UI-visible rank card", max_rank_attempts=1, max_repair_cycles=0)
+    )
+
+    assert run.status == "completed"
+    assert run.failure_class == ""
+    assert any(
+        event.phase == "ui_visibility"
+        and event.status == "success"
+        and event.data.get("inferred_from_diff") is True
+        for event in run.events
+    )
+
+
 def test_supervisor_retries_repair_validation_failures_for_rank_reasons():
     backend = FakeBackend()
     backend.diff = CommandResult(True, "+ui")

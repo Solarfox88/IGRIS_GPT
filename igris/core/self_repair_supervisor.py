@@ -714,6 +714,18 @@ class SelfRepairSupervisor:
             diff_stat = self.backend.git_diff_stat()
             diff = self.backend.git_diff()
             run.add("diff_stat", "success" if diff_stat.success else "failure", _command_detail(diff_stat))
+            if (
+                ui_visibility_required
+                and not ui_visibility_changed
+                and _has_ui_surface_change(diff.output)
+            ):
+                ui_visibility_changed = True
+                run.add(
+                    "ui_visibility",
+                    "success",
+                    "UI visibility inferred from validated diff paths",
+                    inferred_from_diff=True,
+                )
             targeted = CommandResult(True, "Targeted tests skipped")
             full = CommandResult(True, "Full pytest skipped")
             final_smoke = CommandResult(True, "Final smoke skipped")
