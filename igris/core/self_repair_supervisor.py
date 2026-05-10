@@ -34,6 +34,13 @@ REPAIRABLE_FAILURES = {
     "syntax_error",
 }
 
+RETRYABLE_REPAIR_FAILURES = {
+    "reasoning_loop_blocked",
+    "missing_ui_visibility",
+    "max_steps",
+    "syntax_error",
+}
+
 UNSAFE_STATUS_PREFIXES = (
     "?? .env",
     "?? .venv",
@@ -416,7 +423,14 @@ def classify_failure(
     full_tests: Optional[CommandResult] = None,
     smoke: Optional[CommandResult] = None,
 ) -> str:
+    reasoning_text = ""
+    if reasoning_result:
+        reasoning_text = "\n".join(
+            str(reasoning_result.get(key, ""))
+            for key in ("final_summary", "error", "stop_reason")
+        )
     text = "\n".join([
+        reasoning_text,
         diff or "",
         targeted_tests.error if targeted_tests else "",
         targeted_tests.output if targeted_tests else "",
@@ -428,6 +442,12 @@ def classify_failure(
     if reasoning_result:
         stop = str(reasoning_result.get("stop_reason", ""))
         status = str(reasoning_result.get("status", ""))
+        if (
+            "Python AST validation failed" in reasoning_text
+            or "SyntaxError" in reasoning_text
+            or "invalid syntax" in reasoning_text
+        ):
+            return "syntax_error"
         if stop == "reasoning_timeout":
             return "reasoning_loop_blocked"
         if stop == "max_steps":
@@ -1071,7 +1091,7 @@ class SelfRepairSupervisor:
         if not diff.output.strip():
             restore = self.backend.restore_dangerous_diff()
             run.add("repair_restore", "success" if restore.success else "failure", _command_detail(restore))
-            if failure in {"reasoning_loop_blocked", "missing_ui_visibility", "max_steps"}:
+            if failure in RETRYABLE_REPAIR_FAILURES:
                 run.add(
                     "repair_retry",
                     "running",
@@ -1091,7 +1111,7 @@ class SelfRepairSupervisor:
         if not tests.success:
             restore = self.backend.restore_dangerous_diff()
             run.add("repair_restore", "success" if restore.success else "failure", _command_detail(restore))
-            if failure in {"reasoning_loop_blocked", "missing_ui_visibility", "max_steps"}:
+            if failure in RETRYABLE_REPAIR_FAILURES:
                 run.add(
                     "repair_retry",
                     "running",

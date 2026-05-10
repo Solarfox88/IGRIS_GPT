@@ -181,6 +181,21 @@ def test_failure_classifier_detects_reasoning_timeout_as_blocked_loop():
     assert failure == "reasoning_loop_blocked"
 
 
+def test_failure_classifier_detects_ast_validation_block_as_syntax_error():
+    failure = classify_failure(
+        {
+            "status": "blocked",
+            "stop_reason": "blocked",
+            "files_modified": [],
+            "final_summary": (
+                "Python AST validation failed for 'tests/test_rank_ui_card.py': "
+                "expected an indented block after function definition"
+            ),
+        }
+    )
+    assert failure == "syntax_error"
+
+
 def test_failure_classifier_detects_pytest_failure():
     failure = classify_failure(full_tests=CommandResult(False, "FAILED tests/test_x.py", "", 1))
     assert failure == "pytest_failure"
@@ -990,6 +1005,37 @@ def test_supervisor_retries_repair_validation_failures_for_rank_reasons():
     assert run.status == "completed"
     assert run.repair_cycles_used == 1
     assert any(event.phase == "repair_retry" for event in run.events)
+
+
+def test_supervisor_retries_no_diff_repairs_for_syntax_error():
+    backend = FakeBackend()
+    backend.diff = CommandResult(True, "")
+    backend.reasoning_results = [
+        {
+            "status": "blocked",
+            "stop_reason": "blocked",
+            "files_modified": [],
+            "final_summary": "repair attempt produced no valid diff",
+            "goal": "repair",
+        }
+    ]
+
+    supervisor = SelfRepairSupervisor("/tmp/project", backend=backend)
+    run = SupervisorRun(run_id="run-syntax-retry", rank_id="A")
+
+    result = supervisor._repair_cycle(
+        run,
+        _config(goal="Add UI-visible rank card", max_repair_cycles=1),
+        "syntax_error",
+        1,
+    )
+
+    assert result is True
+    assert "restore" in backend.commands
+    assert any(
+        event.phase == "repair_retry" and event.data.get("failure_class") == "syntax_error"
+        for event in run.events
+    )
 
 
 def test_supervisor_rejects_invalid_ui_test_diff_before_validation_pytest():
