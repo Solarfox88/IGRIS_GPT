@@ -1018,6 +1018,64 @@ def test_supervisor_does_not_noop_complete_when_ui_contract_is_not_satisfied(mon
     assert run.failure_class == "reasoning_loop_blocked"
 
 
+def test_supervisor_context_does_not_lock_ui_card_contract_for_non_ui_card_goal(monkeypatch):
+    backend = FakeBackend()
+    monkeypatch.setattr(SelfRepairSupervisor, "_rank_ui_card_contract_satisfied", lambda self: True)
+
+    run = SelfRepairSupervisor("/tmp/project", backend=backend).run(
+        _config(
+            goal="Add Rank S dashboard visibility for /api/rank/s-dashboard",
+            max_rank_attempts=1,
+            max_repair_cycles=0,
+        )
+    )
+
+    assert run.status in {"completed", "blocked"}
+    assert backend.last_reasoning_context["ui_contract_already_satisfied"] is False
+    assert "ui_contract_policy" not in backend.last_reasoning_context
+
+
+def test_supervisor_does_not_noop_complete_non_ui_card_goal_when_ui_card_contract_is_satisfied(monkeypatch):
+    backend = FakeBackend()
+    backend.reasoning_results = [
+        {
+            "status": "blocked",
+            "stop_reason": "blocked",
+            "files_modified": ["igris/web/server.py"],
+            "final_summary": "blocked while editing rank s endpoint",
+            "goal": "Add Rank S dashboard visibility for /api/rank/s-dashboard",
+        }
+    ]
+    backend.diff_stat = CommandResult(True, " igris/web/server.py | 1 +")
+    backend.diff = CommandResult(
+        True,
+        """diff --git a/igris/web/server.py b/igris/web/server.py
+@@ -1,4 +1,5 @@
++@app.get('/api/rank/s-dashboard')
+""",
+    )
+    backend.full_tests = [
+        CommandResult(True, "baseline ok"),
+        CommandResult(True, "rank full ok"),
+    ]
+    monkeypatch.setattr(SelfRepairSupervisor, "_rank_ui_card_contract_satisfied", lambda self: True)
+    monkeypatch.setattr(SelfRepairSupervisor, "_rank_ui_visibility_signal_present", lambda self: True)
+
+    run = SelfRepairSupervisor("/tmp/project", backend=backend).run(
+        _config(
+            goal="Add Rank S dashboard visibility for /api/rank/s-dashboard",
+            rank_id="S",
+            max_rank_attempts=1,
+            max_repair_cycles=0,
+        )
+    )
+
+    assert run.status == "blocked"
+    assert run.failure_class == "missing_ui_visibility"
+    assert run.report.get("completion_mode") != "already_satisfied"
+    assert "restore" not in backend.commands
+
+
 def test_supervisor_restores_protected_ui_contract_test_edits_and_completes_noop(monkeypatch):
     backend = FakeBackend()
     backend.reasoning_results = [
