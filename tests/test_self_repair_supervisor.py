@@ -2421,3 +2421,339 @@ def test_rank_supervisor_api_dry_run_blocks_dirty_repo():
     assert detail.json()["status"] in {"running", "completed", "blocked"}
     listed = client.get("/api/rank/runs")
     assert listed.status_code == 200
+
+
+def _staged_config(**overrides):
+    data = {
+        "goal": (
+            "Implement backend API endpoint /api/rank/s-dashboard with UI dashboard visibility, "
+            "add tests coverage, run full pytest, and complete workflow reporting."
+        ),
+        "rank_id": "S",
+        "max_rank_attempts": 1,
+        "max_repair_cycles": 0,
+        "required_smoke_endpoints": ["http://127.0.0.1:7778/api/health"],
+        "targeted_tests": ["tests/test_rank_s_dashboard.py"],
+        "dry_run": True,
+    }
+    data.update(overrides)
+    return RankSupervisorConfig.from_dict(data)
+
+
+def test_supervisor_keeps_simple_missions_single_stage():
+    supervisor = SelfRepairSupervisor("/tmp/project", backend=FakeBackend())
+    plan = supervisor._build_mission_plan(
+        RankSupervisorConfig.from_dict({"goal": "Add /api/rank/status endpoint"})
+    )
+
+    assert plan.mode == "single-stage"
+    assert [stage.stage_id for stage in plan.stages] == ["single_stage_execution"]
+
+
+def test_supervisor_decomposes_non_trivial_missions_into_ordered_stages():
+    supervisor = SelfRepairSupervisor("/tmp/project", backend=FakeBackend())
+    plan = supervisor._build_mission_plan(_staged_config())
+    stage_ids = [stage.stage_id for stage in plan.stages]
+
+    assert plan.mode == "staged"
+    assert stage_ids[:6] == [
+        "understand_locate",
+        "backend_api_change",
+        "backend_tests",
+        "ui_dashboard_change",
+        "ui_dashboard_tests",
+        "docs_config_update",
+    ]
+    assert stage_ids[-3:] == ["pr_ci_merge", "post_merge_runtime", "final_report"]
+
+
+def test_supervisor_preserves_backend_stage_success_when_ui_stage_fails():
+    backend = FakeBackend()
+    backend.reasoning_results = [
+        {
+            "status": "finished",
+            "stop_reason": "finish",
+            "files_modified": ["igris/web/server.py"],
+            "final_summary": "backend done",
+            "goal": "stage backend",
+        },
+        {
+            "status": "finished",
+            "stop_reason": "finish",
+            "files_modified": ["tests/test_rank_s_dashboard.py"],
+            "final_summary": "backend tests done",
+            "goal": "stage tests",
+        },
+        {
+            "status": "blocked",
+            "stop_reason": "blocked",
+            "files_modified": [],
+            "final_summary": "ui blocked",
+            "goal": "stage ui",
+        },
+    ]
+    backend.diff_stat = CommandResult(True, " igris/web/server.py | 4 ++++\n tests/test_rank_s_dashboard.py | 8 ++++++++")
+    backend.diff = CommandResult(
+        True,
+        """diff --git a/igris/web/server.py b/igris/web/server.py
+@@ -1,2 +1,6 @@
++@app.get('/api/rank/s-dashboard')
+diff --git a/tests/test_rank_s_dashboard.py b/tests/test_rank_s_dashboard.py
+@@ -0,0 +1,8 @@
++def test_rank_s_dashboard():
+""",
+    )
+
+    run = SelfRepairSupervisor("/tmp/project", backend=backend).run(_staged_config())
+
+    assert run.status == "blocked"
+    stages = {entry["stage_id"]: entry for entry in run.report["mission_orchestration"]["stages"]}
+    assert stages["backend_api_change"]["status"] == "success"
+    assert stages["backend_tests"]["status"] == "success"
+    assert stages["ui_dashboard_change"]["status"] == "failure"
+
+
+def test_supervisor_skips_optional_docs_stage_with_explanation_when_not_relevant():
+    backend = FakeBackend()
+    backend.reasoning_results = [
+        {
+            "status": "finished",
+            "stop_reason": "finish",
+            "files_modified": ["igris/web/server.py"],
+            "final_summary": "backend done",
+            "goal": "stage backend",
+        },
+        {
+            "status": "finished",
+            "stop_reason": "finish",
+            "files_modified": ["tests/test_rank_s_dashboard.py"],
+            "final_summary": "backend tests done",
+            "goal": "stage backend tests",
+        },
+        {
+            "status": "finished",
+            "stop_reason": "finish",
+            "files_modified": ["igris/web/templates/index.html"],
+            "final_summary": "ui done",
+            "goal": "stage ui",
+        },
+        {
+            "status": "finished",
+            "stop_reason": "finish",
+            "files_modified": ["tests/test_dashboard_tabs.py"],
+            "final_summary": "ui tests done",
+            "goal": "stage ui tests",
+        },
+    ]
+    backend.diff_stat = CommandResult(True, " igris/web/server.py | 4 ++++")
+
+    run = SelfRepairSupervisor("/tmp/project", backend=backend).run(_staged_config())
+
+    assert run.status == "completed"
+    stages = {entry["stage_id"]: entry for entry in run.report["mission_orchestration"]["stages"]}
+    assert stages["docs_config_update"]["status"] == "skipped"
+    assert "does not require docs/config" in stages["docs_config_update"]["detail"]
+
+
+def test_supervisor_final_report_includes_per_stage_status_for_staged_missions():
+    backend = FakeBackend()
+    backend.reasoning_results = [
+        {
+            "status": "finished",
+            "stop_reason": "finish",
+            "files_modified": ["igris/web/server.py"],
+            "final_summary": "backend done",
+            "goal": "stage backend",
+        },
+        {
+            "status": "finished",
+            "stop_reason": "finish",
+            "files_modified": ["tests/test_rank_s_dashboard.py"],
+            "final_summary": "tests done",
+            "goal": "stage tests",
+        },
+        {
+            "status": "finished",
+            "stop_reason": "finish",
+            "files_modified": ["igris/web/templates/index.html"],
+            "final_summary": "ui done",
+            "goal": "stage ui",
+        },
+        {
+            "status": "finished",
+            "stop_reason": "finish",
+            "files_modified": ["tests/test_dashboard_tabs.py"],
+            "final_summary": "ui tests done",
+            "goal": "stage ui tests",
+        },
+    ]
+
+    run = SelfRepairSupervisor("/tmp/project", backend=backend).run(_staged_config())
+
+    assert run.status == "completed"
+    report = run.report["mission_orchestration"]
+    assert report["mode"] == "staged"
+    assert report["stages"]
+    assert all("stage_id" in stage and "status" in stage for stage in report["stages"])
+
+
+def test_supervisor_does_not_complete_when_required_stage_is_missing(monkeypatch):
+    backend = FakeBackend()
+    backend.reasoning_results = [
+        {
+            "status": "finished",
+            "stop_reason": "finish",
+            "files_modified": ["igris/web/server.py"],
+            "final_summary": "backend done",
+            "goal": "stage backend",
+        }
+    ]
+
+    monkeypatch.setattr(
+        SelfRepairSupervisor,
+        "_required_stages_green",
+        staticmethod(lambda statuses, **kwargs: False),
+    )
+    run = SelfRepairSupervisor("/tmp/project", backend=backend).run(
+        _staged_config(
+            goal=(
+                "Implement backend API endpoint /api/system/version, add tests, "
+                "include docs note, and run workflow reporting."
+            ),
+            targeted_tests=["tests/test_system_version.py"],
+        )
+    )
+
+    assert run.status == "blocked"
+    assert run.failure_class == "reasoning_loop_blocked"
+
+
+def test_supervisor_completes_staged_mission_as_noop_when_already_satisfied(monkeypatch):
+    backend = FakeBackend()
+    backend.diff_stat = CommandResult(True, "")
+    backend.diff = CommandResult(True, "")
+
+    monkeypatch.setattr(
+        SelfRepairSupervisor,
+        "_stage_is_already_satisfied",
+        lambda self, stage, config: stage.stage_id != "final_report",
+    )
+    run = SelfRepairSupervisor("/tmp/project", backend=backend).run(_staged_config())
+
+    assert run.status == "completed"
+    assert run.report["no_op_completion"] is True
+    assert run.report["completion_mode"] == "already_satisfied"
+
+
+def test_supervisor_tracks_non_blocking_behavior_per_stage():
+    backend = FakeBackend()
+    backend.reasoning_results = [
+        {
+            "status": "running",
+            "stop_reason": "partial_progress",
+            "files_modified": ["igris/web/server.py"],
+            "final_summary": "backend partial but acceptable",
+            "goal": "stage backend",
+        },
+        {
+            "status": "finished",
+            "stop_reason": "finish",
+            "files_modified": ["tests/test_rank_s_dashboard.py"],
+            "final_summary": "tests done",
+            "goal": "stage tests",
+        },
+        {
+            "status": "finished",
+            "stop_reason": "finish",
+            "files_modified": ["igris/web/templates/index.html"],
+            "final_summary": "ui done",
+            "goal": "stage ui",
+        },
+        {
+            "status": "finished",
+            "stop_reason": "finish",
+            "files_modified": ["tests/test_dashboard_tabs.py"],
+            "final_summary": "ui tests done",
+            "goal": "stage ui tests",
+        },
+    ]
+
+    run = SelfRepairSupervisor("/tmp/project", backend=backend).run(_staged_config())
+
+    assert run.status == "completed"
+    stages = {entry["stage_id"]: entry for entry in run.report["mission_orchestration"]["stages"]}
+    behaviors = stages["backend_api_change"]["non_blocking_behaviors"]
+    assert any(item["code"] == "degraded_reasoning" for item in behaviors)
+
+
+def test_supervisor_preserve_mode_skips_restore_on_test_repair_failures():
+    backend = FakeBackend()
+    backend.diff = CommandResult(
+        True,
+        """diff --git a/tests/test_rank_status.py b/tests/test_rank_status.py
+@@ -0,0 +1,4 @@
++def test_rank_status():
++    assert True
+""",
+    )
+    backend.reasoning_results = [
+        {
+            "status": "finished",
+            "stop_reason": "finish",
+            "files_modified": ["tests/test_rank_status.py"],
+            "final_summary": "repair test",
+            "goal": "repair",
+        }
+    ]
+    backend.full_tests = [CommandResult(False, "FAILED tests/test_rank_status.py::test_rank_status", "", 1)]
+    supervisor = SelfRepairSupervisor("/tmp/project", backend=backend)
+    run = SupervisorRun(run_id="run-preserve-repair", rank_id="S")
+
+    result = supervisor._repair_cycle(
+        run,
+        _config(goal="Fix backend API endpoint /api/rank/status", targeted_tests=[]),
+        "pytest_failure",
+        1,
+        preserve_validated_progress=True,
+    )
+
+    assert result is True
+    assert "restore" not in backend.commands
+    assert any(event.phase == "repair_restore" and event.status == "skipped" for event in run.events)
+
+
+def test_supervisor_preserve_mode_restores_unsafe_diffs():
+    backend = FakeBackend()
+    backend.diff = CommandResult(
+        True,
+        """diff --git a/igris/web/server.py b/igris/web/server.py
+@@ -1,6 +1,5 @@
+-def create_app() -> FastAPI:
+""",
+    )
+    backend.reasoning_results = [
+        {
+            "status": "finished",
+            "stop_reason": "finish",
+            "files_modified": ["igris/web/server.py"],
+            "final_summary": "unsafe repair",
+            "goal": "repair",
+        }
+    ]
+    supervisor = SelfRepairSupervisor("/tmp/project", backend=backend)
+    run = SupervisorRun(run_id="run-preserve-unsafe", rank_id="S")
+
+    result = supervisor._repair_cycle(
+        run,
+        _config(goal="Fix backend API endpoint /api/rank/status", targeted_tests=[]),
+        "reasoning_loop_blocked",
+        1,
+        preserve_validated_progress=True,
+    )
+
+    assert result is True
+    assert "restore" in backend.commands
+    assert any(
+        event.phase == "repair_retry" and event.data.get("failure_class") == "destructive_diff"
+        for event in run.events
+    )
