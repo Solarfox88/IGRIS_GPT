@@ -460,9 +460,30 @@ def _has_destructive_diff(diff: str) -> bool:
     paths = _diff_changed_paths(diff)
     if paths and all(path.startswith("tests/") for path in paths):
         return False
-    removed_lines = [line for line in diff.splitlines() if line.startswith("-") and not line.startswith("---")]
+
+    python_removed_lines: List[str] = []
+    has_diff_headers = "diff --git " in diff
+    if not has_diff_headers:
+        python_removed_lines = [
+            line for line in diff.splitlines()
+            if line.startswith("-") and not line.startswith("---")
+        ]
+    else:
+        current_path = ""
+        for line in diff.splitlines():
+            if line.startswith("diff --git "):
+                parts = line.split()
+                if len(parts) >= 4:
+                    current_path = parts[3][2:] if parts[3].startswith("b/") else parts[3]
+                else:
+                    current_path = ""
+                continue
+            if not (current_path.endswith(".py") and line.startswith("-") and not line.startswith("---")):
+                continue
+            python_removed_lines.append(line)
+
     critical = ("def create_app", "class ", "import ")
-    return any(any(token in line for token in critical) for line in removed_lines)
+    return any(any(token in line for token in critical) for line in python_removed_lines)
 
 
 def _has_invalid_fastapi_bootstrap_diff(diff: str) -> bool:
