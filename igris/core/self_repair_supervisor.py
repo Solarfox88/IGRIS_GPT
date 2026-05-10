@@ -752,6 +752,7 @@ class SelfRepairSupervisor:
                 for path in modified_files
             )
             ui_visibility_required = self._goal_requires_ui_visibility(config.goal)
+            ui_card_contract_goal = self._goal_targets_rank_ui_card(config.goal)
             ui_visibility_changed = self._has_ui_visibility_change(modified_files)
             run.add(
                 "rank_reasoning",
@@ -780,7 +781,8 @@ class SelfRepairSupervisor:
                     inferred_from_diff=True,
                 )
             ui_contract_locked = (
-                ui_visibility_required
+                ui_card_contract_goal
+                and ui_visibility_required
                 and self._rank_ui_card_contract_satisfied()
                 and self._rank_ui_visibility_signal_present()
             )
@@ -937,6 +939,8 @@ class SelfRepairSupervisor:
     ) -> bool:
         if not self._goal_requires_ui_visibility(config.goal):
             return False
+        if not self._goal_targets_rank_ui_card(config.goal):
+            return False
         if diff_stat.output.strip():
             return False
         if not (targeted.success and full.success and smoke.success):
@@ -963,7 +967,8 @@ class SelfRepairSupervisor:
             ),
         }
         if self._goal_requires_ui_visibility(config.goal):
-            ui_contract_satisfied = self._rank_ui_card_contract_satisfied()
+            ui_card_contract_goal = self._goal_targets_rank_ui_card(config.goal)
+            ui_contract_satisfied = ui_card_contract_goal and self._rank_ui_card_contract_satisfied()
             context["must_add_ui_visibility"] = True
             context["ui_visibility_policy"] = (
                 "If the goal requires UI/dashboard visibility, modify a UI surface "
@@ -977,13 +982,20 @@ class SelfRepairSupervisor:
                     "igris/web/server.py. Do not modify this route. Focus only on "
                     "minimal UI/dashboard visibility edits and related UI checks."
                 )
-            context["ui_test_policy"] = (
-                "UI tests must stay minimal and exact. Do not add placeholder routes, "
-                "commented example paths, or unrelated assertions. Test the exact "
-                "required endpoint plus the minimal UI/dashboard visibility signal. "
-                "For /api/rank/ui-card, only assert the contract keys app, rank, status, "
-                "and capability. Do not assert extra JSON keys such as data."
-            )
+            if ui_card_contract_goal:
+                context["ui_test_policy"] = (
+                    "UI tests must stay minimal and exact. Do not add placeholder routes, "
+                    "commented example paths, or unrelated assertions. Test the exact "
+                    "required endpoint plus the minimal UI/dashboard visibility signal. "
+                    "For /api/rank/ui-card, only assert the contract keys app, rank, status, "
+                    "and capability. Do not assert extra JSON keys such as data."
+                )
+            else:
+                context["ui_test_policy"] = (
+                    "UI/dashboard tests must stay minimal and exact for this mission. "
+                    "Validate only the required endpoint contract and the requested "
+                    "visibility signal. Do not add placeholder routes or unrelated assertions."
+                )
         for target in config.targeted_tests:
             if target.startswith("tests/test_") and target.endswith(".py"):
                 target_path = Path(self.project_root) / target
@@ -1050,6 +1062,15 @@ class SelfRepairSupervisor:
         return any(token in lowered for token in ("ui", "dashboard", "frontend", "visible"))
 
     @staticmethod
+    def _goal_targets_rank_ui_card(goal: str) -> bool:
+        lowered = goal.lower()
+        if "/api/rank/ui-card" in lowered:
+            return True
+        if "ui-card" in lowered or "ui card" in lowered:
+            return True
+        return "rank card" in lowered and "ui" in lowered
+
+    @staticmethod
     def _has_ui_visibility_change(files_modified: List[str]) -> bool:
         ui_markers = (
             "igris/web/templates/",
@@ -1090,12 +1111,19 @@ class SelfRepairSupervisor:
             f"{config.rank_id}. Keep changes minimal, add tests, run pytest, do not push."
         )
         if self._goal_requires_ui_visibility(config.goal):
-            repair_goal += (
-                " The UI mission must include the exact /api/rank/ui-card contract and "
-                "minimal UI/dashboard visibility. Do not create placeholder routes or "
-                "unrelated UI endpoint assertions in tests/test_rank_ui_card.py. "
-                "Only assert the contract keys app, rank, status, and capability."
-            )
+            if self._goal_targets_rank_ui_card(config.goal):
+                repair_goal += (
+                    " The UI mission must include the exact /api/rank/ui-card contract and "
+                    "minimal UI/dashboard visibility. Do not create placeholder routes or "
+                    "unrelated UI endpoint assertions in tests/test_rank_ui_card.py. "
+                    "Only assert the contract keys app, rank, status, and capability."
+                )
+            else:
+                repair_goal += (
+                    " The mission requires minimal UI/dashboard visibility tied to the "
+                    "requested endpoint and matching tests. Keep edits mission-owned and "
+                    "avoid placeholder routes or unrelated assertions."
+                )
         repair_context = self._rank_initial_context(config)
         repair_context.update({
             "repair_cycle": cycle,
