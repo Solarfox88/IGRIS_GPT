@@ -441,6 +441,8 @@ def classify_failure(
     ])
     if _has_destructive_diff(diff):
         return "destructive_diff"
+    if _is_llm_provider_unavailable(reasoning_text):
+        return "infrastructure_bug"
     if targeted_tests and not targeted_tests.success:
         if _is_missing_test_target_error(targeted_tests):
             return "missing_tests"
@@ -540,6 +542,14 @@ def _is_missing_test_target_error(result: Optional["CommandResult"]) -> bool:
         return False
     text = "\n".join([result.output or "", result.error or ""]).lower()
     return "file or directory not found" in text and "tests/test_" in text
+
+
+def _is_llm_provider_unavailable(text: str) -> bool:
+    lowered = (text or "").lower()
+    return (
+        "no suitable llm provider available" in lowered
+        or "llm unavailable" in lowered
+    )
 
 
 def _required_endpoint_from_goal(goal: str) -> str:
@@ -918,6 +928,12 @@ class SelfRepairSupervisor:
                         failure = "missing_ui_visibility"
                 else:
                     failure = classify_failure(reasoning, diff.output, targeted, full, final_smoke)
+            reasoning_text = "\n".join(
+                str(reasoning.get(key, ""))
+                for key in ("final_summary", "error", "stop_reason")
+            )
+            if failure == "infrastructure_bug" and _is_llm_provider_unavailable(reasoning_text):
+                return self._blocked(run, "infrastructure_bug", "No suitable LLM provider available")
 
             if not failure and rank_passed:
                 completion_mode = "direct"
@@ -1139,12 +1155,38 @@ class SelfRepairSupervisor:
                 return True
         return False
 
-    def _scaffold_missing_tests_target(self, config: RankSupervisorConfig) -> CommandResult:
-        target = ""
+    @staticmethod
+    def _targeted_test_file(config: RankSupervisorConfig) -> str:
         for candidate in config.targeted_tests:
             if candidate.startswith("tests/test_") and candidate.endswith(".py"):
-                target = candidate
-                break
+                return candidate
+        return ""
+
+    def _synthetic_missing_tests_diff(self, config: RankSupervisorConfig) -> str:
+        target = self._targeted_test_file(config)
+        if not target:
+            return ""
+        target_path = Path(self.project_root) / target
+        if not target_path.exists():
+            return ""
+        try:
+            content = target_path.read_text(encoding="utf-8")
+        except OSError:
+            return ""
+        lines = [
+            f"diff --git a/{target} b/{target}",
+            "new file mode 100644",
+            "--- /dev/null",
+            f"+++ b/{target}",
+        ]
+        for line in content.splitlines():
+            lines.append(f"+{line}")
+        if not content.endswith("\n"):
+            lines.append("\\ No newline at end of file")
+        return "\n".join(lines) + "\n"
+
+    def _scaffold_missing_tests_target(self, config: RankSupervisorConfig) -> CommandResult:
+        target = self._targeted_test_file(config)
         if not target:
             return CommandResult(False, "", "No targeted test path configured for missing-tests scaffold", 2)
 
@@ -1283,9 +1325,18 @@ class SelfRepairSupervisor:
                 diff_stat = self.backend.git_diff_stat()
                 diff = self.backend.git_diff()
                 run.add("repair_scaffold_diff", "success" if diff_stat.success else "failure", _command_detail(diff_stat))
+                if not diff.output.strip():
+                    synthetic_diff = self._synthetic_missing_tests_diff(config)
+                    if synthetic_diff:
+                        diff = CommandResult(True, synthetic_diff, "", 0)
+                        run.add(
+                            "repair_scaffold_diff",
+                            "success",
+                            "Synthesized missing-tests diff from untracked scaffold file.",
+                            synthesized_untracked=True,
+                        )
             if (
                 not scaffold.success
-                or not diff_stat.success
                 or not _is_valid_missing_tests_repair_diff(diff.output, config.goal)
             ):
                 if scaffold.success:

@@ -221,6 +221,24 @@ def test_failure_classifier_detects_missing_targeted_test_file():
     assert failure == "missing_tests"
 
 
+def test_failure_classifier_prioritizes_llm_unavailable_over_missing_tests():
+    failure = classify_failure(
+        reasoning_result={
+            "status": "blocked",
+            "stop_reason": "blocked",
+            "files_modified": [],
+            "final_summary": "No suitable LLM provider available; deterministic fallback",
+        },
+        targeted_tests=CommandResult(
+            False,
+            "ERROR: file or directory not found: tests/test_rank_s_dashboard.py",
+            "",
+            4,
+        ),
+    )
+    assert failure == "infrastructure_bug"
+
+
 def test_failure_classifier_detects_destructive_diff():
     failure = classify_failure(diff="-def create_app():\n+def removed():\n")
     assert failure == "destructive_diff"
@@ -1072,6 +1090,43 @@ def test_supervisor_does_not_noop_complete_when_ui_contract_is_not_satisfied(mon
     assert run.failure_class == "reasoning_loop_blocked"
 
 
+def test_supervisor_blocks_immediately_when_llm_provider_is_unavailable():
+    backend = FakeBackend()
+    backend.reasoning_results = [
+        {
+            "status": "blocked",
+            "stop_reason": "blocked",
+            "files_modified": [],
+            "final_summary": "No suitable LLM provider available; deterministic fallback",
+            "goal": "Add /api/rank/s-dashboard endpoint and tests",
+        }
+    ]
+    backend.targeted = CommandResult(
+        False,
+        "ERROR: file or directory not found: tests/test_rank_s_dashboard.py",
+        "",
+        4,
+    )
+
+    run = SelfRepairSupervisor("/tmp/project", backend=backend).run(
+        _config(
+            goal="Add /api/rank/s-dashboard endpoint and tests/test_rank_s_dashboard.py",
+            targeted_tests=["tests/test_rank_s_dashboard.py"],
+            max_rank_attempts=2,
+            max_repair_cycles=3,
+        )
+    )
+
+    assert run.status == "blocked"
+    assert run.failure_class == "infrastructure_bug"
+    assert not any(event.phase == "repair_issue" for event in run.events)
+    assert any(
+        event.phase == "blocked"
+        and "No suitable LLM provider available" in event.detail
+        for event in run.events
+    )
+
+
 def test_supervisor_context_does_not_lock_ui_card_contract_for_non_ui_card_goal(monkeypatch):
     backend = FakeBackend()
     monkeypatch.setattr(SelfRepairSupervisor, "_rank_ui_card_contract_satisfied", lambda self: True)
@@ -1745,6 +1800,7 @@ index 1111111..2222222 100644
         run,
         _config(
             goal="Add /api/rank/s-dashboard endpoint and tests/test_rank_s_dashboard.py coverage",
+            targeted_tests=["tests/test_rank_s_dashboard.py"],
             max_repair_cycles=1,
         ),
         "missing_tests",
@@ -1796,6 +1852,7 @@ index 1111111..2222222 100644
         run,
         _config(
             goal="Add /api/rank/s-dashboard endpoint and tests/test_rank_s_dashboard.py coverage",
+            targeted_tests=["tests/test_rank_s_dashboard.py"],
             max_repair_cycles=1,
         ),
         "missing_tests",
@@ -1887,6 +1944,75 @@ def test_supervisor_missing_tests_repair_uses_scaffold_fallback(monkeypatch, tmp
         event.phase == "repair_retry" and event.data.get("failure_class") == "wrong_file_edit"
         for event in run.events
     )
+
+
+def test_supervisor_missing_tests_accepts_untracked_scaffold(monkeypatch, tmp_path):
+    backend = FakeBackend()
+    backend.diff = CommandResult(
+        True,
+        """diff --git a/igris/web/server.py b/igris/web/server.py
+@@ -1,2 +1,6 @@
++@app.get('/api/rank/s-dashboard')
+""",
+    )
+    backend.diff_stat = CommandResult(True, " igris/web/server.py | 4 ++++")
+    backend.reasoning_results = [
+        {
+            "status": "blocked",
+            "stop_reason": "blocked",
+            "files_modified": [],
+            "final_summary": "No suitable LLM provider available; deterministic fallback",
+            "goal": "repair missing tests",
+        }
+    ]
+    backend.full_tests = [CommandResult(True, "repair validation passed")]
+
+    supervisor = SelfRepairSupervisor(str(tmp_path), backend=backend)
+
+    def _fake_scaffold(config):
+        target = tmp_path / "tests/test_rank_s_dashboard.py"
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(
+            (
+                "from fastapi.testclient import TestClient\n\n"
+                "from igris.web.server import create_app\n\n\n"
+                "def test_rank_s_dashboard_contract():\n"
+                "    client = TestClient(create_app())\n"
+                "    response = client.get('/api/rank/s-dashboard')\n"
+                "    assert response.status_code == 200\n"
+            ),
+            encoding="utf-8",
+        )
+        backend.diff = CommandResult(True, "")
+        backend.diff_stat = CommandResult(True, "")
+        return CommandResult(True, "scaffolded")
+
+    monkeypatch.setattr(supervisor, "_scaffold_missing_tests_target", _fake_scaffold)
+    run = SupervisorRun(run_id="run-missing-tests-untracked-scaffold", rank_id="S")
+
+    result = supervisor._repair_cycle(
+        run,
+        _config(
+            goal="Add /api/rank/s-dashboard endpoint and tests/test_rank_s_dashboard.py coverage",
+            targeted_tests=["tests/test_rank_s_dashboard.py"],
+            max_repair_cycles=1,
+        ),
+        "missing_tests",
+        1,
+    )
+
+    assert result is True
+    assert any(event.phase == "repair_scaffold" and event.status == "success" for event in run.events)
+    assert any(
+        event.phase == "repair_scaffold_diff" and event.data.get("synthesized_untracked") is True
+        for event in run.events
+    )
+    assert not any(
+        event.phase == "repair_restore"
+        and "Scaffolded missing-tests diff was invalid; restored." in event.detail
+        for event in run.events
+    )
+    assert any(command.startswith("tests:") for command in backend.commands)
 
 
 def test_supervisor_retries_destructive_repair_diff_for_retryable_failure():
