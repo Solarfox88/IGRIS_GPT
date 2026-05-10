@@ -1208,6 +1208,120 @@ index 1111111..2222222 100644
     )
 
 
+def test_supervisor_accepts_product_only_ui_repair_diff_for_pytest_failure():
+    backend = FakeBackend()
+    backend.diff = CommandResult(
+        True,
+        """diff --git a/igris/web/templates/index.html b/igris/web/templates/index.html
+index 1111111..2222222 100644
+--- a/igris/web/templates/index.html
++++ b/igris/web/templates/index.html
+@@ -48,6 +48,7 @@
+   <section id="rank-dashboard">
++    <p id="rank-ui-card-status">ui-visible-supervised</p>
+   </section>
+diff --git a/tests/test_rank_ui_card.py b/tests/test_rank_ui_card.py
+index 1111111..2222222 100644
+--- a/tests/test_rank_ui_card.py
++++ b/tests/test_rank_ui_card.py
+@@ -1,9 +1,16 @@
+ from fastapi.testclient import TestClient
+
+ from igris.web.server import create_app
+
+
+ def test_rank_ui_card_endpoint_available():
+     client = TestClient(create_app())
+     response = client.get("/api/rank/ui-card")
+
+     assert response.status_code == 200
++    assert response.json() == {
++        "app": "IGRIS_GPT",
++        "rank": "A++",
++        "status": "ok",
++        "capability": "ui-visible-supervised",
++    }
+""",
+    )
+    backend.reasoning_results = [
+        {
+            "status": "finished",
+            "stop_reason": "finish",
+            "files_modified": ["igris/web/templates/index.html", "tests/test_rank_ui_card.py"],
+            "final_summary": "repair pytest failure for ui mission",
+            "goal": "repair",
+        }
+    ]
+    backend.full_tests = [CommandResult(True, "repair validation passed")]
+
+    supervisor = SelfRepairSupervisor("/tmp/project", backend=backend)
+    run = SupervisorRun(run_id="run-ui-pytest-repair", rank_id="A")
+
+    result = supervisor._repair_cycle(
+        run,
+        _config(goal="Add UI-visible rank card", max_repair_cycles=1),
+        "pytest_failure",
+        1,
+    )
+
+    assert result is True
+    assert "restore" not in backend.commands
+    assert any(command.startswith("tests:") for command in backend.commands)
+    assert not any(
+        event.phase == "repair_retry" and event.data.get("failure_class") == "wrong_file_edit"
+        for event in run.events
+    )
+
+
+def test_supervisor_rejects_invalid_ui_test_diff_for_pytest_failure_repairs():
+    backend = FakeBackend()
+    backend.diff = CommandResult(
+        True,
+        """diff --git a/tests/test_rank_ui_card.py b/tests/test_rank_ui_card.py
+@@ -1,8 +1,9 @@
+ from fastapi.testclient import TestClient
+
+ from igris.web.server import create_app
+
+
+ def test_rank_ui_card_endpoint_available():
+     client = TestClient(create_app())
+     response = client.get("/api/rank/ui-card")
+     assert response.status_code == 200
+-    assert response.json() == {"app": "IGRIS_GPT", "rank": "A++", "status": "ok", "capability": "ui-visible-supervised"}
++    assert "data" in response.json()
+""",
+    )
+    backend.reasoning_results = [
+        {
+            "status": "finished",
+            "stop_reason": "finish",
+            "files_modified": ["tests/test_rank_ui_card.py"],
+            "final_summary": "invalid test assertion",
+            "goal": "repair",
+        }
+    ]
+    backend.full_tests = [CommandResult(True, "repair validation passed")]
+
+    supervisor = SelfRepairSupervisor("/tmp/project", backend=backend)
+    run = SupervisorRun(run_id="run-ui-pytest-invalid", rank_id="A")
+
+    result = supervisor._repair_cycle(
+        run,
+        _config(goal="Add UI-visible rank card", max_repair_cycles=1),
+        "pytest_failure",
+        1,
+    )
+
+    assert result is True
+    assert "restore" in backend.commands
+    assert not any(command.startswith("tests:") for command in backend.commands)
+    assert any(
+        event.phase == "repair_retry" and event.data.get("failure_class") == "wrong_file_edit"
+        for event in run.events
+    )
+
+
 def test_supervisor_accepts_safe_ui_surface_repair_for_missing_ui_visibility():
     backend = FakeBackend()
     backend.diff = CommandResult(

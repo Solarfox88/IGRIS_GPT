@@ -1061,6 +1061,8 @@ class SelfRepairSupervisor:
                 _has_ui_surface_change(diff.output)
                 and failure in {"missing_ui_visibility", "reasoning_loop_blocked"}
             )
+            if failure == "pytest_failure":
+                allow_safe_ui_repair = True
             if not allow_safe_ui_repair:
                 restore = self.backend.restore_dangerous_diff()
                 run.add(
