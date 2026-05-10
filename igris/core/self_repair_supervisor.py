@@ -542,6 +542,38 @@ def _is_missing_test_target_error(result: Optional["CommandResult"]) -> bool:
     return "file or directory not found" in text and "tests/test_" in text
 
 
+def _required_endpoint_from_goal(goal: str) -> str:
+    match = re.search(r"/api/[a-z0-9_/-]+", goal.lower())
+    if not match:
+        return ""
+    return match.group(0)
+
+
+def _is_valid_missing_tests_repair_diff(diff: str, goal: str) -> bool:
+    paths = _diff_changed_paths(diff)
+    if not paths:
+        return False
+    if not all(path.startswith("tests/") for path in paths):
+        return False
+
+    lowered = diff.lower()
+    if "test_client(" in lowered:
+        return False
+    if "testclient(create_app())" not in lowered and "create_app()" not in lowered:
+        return False
+
+    required_endpoint = _required_endpoint_from_goal(goal)
+    endpoints_found = set(re.findall(r"/api/[a-z0-9_/-]+", lowered))
+    if required_endpoint:
+        if required_endpoint not in endpoints_found:
+            return False
+        if any(endpoint != required_endpoint for endpoint in endpoints_found):
+            return False
+    if "/dashboard" in lowered:
+        return False
+    return True
+
+
 def _is_valid_ui_test_diff(diff: str) -> bool:
     """Return True when a UI test diff stays minimal and exact.
 
@@ -1149,7 +1181,9 @@ class SelfRepairSupervisor:
         if failure == "missing_tests" and config.targeted_tests:
             repair_goal += (
                 " Create or update the required targeted pytest file(s): "
-                f"{' '.join(config.targeted_tests)}."
+                f"{' '.join(config.targeted_tests)}. Use FastAPI TestClient(create_app()). "
+                "Assert only the mission-owned API endpoint from the goal and avoid "
+                "unrelated endpoints such as /api/rank/status or /dashboard."
             )
         repair_context = self._rank_initial_context(config)
         repair_context.update({
@@ -1196,6 +1230,20 @@ class SelfRepairSupervisor:
                 "running",
                 "Invalid FastAPI bootstrap diff was rejected; retrying with remaining budget.",
                 failure_class="invalid_bootstrap",
+            )
+            return True
+        if failure == "missing_tests" and not _is_valid_missing_tests_repair_diff(diff.output, config.goal):
+            restore = self.backend.restore_dangerous_diff()
+            run.add(
+                "repair_restore",
+                "success" if restore.success else "failure",
+                "Missing-tests repair diff rejected before validation",
+            )
+            run.add(
+                "repair_retry",
+                "running",
+                "Missing-tests repair diff was rejected; retrying with remaining budget.",
+                failure_class="wrong_file_edit",
             )
             return True
         if self._goal_requires_ui_visibility(config.goal) and _is_product_only_ui_task_diff(diff.output):

@@ -1708,6 +1708,109 @@ index 1111111..2222222 100644
     )
 
 
+def test_supervisor_accepts_missing_tests_repair_for_mission_endpoint():
+    backend = FakeBackend()
+    backend.diff = CommandResult(
+        True,
+        """diff --git a/tests/test_rank_s_dashboard.py b/tests/test_rank_s_dashboard.py
+index 1111111..2222222 100644
+--- a/tests/test_rank_s_dashboard.py
++++ b/tests/test_rank_s_dashboard.py
+@@ -0,0 +1,12 @@
++from fastapi.testclient import TestClient
++
++from igris.web.server import create_app
++
++def test_rank_s_dashboard_contract():
++    client = TestClient(create_app())
++    response = client.get("/api/rank/s-dashboard")
++    assert response.status_code == 200
+""",
+    )
+    backend.reasoning_results = [
+        {
+            "status": "finished",
+            "stop_reason": "finish",
+            "files_modified": ["tests/test_rank_s_dashboard.py"],
+            "final_summary": "create targeted test",
+            "goal": "repair missing tests",
+        }
+    ]
+    backend.full_tests = [CommandResult(True, "repair validation passed")]
+
+    supervisor = SelfRepairSupervisor("/tmp/project", backend=backend)
+    run = SupervisorRun(run_id="run-missing-tests-accept", rank_id="S")
+
+    result = supervisor._repair_cycle(
+        run,
+        _config(
+            goal="Add /api/rank/s-dashboard endpoint and tests/test_rank_s_dashboard.py coverage",
+            max_repair_cycles=1,
+        ),
+        "missing_tests",
+        1,
+    )
+
+    assert result is True
+    assert any(command.startswith("tests:") for command in backend.commands)
+    assert not any(event.phase == "repair_retry" for event in run.events)
+
+
+def test_supervisor_rejects_missing_tests_repair_with_unrelated_endpoints():
+    backend = FakeBackend()
+    backend.diff = CommandResult(
+        True,
+        """diff --git a/tests/test_rank_s_dashboard.py b/tests/test_rank_s_dashboard.py
+index 1111111..2222222 100644
+--- a/tests/test_rank_s_dashboard.py
++++ b/tests/test_rank_s_dashboard.py
+@@ -0,0 +1,16 @@
++from fastapi.testclient import TestClient
++
++from igris.web.server import create_app
++
++def test_rank_s_dashboard_endpoint():
++    client = TestClient(create_app())
++    response = client.get("/api/rank/status")
++    assert response.status_code == 200
++
++def test_dashboard_endpoint(client):
++    response = client.get("/dashboard")
++    assert response.status_code == 200
+""",
+    )
+    backend.reasoning_results = [
+        {
+            "status": "finished",
+            "stop_reason": "finish",
+            "files_modified": ["tests/test_rank_s_dashboard.py"],
+            "final_summary": "wrong endpoint and fixture usage",
+            "goal": "repair missing tests",
+        }
+    ]
+
+    supervisor = SelfRepairSupervisor("/tmp/project", backend=backend)
+    run = SupervisorRun(run_id="run-missing-tests-reject", rank_id="S")
+
+    result = supervisor._repair_cycle(
+        run,
+        _config(
+            goal="Add /api/rank/s-dashboard endpoint and tests/test_rank_s_dashboard.py coverage",
+            max_repair_cycles=1,
+        ),
+        "missing_tests",
+        1,
+    )
+
+    assert result is True
+    assert "restore" in backend.commands
+    assert not any(command.startswith("tests:") for command in backend.commands)
+    assert any(
+        event.phase == "repair_retry" and event.data.get("failure_class") == "wrong_file_edit"
+        for event in run.events
+    )
+
+
 def test_supervisor_retries_destructive_repair_diff_for_retryable_failure():
     backend = FakeBackend()
     backend.diff = CommandResult(
