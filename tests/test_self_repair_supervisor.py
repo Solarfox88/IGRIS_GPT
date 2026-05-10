@@ -2081,6 +2081,60 @@ def test_supervisor_preserves_valid_missing_tests_scaffold_when_repair_pytest_fa
     )
 
 
+def test_supervisor_re_scaffolds_targeted_test_after_pytest_failure_restore(tmp_path):
+    backend = FakeBackend()
+    backend.diff = CommandResult(
+        True,
+        """diff --git a/igris/web/server.py b/igris/web/server.py
+@@ -1,2 +1,5 @@
++@app.get('/api/rank/s-dashboard')
++async def get_rank_s_dashboard():
++    return {'status': 'ok'}
+""",
+    )
+    backend.diff_stat = CommandResult(True, " igris/web/server.py | 3 +++")
+    backend.reasoning_results = [
+        {
+            "status": "blocked",
+            "stop_reason": "reasoning_timeout",
+            "files_modified": ["igris/web/server.py"],
+            "final_summary": "repair timed out",
+            "goal": "repair pytest failure",
+        }
+    ]
+    backend.full_tests = [CommandResult(False, "FAILED tests/test_rank_s_dashboard.py::test_api_rank_s_dashboard", "", 1)]
+    backend.restore_result = CommandResult(True, "Removing tests/test_rank_s_dashboard.py")
+
+    supervisor = SelfRepairSupervisor(str(tmp_path), backend=backend)
+    run = SupervisorRun(run_id="run-pytest-re-scaffold", rank_id="S")
+
+    result = supervisor._repair_cycle(
+        run,
+        _config(
+            goal="Add /api/rank/s-dashboard endpoint and tests/test_rank_s_dashboard.py coverage",
+            targeted_tests=["tests/test_rank_s_dashboard.py"],
+            max_repair_cycles=1,
+        ),
+        "pytest_failure",
+        1,
+    )
+
+    assert result is True
+    assert backend.commands.count("restore") == 1
+    assert (tmp_path / "tests/test_rank_s_dashboard.py").exists()
+    assert any(event.phase == "repair_scaffold" and event.status == "success" for event in run.events)
+    assert any(
+        event.phase == "repair_completion"
+        and "re-scaffolded targeted tests" in event.detail
+        for event in run.events
+    )
+    assert not any(
+        event.phase == "repair_retry"
+        and "Repair validation failed; retrying" in event.detail
+        for event in run.events
+    )
+
+
 def test_supervisor_retries_destructive_repair_diff_for_retryable_failure():
     backend = FakeBackend()
     backend.diff = CommandResult(
