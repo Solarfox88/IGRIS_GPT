@@ -39,6 +39,7 @@ RETRYABLE_REPAIR_FAILURES = {
     "missing_ui_visibility",
     "max_steps",
     "syntax_error",
+    "pytest_failure",
 }
 
 UNSAFE_STATUS_PREFIXES = (
@@ -439,6 +440,10 @@ def classify_failure(
     ])
     if _has_destructive_diff(diff):
         return "destructive_diff"
+    if targeted_tests and not targeted_tests.success:
+        return "pytest_failure"
+    if full_tests and not full_tests.success:
+        return "pytest_failure"
     if reasoning_result:
         stop = str(reasoning_result.get("stop_reason", ""))
         status = str(reasoning_result.get("status", ""))
@@ -461,10 +466,6 @@ def classify_failure(
             return "missing_tests"
     if "SyntaxError" in text or "invalid syntax" in text:
         return "syntax_error"
-    if targeted_tests and not targeted_tests.success:
-        return "pytest_failure"
-    if full_tests and not full_tests.success:
-        return "pytest_failure"
     if smoke and not smoke.success:
         smoke_text = "\n".join([smoke.output or "", smoke.error or ""]).lower()
         if "bootstrap" in smoke_text or "invalid bootstrap" in smoke_text:
