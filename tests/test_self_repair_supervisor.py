@@ -233,6 +233,21 @@ index 1111111..2222222 100644
     assert failure != "invalid_bootstrap"
 
 
+def test_failure_classifier_does_not_mark_html_class_changes_as_destructive():
+    diff = """diff --git a/igris/web/templates/index.html b/igris/web/templates/index.html
+index 1111111..2222222 100644
+--- a/igris/web/templates/index.html
++++ b/igris/web/templates/index.html
+@@ -1,5 +1,5 @@
+-<div class="panel card">
++<div class="panel card rank-a">
+ </div>
+"""
+    failure = classify_failure(diff=diff)
+
+    assert failure != "destructive_diff"
+
+
 def test_failure_classifier_detects_invalid_bootstrap_smoke_failure():
     smoke = CommandResult(False, '{"app":"IGRIS_GPT","rank":"A++","status":"ok","capability":"ui-visible-supervised"}', "Invalid bootstrap response for /api/health", 1)
 
