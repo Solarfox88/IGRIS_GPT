@@ -452,6 +452,73 @@ def test_local_backend_classifies_reasoning_timeout(monkeypatch, tmp_path):
     assert "timed out" in result["final_summary"]
 
 
+def test_local_backend_reuses_existing_open_issue_by_exact_title(monkeypatch, tmp_path):
+    commands = []
+
+    class Proc:
+        def __init__(self, stdout="", stderr="", returncode=0):
+            self.returncode = returncode
+            self.stdout = stdout
+            self.stderr = stderr
+
+    def fake_run(cmd, **kwargs):
+        commands.append(cmd)
+        if cmd[:4] == ["gh", "issue", "list", "--state"]:
+            return Proc(
+                stdout=json.dumps([
+                    {"title": "A: supervised repair for reasoning_loop_blocked", "url": "https://example.test/issues/1"},
+                    {"title": "S-full-e2e: supervised repair for syntax_error", "url": "https://example.test/issues/2"},
+                ]),
+            )
+        if cmd[:3] == ["gh", "issue", "create"]:
+            return Proc(stdout="https://example.test/issues/new")
+        return Proc(stdout="")
+
+    import igris.core.self_repair_supervisor as mod
+
+    monkeypatch.setattr(mod.subprocess, "run", fake_run)
+    backend = LocalSupervisorBackend(str(tmp_path))
+    result = backend.create_issue(
+        "S-full-e2e: supervised repair for syntax_error",
+        "body",
+    )
+
+    assert result.success
+    assert result.output == "https://example.test/issues/2"
+    assert not any(cmd[:3] == ["gh", "issue", "create"] for cmd in commands)
+
+
+def test_local_backend_creates_issue_when_no_open_match_exists(monkeypatch, tmp_path):
+    commands = []
+
+    class Proc:
+        def __init__(self, stdout="", stderr="", returncode=0):
+            self.returncode = returncode
+            self.stdout = stdout
+            self.stderr = stderr
+
+    def fake_run(cmd, **kwargs):
+        commands.append(cmd)
+        if cmd[:4] == ["gh", "issue", "list", "--state"]:
+            return Proc(stdout=json.dumps([]))
+        if cmd[:3] == ["gh", "issue", "create"]:
+            return Proc(stdout="https://example.test/issues/new")
+        return Proc(stdout="")
+
+    import igris.core.self_repair_supervisor as mod
+
+    monkeypatch.setattr(mod.subprocess, "run", fake_run)
+    backend = LocalSupervisorBackend(str(tmp_path))
+    result = backend.create_issue(
+        "S-full-e2e: supervised repair for wrong_file_edit",
+        "body",
+    )
+
+    assert result.success
+    assert result.output == "https://example.test/issues/new"
+    assert any(cmd[:3] == ["gh", "issue", "create"] for cmd in commands)
+
+
 def test_supervisor_event_serializes_bytes_safely():
     event = SupervisorEvent(
         phase="baseline_tests",

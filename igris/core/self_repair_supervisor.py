@@ -425,6 +425,18 @@ class LocalSupervisorBackend:
         return self._run(["git", "pull", "--rebase", "origin", "main"], timeout=120)
 
     def create_issue(self, title: str, body: str) -> CommandResult:
+        listed = self._run(
+            ["gh", "issue", "list", "--state", "open", "--limit", "200", "--json", "title,url"],
+            timeout=120,
+        )
+        if listed.success:
+            try:
+                open_issues = json.loads(listed.output or "[]")
+                for issue in open_issues:
+                    if str(issue.get("title", "")) == title:
+                        return CommandResult(True, str(issue.get("url", "")), "", 0)
+            except json.JSONDecodeError:
+                pass
         return self._run(["gh", "issue", "create", "--title", title, "--body", body], timeout=120)
 
     def restore_dangerous_diff(self) -> CommandResult:
