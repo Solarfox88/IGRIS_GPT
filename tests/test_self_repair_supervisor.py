@@ -23,6 +23,7 @@ from igris.web.server import create_app
 class FakeBackend:
     def __init__(self):
         self.status = CommandResult(True, "")
+        self.status_sequence = []
         self.baseline = CommandResult(True, "baseline ok")
         self.smoke_result = CommandResult(True, "smoke ok")
         self.full_tests = [CommandResult(True, "full ok")]
@@ -45,6 +46,8 @@ class FakeBackend:
 
     def git_status(self):
         self.commands.append("git_status")
+        if self.status_sequence:
+            return self.status_sequence.pop(0)
         return self.status
 
     def git_log_head(self):
@@ -738,6 +741,7 @@ def test_supervisor_extends_attempts_after_repair_on_final_configured_attempt():
 def test_supervisor_deduplicates_repair_issue_for_same_failure_in_single_run():
     backend = FakeBackend()
     backend.diff = CommandResult(True, "")
+    backend.diff_stat = CommandResult(True, "")
     backend.reasoning_results = [
         {
             "status": "stopped",
@@ -2818,3 +2822,106 @@ diff --git a/igris/web/templates/index.html b/igris/web/templates/index.html
     )
     assert backend.commands.count("tests:full") == 1
     assert "tests:['tests/test_rank_s_dashboard.py']" not in backend.commands
+
+
+def test_supervisor_grants_one_final_validation_attempt_after_last_successful_repair():
+    backend = FakeBackend()
+    backend.reasoning_results = [
+        {
+            "status": "blocked",
+            "stop_reason": "blocked",
+            "files_modified": [],
+            "final_summary": "initial blocked attempt",
+            "goal": "rank task",
+        },
+        {
+            "status": "finished",
+            "stop_reason": "finish",
+            "files_modified": ["igris/core/fix.py"],
+            "final_summary": "repair applied",
+            "goal": "repair",
+        },
+        {
+            "status": "finished",
+            "stop_reason": "finish",
+            "files_modified": ["igris/core/fix.py"],
+            "final_summary": "final validation attempt",
+            "goal": "rank task",
+        },
+    ]
+    backend.full_tests = [
+        CommandResult(True, "baseline ok"),
+        CommandResult(True, "attempt 1 full pytest ok"),
+        CommandResult(True, "repair validation pytest ok"),
+        CommandResult(True, "attempt 2 full pytest ok"),
+    ]
+
+    run = SelfRepairSupervisor("/tmp/project", backend=backend).run(
+        _config(
+            goal="Add /api/rank/status endpoint",
+            max_rank_attempts=1,
+            max_repair_cycles=1,
+            targeted_tests=[],
+        )
+    )
+
+    assert run.status == "completed"
+    assert any(
+        event.phase == "rank_attempt_extension"
+        and event.data.get("final_validation_only") is True
+        for event in run.events
+    )
+
+
+def test_supervisor_cleans_dirty_workspace_when_blocked_after_attempt_exhaustion():
+    backend = FakeBackend()
+    backend.diff_stat = CommandResult(True, "")
+    backend.diff = CommandResult(True, "")
+    backend.reasoning_results = [
+        {
+            "status": "blocked",
+            "stop_reason": "blocked",
+            "files_modified": ["igris/web/server.py"],
+            "final_summary": "blocked after edit",
+            "goal": "rank task",
+        }
+    ]
+    backend.status_sequence = [
+        CommandResult(True, ""),
+        CommandResult(True, " M igris/web/server.py"),
+        CommandResult(True, ""),
+    ]
+
+    run = SelfRepairSupervisor("/tmp/project", backend=backend).run(
+        _config(
+            goal="Add /api/rank/status endpoint",
+            max_rank_attempts=1,
+            max_repair_cycles=0,
+            targeted_tests=[],
+        )
+    )
+
+    assert run.status == "blocked"
+    assert run.failure_class == "reasoning_loop_blocked"
+    assert "restore" in backend.commands
+    assert any(
+        event.phase == "blocked_workspace_cleanup" and event.status == "success"
+        for event in run.events
+    )
+    assert any(
+        event.phase == "blocked_workspace_state"
+        and event.data.get("after_cleanup") is True
+        and event.data.get("dirty") is False
+        for event in run.events
+    )
+
+
+def test_supervisor_does_not_cleanup_preflight_workspace_dirty_block():
+    backend = FakeBackend()
+    backend.status = CommandResult(True, " M igris/web/server.py")
+
+    run = SelfRepairSupervisor("/tmp/project", backend=backend).run(_config())
+
+    assert run.status == "blocked"
+    assert run.failure_class == "workspace_dirty"
+    assert "restore" not in backend.commands

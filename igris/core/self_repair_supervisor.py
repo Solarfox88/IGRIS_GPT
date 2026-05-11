@@ -1376,6 +1376,7 @@ class SelfRepairSupervisor:
         repair_cycles = 0
         attempt = 1
         attempt_limit = config.max_rank_attempts
+        final_validation_extension_used = False
         while attempt <= attempt_limit:
             branch = f"rank-{config.rank_id.lower()}-{int(time.time())}-{attempt}"
             run.branch = branch
@@ -1687,6 +1688,7 @@ class SelfRepairSupervisor:
                     "No suitable LLM provider available",
                     mission_plan=mission_plan,
                     stage_statuses=stage_statuses,
+                    cleanup_workspace=True,
                 )
 
             if not failure and rank_passed:
@@ -1728,6 +1730,7 @@ class SelfRepairSupervisor:
                     "Rank failed and repair budget is exhausted or not repairable",
                     mission_plan=mission_plan,
                     stage_statuses=stage_statuses,
+                    cleanup_workspace=True,
                 )
 
             repair_cycles += 1
@@ -1745,16 +1748,29 @@ class SelfRepairSupervisor:
                     "Repair cycle failed validation",
                     mission_plan=mission_plan,
                     stage_statuses=stage_statuses,
+                    cleanup_workspace=True,
                 )
-            if attempt == attempt_limit and repair_cycles < config.max_repair_cycles:
-                attempt_limit += 1
-                run.add(
-                    "rank_attempt_extension",
-                    "running",
-                    "Extending rank attempts after successful repair on final configured attempt.",
-                    attempt_limit=attempt_limit,
-                    repair_cycles_used=repair_cycles,
-                )
+            if attempt == attempt_limit:
+                if repair_cycles < config.max_repair_cycles:
+                    attempt_limit += 1
+                    run.add(
+                        "rank_attempt_extension",
+                        "running",
+                        "Extending rank attempts after successful repair on final configured attempt.",
+                        attempt_limit=attempt_limit,
+                        repair_cycles_used=repair_cycles,
+                    )
+                elif not final_validation_extension_used:
+                    attempt_limit += 1
+                    final_validation_extension_used = True
+                    run.add(
+                        "rank_attempt_extension",
+                        "running",
+                        "Granting one final validation attempt after successful repair at repair budget limit.",
+                        attempt_limit=attempt_limit,
+                        repair_cycles_used=repair_cycles,
+                        final_validation_only=True,
+                    )
             attempt += 1
 
         return self._blocked(
@@ -1763,6 +1779,7 @@ class SelfRepairSupervisor:
             "Rank attempts exhausted",
             mission_plan=mission_plan,
             stage_statuses=stage_statuses,
+            cleanup_workspace=True,
         )
 
     def _rank_passed(
@@ -2535,6 +2552,55 @@ class SelfRepairSupervisor:
         run.report.update(self._stage_report_fragment(mission_plan, stage_statuses))
         return run
 
+    def _cleanup_blocked_workspace(self, run: SupervisorRun) -> None:
+        run.add(
+            "blocked_workspace_cleanup",
+            "running",
+            "Ensuring blocked run does not leave dirty workspace state.",
+        )
+        status_before = self.backend.git_status()
+        run.add(
+            "blocked_workspace_state",
+            "success" if status_before.success else "failure",
+            _command_detail(status_before),
+            dirty=bool(status_before.output.strip()) if status_before.success else False,
+        )
+        if not status_before.success:
+            run.add(
+                "blocked_workspace_cleanup",
+                "failure",
+                "Unable to read git status for blocked workspace cleanup.",
+            )
+            return
+        if not status_before.output.strip():
+            run.add(
+                "blocked_workspace_cleanup",
+                "success",
+                "Workspace already clean at blocked exit.",
+                no_op=True,
+            )
+            return
+        diff_stat = self.backend.git_diff_stat()
+        run.add(
+            "blocked_workspace_diff",
+            "success" if diff_stat.success else "failure",
+            _command_detail(diff_stat),
+        )
+        restore = self.backend.restore_dangerous_diff()
+        run.add(
+            "blocked_workspace_cleanup",
+            "success" if restore.success else "failure",
+            _command_detail(restore),
+        )
+        status_after = self.backend.git_status()
+        run.add(
+            "blocked_workspace_state",
+            "success" if status_after.success else "failure",
+            _command_detail(status_after),
+            dirty=bool(status_after.output.strip()) if status_after.success else False,
+            after_cleanup=True,
+        )
+
     def _blocked(
         self,
         run: SupervisorRun,
@@ -2543,11 +2609,14 @@ class SelfRepairSupervisor:
         *,
         mission_plan: Optional[MissionPlan] = None,
         stage_statuses: Optional[Dict[str, Dict[str, Any]]] = None,
+        cleanup_workspace: bool = False,
     ) -> SupervisorRun:
         run.status = "blocked"
         run.outcome = "Blocked"
         run.failure_class = failure
         run.add("blocked", "blocked", detail)
+        if cleanup_workspace:
+            self._cleanup_blocked_workspace(run)
         if stage_statuses and "final_report" in stage_statuses:
             self._set_stage_status(run, stage_statuses, "final_report", "failure", f"Run blocked: {failure}.")
         run.report = {"autonomous": False, "blocked_reason": detail}
