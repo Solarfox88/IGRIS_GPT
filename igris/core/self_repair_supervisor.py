@@ -2300,7 +2300,9 @@ class SelfRepairSupervisor:
                     failure_class="wrong_file_edit",
                 )
                 return True
-        if self._goal_requires_ui_visibility(config.goal) and _is_product_only_ui_task_diff(diff.output):
+        ui_visibility_goal = self._goal_requires_ui_visibility(config.goal)
+        ui_card_goal = self._goal_targets_rank_ui_card(config.goal)
+        if ui_visibility_goal and ui_card_goal and _is_product_only_ui_task_diff(diff.output):
             allow_safe_ui_repair = (
                 _has_ui_surface_change(diff.output)
                 and failure in {"missing_ui_visibility", "reasoning_loop_blocked"}
@@ -2321,7 +2323,7 @@ class SelfRepairSupervisor:
                 )
                 self._preserve_targeted_tests_after_restore_retry(run, config, failure)
                 return True
-        if self._goal_requires_ui_visibility(config.goal) and not _is_valid_ui_test_diff(diff.output):
+        if ui_visibility_goal and ui_card_goal and not _is_valid_ui_test_diff(diff.output):
             if not _restore_or_preserve(
                 "Invalid UI test diff rejected before repair validation",
                 force_restore=True,
