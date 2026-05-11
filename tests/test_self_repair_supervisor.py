@@ -184,6 +184,11 @@ def test_failure_classifier_detects_reasoning_timeout_as_blocked_loop():
     assert failure == "reasoning_loop_blocked"
 
 
+def test_failure_classifier_detects_budget_exceeded_as_blocked_loop():
+    failure = classify_failure({"status": "stopped", "stop_reason": "budget_exceeded", "files_modified": []})
+    assert failure == "reasoning_loop_blocked"
+
+
 def test_failure_classifier_prioritizes_pytest_failure_over_reasoning_timeout():
     failure = classify_failure(
         {"status": "blocked", "stop_reason": "reasoning_timeout", "files_modified": []},
@@ -2851,6 +2856,33 @@ def test_supervisor_tracks_non_blocking_behavior_per_stage():
     stages = {entry["stage_id"]: entry for entry in run.report["mission_orchestration"]["stages"]}
     behaviors = stages["backend_api_change"]["non_blocking_behaviors"]
     assert any(item["code"] == "degraded_reasoning" for item in behaviors)
+
+
+def test_supervisor_does_not_mark_required_stage_success_when_budget_exceeded():
+    backend = FakeBackend()
+    backend.reasoning_results = [
+        {
+            "status": "stopped",
+            "stop_reason": "budget_exceeded",
+            "files_modified": ["igris/web/server.py"],
+            "final_summary": "backend exhausted error budget",
+            "goal": "stage backend",
+        },
+    ]
+
+    run = SelfRepairSupervisor("/tmp/project", backend=backend).run(_staged_config(max_repair_cycles=0))
+
+    assert run.status == "blocked"
+    assert run.failure_class == "reasoning_loop_blocked"
+    stages = {entry["stage_id"]: entry for entry in run.report["mission_orchestration"]["stages"]}
+    assert stages["backend_api_change"]["status"] == "failure"
+    assert not any(
+        event.phase == "mission_stage_behavior"
+        and event.data.get("stage_id") == "backend_api_change"
+        and event.data.get("behavior_code") == "degraded_reasoning"
+        for event in run.events
+    )
+    assert len([cmd for cmd in backend.commands if cmd.startswith("reasoning:")]) == 1
 
 
 def test_supervisor_preserve_mode_skips_restore_on_test_repair_failures():
