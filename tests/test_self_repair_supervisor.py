@@ -41,8 +41,11 @@ class FakeBackend:
         self.commands = []
         self.test_timeouts = []
         self.restore_result = CommandResult(True, "restored")
+        self.restore_paths_result = CommandResult(True, "restore paths ok")
+        self.restore_paths_calls = []
         self.last_reasoning_context = None
         self.reasoning_contexts = []
+        self.reasoning_goals = []
 
     def git_status(self):
         self.commands.append("git_status")
@@ -60,6 +63,7 @@ class FakeBackend:
     def run_reasoning(self, goal, max_steps, initial_context, timeout=300):
         self.commands.append(f"reasoning:{initial_context}")
         self.commands.append(f"reasoning_timeout:{timeout}")
+        self.reasoning_goals.append(goal)
         self.last_reasoning_context = initial_context
         self.reasoning_contexts.append(initial_context)
         if self.reasoning_results:
@@ -126,6 +130,12 @@ class FakeBackend:
     def restore_dangerous_diff(self):
         self.commands.append("restore")
         return self.restore_result
+
+    def restore_paths(self, paths):
+        normalized = list(paths or [])
+        self.commands.append(f"restore_paths:{normalized}")
+        self.restore_paths_calls.append(normalized)
+        return self.restore_paths_result
 
 
 def _config(**overrides):
@@ -3077,9 +3087,17 @@ diff --git a/igris/web/templates/index.html b/igris/web/templates/index.html
     assert run.status == "blocked"
     assert run.failure_class == "wrong_file_edit"
     assert any(
+        event.phase == "ui_stage_retry"
+        and event.status == "running"
+        for event in run.events
+    )
+    assert any(
         event.phase == "mission_stage"
         and event.data.get("stage_id") == "ui_dashboard_change"
-        and "out-of-scope files: igris/web/server.py" in event.detail
+        and (
+            "out-of-scope files" in event.detail
+            or "UI-only recovery exhausted" in event.detail
+        )
         for event in run.events
     )
     assert any(
@@ -3190,3 +3208,164 @@ def test_supervisor_does_not_cleanup_preflight_workspace_dirty_block():
     assert run.status == "blocked"
     assert run.failure_class == "workspace_dirty"
     assert "restore" not in backend.commands
+
+
+def test_ui_stage_wrong_file_edit_on_server_py_triggers_stage_local_restore_only():
+    backend = FakeBackend()
+    backend.reasoning_results = [
+        {
+            "status": "finished",
+            "stop_reason": "finish",
+            "files_modified": ["igris/web/server.py"],
+            "final_summary": "backend done",
+            "goal": "backend",
+        },
+        {
+            "status": "finished",
+            "stop_reason": "finish",
+            "files_modified": ["tests/test_rank_s_dashboard.py"],
+            "final_summary": "backend tests done",
+            "goal": "backend tests",
+        },
+        {
+            "status": "blocked",
+            "stop_reason": "blocked",
+            "files_modified": ["igris/web/server.py", "igris/web/templates/index.html"],
+            "final_summary": "wrong file edit in ui stage",
+            "goal": "ui attempt 1",
+        },
+        {
+            "status": "blocked",
+            "stop_reason": "blocked",
+            "files_modified": ["igris/web/server.py", "igris/web/templates/index.html"],
+            "final_summary": "wrong file edit in ui stage",
+            "goal": "ui attempt 2",
+        },
+        {
+            "status": "blocked",
+            "stop_reason": "blocked",
+            "files_modified": ["igris/web/server.py", "igris/web/templates/index.html"],
+            "final_summary": "wrong file edit in ui stage",
+            "goal": "ui attempt 3",
+        },
+    ]
+
+    run = SelfRepairSupervisor("/tmp/project", backend=backend).run(_staged_config(max_repair_cycles=0))
+
+    stages = {entry["stage_id"]: entry for entry in run.report["mission_orchestration"]["stages"]}
+    assert run.status == "blocked"
+    assert run.failure_class == "wrong_file_edit"
+    assert stages["backend_api_change"]["status"] == "success"
+    assert stages["backend_tests"]["status"] == "success"
+    assert stages["ui_dashboard_change"]["status"] == "failure"
+    assert all("igris/web/server.py" not in call for call in backend.restore_paths_calls)
+    assert all("tests/test_rank_s_dashboard.py" not in call for call in backend.restore_paths_calls)
+    assert any(
+        "igris/web/templates/index.html" in call
+        for call in backend.restore_paths_calls
+    )
+
+
+def test_ui_stage_retry_prompt_contains_ui_only_policy_and_hard_forbid_server_py():
+    backend = FakeBackend()
+    backend.reasoning_results = [
+        {
+            "status": "finished",
+            "stop_reason": "finish",
+            "files_modified": ["igris/web/server.py"],
+            "final_summary": "backend done",
+            "goal": "backend",
+        },
+        {
+            "status": "finished",
+            "stop_reason": "finish",
+            "files_modified": ["tests/test_rank_s_dashboard.py"],
+            "final_summary": "backend tests done",
+            "goal": "backend tests",
+        },
+        {
+            "status": "blocked",
+            "stop_reason": "blocked",
+            "files_modified": ["igris/web/server.py", "igris/web/templates/index.html"],
+            "final_summary": "wrong file edit in ui stage",
+            "goal": "ui attempt 1",
+        },
+        {
+            "status": "finished",
+            "stop_reason": "finish",
+            "files_modified": ["igris/web/templates/index.html"],
+            "final_summary": "ui fixed with template-only edit",
+            "goal": "ui attempt 2",
+        },
+        {
+            "status": "finished",
+            "stop_reason": "finish",
+            "files_modified": ["tests/test_dashboard_tabs.py"],
+            "final_summary": "ui tests done",
+            "goal": "ui tests",
+        },
+    ]
+
+    run = SelfRepairSupervisor("/tmp/project", backend=backend).run(_staged_config(max_repair_cycles=0))
+
+    ui_goals = [
+        goal for goal in backend.reasoning_goals
+        if "[stage:ui_dashboard_change]" in goal
+    ]
+    assert run.status == "completed"
+    assert len(ui_goals) == 2
+    assert "UI-only recovery policy:" in ui_goals[1]
+    assert "Do not modify igris/web/server.py." in ui_goals[1]
+    assert "Hard-forbidden paths for this stage: igris/web/server.py" in ui_goals[1]
+
+
+def test_ui_stage_repeated_wrong_file_edit_has_bounded_retries_not_blind_loop():
+    backend = FakeBackend()
+    backend.reasoning_results = [
+        {
+            "status": "finished",
+            "stop_reason": "finish",
+            "files_modified": ["igris/web/server.py"],
+            "final_summary": "backend done",
+            "goal": "backend",
+        },
+        {
+            "status": "finished",
+            "stop_reason": "finish",
+            "files_modified": ["tests/test_rank_s_dashboard.py"],
+            "final_summary": "backend tests done",
+            "goal": "backend tests",
+        },
+        {
+            "status": "blocked",
+            "stop_reason": "blocked",
+            "files_modified": ["igris/web/server.py", "igris/web/templates/index.html"],
+            "final_summary": "wrong file edit in ui stage",
+            "goal": "ui attempt 1",
+        },
+        {
+            "status": "blocked",
+            "stop_reason": "blocked",
+            "files_modified": ["igris/web/server.py", "igris/web/templates/index.html"],
+            "final_summary": "wrong file edit in ui stage",
+            "goal": "ui attempt 2",
+        },
+        {
+            "status": "blocked",
+            "stop_reason": "blocked",
+            "files_modified": ["igris/web/server.py", "igris/web/templates/index.html"],
+            "final_summary": "wrong file edit in ui stage",
+            "goal": "ui attempt 3",
+        },
+    ]
+
+    run = SelfRepairSupervisor("/tmp/project", backend=backend).run(_staged_config(max_repair_cycles=0))
+
+    ui_contexts = [
+        ctx for ctx in backend.reasoning_contexts
+        if ctx.get("mission_stage_id") == "ui_dashboard_change"
+    ]
+    ui_retry_events = [event for event in run.events if event.phase == "ui_stage_retry"]
+    assert run.status == "blocked"
+    assert len(ui_contexts) == 3
+    assert len(ui_retry_events) == 2
