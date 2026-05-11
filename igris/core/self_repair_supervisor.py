@@ -501,7 +501,7 @@ def classify_failure(
             or "invalid syntax" in reasoning_text
         ):
             return "syntax_error"
-        if stop == "reasoning_timeout":
+        if stop in {"reasoning_timeout", "budget_exceeded"}:
             return "reasoning_loop_blocked"
         if stop == "max_steps":
             return "max_steps"
@@ -1341,7 +1341,7 @@ class SelfRepairSupervisor:
                 break
             runtime_refresh_required = runtime_refresh_required or any(str(path).startswith("igris/") for path in files_modified)
             if status != "finished":
-                if status in {"blocked", "error"} or stop_reason in {"blocked", "ask_user", "max_steps", "reasoning_timeout"}:
+                if status in {"blocked", "error", "stopped"} or stop_reason in {"blocked", "ask_user", "max_steps", "reasoning_timeout", "budget_exceeded"}:
                     self._set_stage_status(
                         run,
                         statuses,
