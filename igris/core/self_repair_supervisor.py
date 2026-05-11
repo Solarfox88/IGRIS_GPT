@@ -242,6 +242,7 @@ class SupervisorBackend(Protocol):
     def pull_main(self) -> CommandResult: ...
     def create_issue(self, title: str, body: str) -> CommandResult: ...
     def restore_dangerous_diff(self) -> CommandResult: ...
+    def restore_paths(self, paths: List[str]) -> CommandResult: ...
 
 
 class LocalSupervisorBackend:
@@ -459,6 +460,25 @@ class LocalSupervisorBackend:
         if not clean.success:
             return clean
         return CommandResult(True, restore.output + clean.output, "", 0)
+
+    def restore_paths(self, paths: List[str]) -> CommandResult:
+        selected = []
+        for raw in paths:
+            path = str(raw or "").strip()
+            if not path:
+                continue
+            if path.startswith("-") or path.startswith("/") or ".." in path.split("/"):
+                return CommandResult(False, "", f"Refusing unsafe restore path: {path}", 2)
+            selected.append(path)
+        if not selected:
+            return CommandResult(True, "", "", 0)
+        restore = self._run(["git", "restore", "--worktree", "--staged", "--", *selected], timeout=60)
+        if not restore.success:
+            return restore
+        clean = self._run(["git", "clean", "-f", "--", *selected], timeout=60)
+        if not clean.success:
+            return clean
+        return CommandResult(True, (restore.output or "") + (clean.output or ""), "", 0)
 
 
 def classify_failure(
@@ -679,6 +699,38 @@ def _diff_changed_paths(diff: str) -> List[str]:
             path = path[2:]
         paths.append(path)
     return paths
+
+
+def _diff_sections_by_path(diff: str) -> Dict[str, str]:
+    sections: Dict[str, str] = {}
+    current_path = ""
+    current_lines: List[str] = []
+    for line in diff.splitlines():
+        if line.startswith("diff --git "):
+            if current_path:
+                sections[current_path] = "\n".join(current_lines)
+            parts = line.split()
+            if len(parts) >= 4:
+                current_path = parts[3][2:] if parts[3].startswith("b/") else parts[3]
+            else:
+                current_path = ""
+            current_lines = [line]
+            continue
+        if current_path:
+            current_lines.append(line)
+    if current_path:
+        sections[current_path] = "\n".join(current_lines)
+    return sections
+
+
+def _changed_paths_between_diffs(before_diff: str, after_diff: str) -> Set[str]:
+    before_sections = _diff_sections_by_path(before_diff)
+    after_sections = _diff_sections_by_path(after_diff)
+    changed: Set[str] = set()
+    for path in set(before_sections.keys()).union(after_sections.keys()):
+        if before_sections.get(path, "") != after_sections.get(path, ""):
+            changed.add(path)
+    return changed
 
 
 def _normalize_candidate_path(path: str) -> str:
@@ -1147,6 +1199,79 @@ class SelfRepairSupervisor:
         return False
 
     @staticmethod
+    def _ui_stage_hard_forbidden_paths(
+        statuses: Dict[str, Dict[str, Any]],
+        config: RankSupervisorConfig,
+    ) -> Set[str]:
+        forbidden: Set[str] = set()
+        if statuses.get("backend_api_change", {}).get("status") == "success":
+            forbidden.add("igris/web/server.py")
+        if statuses.get("backend_tests", {}).get("status") == "success":
+            for target in config.targeted_tests:
+                normalized = str(target or "").strip()
+                if normalized:
+                    forbidden.add(normalized)
+        return forbidden
+
+    def _ui_stage_retry_goal(
+        self,
+        *,
+        base_goal: str,
+        stage: MissionStage,
+        hard_forbidden: Set[str],
+        retry_attempt: int,
+        invalid_paths: List[str],
+    ) -> str:
+        policy_lines = [
+            "UI-only recovery policy:",
+            "- Do not modify igris/web/server.py.",
+            "- Do not modify validated backend endpoint contract files or validated backend tests.",
+            "- Search existing UI/dashboard files first.",
+            "- Modify only UI/dashboard files under igris/web/templates/, igris/web/static/js/, igris/web/static/css/.",
+            "- Add minimal Rank S UI/dashboard visibility and update relevant UI/dashboard tests in their stage.",
+        ]
+        forbidden_line = ", ".join(sorted(hard_forbidden)) or "igris/web/server.py"
+        retry_line = ""
+        if retry_attempt > 0:
+            retry_line = (
+                f"\nRetry attempt {retry_attempt}: previous wrong_file_edit touched: "
+                f"{', '.join(invalid_paths) or 'unknown paths'}."
+            )
+        return (
+            f"{base_goal}\n\n"
+            f"[stage:{stage.stage_id}] {stage.goal}\n"
+            f"Allowed file families: {', '.join(stage.allowed_file_families) or 'mission-owned minimal scope'}.\n"
+            f"Acceptance criteria: {'; '.join(stage.acceptance_criteria)}\n"
+            + "\n".join(policy_lines)
+            + f"\nHard-forbidden paths for this stage: {forbidden_line}."
+            + retry_line
+        )
+
+    def _restore_ui_stage_scope(
+        self,
+        run: SupervisorRun,
+        stage: MissionStage,
+        changed_paths: Set[str],
+        observed_paths: List[str],
+    ) -> Tuple[bool, List[str]]:
+        candidates = set(changed_paths)
+        for path in observed_paths:
+            if path:
+                candidates.add(path)
+        restore_paths = sorted(
+            path for path in candidates
+            if self._path_in_allowed_family(path, stage.allowed_file_families)
+        )
+        restore = self.backend.restore_paths(restore_paths)
+        run.add(
+            "ui_stage_restore",
+            "success" if restore.success else "failure",
+            "Restoring UI-stage scoped edits after wrong_file_edit.",
+            restored_paths=restore_paths,
+        )
+        return restore.success, restore_paths
+
+    @staticmethod
     def _path_in_allowed_family(path: str, families: List[str]) -> bool:
         for family in families:
             if family.endswith("/"):
@@ -1171,10 +1296,13 @@ class SelfRepairSupervisor:
         before_paths: Set[str],
         after_paths: Set[str],
         touched_files: List[str],
+        changed_paths: Optional[Set[str]] = None,
     ) -> Tuple[bool, str]:
         if not stage.allowed_file_families:
             return True, ""
         paths_to_check = set(after_paths - before_paths)
+        if changed_paths:
+            paths_to_check.update(path for path in changed_paths if path)
         for touched in touched_files:
             normalized = str(touched or "").strip()
             if not normalized:
@@ -1270,105 +1398,187 @@ class SelfRepairSupervisor:
                 )
                 continue
 
-            before_diff = self.backend.git_diff()
-            before_paths = set(_diff_changed_paths(before_diff.output))
-            stage_goal = (
-                f"{config.goal}\n\n"
-                f"[stage:{stage.stage_id}] {stage.goal}\n"
-                f"Allowed file families: {', '.join(stage.allowed_file_families) or 'mission-owned minimal scope'}.\n"
-                f"Acceptance criteria: {'; '.join(stage.acceptance_criteria)}"
+            ui_retry_attempt = 0
+            ui_retry_budget = 2
+            ui_retry_invalid_paths: List[str] = []
+            ui_seen_paths: Set[str] = set()
+            ui_hard_forbidden = (
+                self._ui_stage_hard_forbidden_paths(statuses, config)
+                if stage.stage_id == "ui_dashboard_change"
+                else set()
             )
-            stage_context = self._rank_initial_context(config)
-            stage_context.update({
-                "mission_orchestration_mode": plan.mode,
-                "mission_stage_id": stage.stage_id,
-                "mission_stage_goal": stage.goal,
-                "mission_stage_allowed_file_families": stage.allowed_file_families,
-                "mission_stage_acceptance_criteria": stage.acceptance_criteria,
-                "mission_stage_validation": stage.validation,
-                "mission_stage_repair_strategy": stage.repair_strategy,
-            })
-            run.add(
-                "rank_reasoning",
-                "running",
-                f"Running staged mission reasoning: {stage.stage_id}",
-                stage_id=stage.stage_id,
-                timeout_seconds=config.reasoning_timeout_seconds,
-            )
-            result = self.backend.run_reasoning(
-                stage_goal,
-                max_steps=140,
-                initial_context=stage_context,
-                timeout=config.reasoning_timeout_seconds,
-            )
-            status = str(result.get("status", ""))
-            stop_reason = str(result.get("stop_reason", ""))
-            files_modified = list(result.get("files_modified") or [])
-            attempted_write_paths = _extract_attempted_write_paths(result)
-            observed_paths = list(dict.fromkeys(files_modified + attempted_write_paths))
-            if files_modified:
-                for path in files_modified:
-                    if path not in aggregated_files:
-                        aggregated_files.append(path)
-            summaries.append(f"[{stage.stage_id}] {result.get('final_summary', '')}")
-            loop_id = str(result.get("loop_id", ""))
-            if loop_id:
-                loop_ids.append(loop_id)
-            run.add(
-                "rank_reasoning",
-                status,
-                result.get("final_summary", ""),
-                stage_id=stage.stage_id,
-                loop_id=loop_id,
-                stop_reason=stop_reason,
-                files_modified=files_modified,
-                attempted_write_paths=attempted_write_paths,
-            )
-            after_diff = self.backend.git_diff()
-            after_paths = set(_diff_changed_paths(after_diff.output))
-            valid_paths, invalid_paths = self._validate_new_stage_paths(stage, before_paths, after_paths, observed_paths)
-            if not valid_paths:
-                self._set_stage_status(
-                    run,
-                    statuses,
-                    stage.stage_id,
-                    "failure",
-                    f"Stage touched out-of-scope files: {invalid_paths}",
+            while True:
+                before_diff = self.backend.git_diff()
+                before_paths = set(_diff_changed_paths(before_diff.output))
+                stage_goal = (
+                    self._ui_stage_retry_goal(
+                        base_goal=config.goal,
+                        stage=stage,
+                        hard_forbidden=ui_hard_forbidden,
+                        retry_attempt=ui_retry_attempt,
+                        invalid_paths=ui_retry_invalid_paths,
+                    )
+                    if stage.stage_id == "ui_dashboard_change"
+                    else (
+                        f"{config.goal}\n\n"
+                        f"[stage:{stage.stage_id}] {stage.goal}\n"
+                        f"Allowed file families: {', '.join(stage.allowed_file_families) or 'mission-owned minimal scope'}.\n"
+                        f"Acceptance criteria: {'; '.join(stage.acceptance_criteria)}"
+                    )
                 )
-                stage_failure = "wrong_file_edit"
-                last_status = status or "blocked"
-                last_stop_reason = stop_reason or "blocked"
-                break
-            runtime_refresh_required = runtime_refresh_required or any(str(path).startswith("igris/") for path in files_modified)
-            if status != "finished":
-                if status in {"blocked", "error", "stopped"} or stop_reason in {"blocked", "ask_user", "max_steps", "reasoning_timeout", "budget_exceeded"}:
+                stage_context = self._rank_initial_context(config)
+                stage_context.update({
+                    "mission_orchestration_mode": plan.mode,
+                    "mission_stage_id": stage.stage_id,
+                    "mission_stage_goal": stage.goal,
+                    "mission_stage_allowed_file_families": stage.allowed_file_families,
+                    "mission_stage_acceptance_criteria": stage.acceptance_criteria,
+                    "mission_stage_validation": stage.validation,
+                    "mission_stage_repair_strategy": stage.repair_strategy,
+                })
+                run.add(
+                    "rank_reasoning",
+                    "running",
+                    f"Running staged mission reasoning: {stage.stage_id}",
+                    stage_id=stage.stage_id,
+                    timeout_seconds=config.reasoning_timeout_seconds,
+                )
+                result = self.backend.run_reasoning(
+                    stage_goal,
+                    max_steps=140,
+                    initial_context=stage_context,
+                    timeout=config.reasoning_timeout_seconds,
+                )
+                status = str(result.get("status", ""))
+                stop_reason = str(result.get("stop_reason", ""))
+                files_modified = list(result.get("files_modified") or [])
+                attempted_write_paths = _extract_attempted_write_paths(result)
+                if files_modified:
+                    for path in files_modified:
+                        if path not in aggregated_files:
+                            aggregated_files.append(path)
+                summaries.append(f"[{stage.stage_id}] {result.get('final_summary', '')}")
+                loop_id = str(result.get("loop_id", ""))
+                if loop_id:
+                    loop_ids.append(loop_id)
+                run.add(
+                    "rank_reasoning",
+                    status,
+                    result.get("final_summary", ""),
+                    stage_id=stage.stage_id,
+                    loop_id=loop_id,
+                    stop_reason=stop_reason,
+                    files_modified=files_modified,
+                    attempted_write_paths=attempted_write_paths,
+                )
+                after_diff = self.backend.git_diff()
+                after_paths = set(_diff_changed_paths(after_diff.output))
+                changed_paths = _changed_paths_between_diffs(before_diff.output, after_diff.output)
+                observed_paths = list(dict.fromkeys(files_modified + attempted_write_paths + sorted(changed_paths)))
+                valid_paths, invalid_paths = self._validate_new_stage_paths(
+                    stage,
+                    before_paths,
+                    after_paths,
+                    observed_paths,
+                    changed_paths=changed_paths,
+                )
+                if not valid_paths:
+                    invalid_path_list = [path.strip() for path in invalid_paths.split(",") if path.strip()]
+                    if stage.stage_id == "ui_dashboard_change":
+                        for path in observed_paths:
+                            if self._path_in_allowed_family(path, stage.allowed_file_families):
+                                ui_seen_paths.add(path)
+                        if any(path in ui_hard_forbidden for path in invalid_path_list):
+                            ui_retry_invalid_paths = invalid_path_list
+                            restored_ok, restored_paths = self._restore_ui_stage_scope(
+                                run,
+                                stage,
+                                changed_paths,
+                                observed_paths,
+                            )
+                            if not restored_ok:
+                                self._set_stage_status(
+                                    run,
+                                    statuses,
+                                    stage.stage_id,
+                                    "failure",
+                                    "UI-stage recovery failed while restoring stage-local edits.",
+                                )
+                                stage_failure = "wrong_file_edit"
+                                last_status = status or "blocked"
+                                last_stop_reason = stop_reason or "blocked"
+                                break
+                            if ui_retry_attempt < ui_retry_budget:
+                                ui_retry_attempt += 1
+                                run.add(
+                                    "ui_stage_retry",
+                                    "running",
+                                    "Retrying ui_dashboard_change with UI-only constraints after stage-local wrong_file_edit.",
+                                    retry_attempt=ui_retry_attempt,
+                                    retry_budget=ui_retry_budget,
+                                    hard_forbidden=sorted(ui_hard_forbidden),
+                                    restored_paths=restored_paths,
+                                    invalid_paths=invalid_path_list,
+                                )
+                                continue
+                            searched = sorted(ui_seen_paths) or ["(none)"]
+                            self._set_stage_status(
+                                run,
+                                statuses,
+                                stage.stage_id,
+                                "failure",
+                                "UI-only recovery exhausted after repeated wrong_file_edit attempts. "
+                                f"UI files searched/touched: {', '.join(searched)}. "
+                                f"Attempted forbidden edits: {', '.join(sorted(set(ui_retry_invalid_paths)) or ['(none)'])}.",
+                            )
+                            stage_failure = "wrong_file_edit"
+                            last_status = status or "blocked"
+                            last_stop_reason = stop_reason or "blocked"
+                            break
                     self._set_stage_status(
                         run,
                         statuses,
                         stage.stage_id,
                         "failure",
-                        result.get("final_summary", "") or f"Stage {stage.stage_id} did not finish cleanly.",
+                        f"Stage touched out-of-scope files: {invalid_paths}",
                     )
-                    stage_failure = classify_failure(reasoning_result=result)
-                    last_status = status
-                    last_stop_reason = stop_reason
+                    stage_failure = "wrong_file_edit"
+                    last_status = status or "blocked"
+                    last_stop_reason = stop_reason or "blocked"
                     break
-                self._track_non_blocking_behavior(
+                runtime_refresh_required = runtime_refresh_required or any(str(path).startswith("igris/") for path in files_modified)
+                if status != "finished":
+                    if status in {"blocked", "error", "stopped"} or stop_reason in {"blocked", "ask_user", "max_steps", "reasoning_timeout", "budget_exceeded"}:
+                        self._set_stage_status(
+                            run,
+                            statuses,
+                            stage.stage_id,
+                            "failure",
+                            result.get("final_summary", "") or f"Stage {stage.stage_id} did not finish cleanly.",
+                        )
+                        stage_failure = classify_failure(reasoning_result=result)
+                        last_status = status
+                        last_stop_reason = stop_reason
+                        break
+                    self._track_non_blocking_behavior(
+                        run,
+                        statuses,
+                        stage.stage_id,
+                        "degraded_reasoning",
+                        f"Stage {stage.stage_id} accepted with degraded reasoning status {status}/{stop_reason}.",
+                    )
+                self._set_stage_status(
                     run,
                     statuses,
                     stage.stage_id,
-                    "degraded_reasoning",
-                    f"Stage {stage.stage_id} accepted with degraded reasoning status {status}/{stop_reason}.",
+                    "success",
+                    result.get("final_summary", "") or f"Stage {stage.stage_id} completed.",
                 )
-            self._set_stage_status(
-                run,
-                statuses,
-                stage.stage_id,
-                "success",
-                result.get("final_summary", "") or f"Stage {stage.stage_id} completed.",
-            )
-            last_status = status or "finished"
-            last_stop_reason = stop_reason or "finish"
+                last_status = status or "finished"
+                last_stop_reason = stop_reason or "finish"
+                break
+            if stage_failure:
+                break
 
         aggregated = {
             "status": last_status,
