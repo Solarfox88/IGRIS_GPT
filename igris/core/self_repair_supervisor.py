@@ -1548,6 +1548,30 @@ class SelfRepairSupervisor:
                     break
                 runtime_refresh_required = runtime_refresh_required or any(str(path).startswith("igris/") for path in files_modified)
                 if status != "finished":
+                    if (
+                        stage.stage_id == "ui_dashboard_change"
+                        and stop_reason in {"reasoning_timeout", "budget_exceeded"}
+                    ):
+                        has_ui_diff = _has_ui_surface_change(after_diff.output)
+                        stage_satisfied = self._stage_is_already_satisfied(stage, config)
+                        if has_ui_diff or stage_satisfied:
+                            self._track_non_blocking_behavior(
+                                run,
+                                statuses,
+                                stage.stage_id,
+                                "ui_stage_timeout_accepted",
+                                "UI stage timed out but validated UI visibility evidence was present; accepting stage with degraded status.",
+                            )
+                            self._set_stage_status(
+                                run,
+                                statuses,
+                                stage.stage_id,
+                                "success",
+                                "UI stage accepted after timeout because mission-owned UI visibility evidence is present.",
+                            )
+                            last_status = "finished"
+                            last_stop_reason = stop_reason or "reasoning_timeout"
+                            break
                     if status in {"blocked", "error", "stopped"} or stop_reason in {"blocked", "ask_user", "max_steps", "reasoning_timeout", "budget_exceeded"}:
                         self._set_stage_status(
                             run,

@@ -2868,6 +2868,61 @@ def test_supervisor_tracks_non_blocking_behavior_per_stage():
     assert any(item["code"] == "degraded_reasoning" for item in behaviors)
 
 
+def test_supervisor_accepts_ui_stage_timeout_when_ui_visibility_evidence_is_present():
+    backend = FakeBackend()
+    backend.reasoning_results = [
+        {
+            "status": "finished",
+            "stop_reason": "finish",
+            "files_modified": ["igris/web/server.py"],
+            "final_summary": "backend done",
+            "goal": "stage backend",
+        },
+        {
+            "status": "finished",
+            "stop_reason": "finish",
+            "files_modified": ["tests/test_rank_s_dashboard.py"],
+            "final_summary": "backend tests done",
+            "goal": "stage backend tests",
+        },
+        {
+            "status": "blocked",
+            "stop_reason": "reasoning_timeout",
+            "files_modified": [],
+            "final_summary": "ui timeout",
+            "goal": "stage ui",
+        },
+        {
+            "status": "finished",
+            "stop_reason": "finish",
+            "files_modified": ["tests/test_dashboard_tabs.py"],
+            "final_summary": "ui tests done",
+            "goal": "stage ui tests",
+        },
+    ]
+    backend.diff = CommandResult(
+        True,
+        """diff --git a/igris/web/server.py b/igris/web/server.py
+@@ -1,2 +1,6 @@
++@app.get('/api/rank/s-dashboard')
+diff --git a/igris/web/templates/index.html b/igris/web/templates/index.html
+@@ -10,6 +10,7 @@
++<div id='rank-s-dashboard'>ready</div>
+""",
+    )
+
+    run = SelfRepairSupervisor("/tmp/project", backend=backend).run(_staged_config(max_repair_cycles=0))
+
+    assert run.status == "completed"
+    stages = {entry["stage_id"]: entry for entry in run.report["mission_orchestration"]["stages"]}
+    assert stages["ui_dashboard_change"]["status"] == "success"
+    assert "accepted after timeout" in stages["ui_dashboard_change"]["detail"].lower()
+    assert any(
+        item["code"] == "ui_stage_timeout_accepted"
+        for item in stages["ui_dashboard_change"]["non_blocking_behaviors"]
+    )
+
+
 def test_supervisor_does_not_mark_required_stage_success_when_budget_exceeded():
     backend = FakeBackend()
     backend.reasoning_results = [
