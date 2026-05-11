@@ -1478,6 +1478,61 @@ def test_supervisor_retries_no_diff_repairs_for_syntax_error():
     )
 
 
+def test_supervisor_does_not_apply_ui_card_repair_gate_to_rank_s_backend_syntax_repair():
+    backend = FakeBackend()
+    backend.diff = CommandResult(
+        True,
+        """diff --git a/igris/web/server.py b/igris/web/server.py
+@@ -100,6 +100,18 @@ def create_app() -> FastAPI:
++    @app.get('/api/rank/s-dashboard')
++    async def get_rank_s_dashboard() -> Dict[str, object]:
++        return {
++            'app': 'IGRIS_GPT',
++            'rank': 'S',
++            'status': 'ok',
++            'capability': 'end-to-end-supervised',
++            'checks': {'backend': True, 'ui': True, 'tests': True, 'workflow': True},
++        }
+""",
+    )
+    backend.reasoning_results = [
+        {
+            "status": "finished",
+            "stop_reason": "finish",
+            "files_modified": ["igris/web/server.py"],
+            "final_summary": "repair backend syntax",
+            "goal": "repair",
+        }
+    ]
+    backend.full_tests = [CommandResult(True, "repair validation passed")]
+
+    supervisor = SelfRepairSupervisor("/tmp/project", backend=backend)
+    run = SupervisorRun(run_id="run-rank-s-backend-syntax", rank_id="S")
+
+    result = supervisor._repair_cycle(
+        run,
+        _config(
+            goal=(
+                "Complete Rank S mission: add /api/rank/s-dashboard backend endpoint, "
+                "UI dashboard visibility, tests, and workflow."
+            ),
+            targeted_tests=["tests/test_rank_s_dashboard.py"],
+            max_repair_cycles=1,
+        ),
+        "syntax_error",
+        1,
+    )
+
+    assert result is True
+    assert "restore" not in backend.commands
+    assert any(command.startswith("tests:") for command in backend.commands)
+    assert not any(
+        event.phase == "repair_retry"
+        and "Product-only UI task diff was rejected" in event.detail
+        for event in run.events
+    )
+
+
 def test_supervisor_rejects_invalid_ui_test_diff_before_validation_pytest():
     backend = FakeBackend()
     backend.diff = CommandResult(
