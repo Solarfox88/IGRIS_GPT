@@ -168,6 +168,9 @@ class FakeBackend:
         })
         return self.api_helper_result
 
+    def api_helper_is_configured(self) -> bool:
+        return getattr(self, "_api_helper_configured", True)
+
 
 def _config(**overrides):
     data = {
@@ -4209,3 +4212,216 @@ diff --git a/tests/test_supervisor_api.py b/tests/test_supervisor_api.py
         "flask" in (e.detail or "").lower() or "test_client" in (e.detail or "").lower()
         for e in retry_events
     ), f"repair_retry detail should mention Flask or test_client, got: {[e.detail for e in retry_events]}"
+
+
+# ---------------------------------------------------------------------------
+# Tests for bug #341 — API escalation counter fix (unconfigured helper)
+# ---------------------------------------------------------------------------
+
+def _escalation_config(**overrides):
+    """Config with API escalation enabled and a generous budget."""
+    data = {
+        "goal": "Rank A controlled task with tests",
+        "rank_id": "A",
+        "max_rank_attempts": 1,
+        "max_repair_cycles": 1,
+        "allow_api_escalation": True,
+        "max_api_escalations_per_run": 3,
+        "max_api_budget_usd": 1.0,
+        "dry_run": True,
+    }
+    data.update(overrides)
+    return RankSupervisorConfig.from_dict(data)
+
+
+def test_unconfigured_helper_does_not_consume_call_budget():
+    """When IGRIS_API_HELPER_COMMAND is not set, _maybe_api_escalate must NOT
+    increment api_escalations_used — it should instead increment
+    api_escalations_failed_unconfigured so the call budget stays intact."""
+    backend = FakeBackend()
+    backend._api_helper_configured = False
+
+    supervisor = SelfRepairSupervisor("/tmp/project", backend=backend)
+    run = SupervisorRun(run_id="run-uncfg-1", rank_id="test")
+    config = _escalation_config()
+
+    supervisor._maybe_api_escalate(run, config, failure="pytest_failure", cycle=1)
+
+    assert run.api_escalations_used == 0, (
+        "Budget must not be consumed when helper is not configured"
+    )
+    assert run.api_escalations_failed_unconfigured == 1, (
+        "Failed-unconfigured counter must be incremented"
+    )
+    # Helper must NOT have been called
+    assert not any("api_helper" in cmd for cmd in backend.commands), (
+        "call_api_helper must not be invoked when helper is not configured"
+    )
+
+
+def test_unconfigured_helper_emits_not_configured_event():
+    """_maybe_api_escalate must emit an api_escalation/not_configured event
+    (not a skipped/budget-exhausted event) when the helper is unconfigured."""
+    backend = FakeBackend()
+    backend._api_helper_configured = False
+
+    supervisor = SelfRepairSupervisor("/tmp/project", backend=backend)
+    run = SupervisorRun(run_id="run-uncfg-evt", rank_id="test")
+    config = _escalation_config()
+
+    supervisor._maybe_api_escalate(run, config, failure="pytest_failure", cycle=1)
+
+    not_cfg_events = [
+        e for e in run.events
+        if e.phase == "api_escalation" and e.status == "not_configured"
+    ]
+    assert not_cfg_events, (
+        "Expected api_escalation/not_configured event when helper is unconfigured"
+    )
+    skipped_budget_events = [
+        e for e in run.events
+        if e.phase == "api_escalation"
+        and e.status == "skipped"
+        and "budget" in (e.detail or "").lower()
+    ]
+    assert not skipped_budget_events, (
+        "Must NOT emit a budget-exhausted skipped event when the real cause is misconfiguration"
+    )
+
+
+def test_unconfigured_helper_multiple_calls_do_not_exhaust_budget():
+    """Calling _maybe_api_escalate N times with unconfigured helper must not
+    make the budget check (api_escalations_used >= max) trigger — subsequent
+    calls must each emit not_configured rather than budget-exhausted."""
+    backend = FakeBackend()
+    backend._api_helper_configured = False
+
+    supervisor = SelfRepairSupervisor("/tmp/project", backend=backend)
+    run = SupervisorRun(run_id="run-uncfg-multi", rank_id="test")
+    config = _escalation_config(max_api_escalations_per_run=2)
+
+    for cycle in range(1, 5):
+        supervisor._maybe_api_escalate(run, config, failure="pytest_failure", cycle=cycle)
+
+    assert run.api_escalations_used == 0
+    assert run.api_escalations_failed_unconfigured == 4
+
+    # All 4 events must be not_configured, none budget-exhausted
+    for e in run.events:
+        if e.phase == "api_escalation":
+            assert e.status == "not_configured", (
+                f"Expected not_configured but got {e.status!r}: {e.detail!r}"
+            )
+
+
+def test_configured_helper_consumes_call_budget_normally():
+    """When the helper IS configured and call succeeds, api_escalations_used
+    must be incremented and api_escalations_failed_unconfigured must stay 0."""
+    backend = FakeBackend()
+    backend._api_helper_configured = True  # default, but explicit
+
+    supervisor = SelfRepairSupervisor("/tmp/project", backend=backend)
+    run = SupervisorRun(run_id="run-cfg-ok", rank_id="test")
+    config = _escalation_config()
+
+    supervisor._maybe_api_escalate(run, config, failure="pytest_failure", cycle=1)
+
+    assert run.api_escalations_used == 1
+    assert run.api_escalations_failed_unconfigured == 0
+    assert any("api_helper" in cmd for cmd in backend.commands), (
+        "call_api_helper must be invoked when helper is configured"
+    )
+
+
+def test_run_start_emits_config_warning_when_helper_unconfigured():
+    """When allow_api_escalation=True but helper is not configured, the run()
+    method must emit an api_escalation_config/not_configured event immediately
+    after start so operators see the problem early."""
+    backend = FakeBackend()
+    backend._api_helper_configured = False
+    # Make baseline tests fail fast so run exits quickly
+    backend.baseline = CommandResult(False, "baseline failed")
+    backend.status = CommandResult(True, "")
+
+    supervisor = SelfRepairSupervisor("/tmp/project", backend=backend)
+    config = _escalation_config(max_rank_attempts=1, max_repair_cycles=0)
+
+    run = supervisor.run(config)
+
+    cfg_events = [
+        e for e in run.events
+        if e.phase == "api_escalation_config" and e.status == "not_configured"
+    ]
+    assert cfg_events, (
+        "Expected api_escalation_config/not_configured event at run start when helper is unconfigured"
+    )
+
+
+def test_run_start_does_not_emit_config_warning_when_helper_configured():
+    """When the helper IS configured, no api_escalation_config/not_configured
+    warning event should appear at run start."""
+    backend = FakeBackend()
+    backend._api_helper_configured = True
+    backend.baseline = CommandResult(False, "baseline failed")
+    backend.status = CommandResult(True, "")
+
+    supervisor = SelfRepairSupervisor("/tmp/project", backend=backend)
+    config = _escalation_config(max_rank_attempts=1, max_repair_cycles=0)
+
+    run = supervisor.run(config)
+
+    cfg_events = [
+        e for e in run.events
+        if e.phase == "api_escalation_config" and e.status == "not_configured"
+    ]
+    assert not cfg_events, (
+        "Should NOT emit api_escalation_config/not_configured when helper is properly configured"
+    )
+
+
+def test_local_supervisor_backend_api_helper_is_configured_with_env(monkeypatch):
+    """LocalSupervisorBackend.api_helper_is_configured() must return True only
+    when IGRIS_API_HELPER_COMMAND is set to a non-empty string."""
+    backend = LocalSupervisorBackend("/tmp/test_proj")
+
+    monkeypatch.delenv("IGRIS_API_HELPER_COMMAND", raising=False)
+    assert backend.api_helper_is_configured() is False
+
+    monkeypatch.setenv("IGRIS_API_HELPER_COMMAND", "")
+    assert backend.api_helper_is_configured() is False
+
+    monkeypatch.setenv("IGRIS_API_HELPER_COMMAND", "   ")
+    assert backend.api_helper_is_configured() is False
+
+    monkeypatch.setenv("IGRIS_API_HELPER_COMMAND", "python helper.py")
+    assert backend.api_helper_is_configured() is True
+
+
+def test_api_escalation_report_fragment_includes_failed_unconfigured():
+    """_api_escalation_report_fragment must include calls_failed_unconfigured
+    so dashboards can distinguish 'budget used' from 'helper not configured'."""
+    backend = FakeBackend()
+    supervisor = SelfRepairSupervisor("/tmp/project", backend=backend)
+
+    run = SupervisorRun(run_id="run-frag", rank_id="test")
+    run.api_escalations_used = 2
+    run.api_escalations_failed_unconfigured = 3
+
+    fragment = supervisor._api_escalation_report_fragment(run)
+
+    assert fragment["api_escalation"]["calls_used"] == 2
+    assert fragment["api_escalation"]["calls_failed_unconfigured"] == 3
+
+
+def test_summarize_supervised_run_includes_failed_unconfigured():
+    """summarize_supervised_run must surface api_escalations_failed_unconfigured
+    so the UI can show it correctly rather than lumping it into api_escalations_used."""
+    run = SupervisorRun(run_id="run-sum", rank_id="test")
+    run.api_escalations_used = 1
+    run.api_escalations_failed_unconfigured = 2
+
+    summary = summarize_supervised_run(run)
+
+    assert summary.get("api_escalations_failed_unconfigured") == 2, (
+        f"Expected 2 in summary, got: {summary.get('api_escalations_failed_unconfigured')!r}"
+    )
