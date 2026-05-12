@@ -252,6 +252,7 @@ class SupervisorRun:
     repair_cycles_used: int = 0
     max_repair_cycles: int = 0
     api_escalations_used: int = 0
+    api_escalations_failed_unconfigured: int = 0
     api_budget_used_usd: float = 0.0
     max_api_escalations_per_run: int = 0
     max_api_budget_usd: float = 0.0
@@ -285,6 +286,7 @@ class SupervisorRun:
             "repair_cycles_used": self.repair_cycles_used,
             "max_repair_cycles": self.max_repair_cycles,
             "api_escalations_used": self.api_escalations_used,
+            "api_escalations_failed_unconfigured": self.api_escalations_failed_unconfigured,
             "api_budget_used_usd": round(self.api_budget_used_usd, 6),
             "max_api_escalations_per_run": self.max_api_escalations_per_run,
             "max_api_budget_usd": round(self.max_api_budget_usd, 6),
@@ -315,6 +317,7 @@ class SupervisorBackend(Protocol):
     def restore_dangerous_diff(self) -> CommandResult: ...
     def restore_paths(self, paths: List[str]) -> CommandResult: ...
     def call_api_helper(self, packet: Dict[str, Any], model: str, max_tokens: int, timeout: int = 45) -> CommandResult: ...
+    def api_helper_is_configured(self) -> bool: ...
 
 
 class LocalSupervisorBackend:
@@ -678,6 +681,10 @@ class LocalSupervisorBackend:
             return CommandResult(False, "", "API helper command is empty after parsing.", 2)
         payload = json.dumps({"model": model, "max_tokens": max_tokens, "packet": packet})
         return self._run(cmd, timeout=timeout, input_text=payload)
+
+    def api_helper_is_configured(self) -> bool:
+        """Return True when IGRIS_API_HELPER_COMMAND env var is set and non-empty."""
+        return bool(str(os.getenv("IGRIS_API_HELPER_COMMAND", "")).strip())
 
 
 def classify_failure(
@@ -1151,6 +1158,7 @@ class SelfRepairSupervisor:
             "repair_cycles_used": int(payload.get("repair_cycles_used", 0) or 0),
             "max_repair_cycles": int(payload.get("max_repair_cycles", 0) or 0),
             "api_escalations_used": int(payload.get("api_escalations_used", 0) or 0),
+            "api_escalations_failed_unconfigured": int(payload.get("api_escalations_failed_unconfigured", 0) or 0),
             "max_api_escalations_per_run": int(payload.get("max_api_escalations_per_run", 0) or 0),
             "api_budget_used_usd": round(_safe_float(payload.get("api_budget_used_usd", 0.0)), 6),
             "max_api_budget_usd": round(_safe_float(payload.get("max_api_budget_usd", 0.0)), 6),
@@ -1376,6 +1384,20 @@ class SelfRepairSupervisor:
             run.add("api_escalation", "skipped", "API escalation USD budget exhausted.", budget_type="usd")
             return None
 
+        # Pre-flight: if the helper is not configured, skip without consuming
+        # call budget.  The operator may have set allow_api_escalation=True but
+        # not yet provided IGRIS_API_HELPER_COMMAND; burning budget here is
+        # unhelpful and misleads the UI into showing api=N/api=N as exhausted.
+        if not self.backend.api_helper_is_configured():
+            run.api_escalations_failed_unconfigured += 1
+            run.add(
+                "api_escalation",
+                "not_configured",
+                "API helper command is not configured (IGRIS_API_HELPER_COMMAND unset); "
+                "escalation skipped without consuming call budget.",
+                budget_type="unconfigured",
+            )
+            return None
         packet = self._build_api_escalation_packet(run, config, failure=failure, cycle=cycle, stage_statuses=stage_statuses)
         run.add(
             "api_escalation_request",
@@ -1391,6 +1413,8 @@ class SelfRepairSupervisor:
             max_tokens=config.max_tokens_per_escalation,
             timeout=min(60, config.reasoning_timeout_seconds),
         )
+        # Only count as a used escalation when the helper was actually called
+        # (configured, regardless of whether it succeeded).
         run.api_escalations_used += 1
         if not result.success:
             run.add("api_escalation_response", "failure", _command_detail(result))
@@ -2264,6 +2288,19 @@ class SelfRepairSupervisor:
         run = run or SupervisorRun(run_id=uuid.uuid4().hex[:12], rank_id=config.rank_id)
         self._configure_run_tracking(run, config)
         run.add("start", "running", "Supervisor started", dry_run=config.dry_run)
+        # Validate API escalation helper config at run start so problems are
+        # visible immediately rather than discovered mid-repair-cycle.
+        if config.allow_api_escalation and config.max_api_escalations_per_run > 0:
+            if not self.backend.api_helper_is_configured():
+                run.add(
+                    "api_escalation_config",
+                    "not_configured",
+                    "API escalation is enabled (allow_api_escalation=True) but "
+                    "IGRIS_API_HELPER_COMMAND is not set. Escalation calls will be "
+                    "skipped without consuming call budget.",
+                    allow_api_escalation=config.allow_api_escalation,
+                    max_api_escalations_per_run=config.max_api_escalations_per_run,
+                )
         cancelled = self._cancel_if_requested(run)
         if cancelled is not None:
             return cancelled
@@ -3406,6 +3443,7 @@ class SelfRepairSupervisor:
         return {
             "api_escalation": {
                 "calls_used": run.api_escalations_used,
+                "calls_failed_unconfigured": run.api_escalations_failed_unconfigured,
                 "budget_used_usd": round(run.api_budget_used_usd, 6),
             }
         }
@@ -4079,6 +4117,7 @@ def summarize_supervised_run(run: SupervisorRun) -> Dict[str, Any]:
         "repair_cycles_used": int(payload.get("repair_cycles_used", 0) or 0),
         "max_repair_cycles": int(payload.get("max_repair_cycles", 0) or 0),
         "api_escalations_used": int(payload.get("api_escalations_used", 0) or 0),
+        "api_escalations_failed_unconfigured": int(payload.get("api_escalations_failed_unconfigured", 0) or 0),
         "max_api_escalations_per_run": int(payload.get("max_api_escalations_per_run", 0) or 0),
         "api_budget_used_usd": round(_safe_float(payload.get("api_budget_used_usd", 0.0)), 6),
         "max_api_budget_usd": round(_safe_float(payload.get("max_api_budget_usd", 0.0)), 6),
@@ -4168,6 +4207,7 @@ def _load_persisted_recent_runs(project_root: str) -> List[Dict[str, Any]]:
                 "repair_cycles_used": int(raw.get("repair_cycles_used", 0) or 0),
                 "max_repair_cycles": int(raw.get("max_repair_cycles", 0) or 0),
                 "api_escalations_used": int(raw.get("api_escalations_used", 0) or 0),
+                "api_escalations_failed_unconfigured": int(raw.get("api_escalations_failed_unconfigured", 0) or 0),
                 "max_api_escalations_per_run": int(raw.get("max_api_escalations_per_run", 0) or 0),
                 "api_budget_used_usd": round(_safe_float(raw.get("api_budget_used_usd", 0.0)), 6),
                 "max_api_budget_usd": round(_safe_float(raw.get("max_api_budget_usd", 0.0)), 6),
