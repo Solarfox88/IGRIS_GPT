@@ -11,6 +11,8 @@ The orchestrator:
 - Degrades honestly when no suitable model is available
 - Records cost, latency, provider, fallback, outcome
 - Supports any OpenAI-compatible provider
+- Circuit breaker: marks providers unavailable after repeated failures
+- Retry with exponential backoff before falling through to next provider
 
 Profiles:
     deterministic          — no LLM, safety/policy/routing
@@ -32,6 +34,135 @@ from typing import Any, Dict, List, Optional
 
 from igris.core.safety import redact_secrets
 from igris.models.config import CONFIG
+
+
+# ---------------------------------------------------------------------------
+# Circuit Breaker
+# ---------------------------------------------------------------------------
+
+# States: CLOSED (normal), OPEN (failing, skip), HALF_OPEN (testing recovery)
+_CB_CLOSED = "closed"
+_CB_OPEN = "open"
+_CB_HALF_OPEN = "half_open"
+
+# Defaults
+_CB_FAILURE_THRESHOLD = 3      # consecutive failures to trip
+_CB_RECOVERY_TIMEOUT = 30.0    # seconds before trying again (half-open)
+_CB_SUCCESS_THRESHOLD = 1      # successes in half-open to close
+
+# Retry defaults
+_RETRY_MAX_ATTEMPTS = 2        # retries per provider before moving to next
+_RETRY_BASE_DELAY = 0.5        # seconds, doubles each retry
+
+
+@dataclass
+class CircuitBreakerState:
+    """Per-provider circuit breaker state."""
+    state: str = _CB_CLOSED
+    failure_count: int = 0
+    last_failure_time: float = 0.0
+    success_count_half_open: int = 0
+    last_error: str = ""
+
+    # Configurable thresholds
+    failure_threshold: int = _CB_FAILURE_THRESHOLD
+    recovery_timeout: float = _CB_RECOVERY_TIMEOUT
+    success_threshold: int = _CB_SUCCESS_THRESHOLD
+
+    def record_success(self) -> None:
+        """Record a successful call."""
+        if self.state == _CB_HALF_OPEN:
+            self.success_count_half_open += 1
+            if self.success_count_half_open >= self.success_threshold:
+                self.state = _CB_CLOSED
+                self.failure_count = 0
+                self.success_count_half_open = 0
+        elif self.state == _CB_CLOSED:
+            self.failure_count = 0
+
+    def record_failure(self, error: str = "") -> None:
+        """Record a failed call."""
+        self.failure_count += 1
+        self.last_failure_time = time.monotonic()
+        self.last_error = error
+        if self.state == _CB_HALF_OPEN:
+            # Failed during recovery attempt — reopen
+            self.state = _CB_OPEN
+            self.success_count_half_open = 0
+        elif self.failure_count >= self.failure_threshold:
+            self.state = _CB_OPEN
+
+    def is_available(self) -> bool:
+        """Check if the provider should be tried."""
+        if self.state == _CB_CLOSED:
+            return True
+        if self.state == _CB_HALF_OPEN:
+            return True
+        # OPEN — check if recovery timeout has elapsed
+        elapsed = time.monotonic() - self.last_failure_time
+        if elapsed >= self.recovery_timeout:
+            self.state = _CB_HALF_OPEN
+            self.success_count_half_open = 0
+            return True
+        return False
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "state": self.state,
+            "failure_count": self.failure_count,
+            "last_error": self.last_error,
+            "available": self.is_available(),
+        }
+
+
+class CircuitBreakerRegistry:
+    """Registry of per-provider circuit breakers."""
+
+    def __init__(
+        self,
+        failure_threshold: int = _CB_FAILURE_THRESHOLD,
+        recovery_timeout: float = _CB_RECOVERY_TIMEOUT,
+        success_threshold: int = _CB_SUCCESS_THRESHOLD,
+    ):
+        self._breakers: Dict[str, CircuitBreakerState] = {}
+        self._failure_threshold = failure_threshold
+        self._recovery_timeout = recovery_timeout
+        self._success_threshold = success_threshold
+
+    def get(self, provider_name: str) -> CircuitBreakerState:
+        if provider_name not in self._breakers:
+            self._breakers[provider_name] = CircuitBreakerState(
+                failure_threshold=self._failure_threshold,
+                recovery_timeout=self._recovery_timeout,
+                success_threshold=self._success_threshold,
+            )
+        return self._breakers[provider_name]
+
+    def is_available(self, provider_name: str) -> bool:
+        return self.get(provider_name).is_available()
+
+    def record_success(self, provider_name: str) -> None:
+        self.get(provider_name).record_success()
+
+    def record_failure(self, provider_name: str, error: str = "") -> None:
+        self.get(provider_name).record_failure(error)
+
+    def reset(self, provider_name: str) -> None:
+        """Manually reset a circuit breaker (e.g. after known recovery)."""
+        if provider_name in self._breakers:
+            self._breakers[provider_name] = CircuitBreakerState(
+                failure_threshold=self._failure_threshold,
+                recovery_timeout=self._recovery_timeout,
+                success_threshold=self._success_threshold,
+            )
+
+    def reset_all(self) -> None:
+        """Reset all circuit breakers."""
+        self._breakers.clear()
+
+    def status(self) -> Dict[str, Dict[str, Any]]:
+        """Get status of all known breakers."""
+        return {name: cb.to_dict() for name, cb in self._breakers.items()}
 
 
 # ---------------------------------------------------------------------------
@@ -211,10 +342,25 @@ class ModelOrchestrator:
             messages=[{"role": "user", "content": "..."}],
             system_prompt="...",
         )
+
+    Features:
+        - Provider chain with priority ordering per profile
+        - Circuit breaker per provider (trips after N failures, recovers after timeout)
+        - Retry with exponential backoff per provider attempt
+        - Cost tracking and call history
     """
 
-    def __init__(self, providers: Optional[Dict[str, ProviderConfig]] = None):
+    def __init__(
+        self,
+        providers: Optional[Dict[str, ProviderConfig]] = None,
+        circuit_breaker: Optional[CircuitBreakerRegistry] = None,
+        retry_max_attempts: int = _RETRY_MAX_ATTEMPTS,
+        retry_base_delay: float = _RETRY_BASE_DELAY,
+    ):
         self.providers = providers or _build_default_providers()
+        self._circuit_breaker = circuit_breaker or CircuitBreakerRegistry()
+        self._retry_max_attempts = retry_max_attempts
+        self._retry_base_delay = retry_base_delay
         self._history: List[Dict[str, Any]] = []
         self._total_cost: float = 0.0
         self._call_count: int = 0
@@ -254,7 +400,6 @@ class ModelOrchestrator:
 
         t0 = time.monotonic()
         last_error = ""
-        fallback_used = False
 
         for i, provider_name in enumerate(chain):
             provider = self.providers.get(provider_name)
@@ -264,25 +409,45 @@ class ModelOrchestrator:
             if not self._check_provider_available(provider):
                 continue
 
-            try:
-                result = self._call_provider(
-                    provider, messages, system_prompt,
-                    max_tokens, temperature, json_mode, timeout,
+            # Circuit breaker check
+            if not self._circuit_breaker.is_available(provider_name):
+                last_error = (
+                    f"{provider_name} circuit breaker open: "
+                    f"{self._circuit_breaker.get(provider_name).last_error}"
                 )
-                elapsed = int((time.monotonic() - t0) * 1000)
-                result.profile = profile
-                result.latency_ms = elapsed
-                result.fallback_used = i > 0
-                if i > 0:
-                    result.fallback_reason = last_error or "primary unavailable"
-
-                self._record_call(result, task_type)
-                return result
-
-            except Exception as e:
-                last_error = str(e)
-                fallback_used = True
                 continue
+
+            # Retry loop with exponential backoff
+            attempt_error = ""
+            for attempt in range(self._retry_max_attempts + 1):
+                if attempt > 0:
+                    delay = self._retry_base_delay * (2 ** (attempt - 1))
+                    time.sleep(delay)
+
+                try:
+                    result = self._call_provider(
+                        provider, messages, system_prompt,
+                        max_tokens, temperature, json_mode, timeout,
+                    )
+                    elapsed = int((time.monotonic() - t0) * 1000)
+                    result.profile = profile
+                    result.latency_ms = elapsed
+                    result.fallback_used = i > 0
+                    if i > 0:
+                        result.fallback_reason = last_error or "primary unavailable"
+
+                    # Record success in circuit breaker
+                    self._circuit_breaker.record_success(provider_name)
+                    self._record_call(result, task_type)
+                    return result
+
+                except Exception as e:
+                    attempt_error = str(e)
+                    continue
+
+            # All retries exhausted for this provider
+            self._circuit_breaker.record_failure(provider_name, attempt_error)
+            last_error = attempt_error
 
         # All providers failed — deterministic fallback
         elapsed = int((time.monotonic() - t0) * 1000)
@@ -497,3 +662,14 @@ class ModelOrchestrator:
     def get_profiles(self) -> Dict[str, str]:
         """Get task type → profile mapping."""
         return dict(TASK_PROFILE_MAP)
+
+    def get_circuit_breaker_status(self) -> Dict[str, Dict[str, Any]]:
+        """Get circuit breaker status for all providers."""
+        return self._circuit_breaker.status()
+
+    def reset_circuit_breaker(self, provider_name: Optional[str] = None) -> None:
+        """Reset circuit breaker(s). If provider_name is None, reset all."""
+        if provider_name:
+            self._circuit_breaker.reset(provider_name)
+        else:
+            self._circuit_breaker.reset_all()
