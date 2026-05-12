@@ -846,6 +846,22 @@ def _is_valid_missing_tests_repair_diff(diff: str, goal: str) -> bool:
     return True
 
 
+def _has_flask_test_client_in_diff(diff: str) -> bool:
+    """Return True when the diff *adds* Flask-style ``app.test_client()`` calls.
+
+    FastAPI app objects have no ``test_client()`` method; using it causes
+    ``AttributeError`` at pytest collection time (EEE errors).  This helper
+    is used during ``pytest_failure`` repair validation to reject such diffs
+    early so the repair cycle retries with explicit FastAPI TestClient guidance.
+    Only lines that are *added* (starting with '+' but not '+++') are checked.
+    """
+    for line in diff.splitlines():
+        if line.startswith("+") and not line.startswith("+++"):
+            if "test_client(" in line.lower():
+                return True
+    return False
+
+
 def _is_valid_ui_test_diff(diff: str) -> bool:
     """Return True when a UI test diff stays minimal and exact.
 
@@ -2145,6 +2161,33 @@ class SelfRepairSupervisor:
                     last_status = status or "blocked"
                     last_stop_reason = stop_reason or "blocked"
                     break
+                # Guard: a required stage with allowed_file_families that produced no
+                # diff and is not pre-satisfied must be treated as failure, not success.
+                # Without this check _validate_new_stage_paths returns (True, "") for
+                # empty candidate_paths, and the stage falls through to success —
+                # a false positive ("stage required segnato success senza evidence").
+                # Only fires when status == "finished": timeout/blocked paths are handled
+                # by the existing `if status != "finished":` block below.
+                if (
+                    status == "finished"
+                    and stage.required
+                    and stage.allowed_file_families
+                    and not changed_paths
+                    and not observed_paths
+                    and not self._stage_is_already_satisfied(stage, config)
+                ):
+                    self._set_stage_status(
+                        run,
+                        statuses,
+                        stage.stage_id,
+                        "failure",
+                        f"Required stage '{stage.stage_id}' produced no file changes "
+                        "and is not already satisfied.",
+                    )
+                    stage_failure = "reasoning_loop_blocked"
+                    last_status = status or "blocked"
+                    last_stop_reason = stop_reason or "no_change"
+                    break
                 runtime_refresh_required = runtime_refresh_required or any(str(path).startswith("igris/") for path in files_modified)
                 if status != "finished":
                     if (
@@ -3102,6 +3145,18 @@ class SelfRepairSupervisor:
                 "Assert only the mission-owned API endpoint from the goal and avoid "
                 "unrelated endpoints such as /api/rank/status or /dashboard."
             )
+        if failure == "pytest_failure":
+            repair_goal += (
+                " CRITICAL — this is a FastAPI application. Any test file MUST use "
+                "'from fastapi.testclient import TestClient' and instantiate the client as "
+                "'client = TestClient(create_app())'. Do NOT use the Flask-style "
+                "'app.test_client()' — FastAPI app objects have no test_client() method and "
+                "its use causes AttributeError at pytest collection time (EEE errors). "
+                "If existing test files contain 'test_client(' they must be rewritten to "
+                "use 'TestClient(create_app())' from fastapi.testclient. "
+                "Verify that target API endpoints exist in igris/web/server.py before writing "
+                "tests for them; if they are missing, add the endpoint implementation first."
+            )
         repair_context = self._rank_initial_context(config)
         repair_context.update({
             "repair_cycle": cycle,
@@ -3221,6 +3276,27 @@ class SelfRepairSupervisor:
                 "repair_retry",
                 "running",
                 "Invalid UI test diff was rejected; retrying with remaining budget.",
+                failure_class="wrong_file_edit",
+            )
+            self._preserve_targeted_tests_after_restore_retry(run, config, failure)
+            return True
+        # For pytest_failure repairs: reject diffs that introduce Flask-style test_client()
+        # calls.  FastAPI apps have no test_client() method; using it causes AttributeError
+        # at collection time (EEE errors).  Detecting and rejecting this pattern early avoids
+        # repeated repair cycles that add the wrong client without making progress.
+        if failure == "pytest_failure" and _has_flask_test_client_in_diff(diff.output):
+            if not _restore_or_preserve(
+                "Repair diff uses Flask-style test_client() which is incompatible with "
+                "this FastAPI application; restoring and retrying with FastAPI TestClient "
+                "guidance.",
+                force_restore=True,
+            ):
+                return False
+            run.add(
+                "repair_retry",
+                "running",
+                "Flask test_client() detected in repair diff for FastAPI app; "
+                "diff rejected. Retrying with explicit FastAPI TestClient(create_app()) guidance.",
                 failure_class="wrong_file_edit",
             )
             self._preserve_targeted_tests_after_restore_retry(run, config, failure)
