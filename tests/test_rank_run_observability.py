@@ -343,3 +343,44 @@ def test_audit_summary_includes_recent_runs(client, isolated_run_store):
     data = r.json()
     assert "recent_runs" in data
     assert any(item.get("run_id") == "recent-runs-001" for item in data["recent_runs"])
+
+
+def test_audit_summary_loads_persisted_recent_runs_when_memory_empty(client, isolated_run_store, tmp_path, monkeypatch):
+    audit_dir = tmp_path / ".igris"
+    audit_dir.mkdir(parents=True, exist_ok=True)
+    (audit_dir / "supervisor_runs.json").write_text(
+        json.dumps(
+            {
+                "runs": {
+                    "persisted-run-001": {
+                        "run_id": "persisted-run-001",
+                        "rank_id": "S-full-e2e",
+                        "status": "blocked",
+                        "outcome": "Blocked",
+                        "failure_class": "reasoning_loop_blocked",
+                        "current_stage": "ui_dashboard_change",
+                        "failed_stage": "ui_dashboard_change",
+                        "repair_cycles_used": 2,
+                        "max_repair_cycles": 8,
+                        "api_escalations_used": 1,
+                        "max_api_escalations_per_run": 2,
+                        "api_budget_used_usd": 0.02,
+                        "max_api_budget_usd": 1.5,
+                        "escalation_issue_url": "https://github.com/Solarfox88/IGRIS_GPT/issues/321",
+                        "latest_event": {"phase": "blocked", "status": "blocked", "detail": "blocked"},
+                        "created_at": "2026-05-12T00:00:00+00:00",
+                        "updated_at": "2026-05-12T00:01:00+00:00",
+                        "blocked_reason": "ui stage failed",
+                        "next_action": "review:reasoning_loop_blocked",
+                    }
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(CONFIG, "project_root", Path(tmp_path))
+
+    r = client.get("/api/rank/audit/summary")
+    assert r.status_code == 200
+    data = r.json()
+    assert any(item.get("run_id") == "persisted-run-001" for item in data.get("recent_runs", []))

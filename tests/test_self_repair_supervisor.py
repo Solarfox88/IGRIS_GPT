@@ -15,6 +15,7 @@ from igris.core.self_repair_supervisor import (
     SupervisorEvent,
     SupervisorRun,
     classify_failure,
+    get_supervisor_audit_summary,
     get_supervised_run,
     start_supervised_rank_async,
 )
@@ -2614,6 +2615,99 @@ def test_async_supervisor_start_is_observable_before_work_finishes(monkeypatch):
     while time.time() < deadline and get_supervised_run(run.run_id).status == "running":
         time.sleep(0.01)
     assert get_supervised_run(run.run_id).status == "completed"
+
+
+def _load_runs_records(project_root):
+    from pathlib import Path
+    path = Path(project_root) / ".igris" / "supervisor_runs.json"
+    if not path.exists():
+        return {}
+    return json.loads(path.read_text(encoding="utf-8")).get("runs", {})
+
+
+def test_supervisor_run_start_creates_durable_record(tmp_path):
+    backend = FakeBackend()
+    supervisor = SelfRepairSupervisor(str(tmp_path), backend=backend)
+    run = SupervisorRun(run_id="durable-start-001", rank_id="S")
+    config = _config(rank_id="S", max_repair_cycles=3, allow_api_escalation=True, max_api_escalations_per_run=2, max_api_budget_usd=1.5)
+
+    supervisor._configure_run_tracking(run, config)
+    run.add("queued", "running", "accepted")
+
+    records = _load_runs_records(tmp_path)
+    assert "durable-start-001" in records
+    assert records["durable-start-001"]["status"] == "running"
+    assert records["durable-start-001"]["max_repair_cycles"] == 3
+    assert records["durable-start-001"]["max_api_escalations_per_run"] == 2
+
+
+def test_supervisor_run_events_update_durable_record(tmp_path):
+    backend = FakeBackend()
+    supervisor = SelfRepairSupervisor(str(tmp_path), backend=backend)
+    run = SupervisorRun(run_id="durable-events-001", rank_id="S")
+    config = _config(rank_id="S")
+
+    supervisor._configure_run_tracking(run, config)
+    run.add("queued", "running", "accepted")
+    run.add("rank_reasoning", "running", "stage running", stage_id="backend_api_change")
+
+    records = _load_runs_records(tmp_path)
+    latest = records["durable-events-001"]["latest_event"]
+    assert latest["phase"] == "rank_reasoning"
+    assert records["durable-events-001"]["current_stage"] == "backend_api_change"
+
+
+def test_blocked_and_completed_runs_remain_visible_after_memory_reset(tmp_path):
+    backend_blocked = FakeBackend()
+    backend_blocked.reasoning_results = [
+        {
+            "status": "blocked",
+            "stop_reason": "blocked",
+            "files_modified": [],
+            "final_summary": "blocked run",
+            "goal": "blocked",
+        }
+    ]
+    blocked_run = SelfRepairSupervisor(str(tmp_path), backend=backend_blocked).run(_config(rank_id="S", max_rank_attempts=1, max_repair_cycles=0))
+
+    backend_completed = FakeBackend()
+    backend_completed.reasoning_results = [
+        {
+            "status": "finished",
+            "stop_reason": "finish",
+            "files_modified": ["igris/web/server.py", "tests/test_rank_status.py"],
+            "final_summary": "completed run",
+            "goal": "complete",
+        }
+    ]
+    completed_run = SelfRepairSupervisor(str(tmp_path), backend=backend_completed).run(_config(rank_id="A", max_rank_attempts=1, max_repair_cycles=0))
+    assert blocked_run.status == "blocked"
+    assert completed_run.status == "completed"
+
+    RUN_STORE.clear()
+    summary = get_supervisor_audit_summary(str(tmp_path))
+    recent = summary["recent_runs"]
+    ids = {entry["run_id"] for entry in recent}
+    assert blocked_run.run_id in ids
+    assert completed_run.run_id in ids
+    blocked_item = next(item for item in recent if item["run_id"] == blocked_run.run_id)
+    completed_item = next(item for item in recent if item["run_id"] == completed_run.run_id)
+    assert blocked_item["status"] == "blocked"
+    assert completed_item["status"] == "completed"
+
+
+def test_supervisor_durable_records_redact_secrets(tmp_path):
+    backend = FakeBackend()
+    supervisor = SelfRepairSupervisor(str(tmp_path), backend=backend)
+    run = SupervisorRun(run_id="durable-secret-001", rank_id="S")
+    config = _config(rank_id="S")
+
+    supervisor._configure_run_tracking(run, config)
+    run.add("queued", "running", "token=sk-secret-should-not-leak", api_key="sk-live-super-secret")
+
+    serialized = json.dumps(_load_runs_records(tmp_path))
+    assert "sk-live-super-secret" not in serialized
+    assert "sk-secret-should-not-leak" not in serialized
 
 
 def test_rank_supervisor_api_dry_run_blocks_dirty_repo():
