@@ -170,6 +170,77 @@
         reportsEl.innerHTML = '<span class="dim">No decision reports yet</span>';
       }
     }
+
+    await loadSupervisorMonitor();
+  }
+
+  async function loadSupervisorMonitor() {
+    var monitorEl = $("#dash-supervisor-monitor");
+    if (!monitorEl) return;
+
+    var active = await api("GET", "/api/rank/runs/active");
+    var audit = await api("GET", "/api/rank/audit/summary");
+    if (!active.ok && !audit.ok) {
+      monitorEl.innerHTML = '<span class="dim">Supervisor monitor unavailable</span>';
+      return;
+    }
+
+    var rows = [];
+    rows.push("<div><strong>Rank / Mission Monitor</strong></div>");
+    if (active.ok) {
+      var runs = active.data.runs || [];
+      if (!runs.length) {
+        rows.push("<div><strong>Supervisor Runs:</strong> 0 active</div>");
+      } else {
+        rows.push("<div><strong>Supervisor Runs:</strong> " + esc(String(runs.length)) + " active</div>");
+        runs.slice(0, 3).forEach(function (run) {
+          var stage = run.current_stage || "idle";
+          var failedStage = run.failed_stage || "-";
+          var next = run.next_action || "";
+          var issueUrl = run.escalation_issue_url || "";
+          var issueHtml = issueUrl ? ('<a href="' + esc(issueUrl) + '" target="_blank" rel="noopener noreferrer">issue</a>') : "-";
+          rows.push(
+            '<div class="dash-report-item">' +
+            esc(run.run_id || "") +
+            " | status=" + esc(run.status || "") +
+            " | outcome=" + esc(run.outcome || "-") +
+            " | stage=" + esc(stage) +
+            " | failed_stage=" + esc(failedStage) +
+            " | failure=" + esc(run.failure_class || "-") +
+            " | repairs=" + esc(String(run.repair_cycles_used || 0)) +
+            " | api=" + esc(String(run.api_escalations_used || 0)) +
+            " ($" + esc(String(run.api_budget_used_usd || 0)) + ")" +
+            " | escalation_issue=" + issueHtml +
+            " | next=" + esc(next) +
+            "</div>"
+          );
+        });
+      }
+    }
+
+    if (audit.ok) {
+      var inMem = (((audit.data || {}).in_memory || {}).counts) || {};
+      var persisted = (((audit.data || {}).persisted || {}).counts) || {};
+      rows.push("<div><strong>Audit & Escalations</strong></div>");
+      rows.push(
+        "<div><strong>Audit (memory):</strong> " +
+        "new=" + esc(String(inMem["audit-new"] || 0)) + ", " +
+        "reviewed=" + esc(String(inMem["audit-reviewed"] || 0)) + ", " +
+        "fixed=" + esc(String(inMem["audit-fixed"] || 0)) + ", " +
+        "deferred=" + esc(String(inMem["audit-deferred"] || 0)) +
+        "</div>"
+      );
+      rows.push(
+        "<div><strong>Audit (persisted):</strong> " +
+        "new=" + esc(String(persisted["audit-new"] || 0)) + ", " +
+        "reviewed=" + esc(String(persisted["audit-reviewed"] || 0)) + ", " +
+        "fixed=" + esc(String(persisted["audit-fixed"] || 0)) + ", " +
+        "deferred=" + esc(String(persisted["audit-deferred"] || 0)) +
+        "</div>"
+      );
+    }
+
+    monitorEl.innerHTML = rows.join("") || '<span class="dim">No supervisor data</span>';
   }
 
   var _selectedMissionId = null;

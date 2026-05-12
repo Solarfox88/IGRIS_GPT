@@ -3368,3 +3368,192 @@ def get_supervised_run(run_id: str) -> Optional[SupervisorRun]:
 def list_supervised_runs() -> List[SupervisorRun]:
     with RUN_LOCK:
         return list(RUN_STORE.values())
+
+
+def _safe_float(value: Any, default: float = 0.0) -> float:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _stage_summary_from_run_dict(payload: Dict[str, Any]) -> Dict[str, Any]:
+    stages = (
+        ((payload.get("report") or {}).get("mission_orchestration") or {}).get("stages")
+        or []
+    )
+    counts = {
+        "success": 0,
+        "failure": 0,
+        "pending": 0,
+        "running": 0,
+        "skipped": 0,
+        "unknown": 0,
+    }
+    failed_stage_ids: List[str] = []
+    pending_stage_ids: List[str] = []
+    for stage in stages:
+        status = str((stage or {}).get("status", "")).strip().lower()
+        stage_id = str((stage or {}).get("stage_id", "")).strip()
+        if status in counts:
+            counts[status] += 1
+        else:
+            counts["unknown"] += 1
+        if status == "failure" and stage_id:
+            failed_stage_ids.append(stage_id)
+        if status in {"pending", "running"} and stage_id:
+            pending_stage_ids.append(stage_id)
+    return {
+        "counts": counts,
+        "failed_stage_ids": failed_stage_ids,
+        "pending_stage_ids": pending_stage_ids,
+        "total": len(stages),
+    }
+
+
+def _audit_counts_from_events(events: List[Dict[str, Any]]) -> Dict[str, int]:
+    counts = {status: 0 for status in sorted(AUDIT_STATUSES)}
+    counts["unknown"] = 0
+    for event in events:
+        status = str((event or {}).get("audit_status", "")).strip().lower()
+        if status in counts:
+            counts[status] += 1
+        else:
+            counts["unknown"] += 1
+    return counts
+
+
+def _extract_issue_url_from_text(text: str) -> str:
+    match = re.search(r"https://github\.com/[^\s]+/issues/\d+", text or "")
+    return match.group(0) if match else ""
+
+
+def summarize_supervised_run(run: SupervisorRun) -> Dict[str, Any]:
+    payload = run.to_dict()
+    events = payload.get("events") or []
+    started_at = events[0]["timestamp"] if events else None
+    updated_at = events[-1]["timestamp"] if events else None
+    last_event = events[-1] if events else {}
+    current_stage = ""
+    for event in reversed(events):
+        phase = str((event or {}).get("phase", ""))
+        status = str((event or {}).get("status", ""))
+        data = (event or {}).get("data") or {}
+        if phase == "rank_reasoning" and status == "running":
+            current_stage = str(data.get("stage_id", "")).strip()
+            break
+        if phase == "mission_stage" and status == "running":
+            current_stage = str(data.get("stage_id", "")).strip()
+            break
+    stage_summary = _stage_summary_from_run_dict(payload)
+    audit_counts = _audit_counts_from_events(events)
+    failed_stage = (stage_summary.get("failed_stage_ids") or [""])[0]
+    escalation_issue_url = ""
+    for event in reversed(events):
+        if str((event or {}).get("phase", "")).strip() != "repair_issue":
+            continue
+        detail = str((event or {}).get("detail", ""))
+        escalation_issue_url = _extract_issue_url_from_text(detail)
+        if escalation_issue_url:
+            break
+
+    next_action = "monitor"
+    if payload.get("status") == "running":
+        next_action = f"wait:{current_stage}" if current_stage else "wait:next_event"
+    elif payload.get("status") == "blocked":
+        failure = str(payload.get("failure_class", "")).strip() or "blocked"
+        next_action = f"review:{failure}"
+    elif payload.get("status") == "completed":
+        next_action = "done"
+
+    return {
+        "run_id": payload.get("run_id", ""),
+        "rank_id": payload.get("rank_id", ""),
+        "status": payload.get("status", ""),
+        "outcome": payload.get("outcome", ""),
+        "failure_class": payload.get("failure_class", ""),
+        "branch": payload.get("branch", ""),
+        "repair_cycles_used": int(payload.get("repair_cycles_used", 0) or 0),
+        "api_escalations_used": int(payload.get("api_escalations_used", 0) or 0),
+        "api_budget_used_usd": round(_safe_float(payload.get("api_budget_used_usd", 0.0)), 6),
+        "current_stage": current_stage,
+        "failed_stage": failed_stage,
+        "escalation_issue_url": escalation_issue_url,
+        "stage_summary": stage_summary,
+        "audit_summary": {
+            "counts": audit_counts,
+            "next_review_due_count": sum(
+                1
+                for event in events
+                if str((event or {}).get("audit_status", "")).strip().lower() == "audit-deferred"
+                and SelfRepairSupervisor._timestamp_is_due(
+                    str((event or {}).get("audit_next_review_after", ""))
+                )
+            ),
+        },
+        "last_event": {
+            "phase": str(last_event.get("phase", "")),
+            "status": str(last_event.get("status", "")),
+            "timestamp": last_event.get("timestamp"),
+            "audit_status": str(last_event.get("audit_status", "")),
+        },
+        "started_at": started_at,
+        "updated_at": updated_at,
+        "next_action": next_action,
+    }
+
+
+def list_active_supervised_runs() -> List[SupervisorRun]:
+    with RUN_LOCK:
+        return [run for run in RUN_STORE.values() if run.status == "running"]
+
+
+def get_supervisor_audit_summary(project_root: str) -> Dict[str, Any]:
+    in_memory_events: List[Dict[str, Any]] = []
+    with RUN_LOCK:
+        for run in RUN_STORE.values():
+            in_memory_events.extend(run.to_dict().get("events") or [])
+    in_memory_counts = _audit_counts_from_events(in_memory_events)
+
+    persisted_counts = {status: 0 for status in sorted(AUDIT_STATUSES)}
+    persisted_counts["unknown"] = 0
+    persisted_total = 0
+    deferred_due_count = 0
+    audit_path = Path(project_root) / ".igris" / "supervisor_audit.json"
+    if audit_path.exists():
+        try:
+            payload = json.loads(audit_path.read_text(encoding="utf-8"))
+            records = payload.get("records", {}) if isinstance(payload, dict) else {}
+            if isinstance(records, dict):
+                for entry in records.values():
+                    if not isinstance(entry, dict):
+                        continue
+                    persisted_total += 1
+                    status = str(entry.get("audit_status", "")).strip().lower()
+                    if status in persisted_counts:
+                        persisted_counts[status] += 1
+                    else:
+                        persisted_counts["unknown"] += 1
+                    if (
+                        status == "audit-deferred"
+                        and SelfRepairSupervisor._timestamp_is_due(
+                            str(entry.get("audit_next_review_after", ""))
+                        )
+                    ):
+                        deferred_due_count += 1
+        except (OSError, json.JSONDecodeError):
+            pass
+
+    return {
+        "audit_file": str(audit_path),
+        "audit_file_exists": audit_path.exists(),
+        "in_memory": {
+            "event_count": len(in_memory_events),
+            "counts": in_memory_counts,
+        },
+        "persisted": {
+            "record_count": persisted_total,
+            "counts": persisted_counts,
+            "deferred_due_count": deferred_due_count,
+        },
+    }
