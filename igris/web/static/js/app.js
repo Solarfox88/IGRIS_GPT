@@ -38,6 +38,84 @@
     return d.innerHTML;
   }
 
+  var SUPERVISED_LAUNCHER_PRESETS = {
+    "rank-b": {
+      rank_id: "B",
+      goal: "Complete Rank B supervised mission with backend endpoint and tests.",
+      max_rank_attempts: 1,
+      max_repair_cycles: 2,
+      allow_github_pr: false,
+      allow_merge_if_green: false,
+      allow_api_escalation: false,
+      max_api_escalations_per_run: 0,
+      max_api_budget_usd: 0.0,
+      max_tokens_per_escalation: 1200,
+      service_restart_command: "sudo -n systemctl restart igris",
+      required_smoke_endpoints: [
+        "http://127.0.0.1:7778/api/health",
+        "http://127.0.0.1:7778/api/readiness",
+        "http://127.0.0.1:7778/api/ping"
+      ]
+    },
+    "rank-a": {
+      rank_id: "A",
+      goal: "Complete Rank A supervised mission with backend and tests, then verify runtime smoke.",
+      max_rank_attempts: 2,
+      max_repair_cycles: 4,
+      allow_github_pr: true,
+      allow_merge_if_green: true,
+      allow_api_escalation: false,
+      max_api_escalations_per_run: 0,
+      max_api_budget_usd: 0.0,
+      max_tokens_per_escalation: 1200,
+      service_restart_command: "sudo -n systemctl restart igris",
+      required_smoke_endpoints: [
+        "http://127.0.0.1:7778/api/health",
+        "http://127.0.0.1:7778/api/readiness",
+        "http://127.0.0.1:7778/api/ping",
+        "http://127.0.0.1:7778/api/rank/runs"
+      ]
+    },
+    "rank-a-plus-plus-ui": {
+      rank_id: "A++-ui",
+      goal: "Complete Rank A++ UI supervised mission with dashboard visibility, tests, and CI workflow.",
+      max_rank_attempts: 2,
+      max_repair_cycles: 6,
+      allow_github_pr: true,
+      allow_merge_if_green: true,
+      allow_api_escalation: true,
+      max_api_escalations_per_run: 1,
+      max_api_budget_usd: 0.75,
+      max_tokens_per_escalation: 2400,
+      service_restart_command: "sudo -n systemctl restart igris",
+      required_smoke_endpoints: [
+        "http://127.0.0.1:7778/api/health",
+        "http://127.0.0.1:7778/api/readiness",
+        "http://127.0.0.1:7778/api/ping",
+        "http://127.0.0.1:7778/api/rank/runs"
+      ]
+    },
+    "rank-s-full-e2e": {
+      rank_id: "S-full-e2e",
+      goal: "Complete a full Rank S supervised end-to-end mission. Add GET /api/rank/s-dashboard returning exactly {\"app\":\"IGRIS_GPT\",\"rank\":\"S\",\"status\":\"ok\",\"capability\":\"end-to-end-supervised\",\"checks\":{\"backend\":true,\"ui\":true,\"tests\":true,\"workflow\":true}}. Add dedicated backend tests in tests/test_rank_s_dashboard.py. Add mandatory minimal UI/dashboard visibility for the Rank S dashboard endpoint and add/update relevant UI/dashboard smoke tests. Add a minimal operational note if safe and consistent. Run targeted tests and full pytest. Produce a truthful final report. Do not push directly to main.",
+      max_rank_attempts: 3,
+      max_repair_cycles: 8,
+      allow_github_pr: true,
+      allow_merge_if_green: true,
+      allow_api_escalation: true,
+      max_api_escalations_per_run: 2,
+      max_api_budget_usd: 1.50,
+      max_tokens_per_escalation: 4000,
+      service_restart_command: "sudo -n systemctl restart igris",
+      required_smoke_endpoints: [
+        "http://127.0.0.1:7778/api/health",
+        "http://127.0.0.1:7778/api/readiness",
+        "http://127.0.0.1:7778/api/ping",
+        "http://127.0.0.1:7778/api/rank/runs"
+      ]
+    }
+  };
+
   function kvTable(obj) {
     var h = "<table>";
     for (var k in obj) {
@@ -83,6 +161,7 @@
     loadStatus();
     loadMission();
     loadDashboardExtras();
+    setupSupervisedLauncher();
     var supRefresh = $("#btn-refresh-supervisor-monitor");
     if (supRefresh) {
       supRefresh.addEventListener("click", function () { loadSupervisorMonitor(); });
@@ -194,6 +273,96 @@
     await loadSupervisorMonitor();
   }
 
+  function _intValue(id, fallback) {
+    var el = $("#" + id);
+    if (!el) return fallback;
+    var n = parseInt(el.value, 10);
+    return isNaN(n) ? fallback : n;
+  }
+
+  function _floatValue(id, fallback) {
+    var el = $("#" + id);
+    if (!el) return fallback;
+    var n = parseFloat(el.value);
+    return isNaN(n) ? fallback : n;
+  }
+
+  function _supervisorPromptLike(text) {
+    var t = String(text || "").toLowerCase();
+    return (
+      t.indexOf("run-supervised") !== -1 ||
+      t.indexOf("rank s") !== -1 ||
+      t.indexOf("max_repair_cycles") !== -1 ||
+      t.indexOf("allow_api_escalation") !== -1
+    );
+  }
+
+  function applySupervisedPreset(presetId) {
+    var cfg = SUPERVISED_LAUNCHER_PRESETS[presetId];
+    if (!cfg) return;
+    $("#supervised-rank-id").value = cfg.rank_id || "";
+    $("#supervised-goal").value = cfg.goal || "";
+    $("#supervised-max-rank-attempts").value = String(cfg.max_rank_attempts || 1);
+    $("#supervised-max-repair-cycles").value = String(cfg.max_repair_cycles || 0);
+    $("#supervised-allow-github-pr").checked = !!cfg.allow_github_pr;
+    $("#supervised-allow-merge-if-green").checked = !!cfg.allow_merge_if_green;
+    $("#supervised-allow-api-escalation").checked = !!cfg.allow_api_escalation;
+    $("#supervised-max-api-escalations-per-run").value = String(cfg.max_api_escalations_per_run || 0);
+    $("#supervised-max-api-budget-usd").value = String(cfg.max_api_budget_usd || 0);
+    $("#supervised-max-tokens-per-escalation").value = String(cfg.max_tokens_per_escalation || 1200);
+    $("#supervised-service-restart-command").value = cfg.service_restart_command || "";
+    $("#supervised-required-smoke-endpoints").value = (cfg.required_smoke_endpoints || []).join("\n");
+  }
+
+  function setupSupervisedLauncher() {
+    var form = $("#supervised-launcher-form");
+    if (!form) return;
+
+    var preset = $("#supervised-preset");
+    if (preset) {
+      applySupervisedPreset(preset.value || "rank-b");
+      preset.addEventListener("change", function () {
+        applySupervisedPreset(preset.value);
+      });
+    }
+
+    form.addEventListener("submit", async function (e) {
+      e.preventDefault();
+      var result = $("#supervised-launcher-result");
+      if (result) result.textContent = "Launching supervised mission...";
+
+      var payload = {
+        rank_id: ($("#supervised-rank-id").value || "").trim(),
+        goal: ($("#supervised-goal").value || "").trim(),
+        max_rank_attempts: _intValue("supervised-max-rank-attempts", 1),
+        max_repair_cycles: _intValue("supervised-max-repair-cycles", 0),
+        allow_github_pr: !!$("#supervised-allow-github-pr").checked,
+        allow_merge_if_green: !!$("#supervised-allow-merge-if-green").checked,
+        allow_api_escalation: !!$("#supervised-allow-api-escalation").checked,
+        max_api_escalations_per_run: _intValue("supervised-max-api-escalations-per-run", 0),
+        max_api_budget_usd: _floatValue("supervised-max-api-budget-usd", 0),
+        max_tokens_per_escalation: _intValue("supervised-max-tokens-per-escalation", 1200),
+        service_restart_command: ($("#supervised-service-restart-command").value || "").trim(),
+        required_smoke_endpoints: ($("#supervised-required-smoke-endpoints").value || "")
+          .split("\n")
+          .map(function (line) { return line.trim(); })
+          .filter(function (line) { return !!line; }),
+      };
+
+      var resp = await api("POST", "/api/rank/run-supervised", payload);
+      if (!resp.ok) {
+        if (result) result.textContent = "Launch failed: " + String((resp.data || {}).detail || (resp.data || {}).error || "unknown");
+        return;
+      }
+      window._lastStartedSupervisorRun = resp.data || {};
+      if (result) {
+        result.innerHTML =
+          "Supervised mission started. run_id=<strong>" + esc(String((resp.data || {}).run_id || "")) + "</strong>";
+      }
+      await loadSupervisorMonitor();
+    });
+  }
+
   async function loadSupervisorMonitor() {
     var monitorEl = $("#dash-supervisor-monitor");
     if (!monitorEl) return;
@@ -208,7 +377,28 @@
       } else {
         var rows = [];
         rows.push("<div><strong>Rank / Mission Monitor</strong></div>");
-        var runs = active.data.runs || [];
+        var runs = (active.data.runs || []).slice();
+        var lastStarted = window._lastStartedSupervisorRun || null;
+        if (lastStarted && lastStarted.run_id) {
+          var found = runs.some(function (item) { return item.run_id === lastStarted.run_id; });
+          if (!found) {
+            runs.unshift({
+              run_id: lastStarted.run_id,
+              rank_id: lastStarted.rank_id || "",
+              status: lastStarted.status || "running",
+              outcome: lastStarted.outcome || "",
+              current_stage: "",
+              failed_stage: "",
+              failure_class: "",
+              repair_cycles_used: lastStarted.repair_cycles_used || 0,
+              api_escalations_used: lastStarted.api_escalations_used || 0,
+              api_budget_used_usd: lastStarted.api_budget_used_usd || 0,
+              escalation_issue_url: "",
+              audit_summary: { counts: {} },
+              next_action: "wait:next_event",
+            });
+          }
+        }
         if (!runs.length) {
           rows.push("<div><strong>Supervisor Runs:</strong> 0 active</div>");
           rows.push("<div>No active supervisor runs. Start a supervised mission or view recent audit history.</div>");
@@ -923,6 +1113,15 @@
       var inp = $("#chat-input");
       var msg = inp.value.trim();
       if (!msg) return;
+      if (_supervisorPromptLike(msg)) {
+        addMsg("user", msg);
+        inp.value = "";
+        addMsg(
+          "assistant",
+          "This looks like a supervised rank mission request. Use the Dashboard launcher: Start Supervised Mission in Rank / Mission Launcher."
+        );
+        return;
+      }
       addMsg("user", msg);
       inp.value = "";
       if (!sessionId) {
