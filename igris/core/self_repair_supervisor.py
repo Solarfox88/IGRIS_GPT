@@ -241,17 +241,27 @@ class SupervisorRun:
     failure_class: str = ""
     branch: str = ""
     repair_cycles_used: int = 0
+    max_repair_cycles: int = 0
     api_escalations_used: int = 0
     api_budget_used_usd: float = 0.0
+    max_api_escalations_per_run: int = 0
+    max_api_budget_usd: float = 0.0
     events: List[SupervisorEvent] = field(default_factory=list)
     report: Dict[str, Any] = field(default_factory=dict)
     audit_resolver: Any = None
+    update_hook: Any = None
 
     def add(self, phase: str, status: str, detail: str = "", **data: Any) -> None:
         event = SupervisorEvent(phase=phase, status=status, detail=detail, data=data)
         if callable(self.audit_resolver):
             self.audit_resolver(event)
         self.events.append(event)
+        if callable(self.update_hook):
+            self.update_hook(self)
+
+    def touch(self) -> None:
+        if callable(self.update_hook):
+            self.update_hook(self)
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -262,8 +272,11 @@ class SupervisorRun:
             "failure_class": self.failure_class,
             "branch": self.branch,
             "repair_cycles_used": self.repair_cycles_used,
+            "max_repair_cycles": self.max_repair_cycles,
             "api_escalations_used": self.api_escalations_used,
             "api_budget_used_usd": round(self.api_budget_used_usd, 6),
+            "max_api_escalations_per_run": self.max_api_escalations_per_run,
+            "max_api_budget_usd": round(self.max_api_budget_usd, 6),
             "events": [e.to_dict() for e in self.events],
             "report": self.report,
         }
@@ -914,6 +927,9 @@ class SelfRepairSupervisor:
         self.backend = backend or LocalSupervisorBackend(project_root)
         self._audit_path = Path(project_root) / ".igris" / "supervisor_audit.json"
         self._audit_index = self._load_audit_index()
+        self._runs_path = Path(project_root) / ".igris" / "supervisor_runs.json"
+        self._runs_lock = threading.RLock()
+        self._runs_index = self._load_runs_index()
 
     def _load_audit_index(self) -> Dict[str, Dict[str, Any]]:
         try:
@@ -933,6 +949,91 @@ class SelfRepairSupervisor:
             self._audit_path.write_text(json.dumps({"records": self._audit_index}, indent=2, sort_keys=True), encoding="utf-8")
         except OSError:
             return
+
+    def _load_runs_index(self) -> Dict[str, Dict[str, Any]]:
+        try:
+            if not self._runs_path.exists():
+                return {}
+            payload = json.loads(self._runs_path.read_text(encoding="utf-8"))
+            runs = payload.get("runs", {}) if isinstance(payload, dict) else {}
+            if not isinstance(runs, dict):
+                return {}
+            return {
+                str(k): dict(v)
+                for k, v in runs.items()
+                if isinstance(k, str) and isinstance(v, dict)
+            }
+        except (OSError, json.JSONDecodeError):
+            return {}
+
+    def _persist_runs_index(self) -> None:
+        try:
+            self._runs_path.parent.mkdir(parents=True, exist_ok=True)
+            payload = {"runs": self._runs_index}
+            self._runs_path.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
+        except OSError:
+            return
+
+    @staticmethod
+    def _timestamp_to_iso(ts: Optional[float]) -> str:
+        if ts is None:
+            return ""
+        try:
+            return datetime.fromtimestamp(float(ts), tz=timezone.utc).isoformat()
+        except (TypeError, ValueError, OSError):
+            return ""
+
+    def _persisted_run_record(self, run: SupervisorRun) -> Dict[str, Any]:
+        snapshot = summarize_supervised_run(run)
+        payload = run.to_dict()
+        events = payload.get("events") or []
+        first_event_ts = events[0].get("timestamp") if events else None
+        last_event = events[-1] if events else {}
+        current_stage = str(snapshot.get("current_stage", "")).strip()
+        failed_stage = str(snapshot.get("failed_stage", "")).strip()
+        latest_event_summary = {
+            "phase": str(last_event.get("phase", "")),
+            "status": str(last_event.get("status", "")),
+            "detail": str(last_event.get("detail", ""))[:500],
+            "timestamp": last_event.get("timestamp"),
+        }
+        report_data = self._sanitize_escalation_value(payload.get("report") or {})
+        return {
+            "run_id": payload.get("run_id", ""),
+            "rank_id": payload.get("rank_id", ""),
+            "status": payload.get("status", ""),
+            "outcome": payload.get("outcome", ""),
+            "branch": payload.get("branch", ""),
+            "current_stage": current_stage,
+            "failed_stage": failed_stage,
+            "failure_class": payload.get("failure_class", ""),
+            "repair_cycles_used": int(payload.get("repair_cycles_used", 0) or 0),
+            "max_repair_cycles": int(payload.get("max_repair_cycles", 0) or 0),
+            "api_escalations_used": int(payload.get("api_escalations_used", 0) or 0),
+            "max_api_escalations_per_run": int(payload.get("max_api_escalations_per_run", 0) or 0),
+            "api_budget_used_usd": round(_safe_float(payload.get("api_budget_used_usd", 0.0)), 6),
+            "max_api_budget_usd": round(_safe_float(payload.get("max_api_budget_usd", 0.0)), 6),
+            "escalation_issue_url": str(snapshot.get("escalation_issue_url", "")),
+            "latest_event": latest_event_summary,
+            "created_at": self._timestamp_to_iso(first_event_ts) or self._timestamp_now_iso(),
+            "updated_at": self._timestamp_to_iso(snapshot.get("updated_at")) or self._timestamp_now_iso(),
+            "final_report": report_data,
+            "blocked_reason": str(report_data.get("blocked_reason", "")),
+            "next_action": str(snapshot.get("next_action", "")),
+        }
+
+    def _persist_run_snapshot(self, run: SupervisorRun) -> None:
+        record = self._persisted_run_record(run)
+        with self._runs_lock:
+            self._runs_index[str(run.run_id)] = record
+            self._persist_runs_index()
+
+    def _configure_run_tracking(self, run: SupervisorRun, config: RankSupervisorConfig) -> None:
+        run.audit_resolver = self._resolve_event_audit
+        run.update_hook = self._persist_run_snapshot
+        run.max_repair_cycles = config.max_repair_cycles
+        run.max_api_escalations_per_run = config.max_api_escalations_per_run
+        run.max_api_budget_usd = round(config.max_api_budget_usd, 6)
 
     @staticmethod
     def _sanitize_escalation_value(value: Any) -> Any:
@@ -1921,7 +2022,7 @@ class SelfRepairSupervisor:
         run: Optional[SupervisorRun] = None,
     ) -> SupervisorRun:
         run = run or SupervisorRun(run_id=uuid.uuid4().hex[:12], rank_id=config.rank_id)
-        run.audit_resolver = self._resolve_event_audit
+        self._configure_run_tracking(run, config)
         run.add("start", "running", "Supervisor started", dry_run=config.dry_run)
         restart_command = config.service_restart_command
         if config.defer_service_restart and restart_command:
@@ -3132,6 +3233,7 @@ class SelfRepairSupervisor:
                             }
                             run.report.update(self._api_escalation_report_fragment(run))
                             run.report.update(self._stage_report_fragment(mission_plan, stage_statuses))
+                            run.touch()
                             return run
                 elif config.allow_merge_if_green and not ci.success:
                     manual_remaining = "merge skipped because CI is not green"
@@ -3195,6 +3297,7 @@ class SelfRepairSupervisor:
         }
         run.report.update(self._api_escalation_report_fragment(run))
         run.report.update(self._stage_report_fragment(mission_plan, stage_statuses))
+        run.touch()
         return run
 
     def _complete_noop(
@@ -3230,6 +3333,7 @@ class SelfRepairSupervisor:
         }
         run.report.update(self._api_escalation_report_fragment(run))
         run.report.update(self._stage_report_fragment(mission_plan, stage_statuses))
+        run.touch()
         return run
 
     def _cleanup_blocked_workspace(self, run: SupervisorRun) -> None:
@@ -3302,6 +3406,7 @@ class SelfRepairSupervisor:
         run.report = {"autonomous": False, "blocked_reason": detail}
         run.report.update(self._api_escalation_report_fragment(run))
         run.report.update(self._stage_report_fragment(mission_plan, stage_statuses))
+        run.touch()
         return run
 
     def _pr_body(self, run: SupervisorRun) -> str:
@@ -3322,7 +3427,12 @@ RUN_LOCK = threading.RLock()
 def start_supervised_rank(data: Dict[str, Any], project_root: str) -> SupervisorRun:
     config = RankSupervisorConfig.from_dict(data)
     supervisor = SelfRepairSupervisor(project_root=project_root)
-    run = supervisor.run(config)
+    run = SupervisorRun(run_id=uuid.uuid4().hex[:12], rank_id=config.rank_id)
+    if hasattr(supervisor, "_configure_run_tracking"):
+        supervisor._configure_run_tracking(run, config)
+    elif hasattr(supervisor, "_resolve_event_audit"):
+        run.audit_resolver = getattr(supervisor, "_resolve_event_audit")
+    run = supervisor.run(config, run=run)
     with RUN_LOCK:
         RUN_STORE[run.run_id] = run
     return run
@@ -3335,7 +3445,9 @@ def start_supervised_rank_async(data: Dict[str, Any], project_root: str) -> Supe
     config = RankSupervisorConfig.from_dict(payload)
     supervisor = SelfRepairSupervisor(project_root=project_root)
     run = SupervisorRun(run_id=uuid.uuid4().hex[:12], rank_id=config.rank_id)
-    if hasattr(supervisor, "_resolve_event_audit"):
+    if hasattr(supervisor, "_configure_run_tracking"):
+        supervisor._configure_run_tracking(run, config)
+    elif hasattr(supervisor, "_resolve_event_audit"):
         run.audit_resolver = getattr(supervisor, "_resolve_event_audit")
     run.add("queued", "running", "Supervisor run accepted for background execution")
     with RUN_LOCK:
@@ -3350,6 +3462,7 @@ def start_supervised_rank_async(data: Dict[str, Any], project_root: str) -> Supe
             run.failure_class = "supervisor_bug"
             run.add("exception", "blocked", str(exc))
             run.report = {"autonomous": False, "blocked_reason": "Supervisor worker crashed"}
+            run.touch()
 
     thread = threading.Thread(
         target=_worker,
@@ -3375,6 +3488,19 @@ def _safe_float(value: Any, default: float = 0.0) -> float:
         return float(value)
     except (TypeError, ValueError):
         return default
+
+
+def _timestamp_sort_key(value: Any) -> float:
+    numeric = _safe_float(value, default=float("nan"))
+    if numeric == numeric:  # not NaN
+        return numeric
+    text = str(value or "").strip()
+    if not text:
+        return 0.0
+    try:
+        return datetime.fromisoformat(text.replace("Z", "+00:00")).timestamp()
+    except ValueError:
+        return 0.0
 
 
 def _stage_summary_from_run_dict(payload: Dict[str, Any]) -> Dict[str, Any]:
@@ -3474,8 +3600,11 @@ def summarize_supervised_run(run: SupervisorRun) -> Dict[str, Any]:
         "failure_class": payload.get("failure_class", ""),
         "branch": payload.get("branch", ""),
         "repair_cycles_used": int(payload.get("repair_cycles_used", 0) or 0),
+        "max_repair_cycles": int(payload.get("max_repair_cycles", 0) or 0),
         "api_escalations_used": int(payload.get("api_escalations_used", 0) or 0),
+        "max_api_escalations_per_run": int(payload.get("max_api_escalations_per_run", 0) or 0),
         "api_budget_used_usd": round(_safe_float(payload.get("api_budget_used_usd", 0.0)), 6),
+        "max_api_budget_usd": round(_safe_float(payload.get("max_api_budget_usd", 0.0)), 6),
         "current_stage": current_stage,
         "failed_stage": failed_stage,
         "escalation_issue_url": escalation_issue_url,
@@ -3508,6 +3637,49 @@ def list_active_supervised_runs() -> List[SupervisorRun]:
         return [run for run in RUN_STORE.values() if run.status == "running"]
 
 
+def _load_persisted_recent_runs(project_root: str) -> List[Dict[str, Any]]:
+    runs_path = Path(project_root) / ".igris" / "supervisor_runs.json"
+    if not runs_path.exists():
+        return []
+    try:
+        payload = json.loads(runs_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return []
+    runs = payload.get("runs", {}) if isinstance(payload, dict) else {}
+    if not isinstance(runs, dict):
+        return []
+    out: List[Dict[str, Any]] = []
+    for run_id, raw in runs.items():
+        if not isinstance(run_id, str) or not isinstance(raw, dict):
+            continue
+        out.append(
+            {
+                "run_id": run_id,
+                "rank_id": str(raw.get("rank_id", "")),
+                "status": str(raw.get("status", "")),
+                "outcome": str(raw.get("outcome", "")),
+                "branch": str(raw.get("branch", "")),
+                "current_stage": str(raw.get("current_stage", "")),
+                "failed_stage": str(raw.get("failed_stage", "")),
+                "failure_class": str(raw.get("failure_class", "")),
+                "repair_cycles_used": int(raw.get("repair_cycles_used", 0) or 0),
+                "max_repair_cycles": int(raw.get("max_repair_cycles", 0) or 0),
+                "api_escalations_used": int(raw.get("api_escalations_used", 0) or 0),
+                "max_api_escalations_per_run": int(raw.get("max_api_escalations_per_run", 0) or 0),
+                "api_budget_used_usd": round(_safe_float(raw.get("api_budget_used_usd", 0.0)), 6),
+                "max_api_budget_usd": round(_safe_float(raw.get("max_api_budget_usd", 0.0)), 6),
+                "escalation_issue_url": str(raw.get("escalation_issue_url", "")),
+                "latest_event": raw.get("latest_event", {}) if isinstance(raw.get("latest_event"), dict) else {},
+                "updated_at": str(raw.get("updated_at", "")),
+                "created_at": str(raw.get("created_at", "")),
+                "blocked_reason": _safe_redact(raw.get("blocked_reason", "")),
+                "next_action": str(raw.get("next_action", "")),
+            }
+        )
+    out.sort(key=lambda item: _timestamp_sort_key(item.get("updated_at", "")), reverse=True)
+    return out[:20]
+
+
 def get_supervisor_audit_summary(project_root: str) -> Dict[str, Any]:
     in_memory_events: List[Dict[str, Any]] = []
     recent_runs: List[Dict[str, Any]] = []
@@ -3529,7 +3701,21 @@ def get_supervisor_audit_summary(project_root: str) -> Dict[str, Any]:
                     "api_budget_used_usd": round(_safe_float(payload.get("api_budget_used_usd", 0.0)), 6),
                 }
             )
-    recent_runs.sort(key=lambda item: _safe_float(item.get("updated_at", 0.0)), reverse=True)
+    recent_runs.sort(key=lambda item: _timestamp_sort_key(item.get("updated_at", 0.0)), reverse=True)
+    persisted_recent_runs = _load_persisted_recent_runs(project_root)
+    merged_recent: Dict[str, Dict[str, Any]] = {}
+    for item in persisted_recent_runs:
+        merged_recent[str(item.get("run_id", ""))] = item
+    for item in recent_runs:
+        run_id = str(item.get("run_id", ""))
+        existing = merged_recent.get(run_id)
+        if existing is None or _timestamp_sort_key(item.get("updated_at", 0.0)) >= _timestamp_sort_key(existing.get("updated_at", 0.0)):
+            merged_recent[run_id] = item
+    merged_recent_runs = sorted(
+        merged_recent.values(),
+        key=lambda item: _timestamp_sort_key(item.get("updated_at", 0.0)),
+        reverse=True,
+    )[:5]
     in_memory_counts = _audit_counts_from_events(in_memory_events)
 
     persisted_counts = {status: 0 for status in sorted(AUDIT_STATUSES)}
@@ -3573,5 +3759,5 @@ def get_supervisor_audit_summary(project_root: str) -> Dict[str, Any]:
             "counts": persisted_counts,
             "deferred_due_count": deferred_due_count,
         },
-        "recent_runs": recent_runs[:5],
+        "recent_runs": merged_recent_runs,
     }
