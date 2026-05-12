@@ -2647,6 +2647,31 @@ def create_app() -> FastAPI:
         run = start_supervised_rank_async(content, project_root=str(CONFIG.project_root))
         return run.to_dict()
 
+    @app.get("/api/rank/runs/active")
+    async def api_rank_runs_active() -> Dict[str, object]:
+        """List active supervised rank runs with compact summaries."""
+        from igris.core.self_repair_supervisor import (
+            list_active_supervised_runs,
+            summarize_supervised_run,
+        )
+        runs = [summarize_supervised_run(run) for run in list_active_supervised_runs()]
+        return {"runs": runs}
+
+    @app.get("/api/rank/runs/{run_id}/summary")
+    async def api_rank_run_summary(run_id: str) -> Dict[str, object]:
+        """Return compact supervised rank run summary."""
+        from igris.core.self_repair_supervisor import get_supervised_run, summarize_supervised_run
+        run = get_supervised_run(run_id)
+        if run is None:
+            raise HTTPException(status_code=404, detail="rank run not found")
+        return summarize_supervised_run(run)
+
+    @app.get("/api/rank/runs")
+    async def api_rank_runs() -> Dict[str, object]:
+        """List supervised rank runs held in memory."""
+        from igris.core.self_repair_supervisor import list_supervised_runs
+        return {"runs": [run.to_dict() for run in list_supervised_runs()]}
+
     @app.get("/api/rank/runs/{run_id}")
     async def api_rank_run_detail(run_id: str) -> Dict[str, object]:
         """Return one supervised rank run."""
@@ -2656,11 +2681,11 @@ def create_app() -> FastAPI:
             raise HTTPException(status_code=404, detail="rank run not found")
         return run.to_dict()
 
-    @app.get("/api/rank/runs")
-    async def api_rank_runs() -> Dict[str, object]:
-        """List supervised rank runs held in memory."""
-        from igris.core.self_repair_supervisor import list_supervised_runs
-        return {"runs": [run.to_dict() for run in list_supervised_runs()]}
+    @app.get("/api/rank/audit/summary")
+    async def api_rank_audit_summary() -> Dict[str, object]:
+        """Return compact supervisor audit summary."""
+        from igris.core.self_repair_supervisor import get_supervisor_audit_summary
+        return get_supervisor_audit_summary(project_root=str(CONFIG.project_root))
 
     # ------------------------------------------------------------------
     # Integration Layer — Epic #62
