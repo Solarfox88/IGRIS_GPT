@@ -21,6 +21,7 @@ from igris.core.self_repair_supervisor import (
     get_supervised_run,
     summarize_supervised_run,
     start_supervised_rank_async,
+    _has_flask_test_client_in_diff,
 )
 from igris.web.server import create_app
 
@@ -3962,3 +3963,249 @@ def test_ui_stage_repeated_wrong_file_edit_has_bounded_retries_not_blind_loop():
     assert run.status == "blocked"
     assert len(ui_contexts) == 3
     assert len(ui_retry_events) == 2
+
+
+# ---------------------------------------------------------------------------
+# Fix #342 — Defect 1: required stage with no diff must not be accepted as success
+# ---------------------------------------------------------------------------
+
+def test_required_stage_with_no_diff_is_classified_as_failure():
+    """backend_api_change that produces no diff must fail, not silently succeed.
+
+    Previously _validate_new_stage_paths returned (True, "") for empty
+    candidate_paths, allowing required stages to be accepted as success even
+    when the reasoning loop made no file changes.  The fix adds an explicit
+    guard: if a required stage with allowed_file_families produced no diff and
+    _stage_is_already_satisfied() returns False, the stage is failed with
+    reasoning_loop_blocked.
+
+    The test uses _staged_config (score >= 4) to trigger staged mode so
+    _execute_staged_reasoning is called and the per-stage no-diff guard fires.
+    """
+    backend = FakeBackend()
+    # Reasoning for backend_api_change reports "finished" but touches NO files.
+    # The diff stays empty, simulating IGRIS deciding the stage is done without
+    # actually editing server.py.
+    backend.reasoning_results = [
+        {
+            "status": "finished",
+            "stop_reason": "finish",
+            "files_modified": [],      # ← no files modified
+            "final_summary": "no changes needed",
+            "goal": "backend_api_change stage",
+        },
+        # Subsequent stages won't run because backend_api_change fails first.
+    ]
+    # Diff stat and diff both report no changes (clean working tree throughout)
+    backend.diff_stat = CommandResult(True, "")
+    backend.diff = CommandResult(True, "")
+    backend.full_tests = [CommandResult(True, "full ok")]
+
+    # _staged_config provides a non-trivial goal (score >= 4) which forces
+    # staged mode; the endpoint /api/rank/s-dashboard is not in /tmp/project so
+    # _stage_is_already_satisfied returns False for backend_api_change.
+    config = _staged_config(max_repair_cycles=0)
+
+    run = SelfRepairSupervisor("/tmp/project", backend=backend).run(config)
+
+    # The run must be blocked because backend_api_change is required and failed
+    assert run.status == "blocked"
+    assert run.failure_class in {"reasoning_loop_blocked", "wrong_file_edit", "pytest_failure"}
+    # The stage status for backend_api_change must be 'failure'
+    stage_events = [
+        e for e in run.events
+        if e.phase == "mission_stage" and e.data.get("stage_id") == "backend_api_change"
+    ]
+    assert any(e.status == "failure" for e in stage_events), (
+        f"backend_api_change stage must be marked failure when no diff produced; "
+        f"got: {[(e.status, e.detail[:60]) for e in stage_events]}"
+    )
+
+
+def test_required_stage_with_no_diff_is_not_silently_marked_noop_success():
+    """No-diff required stage must never appear as no_op=True success via false positive.
+
+    The no_op=True flag is valid only for stages that _stage_is_already_satisfied
+    returns True (pre-satisfied).  An unsatisfied required stage that runs
+    reasoning and produces no diff must never receive no_op=True success.
+    """
+    backend = FakeBackend()
+    backend.reasoning_results = [
+        {
+            "status": "finished",
+            "stop_reason": "finish",
+            "files_modified": [],
+            "final_summary": "nothing to do",
+            "goal": "backend stage",
+        },
+    ]
+    backend.diff_stat = CommandResult(True, "")
+    backend.diff = CommandResult(True, "")
+
+    config = _staged_config(max_repair_cycles=0)
+    run = SelfRepairSupervisor("/tmp/project", backend=backend).run(config)
+
+    # Must NOT have a no_op=True success event for backend_api_change
+    # that was NOT set by _stage_is_already_satisfied (pre-satisfied paths
+    # use "Stage already satisfied" or "Stage already validated" messages).
+    noop_success_events = [
+        e for e in run.events
+        if e.phase == "mission_stage"
+        and e.data.get("stage_id") == "backend_api_change"
+        and e.status == "success"
+        and e.data.get("no_op") is True
+        and "Stage already satisfied" not in (e.detail or "")
+        and "Stage already validated" not in (e.detail or "")
+    ]
+    assert noop_success_events == [], (
+        f"Expected no false-positive no_op success, got: {[e.detail for e in noop_success_events]}"
+    )
+
+
+# ---------------------------------------------------------------------------
+# Fix #342 — Defect 2: _has_flask_test_client_in_diff helper + repair guidance
+# ---------------------------------------------------------------------------
+
+def test_has_flask_test_client_in_diff_detects_added_flask_call():
+    """_has_flask_test_client_in_diff returns True when diff adds test_client(."""
+    diff = """\
+diff --git a/tests/test_supervisor_api.py b/tests/test_supervisor_api.py
+--- /dev/null
++++ b/tests/test_supervisor_api.py
+@@ -0,0 +1,8 @@
++import pytest
++from igris.web.server import create_app
++
++@pytest.fixture
++def client():
++    app = create_app()
++    with app.test_client() as client:
++        yield client
+"""
+    assert _has_flask_test_client_in_diff(diff) is True
+
+
+def test_has_flask_test_client_in_diff_ignores_removed_flask_call():
+    """_has_flask_test_client_in_diff returns False for removed (- lines) test_client."""
+    diff = """\
+@@ -1,4 +1,4 @@
+-    with app.test_client() as client:
++    client = TestClient(create_app())
+"""
+    assert _has_flask_test_client_in_diff(diff) is False
+
+
+def test_has_flask_test_client_in_diff_ignores_fastapi_testclient():
+    """_has_flask_test_client_in_diff returns False for correct FastAPI TestClient."""
+    diff = """\
++from fastapi.testclient import TestClient
++client = TestClient(create_app())
+"""
+    assert _has_flask_test_client_in_diff(diff) is False
+
+
+def test_pytest_failure_repair_goal_contains_fastapi_testclient_guidance():
+    """repair_cycle goal for pytest_failure must include FastAPI TestClient warning."""
+    backend = FakeBackend()
+    # Repair reasoning produces a clean diff with FastAPI TestClient
+    backend.reasoning_results = [
+        {
+            "status": "finished",
+            "stop_reason": "finish",
+            "files_modified": ["tests/test_supervisor_run.py"],
+            "final_summary": "fixed test",
+            "goal": "repair",
+        }
+    ]
+    backend.diff = CommandResult(
+        True,
+        """\
+diff --git a/tests/test_supervisor_run.py b/tests/test_supervisor_run.py
+@@ -0,0 +1,6 @@
++from fastapi.testclient import TestClient
++from igris.web.server import create_app
++def test_run():
++    client = TestClient(create_app())
++    r = client.post('/api/supervisor/run', json={})
++    assert r.status_code == 200
+""",
+    )
+    backend.full_tests = [CommandResult(True, "all ok")]
+
+    supervisor = SelfRepairSupervisor("/tmp/project", backend=backend)
+    run = SupervisorRun(run_id="run-repair-guidance", rank_id="test")
+
+    supervisor._repair_cycle(
+        run,
+        _config(goal="Fix backend API /api/supervisor/run endpoint tests", targeted_tests=[]),
+        "pytest_failure",
+        1,
+    )
+
+    # The repair goal sent to reasoning must contain FastAPI TestClient guidance
+    assert backend.reasoning_goals, "Expected reasoning to be called during repair"
+    repair_goal = backend.reasoning_goals[-1]
+    assert "TestClient" in repair_goal, (
+        f"Expected FastAPI TestClient guidance in repair goal, got: {repair_goal[:300]}"
+    )
+    assert "test_client()" in repair_goal.lower() or "test_client(" in repair_goal, (
+        "Repair goal must mention the forbidden Flask test_client() pattern"
+    )
+
+
+def test_pytest_failure_repair_rejects_flask_test_client_diff_and_retries():
+    """_repair_cycle must reject a diff that adds Flask test_client() for pytest_failure.
+
+    When IGRIS produces a repair diff containing Flask-style test_client(), the
+    supervisor must detect it via _has_flask_test_client_in_diff, reject the diff,
+    restore the working tree, and return True (retry) with a repair_retry event.
+    """
+    backend = FakeBackend()
+    flask_diff = """\
+diff --git a/tests/test_supervisor_api.py b/tests/test_supervisor_api.py
+--- /dev/null
++++ b/tests/test_supervisor_api.py
+@@ -0,0 +1,10 @@
++import pytest
++from igris.web.server import create_app
++
++@pytest.fixture
++def client():
++    app = create_app()
++    with app.test_client() as client:
++        yield client
++def test_run(client):
++    assert client.post('/api/supervisor/run').status_code == 200
+"""
+    backend.reasoning_results = [
+        {
+            "status": "finished",
+            "stop_reason": "finish",
+            "files_modified": ["tests/test_supervisor_api.py"],
+            "final_summary": "added tests",
+            "goal": "repair pytest",
+        }
+    ]
+    backend.diff = CommandResult(True, flask_diff)
+    backend.diff_stat = CommandResult(True, " tests/test_supervisor_api.py | 10 ++++++++++")
+
+    supervisor = SelfRepairSupervisor("/tmp/project", backend=backend)
+    run = SupervisorRun(run_id="run-flask-reject", rank_id="test")
+
+    result = supervisor._repair_cycle(
+        run,
+        _config(goal="Fix /api/supervisor/run tests", targeted_tests=[]),
+        "pytest_failure",
+        1,
+    )
+
+    # Should return True (continue / retry) and have restored the diff
+    assert result is True
+    assert "restore" in backend.commands
+    # Must have emitted a repair_retry event
+    retry_events = [e for e in run.events if e.phase == "repair_retry"]
+    assert retry_events, "Expected a repair_retry event after Flask test_client rejection"
+    assert any(
+        "flask" in (e.detail or "").lower() or "test_client" in (e.detail or "").lower()
+        for e in retry_events
+    ), f"repair_retry detail should mention Flask or test_client, got: {[e.detail for e in retry_events]}"
