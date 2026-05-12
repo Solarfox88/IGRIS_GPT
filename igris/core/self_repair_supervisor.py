@@ -142,7 +142,7 @@ class RankSupervisorConfig:
     targeted_tests: List[str] = field(default_factory=list)
     dry_run: bool = True
     defer_service_restart: bool = False
-    test_timeout_seconds: int = 240
+    test_timeout_seconds: int = 600  # raised from 240: full suite now takes ~420 s on this VM
     reasoning_timeout_seconds: int = 300
     allow_api_escalation: bool = False
     max_api_escalations_per_run: int = 0
@@ -167,7 +167,7 @@ class RankSupervisorConfig:
             ),
             dry_run=_infer_dry_run(data),
             defer_service_restart=bool(data.get("defer_service_restart", False)),
-            test_timeout_seconds=max(30, int(data.get("test_timeout_seconds", 240))),
+            test_timeout_seconds=max(30, int(data.get("test_timeout_seconds", 600))),
             reasoning_timeout_seconds=max(30, int(data.get("reasoning_timeout_seconds", 300))),
             allow_api_escalation=bool(data.get("allow_api_escalation", False)),
             max_api_escalations_per_run=max(0, int(data.get("max_api_escalations_per_run", 0))),

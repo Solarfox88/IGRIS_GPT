@@ -214,6 +214,20 @@ def test_config_infers_targeted_test_from_goal():
     assert config.targeted_tests == ["tests/test_system_version_summary.py"]
 
 
+def test_config_default_test_timeout_is_at_least_600():
+    # Regression test for #332: old default was 240 s, causing baseline pytest to
+    # time-out on this VM where the full suite takes ~420–440 s.
+    config = RankSupervisorConfig.from_dict({"goal": "rank"})
+    assert config.test_timeout_seconds >= 600, (
+        f"test_timeout_seconds default must be >= 600 s (got {config.test_timeout_seconds})"
+    )
+
+
+def test_config_from_dict_preserves_explicit_test_timeout():
+    config = RankSupervisorConfig.from_dict({"goal": "rank", "test_timeout_seconds": 900})
+    assert config.test_timeout_seconds == 900
+
+
 def test_failure_classifier_detects_max_steps_as_repairable_infrastructure_failure():
     failure = classify_failure({"status": "stopped", "stop_reason": "max_steps", "files_modified": []})
     assert failure == "max_steps"
