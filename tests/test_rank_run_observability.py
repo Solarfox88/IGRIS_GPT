@@ -201,6 +201,20 @@ def test_ui_contains_supervisor_monitor_label(client):
     assert "Loading supervisor runs..." in r.text
 
 
+def test_ui_contains_supervised_launcher_form(client):
+    r = client.get("/")
+    assert r.status_code == 200
+    html = r.text
+    assert "Rank / Mission Launcher" in html
+    assert 'id="supervised-launcher-form"' in html
+    assert 'id="btn-start-supervised-mission"' in html
+    assert 'id="supervised-preset"' in html
+    assert ">Rank B<" in html
+    assert ">Rank A<" in html
+    assert ">Rank A++ UI<" in html
+    assert ">Rank S full e2e<" in html
+
+
 def test_ui_js_contains_supervisor_monitor_states(client):
     r = client.get("/static/js/app.js")
     assert r.status_code == 200
@@ -225,6 +239,62 @@ def test_ui_js_contains_supervisor_monitor_states(client):
     assert "run.api_escalations_used" in js
     assert "run.api_budget_used_usd" in js
     assert "run.next_action" in js
+
+
+def test_ui_js_rank_s_preset_values(client):
+    r = client.get("/static/js/app.js")
+    assert r.status_code == 200
+    js = r.text
+    assert "rank-s-full-e2e" in js
+    assert "allow_api_escalation: true" in js
+    assert "max_api_escalations_per_run: 2" in js
+    assert "max_api_budget_usd: 1.50" in js
+    assert "max_tokens_per_escalation: 4000" in js
+    assert "allow_github_pr: true" in js
+    assert "allow_merge_if_green: true" in js
+
+
+def test_ui_js_launcher_submits_run_supervised(client):
+    r = client.get("/static/js/app.js")
+    assert r.status_code == 200
+    js = r.text
+    assert 'api("POST", "/api/rank/run-supervised", payload)' in js
+    for key in (
+        "rank_id",
+        "goal",
+        "max_rank_attempts",
+        "max_repair_cycles",
+        "allow_github_pr",
+        "allow_merge_if_green",
+        "allow_api_escalation",
+        "max_api_escalations_per_run",
+        "max_api_budget_usd",
+        "max_tokens_per_escalation",
+        "service_restart_command",
+        "required_smoke_endpoints",
+    ):
+        assert (key + ":") in js
+
+
+def test_ui_js_launcher_updates_monitor_with_run_id(client):
+    r = client.get("/static/js/app.js")
+    assert r.status_code == 200
+    js = r.text
+    assert "window._lastStartedSupervisorRun = resp.data || {};" in js
+    assert "run_id=<strong>" in js
+    assert "await loadSupervisorMonitor();" in js
+
+
+def test_ui_js_chat_guardrail_redirects_supervisor_prompt(client):
+    r = client.get("/static/js/app.js")
+    assert r.status_code == 200
+    js = r.text
+    assert "_supervisorPromptLike" in js
+    assert "run-supervised" in js
+    assert "rank s" in js
+    assert "max_repair_cycles" in js
+    assert "allow_api_escalation" in js
+    assert "Use the Dashboard launcher: Start Supervised Mission in Rank / Mission Launcher." in js
 
 
 def test_ui_js_refresh_triggers_reload(client):
