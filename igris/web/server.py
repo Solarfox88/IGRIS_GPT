@@ -2693,6 +2693,17 @@ def create_app() -> FastAPI:
             raise HTTPException(status_code=404, detail="rank run not found")
         return run.to_dict()
 
+    @app.post("/api/rank/runs/{run_id}/cancel")
+    async def api_rank_run_cancel(run_id: str, request: Request) -> Dict[str, object]:
+        """Cancel one supervised rank run safely."""
+        from igris.core.self_repair_supervisor import cancel_supervised_run
+        content = await request.json() if await request.body() else {}
+        reason = str(content.get("reason", "Cancelled by user"))
+        run = cancel_supervised_run(run_id, project_root=str(CONFIG.project_root), reason=reason)
+        if run is None:
+            raise HTTPException(status_code=404, detail="rank run not found")
+        return run.to_dict()
+
     @app.get("/api/rank/audit/summary")
     async def api_rank_audit_summary() -> Dict[str, object]:
         """Return compact supervisor audit summary."""

@@ -124,6 +124,27 @@ def test_active_endpoint_includes_only_running_runs(client, isolated_run_store):
     assert run_blocked.run_id not in ids
 
 
+def test_cancel_endpoint_exists_and_marks_run_cancelled(client, isolated_run_store, tmp_path, monkeypatch):
+    run = _seed_run(run_id="cancel-api-001", status="running")
+    with sup.RUN_LOCK:
+        sup.RUN_STORE[run.run_id] = run
+    monkeypatch.setattr(CONFIG, "project_root", Path(tmp_path))
+
+    r = client.post(f"/api/rank/runs/{run.run_id}/cancel", json={"reason": "Cancelled from UI"})
+    assert r.status_code == 200
+    payload = r.json()
+    assert payload["status"] == "cancelled"
+    assert payload["failure_class"] == "user_cancelled"
+
+    active = client.get("/api/rank/runs/active").json()["runs"]
+    assert all(item.get("run_id") != run.run_id for item in active)
+
+    recent = client.get("/api/rank/audit/summary").json().get("recent_runs", [])
+    recent_item = next((item for item in recent if item.get("run_id") == run.run_id), None)
+    assert recent_item is not None
+    assert recent_item["status"] == "cancelled"
+
+
 def test_active_endpoint_suppresses_stale_running_when_persisted_terminal_newer(
     client, isolated_run_store, tmp_path, monkeypatch
 ):
@@ -367,6 +388,24 @@ def test_ui_js_chat_guardrail_redirects_supervisor_prompt(client):
     assert "max_repair_cycles" in js
     assert "allow_api_escalation" in js
     assert "Use the Dashboard launcher: Start Supervised Mission in Rank / Mission Launcher." in js
+
+
+def test_ui_js_includes_cancel_button_and_endpoint(client):
+    r = client.get("/static/js/app.js")
+    assert r.status_code == 200
+    js = r.text
+    assert "Stop safely" in js
+    assert "btn-cancel-supervised-run" in js
+    assert '"/api/rank/runs/" + encodeURIComponent(runId) + "/cancel"' in js
+    assert "window.confirm(\"Stop supervised run " in js
+
+
+def test_ui_js_suppresses_recent_duplicates_for_active_ids(client):
+    r = client.get("/static/js/app.js")
+    assert r.status_code == 200
+    js = r.text
+    assert "suppressed duplicate run ids already shown in active" in js
+    assert "activeRunIds" in js
 
 
 def test_ui_js_refresh_triggers_reload(client):

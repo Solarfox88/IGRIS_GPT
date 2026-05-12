@@ -7,8 +7,10 @@ from datetime import datetime, timedelta, timezone
 from fastapi.testclient import TestClient
 
 from igris.core.self_repair_supervisor import (
+    cancel_supervised_run,
     CommandResult,
     LocalSupervisorBackend,
+    list_active_supervised_run_summaries,
     RankSupervisorConfig,
     RUN_STORE,
     SelfRepairSupervisor,
@@ -2709,6 +2711,36 @@ def test_supervisor_durable_records_redact_secrets(tmp_path):
     serialized = json.dumps(_load_runs_records(tmp_path))
     assert "sk-live-super-secret" not in serialized
     assert "sk-secret-should-not-leak" not in serialized
+
+
+def test_cancel_run_transitions_to_cancelled_and_persists_recent(tmp_path):
+    backend = FakeBackend()
+    supervisor = SelfRepairSupervisor(str(tmp_path), backend=backend)
+    run = SupervisorRun(run_id="cancel-run-001", rank_id="S")
+    config = _config(rank_id="S", max_repair_cycles=8, allow_api_escalation=True, max_api_escalations_per_run=2, max_api_budget_usd=1.5)
+    supervisor._configure_run_tracking(run, config)
+    run.status = "running"
+    run.add("queued", "running", "running")
+    RUN_STORE[run.run_id] = run
+
+    result = cancel_supervised_run(run.run_id, str(tmp_path), "Cancelled by test")
+    assert result is not None
+    assert result.status == "cancelled"
+    assert result.outcome == "Cancelled"
+    assert result.failure_class == "user_cancelled"
+    assert any(event.phase == "cancel_request" for event in result.events)
+    assert any(event.phase == "cancelled" for event in result.events)
+    assert any(event.phase == "cancel_workspace_state" for event in result.events)
+
+    active = list_active_supervised_run_summaries(str(tmp_path))
+    assert all(item.get("run_id") != run.run_id for item in active)
+
+    summary = get_supervisor_audit_summary(str(tmp_path))
+    item = next((entry for entry in summary["recent_runs"] if entry.get("run_id") == run.run_id), None)
+    assert item is not None
+    assert item["status"] == "cancelled"
+    assert "Cancelled by test" in (item.get("cancelled_reason") or item.get("blocked_reason") or "")
+    RUN_STORE.pop(run.run_id, None)
 
 
 def test_completed_with_failure_requires_resolved_or_degraded_flag():
