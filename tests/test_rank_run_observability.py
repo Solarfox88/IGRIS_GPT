@@ -208,6 +208,11 @@ def test_ui_js_contains_supervisor_monitor_states(client):
     assert "No active supervisor runs. Start a supervised mission or view recent audit history." in js
     assert "Supervisor monitor unavailable:" in js
     assert "Loading supervisor runs..." in js
+    assert "apiWithTimeout" in js
+    assert '"/api/rank/runs/active"' in js
+    assert '"/api/rank/audit/summary"' in js
+    assert '"/api/rank/runs/active", null, 5000' in js
+    assert '"/api/rank/audit/summary", null, 5000' in js
     assert '"/api/rank/runs/active"' in js
     assert '"/api/rank/audit/summary"' in js
     assert "btn-refresh-supervisor-monitor" in js
@@ -220,6 +225,31 @@ def test_ui_js_contains_supervisor_monitor_states(client):
     assert "run.api_escalations_used" in js
     assert "run.api_budget_used_usd" in js
     assert "run.next_action" in js
+
+
+def test_ui_js_refresh_triggers_reload(client):
+    r = client.get("/static/js/app.js")
+    assert r.status_code == 200
+    js = r.text
+    assert 'supRefresh.addEventListener("click", function () { loadSupervisorMonitor(); });' in js
+
+
+def test_ui_js_audit_fallback_render_present(client):
+    r = client.get("/static/js/app.js")
+    assert r.status_code == 200
+    js = r.text
+    assert "Audit & Escalations" in js
+    assert "Recent Runs:" in js
+    assert "not available (in-memory history reset after restart)" in js
+
+
+def test_ui_js_loading_not_terminal_state(client):
+    r = client.get("/static/js/app.js")
+    assert r.status_code == 200
+    js = r.text
+    assert "finally {" in js
+    assert "monitorEl.innerHTML = finalHtml;" in js
+    assert "finalHtml = \"Supervisor monitor unavailable: no data\";" in js
 
 
 def test_summary_endpoint_does_not_expose_secrets(client, isolated_run_store):

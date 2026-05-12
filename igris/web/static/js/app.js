@@ -16,6 +16,22 @@
     }
   }
 
+  async function apiWithTimeout(method, url, body, timeoutMs) {
+    var timeout = typeof timeoutMs === "number" && timeoutMs > 0 ? timeoutMs : 5000;
+    return Promise.race([
+      api(method, url, body),
+      new Promise(function (resolve) {
+        setTimeout(function () {
+          resolve({
+            ok: false,
+            status: 0,
+            data: { error: "timeout after " + String(timeout) + "ms" },
+          });
+        }, timeout);
+      }),
+    ]);
+  }
+
   function esc(s) {
     var d = document.createElement("div");
     d.textContent = String(s);
@@ -182,94 +198,99 @@
     var monitorEl = $("#dash-supervisor-monitor");
     if (!monitorEl) return;
     monitorEl.innerHTML = "Loading supervisor runs...";
-
-    var active = await api("GET", "/api/rank/runs/active");
-    var audit = await api("GET", "/api/rank/audit/summary");
-    if (!active.ok) {
-      var errMsg = ((active.data || {}).detail || (active.data || {}).error || ("HTTP " + String(active.status || 0)));
-      monitorEl.innerHTML = "Supervisor monitor unavailable: " + esc(String(errMsg));
-      return;
-    }
-
-    var rows = [];
-    rows.push("<div><strong>Rank / Mission Monitor</strong></div>");
-    if (active.ok) {
-      var runs = active.data.runs || [];
-      if (!runs.length) {
-        rows.push("<div><strong>Supervisor Runs:</strong> 0 active</div>");
-        rows.push("<div>No active supervisor runs. Start a supervised mission or view recent audit history.</div>");
+    var finalHtml = "";
+    try {
+      var active = await apiWithTimeout("GET", "/api/rank/runs/active", null, 5000);
+      var audit = await apiWithTimeout("GET", "/api/rank/audit/summary", null, 5000);
+      if (!active.ok) {
+        var errMsg = ((active.data || {}).detail || (active.data || {}).error || ("HTTP " + String(active.status || 0)));
+        finalHtml = "Supervisor monitor unavailable: " + esc(String(errMsg));
       } else {
-        rows.push("<div><strong>Supervisor Runs:</strong> " + esc(String(runs.length)) + " active</div>");
-        runs.slice(0, 3).forEach(function (run) {
-          var stage = run.current_stage || "idle";
-          var failedStage = run.failed_stage || "-";
-          var next = run.next_action || "";
-          var issueUrl = run.escalation_issue_url || "";
-          var issueHtml = issueUrl ? ('<a href="' + esc(issueUrl) + '" target="_blank" rel="noopener noreferrer">issue</a>') : "-";
+        var rows = [];
+        rows.push("<div><strong>Rank / Mission Monitor</strong></div>");
+        var runs = active.data.runs || [];
+        if (!runs.length) {
+          rows.push("<div><strong>Supervisor Runs:</strong> 0 active</div>");
+          rows.push("<div>No active supervisor runs. Start a supervised mission or view recent audit history.</div>");
+        } else {
+          rows.push("<div><strong>Supervisor Runs:</strong> " + esc(String(runs.length)) + " active</div>");
+          runs.slice(0, 3).forEach(function (run) {
+            var stage = run.current_stage || "idle";
+            var failedStage = run.failed_stage || "-";
+            var next = run.next_action || "";
+            var issueUrl = run.escalation_issue_url || "";
+            var issueHtml = issueUrl ? ('<a href="' + esc(issueUrl) + '" target="_blank" rel="noopener noreferrer">issue</a>') : "-";
+            rows.push(
+              '<div class="dash-report-item">' +
+              esc(run.run_id || "") +
+              " | rank=" + esc(run.rank_id || "-") +
+              " | status=" + esc(run.status || "") +
+              " | outcome=" + esc(run.outcome || "-") +
+              " | stage=" + esc(stage) +
+              " | failed_stage=" + esc(failedStage) +
+              " | failure=" + esc(run.failure_class || "-") +
+              " | repairs=" + esc(String(run.repair_cycles_used || 0)) +
+              " | api=" + esc(String(run.api_escalations_used || 0)) +
+              " ($" + esc(String(run.api_budget_used_usd || 0)) + ")" +
+              " | escalation_issue=" + issueHtml +
+              " | audit_new=" + esc(String((((run.audit_summary || {}).counts || {})["audit-new"]) || 0)) +
+              " | audit_reviewed=" + esc(String((((run.audit_summary || {}).counts || {})["audit-reviewed"]) || 0)) +
+              " | audit_fixed=" + esc(String((((run.audit_summary || {}).counts || {})["audit-fixed"]) || 0)) +
+              " | audit_deferred=" + esc(String((((run.audit_summary || {}).counts || {})["audit-deferred"]) || 0)) +
+              " | next=" + esc(next) +
+              "</div>"
+            );
+          });
+        }
+
+        if (audit.ok) {
+          var inMem = (((audit.data || {}).in_memory || {}).counts) || {};
+          var persisted = (((audit.data || {}).persisted || {}).counts) || {};
+          rows.push("<div><strong>Audit & Escalations</strong></div>");
           rows.push(
-            '<div class="dash-report-item">' +
-            esc(run.run_id || "") +
-            " | rank=" + esc(run.rank_id || "-") +
-            " | status=" + esc(run.status || "") +
-            " | outcome=" + esc(run.outcome || "-") +
-            " | stage=" + esc(stage) +
-            " | failed_stage=" + esc(failedStage) +
-            " | failure=" + esc(run.failure_class || "-") +
-            " | repairs=" + esc(String(run.repair_cycles_used || 0)) +
-            " | api=" + esc(String(run.api_escalations_used || 0)) +
-            " ($" + esc(String(run.api_budget_used_usd || 0)) + ")" +
-            " | escalation_issue=" + issueHtml +
-            " | audit_new=" + esc(String((((run.audit_summary || {}).counts || {})["audit-new"]) || 0)) +
-            " | audit_reviewed=" + esc(String((((run.audit_summary || {}).counts || {})["audit-reviewed"]) || 0)) +
-            " | audit_fixed=" + esc(String((((run.audit_summary || {}).counts || {})["audit-fixed"]) || 0)) +
-            " | audit_deferred=" + esc(String((((run.audit_summary || {}).counts || {})["audit-deferred"]) || 0)) +
-            " | next=" + esc(next) +
+            "<div><strong>Audit (memory):</strong> " +
+            "new=" + esc(String(inMem["audit-new"] || 0)) + ", " +
+            "reviewed=" + esc(String(inMem["audit-reviewed"] || 0)) + ", " +
+            "fixed=" + esc(String(inMem["audit-fixed"] || 0)) + ", " +
+            "deferred=" + esc(String(inMem["audit-deferred"] || 0)) +
             "</div>"
           );
-        });
-      }
-    }
-
-    if (audit.ok) {
-      var inMem = (((audit.data || {}).in_memory || {}).counts) || {};
-      var persisted = (((audit.data || {}).persisted || {}).counts) || {};
-      rows.push("<div><strong>Audit & Escalations</strong></div>");
-      rows.push(
-        "<div><strong>Audit (memory):</strong> " +
-        "new=" + esc(String(inMem["audit-new"] || 0)) + ", " +
-        "reviewed=" + esc(String(inMem["audit-reviewed"] || 0)) + ", " +
-        "fixed=" + esc(String(inMem["audit-fixed"] || 0)) + ", " +
-        "deferred=" + esc(String(inMem["audit-deferred"] || 0)) +
-        "</div>"
-      );
-      rows.push(
-        "<div><strong>Audit (persisted):</strong> " +
-        "new=" + esc(String(persisted["audit-new"] || 0)) + ", " +
-        "reviewed=" + esc(String(persisted["audit-reviewed"] || 0)) + ", " +
-        "fixed=" + esc(String(persisted["audit-fixed"] || 0)) + ", " +
-        "deferred=" + esc(String(persisted["audit-deferred"] || 0)) + ", " +
-        "deferred_due=" + esc(String((((audit.data || {}).persisted || {}).deferred_due_count) || 0)) +
-        "</div>"
-      );
-      var recent = ((audit.data || {}).recent_runs) || [];
-      if (recent.length) {
-        rows.push("<div><strong>Recent Runs:</strong></div>");
-        recent.slice(0, 3).forEach(function (run) {
           rows.push(
-            '<div class="dash-report-item">' +
-            esc(run.run_id || "") +
-            " | status=" + esc(run.status || "") +
-            " | outcome=" + esc(run.outcome || "-") +
-            " | failure=" + esc(run.failure_class || "-") +
+            "<div><strong>Audit (persisted):</strong> " +
+            "new=" + esc(String(persisted["audit-new"] || 0)) + ", " +
+            "reviewed=" + esc(String(persisted["audit-reviewed"] || 0)) + ", " +
+            "fixed=" + esc(String(persisted["audit-fixed"] || 0)) + ", " +
+            "deferred=" + esc(String(persisted["audit-deferred"] || 0)) + ", " +
+            "deferred_due=" + esc(String((((audit.data || {}).persisted || {}).deferred_due_count) || 0)) +
             "</div>"
           );
-        });
-      } else {
-        rows.push("<div><strong>Recent Runs:</strong> not available (in-memory history reset after restart).</div>");
+          var recent = ((audit.data || {}).recent_runs) || [];
+          if (recent.length) {
+            rows.push("<div><strong>Recent Runs:</strong></div>");
+            recent.slice(0, 3).forEach(function (run) {
+              rows.push(
+                '<div class="dash-report-item">' +
+                esc(run.run_id || "") +
+                " | status=" + esc(run.status || "") +
+                " | outcome=" + esc(run.outcome || "-") +
+                " | failure=" + esc(run.failure_class || "-") +
+                "</div>"
+              );
+            });
+          } else {
+            rows.push("<div><strong>Recent Runs:</strong> not available (in-memory history reset after restart).</div>");
+          }
+        }
+        finalHtml = rows.join("");
       }
+    } catch (err) {
+      finalHtml = "Supervisor monitor unavailable: " + esc(String((err && err.message) || err || "unknown"));
+    } finally {
+      if (!finalHtml || finalHtml.indexOf("Loading supervisor runs...") !== -1) {
+        finalHtml = "Supervisor monitor unavailable: no data";
+      }
+      monitorEl.innerHTML = finalHtml;
     }
-
-    monitorEl.innerHTML = rows.join("") || '<span class="dim">No supervisor data</span>';
   }
 
   var _selectedMissionId = null;
