@@ -710,7 +710,9 @@ def test_supervisor_completes_by_verification_when_reasoning_timeout_has_diff():
     assert run.status == "completed"
     assert "issue" not in backend.commands
     assert not any(event.phase == "failure" for event in run.events)
+    # single_stage_execution stage is failure (reasoning_timeout) → degraded=True with reason
     assert run.report["degraded_completion"] is True
+    assert run.report["degraded_completion_reason"] != ""
     assert run.report["completion_mode"] == "verified_diff"
 
 
@@ -730,7 +732,9 @@ def test_supervisor_records_post_merge_smoke_and_degraded_completion():
     assert run.status == "completed"
     assert any(event.phase == "completion" and event.status == "degraded" for event in run.events)
     assert any(event.phase == "post_merge_smoke" and event.status == "success" for event in run.events)
+    # single_stage_execution stage is failure (reasoning_timeout) → degraded=True with reason
     assert run.report["degraded_completion"] is True
+    assert run.report["degraded_completion_reason"] != ""
     assert run.report["completion_mode"] == "verified_diff"
     assert run.report["post_merge_smoke"] is True
     assert run.report["manual_remaining"] == ""
@@ -760,8 +764,106 @@ def test_supervisor_defers_post_merge_smoke_when_runtime_refresh_is_required():
     assert any(event.phase == "post_merge_smoke" and event.status == "deferred" for event in run.events)
     assert run.report["runtime_refresh_required"] is True
     assert run.report["post_merge_smoke"] is False
+    # runtime_refresh_required + post_merge_smoke=False = smoke not confirmed = genuinely degraded
+    # (also: single_stage_execution stage failure contributes to the reason)
     assert run.report["degraded_completion"] is True
+    assert run.report["degraded_completion_reason"] != ""
     assert sum(1 for command in backend.commands if command.startswith("smoke:")) == 2
+
+
+def test_clean_completed_run_has_degraded_false_and_empty_reason():
+    """A direct completion (reasoning finished cleanly) must NOT be degraded."""
+    backend = FakeBackend()
+    run = SelfRepairSupervisor("/tmp/project", backend=backend).run(
+        _config(max_repair_cycles=0)
+    )
+    assert run.status == "completed"
+    assert run.report["degraded_completion"] is False
+    assert run.report["degraded_completion_reason"] == ""
+
+
+def test_verified_diff_completion_with_all_stages_green_is_not_degraded():
+    """_compute_degraded_completion: verified_diff + all stages green → not degraded.
+
+    Regression for #336: run 3dfcdc055cc2 had completion_mode="verified_diff" but
+    10 required stages all green, failure_class="", state_conflict=False.  The old
+    expression `completion_mode != "direct"` incorrectly forced degraded=True.
+
+    Tested at the unit level because wiring a full staged mission with all stages
+    green via FakeBackend requires complex setup; the logic itself is the fix.
+    """
+    compute = SelfRepairSupervisor._compute_degraded_completion
+
+    # Case 1: verified_diff, no stage system, no smoke (dry-run scenario)
+    degraded, reason = compute(
+        completion_mode="verified_diff",
+        runtime_refresh_required=False,
+        post_merge_smoke_success=False,
+        smoke_was_applicable=False,
+        failure_class="",
+        stage_statuses=None,
+    )
+    assert not degraded, f"expected not degraded, got reason={reason!r}"
+    assert reason == ""
+
+    # Case 2: verified_diff + all required stages green + smoke passed
+    stages = {
+        "s1": {"required": True, "status": "success"},
+        "s2": {"required": True, "status": "success"},
+        "s3": {"required": False, "status": "failure"},  # optional, doesn't count
+    }
+    degraded2, reason2 = compute(
+        completion_mode="verified_diff",
+        runtime_refresh_required=True,
+        post_merge_smoke_success=True,
+        smoke_was_applicable=True,
+        failure_class="",
+        stage_statuses=stages,
+    )
+    assert not degraded2, f"expected not degraded, got reason={reason2!r}"
+    assert reason2 == ""
+
+    # Case 3: verified_diff + a required stage failed → IS degraded
+    stages_with_fail = {
+        "s1": {"required": True, "status": "success"},
+        "s2": {"required": True, "status": "failure"},
+    }
+    degraded3, reason3 = compute(
+        completion_mode="verified_diff",
+        runtime_refresh_required=False,
+        post_merge_smoke_success=True,
+        smoke_was_applicable=True,
+        failure_class="",
+        stage_statuses=stages_with_fail,
+    )
+    assert degraded3
+    assert reason3 != ""
+
+
+def test_degraded_completion_always_has_non_empty_reason():
+    """Whenever degraded_completion=True the reason field must be non-empty."""
+    backend = FakeBackend()
+    backend.reasoning_results = [{
+        "status": "blocked",
+        "stop_reason": "reasoning_timeout",
+        "files_modified": ["igris/web/server.py"],
+        "final_summary": "timed out",
+        "goal": "rank task",
+    }]
+    run = SelfRepairSupervisor("/tmp/project", backend=backend).run(
+        _config(
+            dry_run=False,
+            allow_github_pr=True,
+            allow_merge_if_green=True,
+            defer_service_restart=True,
+            max_repair_cycles=1,
+        )
+    )
+    # runtime_refresh_required + post_merge_smoke=False → degraded
+    if run.report.get("degraded_completion"):
+        assert run.report.get("degraded_completion_reason", "") != "", (
+            "degraded_completion=True must always have a non-empty degraded_completion_reason"
+        )
 
 
 def test_supervisor_reports_manual_remaining_when_merge_is_disabled():
@@ -1243,7 +1345,10 @@ def test_supervisor_completes_ui_mission_as_verified_noop_when_already_satisfied
 
     assert run.status == "completed"
     assert run.report["completion_mode"] == "already_satisfied"
+    # no-op: mission already satisfied, nothing delivered this run → legitimately degraded
     assert run.report["degraded_completion"] is True
+    assert run.report["degraded_completion_reason"] != ""
+    assert "no-op" in run.report["degraded_completion_reason"].lower() or "already" in run.report["degraded_completion_reason"].lower()
     assert run.report["manual_remaining"] == ""
     assert run.report["no_op_completion"] is True
     assert "issue" not in backend.commands

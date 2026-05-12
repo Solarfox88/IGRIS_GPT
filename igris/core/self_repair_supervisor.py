@@ -1148,6 +1148,7 @@ class SelfRepairSupervisor:
             "next_action": str(snapshot.get("next_action", "")),
             "resolved_failure": bool((payload.get("report") or {}).get("resolved_failure", False)),
             "degraded_completion": bool((payload.get("report") or {}).get("degraded_completion", False)),
+            "degraded_completion_reason": str((payload.get("report") or {}).get("degraded_completion_reason", "")),
             "state_conflict": bool(snapshot.get("state_conflict", False)),
             "warning": str(snapshot.get("warning", "")),
         }
@@ -1706,6 +1707,53 @@ class SelfRepairSupervisor:
             if entry.get("status") not in {"success", "skipped"}:
                 return False
         return True
+
+    @staticmethod
+    def _compute_degraded_completion(
+        *,
+        completion_mode: str,
+        runtime_refresh_required: bool,
+        post_merge_smoke_success: bool,
+        smoke_was_applicable: bool,
+        failure_class: str,
+        stage_statuses: Optional[Dict[str, Dict[str, Any]]],
+    ) -> Tuple[bool, str]:
+        """Return ``(degraded_completion, degraded_completion_reason)``.
+
+        A completion is **clean** (degraded=False) when all of the following hold:
+        - ``failure_class`` is empty
+        - all required stages are green (or there is no stage system)
+        - when a post-merge smoke was applicable (merge was actually attempted),
+          it either passed or ``runtime_refresh_required`` was False
+
+        Any condition that is not met makes the completion *degraded*, and an
+        explicit human-readable reason string is always returned alongside
+        ``degraded=True`` so that callers and the UI can surface the cause.
+
+        ``smoke_was_applicable`` must be True only when a merge was actually
+        executed (not dry-run, not merge-disabled).  When smoke is not
+        applicable (dry-run / merge skipped), the ``runtime_refresh_required``
+        flag is irrelevant to delivery quality and must not trigger degraded.
+
+        Note: ``completion_mode == "verified_diff"`` alone is *not* a
+        degradation signal — it describes the reasoning path, not delivery
+        quality.  Only genuine delivery failures (failed stages, unconfirmed
+        smoke, non-empty failure_class) trigger degraded.
+        """
+        reasons: List[str] = []
+        required_all_green = (
+            stage_statuses is None
+            or SelfRepairSupervisor._required_stages_green(stage_statuses)
+        )
+        if failure_class:
+            reasons.append(f"failure_class set: {failure_class}")
+        if not required_all_green:
+            reasons.append("not all required stages passed")
+        if smoke_was_applicable and runtime_refresh_required and not post_merge_smoke_success:
+            reasons.append(
+                "post-merge smoke deferred; runtime refresh required but smoke not confirmed"
+            )
+        return bool(reasons), "; ".join(reasons)
 
     @staticmethod
     def _stage_status_list(statuses: Dict[str, Dict[str, Any]], plan: MissionPlan) -> List[Dict[str, Any]]:
@@ -3397,11 +3445,20 @@ class SelfRepairSupervisor:
                             run.status = "blocked"
                             run.outcome = "Blocked"
                             run.failure_class = "infrastructure_bug"
+                            _deg, _deg_reason = self._compute_degraded_completion(
+                                completion_mode=completion_mode,
+                                runtime_refresh_required=runtime_refresh_required,
+                                post_merge_smoke_success=False,
+                                smoke_was_applicable=True,  # smoke ran (but failed)
+                                failure_class=run.failure_class,
+                                stage_statuses=stage_statuses,
+                            )
                             run.report = {
                                 "autonomous": True,
                                 "manual_remaining": "post-merge verification failed",
                                 "completion_mode": completion_mode,
-                                "degraded_completion": completion_mode != "direct" or runtime_refresh_required,
+                                "degraded_completion": _deg,
+                                "degraded_completion_reason": _deg_reason,
                                 "post_merge_smoke": False,
                                 "runtime_refresh_required": runtime_refresh_required,
                             }
@@ -3461,12 +3518,24 @@ class SelfRepairSupervisor:
                 run.status = "blocked"
                 run.outcome = "Blocked"
                 run.failure_class = "infrastructure_bug"
+        post_smoke_success = False if post_merge_smoke is None else post_merge_smoke.success
+        # post_merge_smoke is only non-None when a merge was actually executed
+        smoke_applicable = post_merge_smoke is not None
+        degraded, degraded_reason = self._compute_degraded_completion(
+            completion_mode=completion_mode,
+            runtime_refresh_required=runtime_refresh_required,
+            post_merge_smoke_success=post_smoke_success,
+            smoke_was_applicable=smoke_applicable,
+            failure_class=run.failure_class,
+            stage_statuses=stage_statuses,
+        )
         run.report = {
             "autonomous": True,
             "manual_remaining": manual_remaining,
             "completion_mode": completion_mode,
-            "degraded_completion": completion_mode != "direct" or runtime_refresh_required,
-            "post_merge_smoke": False if post_merge_smoke is None else post_merge_smoke.success,
+            "degraded_completion": degraded,
+            "degraded_completion_reason": degraded_reason,
+            "post_merge_smoke": post_smoke_success,
             "runtime_refresh_required": runtime_refresh_required,
         }
         run.report.update(self._api_escalation_report_fragment(run))
@@ -3501,6 +3570,10 @@ class SelfRepairSupervisor:
             "manual_remaining": "",
             "completion_mode": completion_mode,
             "degraded_completion": True,
+            "degraded_completion_reason": (
+                f"no-op completion ({completion_mode}): mission goal already satisfied; "
+                "no delivery actions performed in this run"
+            ),
             "post_merge_smoke": post_merge_smoke,
             "runtime_refresh_required": runtime_refresh_required,
             "no_op_completion": True,
@@ -3958,6 +4031,7 @@ def summarize_supervised_run(run: SupervisorRun) -> Dict[str, Any]:
         "updated_at": updated_at,
         "resolved_failure": bool((payload.get("report") or {}).get("resolved_failure", False)),
         "degraded_completion": bool((payload.get("report") or {}).get("degraded_completion", False)),
+        "degraded_completion_reason": str((payload.get("report") or {}).get("degraded_completion_reason", "")),
         "cancelled_reason": str((payload.get("report") or {}).get("cancelled_reason", "") or payload.get("cancel_reason", "")),
         "next_action": next_action,
     }
@@ -4030,6 +4104,7 @@ def _load_persisted_recent_runs(project_root: str) -> List[Dict[str, Any]]:
                 "next_action": str(raw.get("next_action", "")),
                 "resolved_failure": bool(raw.get("resolved_failure", False)),
                 "degraded_completion": bool(raw.get("degraded_completion", False)),
+                "degraded_completion_reason": str(raw.get("degraded_completion_reason", "")),
                 "state_conflict": bool(raw.get("state_conflict", False)),
                 "warning": str(raw.get("warning", "")),
             }
