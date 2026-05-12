@@ -378,6 +378,7 @@
         var rows = [];
         rows.push("<div><strong>Rank / Mission Monitor</strong></div>");
         var runs = (active.data.runs || []).slice();
+        var activeRunIds = {};
         var lastStarted = window._lastStartedSupervisorRun || null;
         if (lastStarted && lastStarted.run_id) {
           var found = runs.some(function (item) { return item.run_id === lastStarted.run_id; });
@@ -405,14 +406,17 @@
         } else {
           rows.push("<div><strong>Supervisor Runs:</strong> " + esc(String(runs.length)) + " active</div>");
           runs.slice(0, 3).forEach(function (run) {
+            activeRunIds[String(run.run_id || "")] = true;
             var stage = run.current_stage || "idle";
             var failedStage = run.failed_stage || "-";
             var next = run.next_action || "";
             var issueUrl = run.escalation_issue_url || "";
             var issueHtml = issueUrl ? ('<a href="' + esc(issueUrl) + '" target="_blank" rel="noopener noreferrer">issue</a>') : "-";
+            var runIdSafe = esc(String(run.run_id || ""));
+            var cancelBtn = '<button type="button" class="action-btn btn-cancel-supervised-run" data-run-id="' + runIdSafe + '">Stop safely</button>';
             rows.push(
               '<div class="dash-report-item">' +
-              esc(run.run_id || "") +
+              runIdSafe +
               " | rank=" + esc(run.rank_id || "-") +
               " | status=" + esc(run.status || "") +
               " | outcome=" + esc(run.outcome || "-") +
@@ -430,6 +434,7 @@
               " | state_conflict=" + esc(String(!!run.state_conflict)) +
               (run.warning ? (" | warning=" + esc(run.warning)) : "") +
               " | next=" + esc(next) +
+              " | " + cancelBtn +
               "</div>"
             );
           });
@@ -457,20 +462,34 @@
             "</div>"
           );
           var recent = ((audit.data || {}).recent_runs) || [];
+          var suppressed = [];
           if (recent.length) {
             rows.push("<div><strong>Recent Runs:</strong></div>");
             recent.slice(0, 3).forEach(function (run) {
+              var rid = String(run.run_id || "");
+              if (activeRunIds[rid]) {
+                suppressed.push(rid);
+                return;
+              }
               rows.push(
                 '<div class="dash-report-item">' +
-                esc(run.run_id || "") +
+                esc(rid) +
                 " | status=" + esc(run.status || "") +
                 " | outcome=" + esc(run.outcome || "-") +
                 " | failure=" + esc(run.failure_class || "-") +
                 " | state_conflict=" + esc(String(!!run.state_conflict)) +
                 (run.warning ? (" | warning=" + esc(run.warning)) : "") +
+                (run.cancelled_reason ? (" | reason=" + esc(run.cancelled_reason)) : "") +
                 "</div>"
               );
             });
+            if (suppressed.length) {
+              rows.push(
+                "<div><strong>Recent Runs:</strong> suppressed duplicate run ids already shown in active: " +
+                esc(suppressed.join(", ")) +
+                "</div>"
+              );
+            }
           } else {
             rows.push("<div><strong>Recent Runs:</strong> not available (in-memory history reset after restart).</div>");
           }
@@ -484,6 +503,22 @@
         finalHtml = "Supervisor monitor unavailable: no data";
       }
       monitorEl.innerHTML = finalHtml;
+      monitorEl.querySelectorAll(".btn-cancel-supervised-run").forEach(function (btn) {
+        btn.addEventListener("click", async function () {
+          var runId = btn.getAttribute("data-run-id") || "";
+          if (!runId) return;
+          var ok = window.confirm("Stop supervised run " + runId + " safely?");
+          if (!ok) return;
+          btn.disabled = true;
+          var resp = await api("POST", "/api/rank/runs/" + encodeURIComponent(runId) + "/cancel", {
+            reason: "Cancelled by user from Supervisor Monitor",
+          });
+          if (!resp.ok) {
+            btn.disabled = false;
+          }
+          await loadSupervisorMonitor();
+        });
+      });
     }
   }
 

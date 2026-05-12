@@ -250,6 +250,8 @@ class SupervisorRun:
     report: Dict[str, Any] = field(default_factory=dict)
     audit_resolver: Any = None
     update_hook: Any = None
+    cancel_requested: bool = False
+    cancel_reason: str = ""
 
     def add(self, phase: str, status: str, detail: str = "", **data: Any) -> None:
         event = SupervisorEvent(phase=phase, status=status, detail=detail, data=data)
@@ -279,6 +281,8 @@ class SupervisorRun:
             "max_api_budget_usd": round(self.max_api_budget_usd, 6),
             "events": [e.to_dict() for e in self.events],
             "report": self.report,
+            "cancel_requested": bool(self.cancel_requested),
+            "cancel_reason": _safe_redact(self.cancel_reason),
         }
 
 
@@ -998,6 +1002,7 @@ class SelfRepairSupervisor:
             "timestamp": last_event.get("timestamp"),
         }
         report_data = self._sanitize_escalation_value(payload.get("report") or {})
+        cancelled_reason = str(report_data.get("cancelled_reason", "") or payload.get("cancel_reason", "") or "")
         record = {
             "run_id": payload.get("run_id", ""),
             "rank_id": payload.get("rank_id", ""),
@@ -1019,6 +1024,7 @@ class SelfRepairSupervisor:
             "updated_at": self._timestamp_to_iso(snapshot.get("updated_at")) or self._timestamp_now_iso(),
             "final_report": report_data,
             "blocked_reason": str(report_data.get("blocked_reason", "")),
+            "cancelled_reason": cancelled_reason,
             "next_action": str(snapshot.get("next_action", "")),
             "resolved_failure": bool((payload.get("report") or {}).get("resolved_failure", False)),
             "degraded_completion": bool((payload.get("report") or {}).get("degraded_completion", False)),
@@ -1039,6 +1045,24 @@ class SelfRepairSupervisor:
         run.max_repair_cycles = config.max_repair_cycles
         run.max_api_escalations_per_run = config.max_api_escalations_per_run
         run.max_api_budget_usd = round(config.max_api_budget_usd, 6)
+
+    def _cancel_if_requested(
+        self,
+        run: SupervisorRun,
+        *,
+        mission_plan: Optional[MissionPlan] = None,
+        stage_statuses: Optional[Dict[str, Dict[str, Any]]] = None,
+    ) -> Optional[SupervisorRun]:
+        if not bool(run.cancel_requested):
+            return None
+        reason = str(run.cancel_reason or "Cancelled by user").strip() or "Cancelled by user"
+        return self._cancelled(
+            run,
+            reason,
+            mission_plan=mission_plan,
+            stage_statuses=stage_statuses,
+            cleanup_workspace=True,
+        )
 
     @staticmethod
     def _sanitize_escalation_value(value: Any) -> Any:
@@ -2029,6 +2053,9 @@ class SelfRepairSupervisor:
         run = run or SupervisorRun(run_id=uuid.uuid4().hex[:12], rank_id=config.rank_id)
         self._configure_run_tracking(run, config)
         run.add("start", "running", "Supervisor started", dry_run=config.dry_run)
+        cancelled = self._cancel_if_requested(run)
+        if cancelled is not None:
+            return cancelled
         restart_command = config.service_restart_command
         if config.defer_service_restart and restart_command:
             run.add(
@@ -2041,6 +2068,9 @@ class SelfRepairSupervisor:
 
         status = self.backend.git_status()
         run.add("git_status", "success" if status.success else "failure", _command_detail(status))
+        cancelled = self._cancel_if_requested(run)
+        if cancelled is not None:
+            return cancelled
         if not status.success:
             return self._blocked(run, "infrastructure_bug", "Unable to read git status")
         if status.output.strip():
@@ -2057,6 +2087,9 @@ class SelfRepairSupervisor:
         )
         baseline = self.backend.run_tests(timeout=config.test_timeout_seconds)
         run.add("baseline_tests", "success" if baseline.success else "failure", _command_detail(baseline))
+        cancelled = self._cancel_if_requested(run)
+        if cancelled is not None:
+            return cancelled
         if not baseline.success:
             run.add(
                 "baseline_diagnostics",
@@ -2077,6 +2110,9 @@ class SelfRepairSupervisor:
         run.add("baseline_smoke", "running", "Running baseline smoke")
         smoke = self.backend.smoke(config.required_smoke_endpoints, restart_command)
         run.add("baseline_smoke", "success" if smoke.success else "failure", _command_detail(smoke))
+        cancelled = self._cancel_if_requested(run)
+        if cancelled is not None:
+            return cancelled
         if not smoke.success:
             return self._blocked(run, "infrastructure_bug", "Baseline smoke failed")
 
@@ -2095,10 +2131,16 @@ class SelfRepairSupervisor:
         attempt_limit = config.max_rank_attempts
         final_validation_extension_used = False
         while attempt <= attempt_limit:
+            cancelled = self._cancel_if_requested(run, mission_plan=mission_plan, stage_statuses=stage_statuses)
+            if cancelled is not None:
+                return cancelled
             branch = f"rank-{config.rank_id.lower()}-{int(time.time())}-{attempt}"
             run.branch = branch
             branch_result = self.backend.create_branch(branch)
             run.add("rank_branch", "success" if branch_result.success else "failure", _command_detail(branch_result), branch=branch)
+            cancelled = self._cancel_if_requested(run, mission_plan=mission_plan, stage_statuses=stage_statuses)
+            if cancelled is not None:
+                return cancelled
             if not branch_result.success:
                 return self._blocked(run, "infrastructure_bug", "Could not create rank branch")
 
@@ -2179,6 +2221,9 @@ class SelfRepairSupervisor:
                 ui_visibility_changed=ui_visibility_changed,
                 mission_orchestration_mode=mission_plan.mode,
             )
+            cancelled = self._cancel_if_requested(run, mission_plan=mission_plan, stage_statuses=stage_statuses)
+            if cancelled is not None:
+                return cancelled
 
             diff_stat = self.backend.git_diff_stat()
             diff = self.backend.git_diff()
@@ -3131,6 +3176,9 @@ class SelfRepairSupervisor:
         mission_plan: Optional[MissionPlan] = None,
         stage_statuses: Optional[Dict[str, Dict[str, Any]]] = None,
     ) -> SupervisorRun:
+        cancelled = self._cancel_if_requested(run, mission_plan=mission_plan, stage_statuses=stage_statuses)
+        if cancelled is not None:
+            return cancelled
         restart_command = config.service_restart_command if not config.defer_service_restart else ""
         post_merge_smoke: Optional[CommandResult] = None
         manual_remaining = ""
@@ -3390,6 +3438,68 @@ class SelfRepairSupervisor:
             after_cleanup=True,
         )
 
+    def _cleanup_cancelled_workspace(self, run: SupervisorRun) -> None:
+        run.add(
+            "cancel_workspace_cleanup",
+            "running",
+            "Ensuring cancelled run leaves tracked workspace state.",
+        )
+        status_before = self.backend.git_status()
+        dirty_before = bool(status_before.output.strip()) if status_before.success else False
+        run.add(
+            "cancel_workspace_state",
+            "success" if status_before.success else "failure",
+            _command_detail(status_before),
+            dirty=dirty_before,
+            before_cleanup=True,
+        )
+        if not status_before.success or not dirty_before:
+            run.add(
+                "cancel_workspace_cleanup",
+                "skipped",
+                "Workspace already clean or status unavailable; no restore executed.",
+            )
+            return
+        restore = self.backend.restore_dangerous_diff()
+        run.add(
+            "cancel_workspace_cleanup",
+            "success" if restore.success else "failure",
+            _command_detail(restore),
+        )
+        status_after = self.backend.git_status()
+        run.add(
+            "cancel_workspace_state",
+            "success" if status_after.success else "failure",
+            _command_detail(status_after),
+            dirty=bool(status_after.output.strip()) if status_after.success else False,
+            after_cleanup=True,
+        )
+
+    def _cancelled(
+        self,
+        run: SupervisorRun,
+        reason: str,
+        *,
+        mission_plan: Optional[MissionPlan] = None,
+        stage_statuses: Optional[Dict[str, Dict[str, Any]]] = None,
+        cleanup_workspace: bool = True,
+    ) -> SupervisorRun:
+        run.cancel_requested = True
+        run.cancel_reason = reason
+        run.status = "cancelled"
+        run.outcome = "Cancelled"
+        run.failure_class = "user_cancelled"
+        run.add("cancelled", "cancelled", reason)
+        if cleanup_workspace:
+            self._cleanup_cancelled_workspace(run)
+        if stage_statuses and "final_report" in stage_statuses:
+            self._set_stage_status(run, stage_statuses, "final_report", "failure", "Run cancelled by user.")
+        run.report = {"autonomous": False, "cancelled_reason": reason, "blocked_reason": reason}
+        run.report.update(self._api_escalation_report_fragment(run))
+        run.report.update(self._stage_report_fragment(mission_plan, stage_statuses))
+        run.touch()
+        return run
+
     def _blocked(
         self,
         run: SupervisorRun,
@@ -3483,6 +3593,31 @@ def get_supervised_run(run_id: str) -> Optional[SupervisorRun]:
         return RUN_STORE.get(run_id)
 
 
+def cancel_supervised_run(run_id: str, project_root: str, reason: str = "Cancelled by user") -> Optional[SupervisorRun]:
+    with RUN_LOCK:
+        run = RUN_STORE.get(run_id)
+    if run is None:
+        return None
+
+    current_status = str(run.status or "").strip().lower()
+    if _is_terminal_status(current_status):
+        return run
+
+    cancel_reason = str(reason or "Cancelled by user").strip() or "Cancelled by user"
+    run.cancel_requested = True
+    run.cancel_reason = cancel_reason
+    if current_status != "cancelling":
+        run.status = "cancelling"
+        run.add("cancel_request", "running", cancel_reason, requested_by="api")
+    else:
+        run.add("cancel_request", "running", cancel_reason, requested_by="api", duplicate=True)
+
+    supervisor = SelfRepairSupervisor(project_root=project_root)
+    if hasattr(supervisor, "_configure_run_tracking"):
+        supervisor._configure_run_tracking(run, RankSupervisorConfig.from_dict({"goal": "", "rank_id": run.rank_id}))
+    return supervisor._cancelled(run, cancel_reason, cleanup_workspace=True)
+
+
 def list_supervised_runs() -> List[SupervisorRun]:
     with RUN_LOCK:
         return list(RUN_STORE.values())
@@ -3559,7 +3694,7 @@ def _extract_issue_url_from_text(text: str) -> str:
     return match.group(0) if match else ""
 
 
-TERMINAL_RUN_STATUSES = {"completed", "blocked", "failed", "crashed"}
+TERMINAL_RUN_STATUSES = {"completed", "blocked", "failed", "crashed", "cancelled"}
 
 
 def _is_terminal_status(status: Any) -> bool:
@@ -3702,6 +3837,7 @@ def summarize_supervised_run(run: SupervisorRun) -> Dict[str, Any]:
         "updated_at": updated_at,
         "resolved_failure": bool((payload.get("report") or {}).get("resolved_failure", False)),
         "degraded_completion": bool((payload.get("report") or {}).get("degraded_completion", False)),
+        "cancelled_reason": str((payload.get("report") or {}).get("cancelled_reason", "") or payload.get("cancel_reason", "")),
         "next_action": next_action,
     }
     return _enforce_completion_failure_invariant(summary)
@@ -3769,6 +3905,7 @@ def _load_persisted_recent_runs(project_root: str) -> List[Dict[str, Any]]:
                 "updated_at": str(raw.get("updated_at", "")),
                 "created_at": str(raw.get("created_at", "")),
                 "blocked_reason": _safe_redact(raw.get("blocked_reason", "")),
+                "cancelled_reason": _safe_redact(raw.get("cancelled_reason", "")),
                 "next_action": str(raw.get("next_action", "")),
                 "resolved_failure": bool(raw.get("resolved_failure", False)),
                 "degraded_completion": bool(raw.get("degraded_completion", False)),
