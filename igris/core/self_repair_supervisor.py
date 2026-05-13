@@ -39,6 +39,20 @@ REPAIRABLE_FAILURES = {
     "syntax_error",
 }
 
+# Signals that accumulate across repair cycles to indicate model capability limits.
+# When any single signal reaches CAPABILITY_LIMIT_THRESHOLD the supervisor stops
+# re-trying and instead asks IGRIS to decompose the mission.
+CAPABILITY_LIMIT_SIGNALS = frozenset({"reasoning_timeout", "pytest_hang", "no_diff_repair"})
+CAPABILITY_LIMIT_THRESHOLD = 2
+
+# Required fields in a valid IGRIS decomposition response.
+DECOMPOSITION_REQUIRED_FIELDS = (
+    "why_too_large",
+    "sub_missions",
+    "first_sub_mission",
+    "human_approval_required",
+)
+
 RETRYABLE_REPAIR_FAILURES = {
     "reasoning_loop_blocked",
     "missing_ui_visibility",
@@ -262,6 +276,10 @@ class SupervisorRun:
     update_hook: Any = None
     cancel_requested: bool = False
     cancel_reason: str = ""
+    # Capability-limit tracking: maps signal name → count across all attempts/repairs.
+    capability_signals: Dict[str, int] = field(default_factory=dict)
+    # Decomposition produced by IGRIS when capability_limit is detected.
+    decomposition: Optional[Dict[str, Any]] = None
 
     def add(self, phase: str, status: str, detail: str = "", **data: Any) -> None:
         event = SupervisorEvent(phase=phase, status=status, detail=detail, data=data)
@@ -294,6 +312,8 @@ class SupervisorRun:
             "report": self.report,
             "cancel_requested": bool(self.cancel_requested),
             "cancel_reason": _safe_redact(self.cancel_reason),
+            "capability_signals": dict(self.capability_signals),
+            "decomposition": self.decomposition,
         }
 
 
@@ -2681,6 +2701,18 @@ class SelfRepairSupervisor:
                         failure = "missing_ui_visibility"
                 else:
                     failure = classify_failure(reasoning, diff.output, targeted, full, final_smoke)
+                    # Record reasoning_timeout signal when the model timed out without
+                    # producing a usable diff — a strong indicator of capability limit.
+                    if failure == "reasoning_loop_blocked" and stop_reason in {
+                        "reasoning_timeout", "budget_exceeded"
+                    }:
+                        self._record_capability_signal(run, "reasoning_timeout")
+            # Record pytest_hang when the full test subprocess was killed for
+            # producing no output (idle timeout) — repeated hangs indicate the
+            # model's change consistently breaks the test suite in a way it
+            # cannot self-repair.
+            if not full.success and "Command killed:" in (full.error or ""):
+                self._record_capability_signal(run, "pytest_hang")
             if not failure and mission_plan.mode == "staged" and not required_stages_complete:
                 failure = "reasoning_loop_blocked"
                 run.add(
@@ -2735,6 +2767,22 @@ class SelfRepairSupervisor:
             run.failure_class = failure
             run.add("failure", "classified", failure)
             if failure not in REPAIRABLE_FAILURES or repair_cycles >= config.max_repair_cycles:
+                triggering_signal = self._detect_capability_limit(run)
+                if triggering_signal:
+                    decomposition = self._ask_igris_decompose(run, config)
+                    return self._blocked_decomposition_required(
+                        run,
+                        triggering_signal,
+                        (
+                            f"Capability limit detected ({triggering_signal} × "
+                            f"{run.capability_signals[triggering_signal]}); "
+                            "mission requires decomposition."
+                        ),
+                        decomposition,
+                        mission_plan=mission_plan,
+                        stage_statuses=stage_statuses,
+                        cleanup_workspace=True,
+                    )
                 return self._blocked(
                     run,
                     failure,
@@ -2754,6 +2802,22 @@ class SelfRepairSupervisor:
                 preserve_validated_progress=mission_plan.mode == "staged",
                 stage_statuses=stage_statuses if mission_plan.mode == "staged" else None,
             ):
+                triggering_signal = self._detect_capability_limit(run)
+                if triggering_signal:
+                    decomposition = self._ask_igris_decompose(run, config)
+                    return self._blocked_decomposition_required(
+                        run,
+                        triggering_signal,
+                        (
+                            f"Capability limit detected ({triggering_signal} × "
+                            f"{run.capability_signals[triggering_signal]}); "
+                            "mission requires decomposition."
+                        ),
+                        decomposition,
+                        mission_plan=mission_plan,
+                        stage_statuses=stage_statuses,
+                        cleanup_workspace=True,
+                    )
                 return self._blocked(
                     run,
                     failure,
@@ -2785,6 +2849,22 @@ class SelfRepairSupervisor:
                     )
             attempt += 1
 
+        triggering_signal = self._detect_capability_limit(run)
+        if triggering_signal:
+            decomposition = self._ask_igris_decompose(run, config)
+            return self._blocked_decomposition_required(
+                run,
+                triggering_signal,
+                (
+                    f"Capability limit detected ({triggering_signal} × "
+                    f"{run.capability_signals[triggering_signal]}); "
+                    "mission requires decomposition."
+                ),
+                decomposition,
+                mission_plan=mission_plan,
+                stage_statuses=stage_statuses,
+                cleanup_workspace=True,
+            )
         return self._blocked(
             run,
             run.failure_class or "max_rank_attempts",
@@ -3210,6 +3290,10 @@ class SelfRepairSupervisor:
             timeout=config.reasoning_timeout_seconds,
         )
         run.add("repair_reasoning", str(result.get("status", "")), result.get("final_summary", ""))
+        # Record a reasoning_timeout signal when repair reasoning itself times out —
+        # that also indicates the model cannot make progress on this mission.
+        if str(result.get("stop_reason", "")) in {"reasoning_timeout", "budget_exceeded"}:
+            self._record_capability_signal(run, "reasoning_timeout")
         diff_stat = self.backend.git_diff_stat()
         diff = self.backend.git_diff()
         run.add("repair_diff_stat", "success" if diff_stat.success else "failure", _command_detail(diff_stat))
@@ -3339,6 +3423,9 @@ class SelfRepairSupervisor:
             self._preserve_targeted_tests_after_restore_retry(run, config, failure)
             return True
         if not diff.output.strip():
+            # Count repairs that produce no diff — a model that cannot propose any
+            # change after multiple cycles has hit a capability wall.
+            self._record_capability_signal(run, "no_diff_repair")
             _restore_or_preserve("Repair produced no validated diff; restoring working tree state.")
             if failure == "pytest_failure" and self._re_scaffold_targeted_test_if_missing(run, config):
                 run.add(
@@ -3365,6 +3452,9 @@ class SelfRepairSupervisor:
         )
         tests = self.backend.run_tests(timeout=config.test_timeout_seconds, hard_cap=config.test_hard_cap_seconds)
         run.add("repair_tests", "success" if tests.success else "failure", _command_detail(tests))
+        if not tests.success and "Command killed:" in (tests.error or ""):
+            # Repair validation also hung — counts against the same capability-limit budget.
+            self._record_capability_signal(run, "pytest_hang")
         if not tests.success:
             if failure == "missing_tests" and _is_valid_missing_tests_repair_diff(diff.output, config.goal):
                 run.add(
@@ -3816,6 +3906,154 @@ class SelfRepairSupervisor:
         run.report.update(self._stage_report_fragment(mission_plan, stage_statuses))
         run.touch()
         return run
+
+    # ------------------------------------------------------------------
+    # Capability-limit detection and mission decomposition
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _record_capability_signal(run: SupervisorRun, signal: str) -> None:
+        run.capability_signals[signal] = run.capability_signals.get(signal, 0) + 1
+
+    @staticmethod
+    def _detect_capability_limit(run: SupervisorRun) -> Optional[str]:
+        """Return the first signal that reached the threshold, or None."""
+        for signal, count in run.capability_signals.items():
+            if count >= CAPABILITY_LIMIT_THRESHOLD:
+                return signal
+        return None
+
+    def _ask_igris_decompose(
+        self, run: SupervisorRun, config: RankSupervisorConfig
+    ) -> Dict[str, Any]:
+        """Ask IGRIS to decompose a too-large mission into sub-missions.
+
+        The reasoning call receives the original goal, the failure signals, and
+        explicit instructions to produce a structured JSON decomposition — NOT
+        to implement anything.  We parse whatever JSON IGRIS returns and
+        validate the required fields, storing the raw output as a fallback.
+        """
+        signals = dict(run.capability_signals)
+        decomp_goal = (
+            "MISSION DECOMPOSITION TASK — do not implement any code.\n\n"
+            f"The original mission could not be completed: '{config.goal}'.\n"
+            f"Capability limit signals observed: {signals}.\n\n"
+            "Analyse why the mission exceeded the model's capability in a single "
+            "reasoning pass and produce a structured JSON decomposition.\n\n"
+            "Output ONLY a single JSON object with these exact fields:\n"
+            "  why_too_large       — string: root cause analysis\n"
+            "  sub_missions        — array of objects, each with:\n"
+            "      title                    string\n"
+            "      goal                     string\n"
+            "      dependencies             array of titles (may be empty)\n"
+            "      acceptance_criteria      array of strings\n"
+            "      allowed_file_scopes      array of glob patterns\n"
+            "      tests                    array of pytest targets\n"
+            "      risk_level               'low' | 'medium' | 'high'\n"
+            "      human_approval_required  bool\n"
+            "  first_sub_mission   — string: title of first sub-mission to run\n"
+            "  human_approval_required — bool: whether operator review is needed "
+            "before starting\n\n"
+            "Do not write any Python, shell, or patch.  Only the JSON."
+        )
+        context = self._rank_initial_context(config)
+        context.update({
+            "decomposition_required": True,
+            "capability_limit_signals": signals,
+            "repair_cycles_used": run.repair_cycles_used,
+            "max_repair_cycles": run.max_repair_cycles,
+        })
+        run.add(
+            "decomposition_request",
+            "running",
+            f"Asking IGRIS to decompose mission. signals={signals}",
+            capability_signals=signals,
+            original_goal=_safe_redact(config.goal),
+        )
+        result = self.backend.run_reasoning(
+            decomp_goal,
+            max_steps=40,
+            initial_context=context,
+            timeout=config.reasoning_timeout_seconds,
+        )
+        raw = _safe_redact(
+            result.get("final_summary") or result.get("output") or ""
+        )
+        decomposition: Dict[str, Any] = {}
+        try:
+            json_match = re.search(r"\{.*\}", raw, re.DOTALL)
+            if json_match:
+                decomposition = json.loads(json_match.group())
+        except (json.JSONDecodeError, AttributeError):
+            decomposition = {"raw_output": raw}
+
+        fields_present = [f for f in DECOMPOSITION_REQUIRED_FIELDS if f in decomposition]
+        fields_missing = [f for f in DECOMPOSITION_REQUIRED_FIELDS if f not in decomposition]
+        decomposition["_fields_present"] = fields_present
+        decomposition["_fields_missing"] = fields_missing
+        decomposition["_capability_signals"] = signals
+        run.add(
+            "decomposition_response",
+            "success" if not fields_missing else "partial",
+            f"IGRIS decomposition generated. present={fields_present} missing={fields_missing}",
+            fields_present=fields_present,
+            fields_missing=fields_missing,
+        )
+        run.decomposition = decomposition
+        return decomposition
+
+    def _blocked_decomposition_required(
+        self,
+        run: SupervisorRun,
+        triggering_signal: str,
+        detail: str,
+        decomposition: Dict[str, Any],
+        *,
+        mission_plan: Optional[MissionPlan] = None,
+        stage_statuses: Optional[Dict[str, Dict[str, Any]]] = None,
+        cleanup_workspace: bool = False,
+    ) -> SupervisorRun:
+        """Block the run with failure_class='decomposition_required' and attach the
+        IGRIS-generated decomposition to the run report and durable storage."""
+        run = self._blocked(
+            run,
+            "decomposition_required",
+            detail,
+            mission_plan=mission_plan,
+            stage_statuses=stage_statuses,
+            cleanup_workspace=cleanup_workspace,
+        )
+        first_sub = _safe_redact(str(decomposition.get("first_sub_mission", "")))
+        human_approval = bool(decomposition.get("human_approval_required", True))
+        next_action = (
+            "request_approval:decomposition"
+            if human_approval or not first_sub
+            else f"run:{first_sub}"
+        )
+        # Redact any strings inside sub_missions for safety.
+        safe_decomposition: Dict[str, Any] = {}
+        for k, v in decomposition.items():
+            if isinstance(v, str):
+                safe_decomposition[k] = _safe_redact(v)
+            elif isinstance(v, list) and all(isinstance(i, dict) for i in v):
+                safe_decomposition[k] = [
+                    {ik: _safe_redact(iv) if isinstance(iv, str) else iv
+                     for ik, iv in item.items()}
+                    for item in v
+                ]
+            else:
+                safe_decomposition[k] = v
+        run.report.update({
+            "decomposition_required": True,
+            "capability_limit_signal": triggering_signal,
+            "next_action": next_action,
+            "decomposition": safe_decomposition,
+        })
+        run.decomposition = safe_decomposition
+        run.touch()
+        return run
+
+    # ------------------------------------------------------------------
 
     def _blocked(
         self,

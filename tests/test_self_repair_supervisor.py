@@ -8,7 +8,9 @@ from fastapi.testclient import TestClient
 
 from igris.core.self_repair_supervisor import (
     cancel_supervised_run,
+    CAPABILITY_LIMIT_THRESHOLD,
     CommandResult,
+    DECOMPOSITION_REQUIRED_FIELDS,
     LocalSupervisorBackend,
     list_active_supervised_run_summaries,
     RankSupervisorConfig,
@@ -98,9 +100,13 @@ class FakeBackend:
         }
 
     def git_diff_stat(self):
+        if getattr(self, "diff_stat_sequence", None):
+            return self.diff_stat_sequence.pop(0)
         return self.diff_stat
 
     def git_diff(self):
+        if getattr(self, "diff_sequence", None):
+            return self.diff_sequence.pop(0)
         return self.diff
 
     def run_tests(self, targets=None, timeout=120, hard_cap=3600):
@@ -4547,3 +4553,363 @@ def test_complete_noop_still_blocks_on_genuinely_missing_required_stage():
         f"Expected status='blocked' when required implementation stage is missing, got '{run.status}'"
     )
     assert run.failure_class == "reasoning_loop_blocked"
+
+
+# ---------------------------------------------------------------------------
+# Capability-limit detection and mission decomposition tests
+# ---------------------------------------------------------------------------
+
+def _decomposition_reasoning_result(fields=None):
+    """Fake reasoning result that returns a well-formed JSON decomposition."""
+    sub = {
+        "title": "Implement sub-task A",
+        "goal": "Add endpoint /api/foo",
+        "dependencies": [],
+        "acceptance_criteria": ["GET /api/foo returns 200"],
+        "allowed_file_scopes": ["igris/web/server.py", "tests/test_foo.py"],
+        "tests": ["tests/test_foo.py"],
+        "risk_level": "low",
+        "human_approval_required": False,
+    }
+    payload = {
+        "why_too_large": "Original mission required 5+ file changes across unrelated modules.",
+        "sub_missions": [sub],
+        "first_sub_mission": "Implement sub-task A",
+        "human_approval_required": False,
+    }
+    if fields:
+        payload.update(fields)
+    return {
+        "status": "finished",
+        "stop_reason": "finish",
+        "files_modified": [],
+        "final_summary": json.dumps(payload),
+        "goal": "decomposition",
+    }
+
+
+def _make_timeout_result():
+    return {
+        "status": "blocked",
+        "stop_reason": "reasoning_timeout",
+        "files_modified": [],
+        "final_summary": "Timed out without producing a change.",
+    }
+
+
+def _make_no_diff_repair_results(n: int):
+    """n repair reasoning results that succeed but produce no diff."""
+    return [
+        {
+            "status": "finished",
+            "stop_reason": "finish",
+            "files_modified": [],
+            "final_summary": f"repair attempt {i + 1}",
+        }
+        for i in range(n)
+    ]
+
+
+def test_repeated_reasoning_timeout_triggers_decomposition_required():
+    """When reasoning times out CAPABILITY_LIMIT_THRESHOLD times the supervisor
+    must block with failure_class='decomposition_required', not a generic block.
+
+    Sequence (with diff_stat always failing so no diff is produced):
+      [0] attempt-1 main reasoning  → reasoning_timeout (signal=1)
+      [1] repair-cycle reasoning    → reasoning_timeout (signal=2 → threshold)
+          _repair_cycle returns False (diff_stat failure), capability limit fires.
+      [2] decomposition reasoning   → JSON decomposition
+    """
+    backend = FakeBackend()
+    backend.reasoning_results = [
+        _make_timeout_result(),              # [0] attempt-1 main → reasoning_timeout=1
+        _make_timeout_result(),              # [1] repair-cycle  → reasoning_timeout=2
+        _decomposition_reasoning_result(),   # [2] decomposition call
+    ]
+    backend.diff_stat = CommandResult(False, "")
+    backend.diff = CommandResult(True, "")
+    backend.full_tests = [CommandResult(True, "ok")] * 10
+
+    supervisor = SelfRepairSupervisor("/tmp/project", backend=backend)
+    config = _config(
+        max_rank_attempts=3,
+        max_repair_cycles=1,
+        goal="Complex multi-file task that exceeds model capacity",
+    )
+    run = SupervisorRun(run_id="cap-timeout", rank_id="test")
+    result = supervisor.run(config, run=run)
+
+    assert result.failure_class == "decomposition_required", (
+        f"Expected decomposition_required, got {result.failure_class!r}"
+    )
+    assert result.status == "blocked"
+    assert result.outcome == "Blocked"
+    assert result.report.get("decomposition_required") is True
+    assert result.capability_signals.get("reasoning_timeout", 0) >= CAPABILITY_LIMIT_THRESHOLD
+    assert "decomposition" in result.report
+    assert result.report.get("next_action", "").startswith("run:") or \
+           result.report.get("next_action", "").startswith("request_approval:")
+
+
+def test_repeated_no_diff_repair_triggers_decomposition_required():
+    """When repair cycles repeatedly produce no diff, capability limit is detected.
+
+    Flow with max_rank_attempts=3, max_repair_cycles=2 (== CAPABILITY_LIMIT_THRESHOLD):
+      attempt-1: main→done+diff, full=FAILED; repair-1→no_diff (no_diff_repair=1) → True
+      attempt-2: main→done+diff, full=FAILED; repair-2→no_diff (no_diff_repair=2) → True
+      attempt-3: main→done+diff, full=FAILED;
+          repair_cycles(2) >= max_repair_cycles(2) → budget exhausted
+          capability limit: no_diff_repair=2 → TRIGGERED → decomposition
+    """
+    n = CAPABILITY_LIMIT_THRESHOLD  # = 2
+    backend = FakeBackend()
+    # 3 main attempts + 2 repair cycles + 1 decomposition = 6 reasoning calls
+    main_result = {
+        "status": "finished",
+        "stop_reason": "finish",
+        "files_modified": ["igris/web/server.py"],
+        "final_summary": "done",
+    }
+    no_diff_repair = {
+        "status": "finished",
+        "stop_reason": "finish",
+        "files_modified": [],
+        "final_summary": "repaired (no change)",
+    }
+    backend.reasoning_results = [
+        main_result,            # [0] attempt-1 main
+        no_diff_repair,         # [1] repair-1
+        dict(main_result),      # [2] attempt-2 main
+        dict(no_diff_repair),   # [3] repair-2
+        dict(main_result),      # [4] attempt-3 main
+        _decomposition_reasoning_result(),  # [5] decomposition
+    ]
+    # diff_stat_sequence: 5 calls (3 main + 2 repair) — repair sees empty stat
+    diff_has = CommandResult(True, " igris/web/server.py | 1 +")
+    diff_empty_stat = CommandResult(True, "")
+    backend.diff_stat_sequence = [diff_has, diff_empty_stat, diff_has, diff_empty_stat, diff_has]
+    # diff_sequence: main sees real diff, repair sees empty diff
+    diff_real = CommandResult(True, "+safe line")
+    diff_empty = CommandResult(True, "")
+    backend.diff_sequence = [diff_real, diff_empty, diff_real, diff_empty, diff_real]
+    # full_tests: baseline pops first (must succeed), then each main attempt pops one
+    # repairs exit early (no run_tests call in no-diff path)
+    backend.full_tests = (
+        [CommandResult(True, "baseline ok")]       # baseline
+        + [CommandResult(False, "FAILED")] * 3     # attempts 1, 2, 3
+        + [CommandResult(True, "ok")] * 5          # spare
+    )
+    backend.targeted = CommandResult(True, "ok")
+
+    supervisor = SelfRepairSupervisor("/tmp/project", backend=backend)
+    config = _config(
+        max_rank_attempts=3,
+        max_repair_cycles=n,
+        goal="Complex mission with no-diff repair loops",
+    )
+    run = SupervisorRun(run_id="cap-nodiff", rank_id="test")
+    result = supervisor.run(config, run=run)
+
+    assert result.failure_class == "decomposition_required", (
+        f"Expected decomposition_required, got {result.failure_class!r}; "
+        f"signals={result.capability_signals}"
+    )
+    assert result.report.get("decomposition_required") is True
+    assert result.capability_signals.get("no_diff_repair", 0) >= CAPABILITY_LIMIT_THRESHOLD
+
+
+def test_repeated_pytest_hang_triggers_decomposition_required():
+    """Repeated pytest hangs (Command killed) must trigger decomposition_required.
+
+    Flow (max_repair_cycles=1):
+      baseline → ok
+      attempt-1: full→hang (pytest_hang=1); repair-1 reasoning ok+diff,
+                 repair-validation→hang (pytest_hang=2, RETRYABLE → returns True)
+      attempt-2: full→hang (pytest_hang=3);
+                 repair_cycles(1) >= max_repair_cycles(1) → budget exhausted
+                 capability limit: pytest_hang=3 >= 2 → TRIGGERED → decomposition
+    """
+    backend = FakeBackend()
+    hang = CommandResult(False, "", "Command killed: no output for 120s (idle timeout)", 124)
+    backend.reasoning_results = [
+        {                             # [0] attempt-1 main
+            "status": "finished", "stop_reason": "finish",
+            "files_modified": ["igris/web/server.py"], "final_summary": "done",
+        },
+        {                             # [1] repair-1 reasoning
+            "status": "finished", "stop_reason": "finish",
+            "files_modified": ["igris/web/server.py"], "final_summary": "repair",
+        },
+        _decomposition_reasoning_result(),   # [2] decomposition
+    ]
+    backend.diff_stat = CommandResult(True, " igris/web/server.py | 1 +")
+    backend.diff = CommandResult(True, "+safe")
+    # [0] baseline ok, [1] attempt-1 full hang, [2] repair-1 validation hang,
+    # [3] attempt-2 full hang
+    backend.full_tests = [CommandResult(True, "baseline ok"), hang, hang, hang] + [CommandResult(True, "ok")] * 5
+
+    supervisor = SelfRepairSupervisor("/tmp/project", backend=backend)
+    config = _config(
+        max_rank_attempts=4,
+        max_repair_cycles=1,
+        goal="Mission with hanging pytest",
+    )
+    run = SupervisorRun(run_id="cap-hang", rank_id="test")
+    result = supervisor.run(config, run=run)
+
+    assert result.failure_class == "decomposition_required", (
+        f"Expected decomposition_required, got {result.failure_class!r}; "
+        f"signals={result.capability_signals}"
+    )
+    assert result.capability_signals.get("pytest_hang", 0) >= CAPABILITY_LIMIT_THRESHOLD
+    assert result.report.get("decomposition_required") is True
+
+
+def test_decomposition_report_contains_required_fields():
+    """decomposition_required run must include all required fields in run.decomposition."""
+    backend = FakeBackend()
+    backend.reasoning_results = [
+        _make_timeout_result(),
+        _make_timeout_result(),
+        _decomposition_reasoning_result(),
+    ]
+    backend.diff_stat = CommandResult(False, "")
+    backend.diff = CommandResult(True, "")
+    backend.full_tests = [CommandResult(True, "ok")] * 10
+
+    supervisor = SelfRepairSupervisor("/tmp/project", backend=backend)
+    config = _config(
+        max_rank_attempts=3,
+        max_repair_cycles=1,
+        goal="Mission requiring decomposition",
+    )
+    run = SupervisorRun(run_id="cap-fields", rank_id="test")
+    result = supervisor.run(config, run=run)
+
+    assert result.failure_class == "decomposition_required"
+    decomposition = result.decomposition
+    assert decomposition is not None, "run.decomposition must not be None"
+    for field in DECOMPOSITION_REQUIRED_FIELDS:
+        assert field in decomposition, (
+            f"Required decomposition field '{field}' missing. "
+            f"Present: {list(decomposition.keys())}"
+        )
+
+
+def test_supervisor_does_not_declare_completed_on_decomposition_required():
+    """A run blocked with decomposition_required must never have status='completed'."""
+    backend = FakeBackend()
+    backend.reasoning_results = [
+        _make_timeout_result(),
+        _make_timeout_result(),
+        _decomposition_reasoning_result(),
+    ]
+    backend.diff_stat = CommandResult(False, "")
+    backend.diff = CommandResult(True, "")
+    backend.full_tests = [CommandResult(True, "ok")] * 10
+
+    supervisor = SelfRepairSupervisor("/tmp/project", backend=backend)
+    config = _config(
+        max_rank_attempts=3,
+        max_repair_cycles=1,
+        goal="Uncompletable mission",
+    )
+    run = SupervisorRun(run_id="cap-nocomp", rank_id="test")
+    result = supervisor.run(config, run=run)
+
+    assert result.status != "completed", (
+        "Supervisor must not declare 'completed' when decomposition_required is set"
+    )
+    assert result.outcome != "Completed"
+    assert result.report.get("decomposition_required") is True
+
+
+def test_decomposition_is_persisted_in_run_report_and_to_dict():
+    """run.to_dict() must include decomposition and capability_signals."""
+    backend = FakeBackend()
+    backend.reasoning_results = [
+        _make_timeout_result(),
+        _make_timeout_result(),
+        _decomposition_reasoning_result(),
+    ]
+    backend.diff_stat = CommandResult(False, "")
+    backend.diff = CommandResult(True, "")
+    backend.full_tests = [CommandResult(True, "ok")] * 10
+
+    supervisor = SelfRepairSupervisor("/tmp/project", backend=backend)
+    config = _config(
+        max_rank_attempts=3,
+        max_repair_cycles=1,
+        goal="Persisted decomposition test",
+    )
+    run = SupervisorRun(run_id="cap-persist", rank_id="test")
+    result = supervisor.run(config, run=run)
+
+    d = result.to_dict()
+    assert "capability_signals" in d, "to_dict() must include capability_signals"
+    assert "decomposition" in d, "to_dict() must include decomposition"
+    assert d["decomposition"] is not None
+    assert d["capability_signals"].get("reasoning_timeout", 0) >= CAPABILITY_LIMIT_THRESHOLD
+
+    # Report must also carry decomposition
+    assert result.report.get("decomposition") is not None
+    assert result.report.get("capability_limit_signal") is not None
+    assert result.report.get("next_action") is not None
+
+
+def test_decomposition_report_has_no_secrets():
+    """Decomposition fields must be redacted — no raw secrets pass through."""
+    backend = FakeBackend()
+    # Inject a secret into the decomposition output to verify it gets redacted.
+    decomp_with_secret = _decomposition_reasoning_result(fields={
+        "why_too_large": "Failed because OPENAI_API_KEY=sk-secret123 was missing."
+    })
+    backend.reasoning_results = [
+        _make_timeout_result(),
+        _make_timeout_result(),
+        decomp_with_secret,
+    ]
+    backend.diff_stat = CommandResult(False, "")
+    backend.diff = CommandResult(True, "")
+    backend.full_tests = [CommandResult(True, "ok")] * 10
+
+    supervisor = SelfRepairSupervisor("/tmp/project", backend=backend)
+    config = _config(
+        max_rank_attempts=3,
+        max_repair_cycles=1,
+        goal="Secret safety test",
+    )
+    run = SupervisorRun(run_id="cap-secret", rank_id="test")
+    result = supervisor.run(config, run=run)
+
+    assert result.failure_class == "decomposition_required"
+    report_text = json.dumps(result.report)
+    assert "sk-secret123" not in report_text, (
+        "Secret must be redacted from decomposition report"
+    )
+
+
+def test_non_repeated_failure_does_not_trigger_decomposition():
+    """A single reasoning_timeout (below threshold) must NOT trigger decomposition."""
+    backend = FakeBackend()
+    backend.reasoning_results = [
+        _make_timeout_result(),       # 1 timeout — below threshold
+        _decomposition_reasoning_result(),  # would be repair result if triggered
+    ]
+    backend.diff_stat = CommandResult(False, "")
+    backend.diff = CommandResult(True, "")
+    backend.full_tests = [CommandResult(True, "ok")] * 10
+
+    supervisor = SelfRepairSupervisor("/tmp/project", backend=backend)
+    config = _config(
+        max_rank_attempts=1,
+        max_repair_cycles=0,   # no repair budget → blocked immediately
+        goal="Single timeout test",
+    )
+    run = SupervisorRun(run_id="cap-single", rank_id="test")
+    result = supervisor.run(config, run=run)
+
+    # Below threshold — should be a plain block, not decomposition_required.
+    assert result.failure_class != "decomposition_required", (
+        "Single timeout below threshold must not trigger decomposition_required"
+    )
