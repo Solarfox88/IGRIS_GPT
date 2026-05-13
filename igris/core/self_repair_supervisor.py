@@ -3667,12 +3667,21 @@ class SelfRepairSupervisor:
         post_merge_smoke: bool,
         mission_plan: Optional[MissionPlan] = None,
         stage_statuses: Optional[Dict[str, Dict[str, Any]]] = None,
+        exclude_stage_ids: Optional[Set[str]] = None,
     ) -> SupervisorRun:
+        # No-op completions never execute delivery stages; always exclude them so
+        # the required-stages check does not reject a valid no-op because
+        # pr_ci_merge / post_merge_runtime were not reached.
+        _noop_exclude = (exclude_stage_ids or set()) | {
+            "pr_ci_merge",
+            "post_merge_runtime",
+            "final_report",
+        }
         run.add("completion", "degraded", detail, mode=completion_mode)
         run.status = "completed"
         run.outcome = "Completed"
         if stage_statuses and "final_report" in stage_statuses:
-            if self._required_stages_green(stage_statuses):
+            if self._required_stages_green(stage_statuses, exclude_stage_ids=_noop_exclude):
                 self._set_stage_status(run, stage_statuses, "final_report", "success", "No-op completion validated with required stages satisfied.")
             else:
                 self._set_stage_status(run, stage_statuses, "final_report", "failure", "No-op completion rejected: required stage missing.")
