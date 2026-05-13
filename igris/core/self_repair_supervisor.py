@@ -40,8 +40,8 @@ REPAIRABLE_FAILURES = {
 }
 
 # Signals that accumulate across repair cycles to indicate model capability limits.
-# When any single signal reaches CAPABILITY_LIMIT_THRESHOLD the supervisor stops
-# re-trying and instead asks IGRIS to decompose the mission.
+# Decomposition is triggered when any single signal reaches CAPABILITY_LIMIT_THRESHOLD,
+# OR when the combined total of all signals reaches it (mixed-failure capability wall).
 CAPABILITY_LIMIT_SIGNALS = frozenset({"reasoning_timeout", "pytest_hang", "no_diff_repair"})
 CAPABILITY_LIMIT_THRESHOLD = 2
 
@@ -3917,10 +3917,17 @@ class SelfRepairSupervisor:
 
     @staticmethod
     def _detect_capability_limit(run: SupervisorRun) -> Optional[str]:
-        """Return the first signal that reached the threshold, or None."""
+        """Return the triggering signal if capability limit reached, or None.
+
+        Fires when any single signal reaches CAPABILITY_LIMIT_THRESHOLD, or when
+        the combined total of all distinct signals reaches the threshold (mixed-failure
+        capability wall — e.g. one reasoning_timeout + one no_diff_repair).
+        """
         for signal, count in run.capability_signals.items():
             if count >= CAPABILITY_LIMIT_THRESHOLD:
                 return signal
+        if sum(run.capability_signals.values()) >= CAPABILITY_LIMIT_THRESHOLD:
+            return max(run.capability_signals, key=run.capability_signals.get)
         return None
 
     def _ask_igris_decompose(

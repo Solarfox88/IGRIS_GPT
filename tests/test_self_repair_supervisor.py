@@ -4889,6 +4889,79 @@ def test_decomposition_report_has_no_secrets():
     )
 
 
+def test_mixed_capability_signals_trigger_decomposition():
+    """One reasoning_timeout + one no_diff_repair (total=2) must trigger decomposition.
+
+    This verifies cross-signal detection: even when no single signal reaches
+    CAPABILITY_LIMIT_THRESHOLD alone, the combined total reaching it triggers
+    decomposition_required.
+
+    Flow: max_rank_attempts=3, max_repair_cycles=1
+      attempt-1: main→finish+diff, full=FAILED (pytest_failure)
+                 repair-1 → no_diff (no_diff_repair=1, RETRYABLE → return True)
+      attempt-2: main→timeout (reasoning_timeout=1)
+                 repair_cycles(1) >= max_repair_cycles(1) → budget exhausted
+                 capability limit: total=2 >= threshold → decomposition_required
+    """
+    backend = FakeBackend()
+    main_ok = {
+        "status": "finished",
+        "stop_reason": "finish",
+        "files_modified": ["igris/web/server.py"],
+        "final_summary": "done",
+    }
+    repair_ok = {
+        "status": "finished",
+        "stop_reason": "finish",
+        "files_modified": [],
+        "final_summary": "repair attempt",
+    }
+    backend.reasoning_results = [
+        main_ok,                           # [0] attempt-1 main → pytest_failure
+        repair_ok,                         # [1] repair-1 → empty diff → no_diff_repair=1
+        _make_timeout_result(),            # [2] attempt-2 main → reasoning_timeout=1
+        _decomposition_reasoning_result(), # [3] decomposition
+    ]
+    diff_has = CommandResult(True, " igris/web/server.py | 1 +")
+    diff_empty_stat = CommandResult(True, "")
+    backend.diff_stat_sequence = [
+        diff_has,        # main-1: real diff produced
+        diff_has,        # repair-1: passes diff_stat check (but diff itself is empty)
+        diff_empty_stat, # main-2: timeout, no diff
+    ]
+    diff_real = CommandResult(True, "+some code")
+    diff_empty = CommandResult(True, "")
+    backend.diff_sequence = [
+        diff_real,  # main-1 diff
+        diff_empty, # repair-1 diff → no_diff_repair signal
+        diff_empty, # main-2 diff
+    ]
+    backend.full_tests = [
+        CommandResult(True, "baseline ok"),  # baseline
+        CommandResult(False, "FAILED"),      # main-1 → pytest_failure triggers repair
+        CommandResult(True, "ok"),           # main-2 (reasoning failure supersedes)
+    ]
+    backend.targeted = CommandResult(True, "ok")
+
+    supervisor = SelfRepairSupervisor("/tmp/project", backend=backend)
+    config = _config(
+        max_rank_attempts=3,
+        max_repair_cycles=1,
+        goal="Mission that produces mixed capability signals",
+    )
+    run = SupervisorRun(run_id="cap-mixed", rank_id="test")
+    result = supervisor.run(config, run=run)
+
+    assert result.failure_class == "decomposition_required", (
+        f"Expected decomposition_required, got {result.failure_class!r}; "
+        f"signals={result.capability_signals}"
+    )
+    assert result.report.get("decomposition_required") is True
+    assert result.capability_signals.get("reasoning_timeout", 0) >= 1
+    assert result.capability_signals.get("no_diff_repair", 0) >= 1
+    assert "decomposition" in result.report
+
+
 def test_non_repeated_failure_does_not_trigger_decomposition():
     """A single reasoning_timeout (below threshold) must NOT trigger decomposition."""
     backend = FakeBackend()
