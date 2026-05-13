@@ -4425,3 +4425,125 @@ def test_summarize_supervised_run_includes_failed_unconfigured():
     assert summary.get("api_escalations_failed_unconfigured") == 2, (
         f"Expected 2 in summary, got: {summary.get('api_escalations_failed_unconfigured')!r}"
     )
+
+
+# ---------------------------------------------------------------------------
+# Tests for noop completion bug (#345) — _complete_noop must not be blocked
+# by pr_ci_merge / post_merge_runtime when they were never reached
+# ---------------------------------------------------------------------------
+
+def test_complete_noop_does_not_block_when_pr_ci_merge_was_not_reached():
+    """When a staged mission completes as a no-op (goal already satisfied,
+    no diff produced, all tests green), _complete_noop must NOT block the run
+    because pr_ci_merge / post_merge_runtime stages were never executed.
+
+    Regression: before the fix, _required_stages_green() inside _complete_noop
+    was called without exclusions, so a required pr_ci_merge stage with no
+    status (never reached) triggered 'No-op completion rejected: required
+    stage missing.' and set run.status = 'blocked'.
+    """
+    backend = FakeBackend()
+    supervisor = SelfRepairSupervisor("/tmp/project", backend=backend)
+    run = SupervisorRun(run_id="run-noop-prci", rank_id="test")
+
+    # Build stage_statuses that mirror what the supervisor would have after
+    # completing implementation stages but never reaching pr_ci_merge.
+    stage_statuses = {
+        "backend_api_change": {
+            "required": True,
+            "status": "success",
+            "detail": "API change implemented.",
+        },
+        "backend_tests": {
+            "required": True,
+            "status": "success",
+            "detail": "Tests implemented.",
+        },
+        # pr_ci_merge is required (dry_run=False) but was never executed
+        "pr_ci_merge": {
+            "required": True,
+            "status": "pending",
+            "detail": "",
+        },
+        # post_merge_runtime same
+        "post_merge_runtime": {
+            "required": True,
+            "status": "pending",
+            "detail": "",
+        },
+        "final_report": {
+            "required": True,
+            "status": "pending",
+            "detail": "",
+        },
+    }
+
+    supervisor._complete_noop(
+        run,
+        completion_mode="already_satisfied",
+        runtime_refresh_required=False,
+        detail="All required staged mission phases were already satisfied; completed as verified no-op.",
+        post_merge_smoke=True,
+        stage_statuses=stage_statuses,
+    )
+
+    # Must NOT be blocked
+    assert run.status == "completed", (
+        f"Expected status='completed' for valid noop, got '{run.status}'. "
+        "Check: _complete_noop may be including pr_ci_merge in required-stages check."
+    )
+    assert run.outcome == "Completed"
+    assert run.failure_class == ""
+
+    # final_report must be success
+    final_status = stage_statuses.get("final_report", {}).get("status")
+    assert final_status == "success", (
+        f"Expected final_report status='success', got '{final_status}'"
+    )
+
+
+def test_complete_noop_still_blocks_on_genuinely_missing_required_stage():
+    """If a truly required IMPLEMENTATION stage (not delivery) is missing,
+    _complete_noop should still block — the exclusion is limited to delivery
+    stages (pr_ci_merge, post_merge_runtime, final_report)."""
+    backend = FakeBackend()
+    supervisor = SelfRepairSupervisor("/tmp/project", backend=backend)
+    run = SupervisorRun(run_id="run-noop-miss", rank_id="test")
+
+    stage_statuses = {
+        "backend_api_change": {
+            "required": True,
+            "status": "pending",  # NOT completed — this should block
+            "detail": "",
+        },
+        "pr_ci_merge": {
+            "required": True,
+            "status": "pending",
+            "detail": "",
+        },
+        "post_merge_runtime": {
+            "required": True,
+            "status": "pending",
+            "detail": "",
+        },
+        "final_report": {
+            "required": True,
+            "status": "pending",
+            "detail": "",
+        },
+    }
+
+    supervisor._complete_noop(
+        run,
+        completion_mode="already_satisfied",
+        runtime_refresh_required=False,
+        detail="Noop with missing implementation stage.",
+        post_merge_smoke=True,
+        stage_statuses=stage_statuses,
+    )
+
+    # MUST be blocked because backend_api_change was not completed
+    assert run.status == "blocked", (
+        f"Expected status='blocked' when required implementation stage is missing, got '{run.status}'"
+    )
+    assert run.failure_class == "reasoning_loop_blocked"
