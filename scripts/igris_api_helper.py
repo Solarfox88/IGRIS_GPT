@@ -123,8 +123,28 @@ def _resolve_model(requested: str, provider: str) -> str:
 
 
 # ---------------------------------------------------------------------------
-# System prompt
+# System prompts
 # ---------------------------------------------------------------------------
+
+_DECOMPOSITION_SYSTEM_PROMPT = """You are a mission decomposition assistant for IGRIS.
+A mission was too large for the local model to complete in one reasoning pass.
+Your job is to decompose it into 2-4 smaller sub-missions.
+
+Output ONLY a valid JSON object with exactly these fields:
+{
+  "why_too_large": "<one sentence: root cause>",
+  "sub_missions": [
+    {
+      "title": "<short title>",
+      "goal": "<concrete goal>",
+      "risk_level": "low|medium|high"
+    }
+  ],
+  "first_sub_mission": "<title of first sub-mission to run>",
+  "human_approval_required": false
+}
+
+No markdown. No explanation. Only the JSON."""
 
 _SYSTEM_PROMPT = """You are an advisory assistant for IGRIS, an autonomous coding agent.
 IGRIS's supervisor is blocked on a repair task and is asking for diagnostic advice.
@@ -159,7 +179,7 @@ Output ONLY the JSON. No markdown, no explanation outside the JSON."""
 # Anthropic call
 # ---------------------------------------------------------------------------
 
-def _call_anthropic(key: str, model: str, max_tokens: int, context: str, timeout: int) -> Tuple[str, float]:
+def _call_anthropic(key: str, model: str, max_tokens: int, context: str, timeout: int, system_prompt: str = _SYSTEM_PROMPT) -> Tuple[str, float]:
     try:
         import anthropic as _anthropic
     except ImportError:
@@ -169,7 +189,7 @@ def _call_anthropic(key: str, model: str, max_tokens: int, context: str, timeout
     msg = client.messages.create(
         model=model,
         max_tokens=max(64, min(max_tokens, 4096)),
-        system=_SYSTEM_PROMPT,
+        system=system_prompt,
         messages=[{"role": "user", "content": context}],
     )
     text = "".join(
@@ -186,7 +206,7 @@ def _call_anthropic(key: str, model: str, max_tokens: int, context: str, timeout
 # OpenAI call
 # ---------------------------------------------------------------------------
 
-def _call_openai(key: str, model: str, max_tokens: int, context: str, timeout: int) -> Tuple[str, float]:
+def _call_openai(key: str, model: str, max_tokens: int, context: str, timeout: int, system_prompt: str = _SYSTEM_PROMPT) -> Tuple[str, float]:
     try:
         import openai as _openai
     except ImportError:
@@ -197,7 +217,7 @@ def _call_openai(key: str, model: str, max_tokens: int, context: str, timeout: i
         model=model,
         max_tokens=max(64, min(max_tokens, 4096)),
         messages=[
-            {"role": "system", "content": _SYSTEM_PROMPT},
+            {"role": "system", "content": system_prompt},
             {"role": "user", "content": context},
         ],
     )
@@ -311,22 +331,34 @@ def main() -> None:
     packet = data.get("packet", {})
     timeout = int(os.environ.get("IGRIS_HELPER_TIMEOUT", "45"))
 
-    # Build context (never include raw secrets)
-    context_parts = [
-        f"failure_class: {packet.get('failure_class', 'unknown')}",
-        f"goal: {_redact(str(packet.get('goal', ''))[:500])}",
-        f"repair_cycles_used: {packet.get('repair_cycles_used', 0)}",
-        f"capability_signals: {packet.get('capability_signals', {})}",
-    ]
-    if packet.get("events"):
-        recent = packet["events"][-5:]
-        context_parts.append(
-            "recent_events: " + json.dumps([
-                {k: _redact(str(v)) for k, v in e.items()
-                 if k in ("phase", "status", "detail")}
-                for e in recent
-            ])
-        )
+    # Detect decomposition task and build appropriate context
+    is_decomposition = packet.get("task") == "decomposition"
+
+    if is_decomposition:
+        context_parts = [
+            f"goal: {_redact(str(packet.get('goal', ''))[:500])}",
+            f"signals: {packet.get('signals', {})}",
+            f"run_id: {packet.get('run_id', '')}",
+        ]
+        system_prompt = _DECOMPOSITION_SYSTEM_PROMPT
+    else:
+        context_parts = [
+            f"failure_class: {packet.get('failure_class', 'unknown')}",
+            f"goal: {_redact(str(packet.get('goal', ''))[:500])}",
+            f"repair_cycles_used: {packet.get('repair_cycles_used', 0)}",
+            f"capability_signals: {packet.get('capability_signals', {})}",
+        ]
+        if packet.get("events"):
+            recent = packet["events"][-5:]
+            context_parts.append(
+                "recent_events: " + json.dumps([
+                    {k: _redact(str(v)) for k, v in e.items()
+                     if k in ("phase", "status", "detail")}
+                    for e in recent
+                ])
+            )
+        system_prompt = _SYSTEM_PROMPT
+
     context = "\n".join(context_parts)
 
     # Resolve API key and provider
@@ -340,11 +372,34 @@ def main() -> None:
     # Call API
     try:
         if provider == "anthropic":
-            raw_response, cost = _call_anthropic(api_key, model, max_tokens, context, timeout)
+            raw_response, cost = _call_anthropic(api_key, model, max_tokens, context, timeout, system_prompt)
         else:
-            raw_response, cost = _call_openai(api_key, model, max_tokens, context, timeout)
+            raw_response, cost = _call_openai(api_key, model, max_tokens, context, timeout, system_prompt)
     except Exception as exc:
         _safe_error(f"API call failed: {_redact(str(exc))}")
+
+    # Handle decomposition response separately
+    if is_decomposition:
+        decomp: Dict[str, Any] = {}
+        try:
+            m = re.search(r"\{.*\}", raw_response, re.DOTALL)
+            if m:
+                decomp = json.loads(m.group())
+        except (json.JSONDecodeError, AttributeError):
+            pass
+        print(json.dumps({
+            "ok": bool(decomp.get("why_too_large") and decomp.get("sub_missions")),
+            "model": model,
+            "why_too_large": _redact(str(decomp.get("why_too_large", ""))),
+            "sub_missions": [
+                {k: _redact(str(v)) if isinstance(v, str) else v for k, v in s.items()}
+                for s in (decomp.get("sub_missions") or [])
+            ],
+            "first_sub_mission": _redact(str(decomp.get("first_sub_mission", ""))),
+            "human_approval_required": bool(decomp.get("human_approval_required", True)),
+            "estimated_cost_usd": cost,
+        }))
+        sys.exit(0)
 
     result = _parse_response(raw_response, model, cost)
     print(json.dumps(result))
