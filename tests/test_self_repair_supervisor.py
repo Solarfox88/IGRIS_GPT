@@ -200,6 +200,9 @@ def _config(**overrides):
         "dry_run": True,
         # Planning disabled by default in tests — the dataclass default is False
         # and planning tests opt in explicitly with enable_mission_planning=True.
+        # Semantic gate disabled by default — most tests use simplified diffs and
+        # test orchestration behavior, not implementation quality.
+        "enable_semantic_gate": False,
     }
     data.update(overrides)
     return RankSupervisorConfig.from_dict(data)
@@ -3001,6 +3004,8 @@ def _staged_config(**overrides):
         "required_smoke_endpoints": ["http://127.0.0.1:7778/api/health"],
         "targeted_tests": ["tests/test_rank_s_dashboard.py"],
         "dry_run": True,
+        # Semantic gate disabled — staged tests exercise orchestration, not implementation quality.
+        "enable_semantic_gate": False,
     }
     data.update(overrides)
     return RankSupervisorConfig.from_dict(data)
@@ -5476,6 +5481,191 @@ def test_decomposition_no_secrets_in_subissue_body():
     assert not subissue_created, (
         "create_issue must NOT be called for sub-missions when decomposition is blocked as unsafe"
     )
+
+
+# ---------------------------------------------------------------------------
+# Semantic acceptance gate integration tests (#365)
+# ---------------------------------------------------------------------------
+
+_STUB_DIFF = """\
+diff --git a/igris/web/server.py b/igris/web/server.py
+--- a/igris/web/server.py
++++ b/igris/web/server.py
+@@ -1,3 +1,10 @@
++    @app.get('/api/diagnostics/session-resume')
++    async def session_resume():
++        # Logic to gather diagnostics data
++        return JSONResponse(content={'zombie_runs': [], 'active_runs': [], 'stale_branches': []})
+"""
+
+_REAL_DIFF = """\
+diff --git a/igris/web/server.py b/igris/web/server.py
+--- a/igris/web/server.py
++++ b/igris/web/server.py
+@@ -1,3 +1,10 @@
++    @app.get('/api/diagnostics/session-resume')
++    async def session_resume():
++        runs = list_supervised_runs()
++        zombie = [r for r in runs if _is_zombie(r)]
++        return JSONResponse(content={'zombie_runs': zombie, 'active_runs': []})
+diff --git a/tests/test_session_resume.py b/tests/test_session_resume.py
+--- /dev/null
++++ b/tests/test_session_resume.py
+@@ -0,0 +1,8 @@
++def test_session_resume():
++    resp = client.get('/api/diagnostics/session-resume')
++    assert resp.status_code == 200
++    assert 'zombie_runs' in resp.json()
+"""
+
+
+def _make_semantic_backend(diff_output: str, targeted_pass: bool = True):
+    """FakeBackend configured so tests pass but diff is controllable."""
+    backend = FakeBackend()
+    backend.reasoning_results = [{
+        "status": "finished",
+        "stop_reason": "finish",
+        "files_modified": ["igris/web/server.py", "tests/test_session_resume.py"],
+        "final_summary": "done",
+        "loop_id": "loop-1",
+    }]
+    backend.diff_stat = CommandResult(True, "igris/web/server.py | 5 +++++")
+    backend.diff = CommandResult(True, diff_output)
+    backend.targeted = CommandResult(targeted_pass, "1 passed" if targeted_pass else "1 failed")
+    backend.full_tests = [CommandResult(True, "ok")] * 5
+    return backend
+
+
+def test_semantic_gate_blocks_stub_endpoint():
+    """Stub endpoint (hardcoded empty arrays) must be classified semantic_incomplete."""
+    backend = _make_semantic_backend(_STUB_DIFF)
+    supervisor = SelfRepairSupervisor("/tmp/project", backend=backend)
+    config = _config(
+        goal="Implement GET /api/diagnostics/session-resume endpoint in server.py",
+        max_repair_cycles=0,
+        dry_run=False,
+        allow_github_pr=False,
+        enable_semantic_gate=True,
+    )
+    run = supervisor.run(config)
+
+    assert run.status == "blocked"
+    assert run.failure_class == "semantic_incomplete"
+    semantic_events = [e for e in run.events if e.phase == "semantic_check"]
+    assert semantic_events, "Expected semantic_check event"
+    assert semantic_events[-1].status == "incomplete"
+    assert "acceptance_evidence" in run.report
+    assert not run.report["acceptance_evidence"]["passed"]
+
+
+def test_semantic_gate_passes_real_implementation():
+    """Real implementation with test coverage must pass the gate and complete."""
+    backend = _make_semantic_backend(_REAL_DIFF)
+    supervisor = SelfRepairSupervisor("/tmp/project", backend=backend)
+    config = _config(
+        goal="Implement GET /api/diagnostics/session-resume endpoint in server.py",
+        max_repair_cycles=0,
+        dry_run=True,
+        allow_github_pr=False,
+        enable_semantic_gate=True,
+    )
+    run = supervisor.run(config)
+
+    assert run.status == "completed"
+    semantic_events = [e for e in run.events if e.phase == "semantic_check"]
+    assert semantic_events, "Expected semantic_check event"
+    assert semantic_events[-1].status == "passed"
+    assert run.report.get("acceptance_evidence", {}).get("passed") is True
+
+
+def test_semantic_gate_triggers_repair_when_cycles_available():
+    """semantic_incomplete is repairable: first attempt stubs, second delivers real code."""
+    stub_result = {
+        "status": "finished",
+        "stop_reason": "finish",
+        "files_modified": ["igris/web/server.py"],
+        "final_summary": "stub",
+    }
+    real_result = {
+        "status": "finished",
+        "stop_reason": "finish",
+        "files_modified": ["igris/web/server.py", "tests/test_session_resume.py"],
+        "final_summary": "real impl",
+    }
+    # [0] attempt-1 main reasoning → stub (gate blocks)
+    # [1] repair-cycle reasoning (consumed by _repair_cycle internals)
+    # [2] attempt-2 main reasoning → real impl with test file in modified_files
+    attempt2_result = {
+        "status": "finished",
+        "stop_reason": "finish",
+        "files_modified": ["igris/web/server.py", "tests/test_session_resume.py"],
+        "final_summary": "real impl attempt 2",
+    }
+    backend = FakeBackend()
+    backend.reasoning_results = [stub_result, real_result, attempt2_result]
+    backend.diff_stat = CommandResult(True, "igris/web/server.py | 5 +++++")
+    # diff_sequence: [0]=stub (attempt-1 gate), [1]=real (repair cycle validation)
+    # attempt-2 gate uses backend.diff fallback below
+    backend.diff_sequence = [
+        CommandResult(True, _STUB_DIFF),
+        CommandResult(True, _REAL_DIFF),
+    ]
+    backend.diff = CommandResult(True, _REAL_DIFF)
+    backend.full_tests = [CommandResult(True, "ok")] * 10
+
+    supervisor = SelfRepairSupervisor("/tmp/project", backend=backend)
+    config = _config(
+        goal="Implement GET /api/diagnostics/session-resume endpoint in server.py",
+        max_repair_cycles=1,
+        dry_run=True,
+        allow_github_pr=False,
+        enable_semantic_gate=True,
+    )
+    run = supervisor.run(config)
+
+    assert run.status == "completed"
+    incomplete_events = [e for e in run.events if e.phase == "semantic_check" and e.status == "incomplete"]
+    assert incomplete_events, "Expected at least one semantic_check/incomplete event during repair"
+
+
+def test_semantic_gate_report_has_evidence_fields():
+    """run.report must contain acceptance_evidence with found/missing/endpoints."""
+    backend = _make_semantic_backend(_STUB_DIFF)
+    supervisor = SelfRepairSupervisor("/tmp/project", backend=backend)
+    config = _config(
+        goal="Implement GET /api/diagnostics/session-resume endpoint in server.py",
+        max_repair_cycles=0,
+        dry_run=False,
+        allow_github_pr=False,
+        enable_semantic_gate=True,
+    )
+    run = supervisor.run(config)
+
+    ev = run.report.get("acceptance_evidence", {})
+    assert "passed" in ev
+    assert "found_evidence" in ev
+    assert "missing_evidence" in ev
+    assert "required_endpoints" in ev
+    assert "/api/diagnostics/session-resume" in ev["required_endpoints"]
+
+
+def test_semantic_gate_not_triggered_for_generic_goal():
+    """Generic goals with no endpoint spec must pass the gate without intervention."""
+    backend = _make_semantic_backend("+ x = 1 + 2\n+ y = x * 3")
+    supervisor = SelfRepairSupervisor("/tmp/project", backend=backend)
+    config = _config(
+        goal="Fix arithmetic bug in calculation module",
+        max_repair_cycles=0,
+        dry_run=True,
+        allow_github_pr=False,
+        enable_semantic_gate=True,
+    )
+    run = supervisor.run(config)
+
+    assert run.status == "completed"
+    semantic_events = [e for e in run.events if e.phase == "semantic_check"]
+    assert semantic_events
+    assert semantic_events[-1].status == "passed"
 
 
 # ---------------------------------------------------------------------------

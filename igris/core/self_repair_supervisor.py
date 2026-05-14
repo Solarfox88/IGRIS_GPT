@@ -25,6 +25,7 @@ from typing import Any, Dict, List, Optional, Protocol, Set, Tuple
 
 from igris.core.safety import redact_secrets
 from igris.core.failure_memory import FailureMemory, FailureRisk
+from igris.core.acceptance_gate import check_acceptance_evidence
 
 
 REPAIRABLE_FAILURES = {
@@ -38,6 +39,7 @@ REPAIRABLE_FAILURES = {
     "infrastructure_bug",
     "invalid_bootstrap",
     "syntax_error",
+    "semantic_incomplete",
 }
 
 # Signals that accumulate across repair cycles to indicate model capability limits.
@@ -181,6 +183,7 @@ class RankSupervisorConfig:
     api_helper_model: str = "gpt-5.4-mini"
     enable_mission_planning: bool = False
     allow_auto_subissues: bool = False
+    enable_semantic_gate: bool = True
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "RankSupervisorConfig":
@@ -209,6 +212,7 @@ class RankSupervisorConfig:
             api_helper_model=str(data.get("api_helper_model", "gpt-5.4-mini")),
             enable_mission_planning=bool(data.get("enable_mission_planning", False)),
             allow_auto_subissues=bool(data.get("allow_auto_subissues", False)),
+            enable_semantic_gate=bool(data.get("enable_semantic_gate", True)),
         )
 
 
@@ -296,6 +300,8 @@ class SupervisorRun:
     mission_scope: Optional[Dict[str, Any]] = None
     # Goal string copied from config so it's available in terminal callbacks.
     goal: str = ""
+    # Semantic acceptance gate result (set by the gate, survives report overwrites).
+    acceptance_evidence: Optional[Dict[str, Any]] = None
 
     def add(self, phase: str, status: str, detail: str = "", **data: Any) -> None:
         event = SupervisorEvent(phase=phase, status=status, detail=detail, data=data)
@@ -2823,15 +2829,53 @@ class SelfRepairSupervisor:
                             "verified_diff_completion",
                             "Completed by validated diff despite non-clean reasoning stop.",
                         )
-                return self._complete_rank(
-                    run,
-                    config,
-                    branch,
-                    completion_mode=completion_mode,
-                    runtime_refresh_required=runtime_refresh_required,
-                    mission_plan=mission_plan,
-                    stage_statuses=stage_statuses,
-                )
+
+                # --- Semantic acceptance gate ---
+                # Verify the diff is a genuine implementation, not a stub.
+                if config.enable_semantic_gate:
+                    acceptance = check_acceptance_evidence(
+                        config.goal,
+                        diff.output,
+                        modified_files,
+                    )
+                    # Store on the run object so it survives any subsequent run.report overwrites.
+                    run.acceptance_evidence = {
+                        "passed": acceptance.passed,
+                        "found_evidence": acceptance.found_evidence,
+                        "missing_evidence": acceptance.missing_evidence,
+                        "required_endpoints": acceptance.required_endpoints,
+                    }
+                    if not acceptance.passed:
+                        run.add(
+                            "semantic_check",
+                            "incomplete",
+                            "Mission acceptance gate failed: implementation appears to be a stub. "
+                            + "; ".join(acceptance.missing_evidence),
+                            missing_evidence=acceptance.missing_evidence,
+                            found_evidence=acceptance.found_evidence,
+                            required_endpoints=acceptance.required_endpoints,
+                        )
+                        failure = "semantic_incomplete"
+                        rank_passed = False
+                    else:
+                        run.add(
+                            "semantic_check",
+                            "passed",
+                            "Mission acceptance gate passed.",
+                            found_evidence=acceptance.found_evidence,
+                            required_endpoints=acceptance.required_endpoints,
+                        )
+
+                if rank_passed:
+                    return self._complete_rank(
+                        run,
+                        config,
+                        branch,
+                        completion_mode=completion_mode,
+                        runtime_refresh_required=runtime_refresh_required,
+                        mission_plan=mission_plan,
+                        stage_statuses=stage_statuses,
+                    )
 
             run.failure_class = failure
             run.add("failure", "classified", failure)
@@ -3738,6 +3782,8 @@ class SelfRepairSupervisor:
                                 "post_merge_smoke": False,
                                 "runtime_refresh_required": runtime_refresh_required,
                             }
+                            if run.acceptance_evidence is not None:
+                                run.report["acceptance_evidence"] = run.acceptance_evidence
                             run.report.update(self._api_escalation_report_fragment(run))
                             run.report.update(self._stage_report_fragment(mission_plan, stage_statuses))
                             run.touch()
@@ -3814,6 +3860,8 @@ class SelfRepairSupervisor:
             "post_merge_smoke": post_smoke_success,
             "runtime_refresh_required": runtime_refresh_required,
         }
+        if run.acceptance_evidence is not None:
+            run.report["acceptance_evidence"] = run.acceptance_evidence
         run.report.update(self._api_escalation_report_fragment(run))
         run.report.update(self._stage_report_fragment(mission_plan, stage_statuses))
         run.touch()
@@ -4655,6 +4703,8 @@ class SelfRepairSupervisor:
         if stage_statuses and "final_report" in stage_statuses:
             self._set_stage_status(run, stage_statuses, "final_report", "failure", f"Run blocked: {failure}.")
         run.report = {"autonomous": False, "blocked_reason": detail}
+        if run.acceptance_evidence is not None:
+            run.report["acceptance_evidence"] = run.acceptance_evidence
         run.report.update(self._api_escalation_report_fragment(run))
         run.report.update(self._stage_report_fragment(mission_plan, stage_statuses))
         run.touch()
