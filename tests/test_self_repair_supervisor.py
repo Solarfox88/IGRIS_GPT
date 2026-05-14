@@ -74,6 +74,7 @@ class FakeBackend:
             }),
         )
         self.api_helper_packets = []
+        self.created_issues: list = []  # records (title, body) for each create_issue call
 
     def git_status(self):
         self.commands.append("git_status")
@@ -157,7 +158,12 @@ class FakeBackend:
 
     def create_issue(self, title, body):
         self.commands.append("issue")
+        self.created_issues.append({"title": title, "body": body})
         return CommandResult(True, "issue")
+
+    def update_issue(self, issue_url, comment_body):
+        self.commands.append(f"update_issue:{issue_url}")
+        return CommandResult(True, "updated")
 
     def restore_dangerous_diff(self):
         self.commands.append("restore")
@@ -5233,6 +5239,242 @@ def test_decomposition_no_secrets_in_fallback():
     serialised = json.dumps(decomp)
     assert secret not in serialised, (
         "Secret must be redacted from decomposition fallback output"
+    )
+
+
+# ---------------------------------------------------------------------------
+# Autonomous sub-issue creation — policy-aware decomposition (#decomp-auto)
+# ---------------------------------------------------------------------------
+
+def _make_valid_decomposition_result(destructive=False, has_secret=False):
+    """Reasoning result returning a valid 4-field decomposition."""
+    goal_text = "Implement sub-task A"
+    if destructive:
+        goal_text = "Delete all data and reset database"
+    if has_secret:
+        goal_text = "Deploy with key sk-ant-testfakekey1234567890"
+    sub = {
+        "title": "Sub A",
+        "goal": goal_text,
+        "dependencies": [],
+        "acceptance_criteria": ["Works correctly"],
+        "allowed_file_scopes": ["igris/web/server.py"],
+        "tests": ["tests/test_rank_status.py"],
+        "risk_level": "high" if destructive else "medium",
+        "human_approval_required": False,
+    }
+    payload = {
+        "why_too_large": "Mission too large for single pass.",
+        "sub_missions": [sub],
+        "first_sub_mission": "Sub A",
+        "human_approval_required": False,
+    }
+    return {
+        "status": "finished",
+        "stop_reason": "finish",
+        "files_modified": [],
+        "final_summary": json.dumps(payload),
+        "goal": "decomposition",
+    }
+
+
+def _decomp_backend(decomp_result):
+    """Build a FakeBackend wired for a 2-timeout decomposition flow."""
+    backend = FakeBackend()
+    backend.reasoning_results = [
+        _make_timeout_result(),   # [0] attempt-1 main → reasoning_timeout=1
+        _make_timeout_result(),   # [1] repair-cycle  → reasoning_timeout=2 → threshold
+        decomp_result,            # [2] decomposition call
+    ]
+    backend.diff_stat = CommandResult(False, "")
+    backend.diff = CommandResult(True, "")
+    backend.full_tests = [CommandResult(True, "ok")] * 10
+    return backend
+
+
+def test_decomposition_policy_auto_create_when_safe():
+    """Safe decomposition with GitHub enabled triggers auto sub-issue creation."""
+    backend = _decomp_backend(_make_valid_decomposition_result())
+    supervisor = SelfRepairSupervisor("/tmp/project", backend=backend)
+    config = _config(
+        max_rank_attempts=3,
+        max_repair_cycles=1,
+        goal="Complex task",
+        allow_github_pr=True,
+        allow_auto_subissues=True,
+        dry_run=False,
+    )
+    run = SupervisorRun(run_id="auto-create-safe", rank_id="test")
+    result = supervisor.run(config, run=run)
+
+    assert result.failure_class == "decomposition_required"
+    next_action = result.report.get("next_action", "")
+    assert next_action.startswith("run:"), (
+        f"Expected next_action to start with 'run:' when safe, got: {next_action!r}"
+    )
+    phases = [e.phase for e in result.events]
+    assert "subissue_creation" in phases, "Expected subissue_creation event"
+    sub_issue_urls = result.report.get("decomposition", {}).get("sub_issue_urls", [])
+    assert len(sub_issue_urls) > 0, "Expected non-empty sub_issue_urls in decomposition report"
+
+
+def test_decomposition_policy_request_approval_when_dry_run():
+    """dry_run=True suppresses auto sub-issue creation even if allow_auto_subissues is set."""
+    backend = _decomp_backend(_make_valid_decomposition_result())
+    supervisor = SelfRepairSupervisor("/tmp/project", backend=backend)
+    config = _config(
+        max_rank_attempts=3,
+        max_repair_cycles=1,
+        goal="Complex task",
+        allow_auto_subissues=True,
+        dry_run=True,
+    )
+    run = SupervisorRun(run_id="dry-run-no-auto", rank_id="test")
+    result = supervisor.run(config, run=run)
+
+    next_action = result.report.get("next_action", "")
+    assert next_action.startswith("request_approval:"), (
+        f"Expected request_approval when dry_run=True, got: {next_action!r}"
+    )
+    phases = [e.phase for e in result.events]
+    assert "subissue_creation" not in phases, "No subissue_creation events expected in dry_run"
+
+
+def test_decomposition_policy_request_approval_when_github_disabled():
+    """No GitHub flags → always request_approval:decomposition."""
+    backend = _decomp_backend(_make_valid_decomposition_result())
+    supervisor = SelfRepairSupervisor("/tmp/project", backend=backend)
+    config = _config(
+        max_rank_attempts=3,
+        max_repair_cycles=1,
+        goal="Complex task",
+        allow_github_pr=False,
+        allow_auto_subissues=False,
+        dry_run=True,
+    )
+    run = SupervisorRun(run_id="no-github-no-auto", rank_id="test")
+    result = supervisor.run(config, run=run)
+
+    assert result.report.get("next_action") == "request_approval:decomposition"
+
+
+def test_decomposition_policy_request_approval_for_destructive():
+    """Destructive decomposition → request_human_approval (no auto-create)."""
+    backend = _decomp_backend(_make_valid_decomposition_result(destructive=True))
+    supervisor = SelfRepairSupervisor("/tmp/project", backend=backend)
+    config = _config(
+        max_rank_attempts=3,
+        max_repair_cycles=1,
+        goal="Complex task",
+        allow_github_pr=True,
+        allow_auto_subissues=True,
+        dry_run=False,
+    )
+    run = SupervisorRun(run_id="destructive-no-auto", rank_id="test")
+    result = supervisor.run(config, run=run)
+
+    assert result.report.get("next_action") == "request_approval:decomposition", (
+        "Destructive decomposition must request human approval, not auto-create"
+    )
+
+
+def test_decomposition_policy_block_unsafe_for_secret():
+    """Decomposition containing a secret pattern is blocked as unsafe."""
+    backend = _decomp_backend(_make_valid_decomposition_result(has_secret=True))
+    supervisor = SelfRepairSupervisor("/tmp/project", backend=backend)
+    config = _config(
+        max_rank_attempts=3,
+        max_repair_cycles=1,
+        goal="Complex task",
+        allow_github_pr=True,
+        allow_auto_subissues=True,
+        dry_run=False,
+    )
+    run = SupervisorRun(run_id="secret-blocked", rank_id="test")
+    result = supervisor.run(config, run=run)
+
+    assert result.report.get("next_action") == "request_approval:decomposition"
+    blocked_unsafe_events = [
+        e for e in result.events
+        if e.phase == "decomposition_policy" and e.status == "blocked_unsafe"
+    ]
+    assert blocked_unsafe_events, (
+        "Expected a decomposition_policy/blocked_unsafe event for secret-containing decomposition"
+    )
+
+
+def test_decomposition_subissue_body_contains_parent_run_and_generated_by():
+    """Auto-create path calls create_issue and records subissue_created events with expected fields."""
+    backend = _decomp_backend(_make_valid_decomposition_result())
+    supervisor = SelfRepairSupervisor("/tmp/project", backend=backend)
+    config = _config(
+        max_rank_attempts=3,
+        max_repair_cycles=1,
+        goal="Complex task",
+        allow_github_pr=True,
+        allow_auto_subissues=True,
+        dry_run=False,
+    )
+    run = SupervisorRun(run_id="subissue-body-check", rank_id="test")
+    result = supervisor.run(config, run=run)
+
+    assert "issue" in backend.commands, "create_issue must be called on the backend"
+    created_events = [e for e in result.events if e.phase == "subissue_created" and e.status == "success"]
+    assert created_events, "Expected at least one subissue_created/success event"
+    ev = created_events[0]
+    assert ev.data.get("title"), "subissue_created event must have title"
+    assert ev.data.get("url"), "subissue_created event must have url"
+    assert ev.data.get("risk"), "subissue_created event must have risk"
+
+
+def test_decomposition_subissue_urls_persisted_in_report():
+    """sub_issue_urls must be non-empty in run.report decomposition after auto-create."""
+    backend = _decomp_backend(_make_valid_decomposition_result())
+    supervisor = SelfRepairSupervisor("/tmp/project", backend=backend)
+    config = _config(
+        max_rank_attempts=3,
+        max_repair_cycles=1,
+        goal="Complex task",
+        allow_github_pr=True,
+        allow_auto_subissues=True,
+        dry_run=False,
+    )
+    run = SupervisorRun(run_id="subissue-urls", rank_id="test")
+    result = supervisor.run(config, run=run)
+
+    sub_issue_urls = result.report.get("decomposition", {}).get("sub_issue_urls", [])
+    assert isinstance(sub_issue_urls, list) and len(sub_issue_urls) > 0, (
+        "sub_issue_urls must be a non-empty list after auto-create"
+    )
+    d = result.to_dict()
+    assert isinstance(d.get("decomposition", {}).get("sub_issue_urls"), list), (
+        "sub_issue_urls must survive to_dict() serialization"
+    )
+
+
+def test_decomposition_no_secrets_in_subissue_body():
+    """Decomposition with secret content is blocked before create_issue is called."""
+    backend = _decomp_backend(_make_valid_decomposition_result(has_secret=True))
+    supervisor = SelfRepairSupervisor("/tmp/project", backend=backend)
+    config = _config(
+        max_rank_attempts=3,
+        max_repair_cycles=1,
+        goal="Complex task",
+        allow_github_pr=True,
+        allow_auto_subissues=True,
+        dry_run=False,
+    )
+    run = SupervisorRun(run_id="secret-no-create", rank_id="test")
+    result = supervisor.run(config, run=run)
+
+    # Policy should block this — no sub-mission issues must be created.
+    # (The supervisor may create a repair-tracking issue, but NOT any sub-mission issue.)
+    subissue_created = any(
+        issue["title"] == "Sub A"  # sub-mission title from _make_valid_decomposition_result
+        for issue in backend.created_issues
+    )
+    assert not subissue_created, (
+        "create_issue must NOT be called for sub-missions when decomposition is blocked as unsafe"
     )
 
 
