@@ -98,7 +98,8 @@ def check_command_allowed(command_id: str) -> bool:
 # ---------------------------------------------------------------------------
 
 _SECRET_PATTERNS = [
-    # OpenAI keys
+    # OpenAI / Anthropic keys (sk-..., sk-ant-..., multi-segment)
+    re.compile(r"sk-[A-Za-z0-9_\-]{3,}[A-Za-z0-9]{10,}", re.ASCII),
     re.compile(r"sk-[A-Za-z0-9]{20,}"),
     # GitHub tokens
     re.compile(r"gh[pos]_[A-Za-z0-9]{10,}"),

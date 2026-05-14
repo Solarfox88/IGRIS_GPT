@@ -5004,6 +5004,239 @@ def test_non_repeated_failure_does_not_trigger_decomposition():
 
 
 # ---------------------------------------------------------------------------
+# Decomposition fallback chain tests
+# ---------------------------------------------------------------------------
+
+def test_decomposition_local_retry_short_prompt_succeeds():
+    """When the local short-prompt reasoning returns valid 4-field JSON,
+    generated_by must be 'local_reasoning' and all required fields present."""
+    backend = FakeBackend()
+    backend.reasoning_results = [
+        _make_timeout_result(),              # [0] main → reasoning_timeout=1
+        _make_timeout_result(),              # [1] repair  → reasoning_timeout=2 → threshold
+        _decomposition_reasoning_result(),   # [2] short-prompt decomp → valid JSON
+    ]
+    backend.diff_stat = CommandResult(False, "")
+    backend.diff = CommandResult(True, "")
+    backend.full_tests = [CommandResult(True, "ok")] * 10
+
+    supervisor = SelfRepairSupervisor("/tmp/project", backend=backend)
+    config = _config(
+        max_rank_attempts=3,
+        max_repair_cycles=1,
+        goal="Complex multi-file task requiring decomposition",
+    )
+    run = SupervisorRun(run_id="decomp-local", rank_id="test")
+    result = supervisor.run(config, run=run)
+
+    assert result.failure_class == "decomposition_required"
+    decomp = result.decomposition
+    assert decomp is not None
+    assert decomp.get("generated_by") == "local_reasoning", (
+        f"Expected generated_by='local_reasoning', got {decomp.get('generated_by')!r}"
+    )
+    for field in DECOMPOSITION_REQUIRED_FIELDS:
+        assert field in decomp, f"Required field '{field}' missing from decomposition"
+
+
+def _make_max_steps_result():
+    """Reasoning result that hits max_steps with no valid JSON in summary."""
+    return {
+        "status": "stopped",
+        "stop_reason": "max_steps",
+        "files_modified": [],
+        "final_summary": "Steps exhausted without producing output.",
+    }
+
+
+def test_decomposition_falls_back_to_api_helper_when_local_fails():
+    """When local decomposition yields no valid JSON, API helper is tried.
+    generated_by must be 'api_helper' when helper returns valid decomposition."""
+    backend = FakeBackend()
+    backend._api_helper_configured = True
+    backend.api_helper_result = CommandResult(
+        True,
+        json.dumps({
+            "ok": True,
+            "why_too_large": "Mission too broad for single pass.",
+            "sub_missions": [
+                {"title": "Sub A", "goal": "Do A", "risk_level": "low"}
+            ],
+            "first_sub_mission": "Sub A",
+            "human_approval_required": False,
+        }),
+    )
+    backend.reasoning_results = [
+        _make_timeout_result(),      # [0] main → reasoning_timeout=1
+        _make_timeout_result(),      # [1] repair → reasoning_timeout=2 → threshold
+        _make_max_steps_result(),    # [2] local decomp → no valid JSON
+    ]
+    backend.diff_stat = CommandResult(False, "")
+    backend.diff = CommandResult(True, "")
+    backend.full_tests = [CommandResult(True, "ok")] * 10
+
+    supervisor = SelfRepairSupervisor("/tmp/project", backend=backend)
+    config = _config(
+        max_rank_attempts=3,
+        max_repair_cycles=1,
+        goal="Large task requiring api helper decomposition",
+        allow_api_escalation=True,
+        max_api_escalations_per_run=2,
+    )
+    run = SupervisorRun(run_id="decomp-api", rank_id="test")
+    result = supervisor.run(config, run=run)
+
+    assert result.failure_class == "decomposition_required"
+    decomp = result.decomposition
+    assert decomp is not None
+    assert decomp.get("generated_by") == "api_helper", (
+        f"Expected generated_by='api_helper', got {decomp.get('generated_by')!r}"
+    )
+    for field in DECOMPOSITION_REQUIRED_FIELDS:
+        assert field in decomp, f"Required field '{field}' missing from decomposition"
+
+
+def test_decomposition_falls_back_to_deterministic_when_helper_unavailable():
+    """When local fails and API helper is not configured, deterministic fallback fires.
+    generated_by must be 'deterministic_fallback' and all required fields present."""
+    backend = FakeBackend()
+    backend._api_helper_configured = False
+    backend.reasoning_results = [
+        _make_timeout_result(),      # [0] main
+        _make_timeout_result(),      # [1] repair → threshold
+        _make_max_steps_result(),    # [2] local decomp → no valid JSON
+    ]
+    backend.diff_stat = CommandResult(False, "")
+    backend.diff = CommandResult(True, "")
+    backend.full_tests = [CommandResult(True, "ok")] * 10
+
+    supervisor = SelfRepairSupervisor("/tmp/project", backend=backend)
+    config = _config(
+        max_rank_attempts=3,
+        max_repair_cycles=1,
+        goal="Implement auth endpoint, add tests, update dashboard badge",
+    )
+    run = SupervisorRun(run_id="decomp-det-nohelper", rank_id="test")
+    result = supervisor.run(config, run=run)
+
+    assert result.failure_class == "decomposition_required"
+    decomp = result.decomposition
+    assert decomp is not None
+    assert decomp.get("generated_by") == "deterministic_fallback", (
+        f"Expected 'deterministic_fallback', got {decomp.get('generated_by')!r}"
+    )
+    for field in DECOMPOSITION_REQUIRED_FIELDS:
+        assert field in decomp, f"Required field '{field}' missing from decomposition"
+    assert isinstance(decomp.get("sub_missions"), list)
+    assert len(decomp["sub_missions"]) >= 1
+
+
+def test_decomposition_falls_back_to_deterministic_when_helper_fails():
+    """When local fails and API helper returns a failure, deterministic fallback fires."""
+    backend = FakeBackend()
+    backend._api_helper_configured = True
+    backend.api_helper_result = CommandResult(False, "", "network error", 1)
+    backend.reasoning_results = [
+        _make_timeout_result(),      # [0] main
+        _make_timeout_result(),      # [1] repair → threshold
+        _make_max_steps_result(),    # [2] local decomp → no valid JSON
+    ]
+    backend.diff_stat = CommandResult(False, "")
+    backend.diff = CommandResult(True, "")
+    backend.full_tests = [CommandResult(True, "ok")] * 10
+
+    supervisor = SelfRepairSupervisor("/tmp/project", backend=backend)
+    config = _config(
+        max_rank_attempts=3,
+        max_repair_cycles=1,
+        goal="Refactor supervisor and add endpoint",
+        allow_api_escalation=True,
+        max_api_escalations_per_run=2,
+    )
+    run = SupervisorRun(run_id="decomp-det-helperfail", rank_id="test")
+    result = supervisor.run(config, run=run)
+
+    assert result.failure_class == "decomposition_required"
+    decomp = result.decomposition
+    assert decomp is not None
+    assert decomp.get("generated_by") == "deterministic_fallback", (
+        f"Expected 'deterministic_fallback', got {decomp.get('generated_by')!r}"
+    )
+    for field in DECOMPOSITION_REQUIRED_FIELDS:
+        assert field in decomp, f"Required field '{field}' missing from decomposition"
+
+
+def test_decomposition_persisted_with_generated_by():
+    """run.to_dict() and run.report must include generated_by and next_action."""
+    backend = FakeBackend()
+    backend._api_helper_configured = False
+    backend.reasoning_results = [
+        _make_timeout_result(),
+        _make_timeout_result(),
+        _make_max_steps_result(),    # triggers deterministic fallback
+    ]
+    backend.diff_stat = CommandResult(False, "")
+    backend.diff = CommandResult(True, "")
+    backend.full_tests = [CommandResult(True, "ok")] * 10
+
+    supervisor = SelfRepairSupervisor("/tmp/project", backend=backend)
+    config = _config(
+        max_rank_attempts=3,
+        max_repair_cycles=1,
+        goal="Persist decomposition with generated_by",
+    )
+    run = SupervisorRun(run_id="decomp-persist", rank_id="test")
+    result = supervisor.run(config, run=run)
+
+    assert result.failure_class == "decomposition_required"
+    d = result.to_dict()
+    assert "decomposition" in d, "to_dict() must include decomposition"
+    assert d["decomposition"] is not None
+    assert d["decomposition"].get("generated_by") in {
+        "local_reasoning", "api_helper", "deterministic_fallback"
+    }, f"Unexpected generated_by: {d['decomposition'].get('generated_by')!r}"
+
+    next_action = result.report.get("next_action", "")
+    assert next_action.startswith("request_approval:") or next_action.startswith("run:"), (
+        f"next_action must start with 'request_approval:' or 'run:', got {next_action!r}"
+    )
+
+
+def test_decomposition_no_secrets_in_fallback():
+    """Secrets in the goal must be redacted in the deterministic fallback decomposition."""
+    backend = FakeBackend()
+    backend._api_helper_configured = False
+    backend.reasoning_results = [
+        _make_timeout_result(),
+        _make_timeout_result(),
+        _make_max_steps_result(),
+    ]
+    backend.diff_stat = CommandResult(False, "")
+    backend.diff = CommandResult(True, "")
+    backend.full_tests = [CommandResult(True, "ok")] * 10
+
+    supervisor = SelfRepairSupervisor("/tmp/project", backend=backend)
+    secret = "sk-ant-fake123abcdefghijklmno"
+    config = _config(
+        max_rank_attempts=3,
+        max_repair_cycles=1,
+        goal=f"implement {secret} endpoint and add tests",
+    )
+    run = SupervisorRun(run_id="decomp-nosecret", rank_id="test")
+    result = supervisor.run(config, run=run)
+
+    assert result.failure_class == "decomposition_required"
+    decomp = result.decomposition
+    assert decomp is not None
+
+    # Serialise everything and check secret is absent
+    serialised = json.dumps(decomp)
+    assert secret not in serialised, (
+        "Secret must be redacted from decomposition fallback output"
+    )
+
+
+# ---------------------------------------------------------------------------
 # Ghost / zombie run detection — service restart stale-active fix (#332)
 # ---------------------------------------------------------------------------
 

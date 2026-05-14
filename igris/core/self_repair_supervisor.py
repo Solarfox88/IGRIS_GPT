@@ -4092,39 +4092,28 @@ class SelfRepairSupervisor:
 
         return scope
 
+    # Short prompt template for the local decomposition attempt (max_steps=15).
+    _DECOMP_SHORT_PROMPT = (
+        "DECOMPOSE — no code, output JSON only.\n"
+        "Mission: '{goal}'\n"
+        "Signals: {signals}\n\n"
+        "Output ONLY:\n"
+        '{{"why_too_large":"<reason>","sub_missions":[{{"title":"<t>","goal":"<g>","risk_level":"low"}}],"first_sub_mission":"<t>","human_approval_required":false}}'
+    )
+
     def _ask_igris_decompose(
         self, run: SupervisorRun, config: RankSupervisorConfig
     ) -> Dict[str, Any]:
         """Ask IGRIS to decompose a too-large mission into sub-missions.
 
-        The reasoning call receives the original goal, the failure signals, and
-        explicit instructions to produce a structured JSON decomposition — NOT
-        to implement anything.  We parse whatever JSON IGRIS returns and
-        validate the required fields, storing the raw output as a fallback.
+        Uses a fallback chain:
+          1. Local reasoning short-prompt (max_steps=15)
+          2. API helper (if configured and budget allows)
+          3. Deterministic fallback (always succeeds)
         """
         signals = dict(run.capability_signals)
-        decomp_goal = (
-            "MISSION DECOMPOSITION TASK — do not implement any code.\n\n"
-            f"The original mission could not be completed: '{config.goal}'.\n"
-            f"Capability limit signals observed: {signals}.\n\n"
-            "Analyse why the mission exceeded the model's capability in a single "
-            "reasoning pass and produce a structured JSON decomposition.\n\n"
-            "Output ONLY a single JSON object with these exact fields:\n"
-            "  why_too_large       — string: root cause analysis\n"
-            "  sub_missions        — array of objects, each with:\n"
-            "      title                    string\n"
-            "      goal                     string\n"
-            "      dependencies             array of titles (may be empty)\n"
-            "      acceptance_criteria      array of strings\n"
-            "      allowed_file_scopes      array of glob patterns\n"
-            "      tests                    array of pytest targets\n"
-            "      risk_level               'low' | 'medium' | 'high'\n"
-            "      human_approval_required  bool\n"
-            "  first_sub_mission   — string: title of first sub-mission to run\n"
-            "  human_approval_required — bool: whether operator review is needed "
-            "before starting\n\n"
-            "Do not write any Python, shell, or patch.  Only the JSON."
-        )
+
+        # --- emit decomposition_request event (same as before) ---
         context = self._rank_initial_context(config)
         context.update({
             "decomposition_required": True,
@@ -4139,9 +4128,15 @@ class SelfRepairSupervisor:
             capability_signals=signals,
             original_goal=_safe_redact(config.goal),
         )
+
+        # --- 1. Local short-prompt attempt ---
+        short_prompt = self._DECOMP_SHORT_PROMPT.format(
+            goal=_safe_redact(config.goal),
+            signals=signals,
+        )
         result = self.backend.run_reasoning(
-            decomp_goal,
-            max_steps=40,
+            short_prompt,
+            max_steps=15,
             initial_context=context,
             timeout=config.reasoning_timeout_seconds,
         )
@@ -4154,22 +4149,222 @@ class SelfRepairSupervisor:
             if json_match:
                 decomposition = json.loads(json_match.group())
         except (json.JSONDecodeError, AttributeError):
-            decomposition = {"raw_output": raw}
+            decomposition = {}
+
+        fields_missing = [f for f in DECOMPOSITION_REQUIRED_FIELDS if f not in decomposition]
+
+        if not fields_missing:
+            # Local reasoning succeeded
+            decomposition["generated_by"] = "local_reasoning"
+        else:
+            # --- 2. API helper attempt ---
+            api_result = self._api_helper_decompose(run, config, signals)
+            if api_result is not None:
+                decomposition = api_result
+                fields_missing = [f for f in DECOMPOSITION_REQUIRED_FIELDS if f not in decomposition]
+            else:
+                # --- 3. Deterministic fallback ---
+                decomposition = self._deterministic_decompose_fallback(config.goal, signals)
+                fields_missing = []
 
         fields_present = [f for f in DECOMPOSITION_REQUIRED_FIELDS if f in decomposition]
-        fields_missing = [f for f in DECOMPOSITION_REQUIRED_FIELDS if f not in decomposition]
+        fields_missing_final = [f for f in DECOMPOSITION_REQUIRED_FIELDS if f not in decomposition]
         decomposition["_fields_present"] = fields_present
-        decomposition["_fields_missing"] = fields_missing
+        decomposition["_fields_missing"] = fields_missing_final
         decomposition["_capability_signals"] = signals
+
         run.add(
             "decomposition_response",
-            "success" if not fields_missing else "partial",
-            f"IGRIS decomposition generated. present={fields_present} missing={fields_missing}",
+            "success" if not fields_missing_final else "fallback",
+            (
+                f"IGRIS decomposition generated via {decomposition.get('generated_by','unknown')}. "
+                f"present={fields_present} missing={fields_missing_final}"
+            ),
             fields_present=fields_present,
-            fields_missing=fields_missing,
+            fields_missing=fields_missing_final,
+            generated_by=decomposition.get("generated_by", "unknown"),
         )
         run.decomposition = decomposition
         return decomposition
+
+    def _api_helper_decompose(
+        self,
+        run: "SupervisorRun",
+        config: "RankSupervisorConfig",
+        signals: Dict[str, int],
+    ) -> Optional[Dict[str, Any]]:
+        """Try to obtain a decomposition from the API helper.
+
+        Returns a decomposition dict with generated_by='api_helper' on success,
+        or None if the helper is not available, budget is exhausted, or the
+        response is invalid.
+        """
+        # Budget check
+        if run.api_escalations_used >= config.max_api_escalations_per_run:
+            return None
+
+        if not self.backend.api_helper_is_configured():
+            run.add(
+                "decomposition_api",
+                "not_configured",
+                "API helper not configured; skipping decomposition escalation.",
+            )
+            return None
+
+        packet: Dict[str, Any] = {
+            "task": "decomposition",
+            "goal": _safe_redact(config.goal),
+            "signals": signals,
+            "run_id": run.run_id,
+        }
+        run.add(
+            "decomposition_api_request",
+            "running",
+            "Calling API helper for decomposition.",
+        )
+        api_result = self.backend.call_api_helper(
+            packet,
+            model=config.api_helper_model,
+            max_tokens=512,
+            timeout=45,
+        )
+        run.api_escalations_used += 1
+
+        if not api_result.success:
+            run.add(
+                "decomposition_api_response",
+                "failure",
+                f"API helper decomposition failed: {_safe_redact(api_result.error)}",
+            )
+            return None
+
+        # Parse response
+        resp: Dict[str, Any] = {}
+        try:
+            resp = json.loads(api_result.output)
+        except (json.JSONDecodeError, ValueError):
+            pass
+
+        why = resp.get("why_too_large", "")
+        subs = resp.get("sub_missions")
+        first = resp.get("first_sub_mission", "")
+
+        if (
+            why and isinstance(why, str)
+            and subs and isinstance(subs, list) and len(subs) > 0
+            and isinstance(first, str)
+        ):
+            decomp: Dict[str, Any] = {
+                "why_too_large": _safe_redact(why),
+                "sub_missions": subs,
+                "first_sub_mission": _safe_redact(first),
+                "human_approval_required": bool(resp.get("human_approval_required", True)),
+                "generated_by": "api_helper",
+            }
+            run.add(
+                "decomposition_api_response",
+                "success",
+                "API helper returned valid decomposition.",
+            )
+            return decomp
+
+        run.add(
+            "decomposition_api_response",
+            "partial",
+            "API helper returned incomplete decomposition; falling back.",
+        )
+        return None
+
+    @staticmethod
+    def _deterministic_decompose_fallback(
+        goal: str,
+        signals: Dict[str, int],
+    ) -> Dict[str, Any]:
+        """Always produce a syntactically complete decomposition from the goal text.
+
+        Parsing strategy:
+        1. If ':' is present, split on ':' and tokenise the RHS on commas/semicolons/periods.
+        2. Otherwise split the whole goal on ', ' and '. '.
+        3. Filter fragments shorter than 10 chars and known noise phrases.
+        4. Create at most 4 sub_missions from the remaining components.
+        """
+        _NOISE = frozenset({
+            "no secrets", "add tests", "no code", "output json only",
+        })
+
+        def _infer_risk(text: str) -> str:
+            t = text.lower()
+            if any(k in t for k in ("zombie", "orphan", "delete", "destroy", "drop")):
+                return "high"
+            if any(k in t for k in ("report", "badge", "endpoint", "api", "dashboard")):
+                return "medium"
+            return "low"
+
+        def _infer_file_scopes(text: str) -> List[str]:
+            t = text.lower()
+            if any(k in t for k in ("endpoint", "api", "server", "route")):
+                return ["igris/web/server.py"]
+            if any(k in t for k in ("dashboard", "badge", "ui", "card")):
+                return ["igris/web/static/**", "igris/web/templates/**"]
+            if "test" in t:
+                return ["tests/"]
+            if any(k in t for k in ("supervisor", "repair")):
+                return ["igris/core/self_repair_supervisor.py"]
+            return ["igris/**"]
+
+        def _infer_test_targets(text: str) -> List[str]:
+            t = text.lower()
+            if "test" in t:
+                return ["tests/"]
+            return []
+
+        # Parse components from goal
+        safe_goal = _safe_redact(str(goal))
+        if ":" in safe_goal:
+            rhs = safe_goal.split(":", 1)[1]
+            raw_parts = re.split(r"[,;.]", rhs)
+        else:
+            raw_parts = re.split(r",\s+|\.\s+", safe_goal)
+
+        components: List[str] = []
+        for part in raw_parts:
+            stripped = part.strip()
+            if len(stripped) < 10:
+                continue
+            if stripped.lower() in _NOISE:
+                continue
+            components.append(stripped)
+
+        # Ensure at least one component
+        if not components:
+            components = [safe_goal[:200] or "Complete mission"]
+
+        components = components[:4]
+
+        sub_missions = []
+        for component in components:
+            title = component[:40].capitalize()
+            sub_missions.append({
+                "title": title,
+                "goal": _safe_redact(component),
+                "dependencies": [],
+                "acceptance_criteria": [f"{title} works as described"],
+                "allowed_file_scopes": _infer_file_scopes(component),
+                "tests": _infer_test_targets(component),
+                "risk_level": _infer_risk(component),
+                "human_approval_required": False,
+            })
+
+        return {
+            "why_too_large": _safe_redact(
+                f"Mission contains {len(components)} distinct components requiring separate "
+                f"reasoning passes. Signals: {signals}"
+            ),
+            "sub_missions": sub_missions,
+            "first_sub_mission": sub_missions[0]["title"],
+            "human_approval_required": True,
+            "generated_by": "deterministic_fallback",
+        }
 
     def _blocked_decomposition_required(
         self,
