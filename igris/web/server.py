@@ -58,6 +58,17 @@ def create_app() -> FastAPI:
     """Create and configure the FastAPI application."""
     app = FastAPI(title="IGRIS_GPT", version="0.1.0")
 
+    @app.get('/api/diagnostics/session-resume')
+    async def session_resume():
+        # Logic to gather diagnostics data
+        return JSONResponse(content={
+            'zombie_runs': [],
+            'active_runs': [],
+            'stale_branches': [],
+            'open_supervisor_issues': [],
+            'recommended_next_action': ''
+        })
+
     @app.get('/session-diagnostics')
     async def session_diagnostics():
         return JSONResponse(content={'status': 'success', 'message': 'Session diagnostics endpoint is operational.'})
