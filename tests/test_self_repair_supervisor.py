@@ -3,6 +3,7 @@ import subprocess
 import threading
 import time
 from datetime import datetime, timedelta, timezone
+from typing import Any, Dict
 
 from fastapi.testclient import TestClient
 
@@ -13,6 +14,8 @@ from igris.core.self_repair_supervisor import (
     DECOMPOSITION_REQUIRED_FIELDS,
     LocalSupervisorBackend,
     list_active_supervised_run_summaries,
+    PLANNING_MAX_STEPS,
+    PLANNING_TIMEOUT_SECONDS,
     RankSupervisorConfig,
     RUN_STORE,
     SelfRepairSupervisor,
@@ -189,6 +192,8 @@ def _config(**overrides):
         "required_smoke_endpoints": ["http://127.0.0.1:7778/api/health"],
         "targeted_tests": ["tests/test_rank_status.py"],
         "dry_run": True,
+        # Planning disabled by default in tests — the dataclass default is False
+        # and planning tests opt in explicitly with enable_mission_planning=True.
     }
     data.update(overrides)
     return RankSupervisorConfig.from_dict(data)
@@ -5048,3 +5053,173 @@ def test_active_runs_excludes_ghost_runs_after_restart(tmp_path):
     assert not any(r["run_id"] == "ghost-18fa" for r in active), (
         "Ghost run (persisted-only, status=running) must not appear in active runs after restart"
     )
+
+
+# ---------------------------------------------------------------------------
+# Pre-flight mission planning (#354 — Miglioramento 1)
+# ---------------------------------------------------------------------------
+
+def _planning_scope_result(
+    complexity: str = "low",
+    decomposition_recommended: bool = False,
+    reason: str = "",
+    files: list | None = None,
+) -> Dict[str, Any]:
+    """Fake backend result whose final_summary contains a valid MissionScope JSON."""
+    scope = {
+        "files_to_touch": files or ["igris/web/server.py"],
+        "estimated_complexity": complexity,
+        "decomposition_recommended": decomposition_recommended,
+        "decomposition_reason": reason,
+        "safe_entry_point": "add endpoint first",
+        "risks": ["may break existing tests"],
+    }
+    return {
+        "status": "finished",
+        "stop_reason": "finish",
+        "files_modified": [],
+        "final_summary": json.dumps(scope),
+    }
+
+
+def test_planning_pass_produces_mission_scope():
+    """Planning pass must populate run.mission_scope and run.report['mission_scope']."""
+    backend = FakeBackend()
+    backend.reasoning_results = [
+        _planning_scope_result(complexity="medium"),  # planning
+        {                                              # main attempt
+            "status": "finished",
+            "stop_reason": "finish",
+            "files_modified": ["igris/web/server.py"],
+            "final_summary": "done",
+        },
+    ]
+    backend.diff_stat = CommandResult(True, " igris/web/server.py | 1 +")
+    backend.diff = CommandResult(True, "+ok")
+    backend.full_tests = [CommandResult(True, "ok")] * 5
+
+    supervisor = SelfRepairSupervisor("/tmp/project", backend=backend)
+    config = _config(
+        max_rank_attempts=1,
+        max_repair_cycles=0,
+        goal="Add diagnostics endpoint",
+        enable_mission_planning=True,
+    )
+    run = SupervisorRun(run_id="plan-scope", rank_id="test")
+    result = supervisor.run(config, run=run)
+
+    assert result.mission_scope is not None, "mission_scope must be set after planning pass"
+    assert result.mission_scope.get("estimated_complexity") == "medium"
+    assert result.to_dict().get("mission_scope") is not None
+    planning_events = [e for e in result.events if e.phase == "mission_planning"]
+    assert len(planning_events) >= 2, "Expected running + success/partial planning events"
+
+
+def test_proactive_decomposition_from_planning():
+    """If the planning pass flags decomposition_recommended=true, the supervisor
+    must block with decomposition_required BEFORE the first attempt."""
+    backend = FakeBackend()
+    backend.reasoning_results = [
+        _planning_scope_result(           # planning → recommends decomposition
+            complexity="high",
+            decomposition_recommended=True,
+            reason="4000+ LOC file, cross-cutting concerns",
+        ),
+        _decomposition_reasoning_result(), # _ask_igris_decompose
+        # No main attempt reasoning — must never be reached
+        {
+            "status": "finished",
+            "stop_reason": "finish",
+            "files_modified": ["igris/core/self_repair_supervisor.py"],
+            "final_summary": "attempted — should not happen",
+        },
+    ]
+    backend.diff_stat = CommandResult(True, "")
+    backend.diff = CommandResult(True, "")
+    backend.full_tests = [CommandResult(True, "ok")] * 5
+
+    supervisor = SelfRepairSupervisor("/tmp/project", backend=backend)
+    config = _config(
+        max_rank_attempts=3,
+        max_repair_cycles=3,
+        goal="Universal supervisor redesign",
+        enable_mission_planning=True,
+    )
+    run = SupervisorRun(run_id="plan-decomp", rank_id="test")
+    result = supervisor.run(config, run=run)
+
+    assert result.failure_class == "decomposition_required", (
+        f"Expected decomposition_required from planning, got {result.failure_class!r}"
+    )
+    assert result.report.get("decomposition_required") is True
+    assert result.report.get("capability_limit_signal") == "pre_flight_planning"
+    # Must not have attempted any code changes
+    branch_events = [e for e in result.events if e.phase == "rank_branch"]
+    assert not branch_events, "No rank branch should have been created — decomp fires before first attempt"
+
+
+def test_planning_failure_does_not_block_run():
+    """If the planning pass produces no valid JSON, the run proceeds normally."""
+    backend = FakeBackend()
+    backend.reasoning_results = [
+        {                                  # planning → garbage output
+            "status": "finished",
+            "stop_reason": "finish",
+            "files_modified": [],
+            "final_summary": "I cannot produce a valid scope analysis.",
+        },
+        {                                  # main attempt → succeeds
+            "status": "finished",
+            "stop_reason": "finish",
+            "files_modified": ["igris/web/server.py"],
+            "final_summary": "done",
+        },
+    ]
+    backend.diff_stat = CommandResult(True, " igris/web/server.py | 1 +")
+    backend.diff = CommandResult(True, "+ok")
+    backend.full_tests = [CommandResult(True, "ok")] * 5
+
+    supervisor = SelfRepairSupervisor("/tmp/project", backend=backend)
+    config = _config(
+        max_rank_attempts=1,
+        max_repair_cycles=0,
+        goal="Add simple endpoint",
+        enable_mission_planning=True,
+    )
+    run = SupervisorRun(run_id="plan-fail", rank_id="test")
+    result = supervisor.run(config, run=run)
+
+    assert result.failure_class != "decomposition_required", (
+        "Planning failure must not block the run — it should proceed to main attempt"
+    )
+    assert result.status == "completed", f"Expected completed, got {result.status!r}"
+
+
+def test_planning_disabled_skips_planning_pass():
+    """When enable_mission_planning=False, no mission_planning event is emitted."""
+    backend = FakeBackend()
+    backend.reasoning_results = [
+        {
+            "status": "finished",
+            "stop_reason": "finish",
+            "files_modified": ["igris/web/server.py"],
+            "final_summary": "done",
+        },
+    ]
+    backend.diff_stat = CommandResult(True, " igris/web/server.py | 1 +")
+    backend.diff = CommandResult(True, "+ok")
+    backend.full_tests = [CommandResult(True, "ok")] * 5
+
+    supervisor = SelfRepairSupervisor("/tmp/project", backend=backend)
+    config = _config(
+        max_rank_attempts=1,
+        max_repair_cycles=0,
+        goal="Simple task",
+        enable_mission_planning=False,
+    )
+    run = SupervisorRun(run_id="plan-disabled", rank_id="test")
+    result = supervisor.run(config, run=run)
+
+    planning_events = [e for e in result.events if e.phase == "mission_planning"]
+    assert not planning_events, "No mission_planning events when planning is disabled"
+    assert result.mission_scope is None

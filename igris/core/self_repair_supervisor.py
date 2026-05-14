@@ -45,6 +45,11 @@ REPAIRABLE_FAILURES = {
 CAPABILITY_LIMIT_SIGNALS = frozenset({"reasoning_timeout", "pytest_hang", "no_diff_repair"})
 CAPABILITY_LIMIT_THRESHOLD = 2
 
+# Pre-flight mission planning: a lightweight read-only reasoning pass that
+# estimates complexity and recommends decomposition BEFORE any code is written.
+PLANNING_MAX_STEPS = 20
+PLANNING_TIMEOUT_SECONDS = 60
+
 # Required fields in a valid IGRIS decomposition response.
 DECOMPOSITION_REQUIRED_FIELDS = (
     "why_too_large",
@@ -171,6 +176,7 @@ class RankSupervisorConfig:
     max_api_budget_usd: float = 0.0
     max_tokens_per_escalation: int = 600
     api_helper_model: str = "gpt-5.4-mini"
+    enable_mission_planning: bool = False
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "RankSupervisorConfig":
@@ -197,6 +203,7 @@ class RankSupervisorConfig:
             max_api_budget_usd=max(0.0, float(data.get("max_api_budget_usd", 0.0))),
             max_tokens_per_escalation=max(64, int(data.get("max_tokens_per_escalation", 600))),
             api_helper_model=str(data.get("api_helper_model", "gpt-5.4-mini")),
+            enable_mission_planning=bool(data.get("enable_mission_planning", False)),
         )
 
 
@@ -280,6 +287,8 @@ class SupervisorRun:
     capability_signals: Dict[str, int] = field(default_factory=dict)
     # Decomposition produced by IGRIS when capability_limit is detected.
     decomposition: Optional[Dict[str, Any]] = None
+    # Pre-flight scope assessment produced by the mission planning pass.
+    mission_scope: Optional[Dict[str, Any]] = None
 
     def add(self, phase: str, status: str, detail: str = "", **data: Any) -> None:
         event = SupervisorEvent(phase=phase, status=status, detail=detail, data=data)
@@ -314,6 +323,7 @@ class SupervisorRun:
             "cancel_reason": _safe_redact(self.cancel_reason),
             "capability_signals": dict(self.capability_signals),
             "decomposition": self.decomposition,
+            "mission_scope": self.mission_scope,
         }
 
 
@@ -2394,6 +2404,31 @@ class SelfRepairSupervisor:
             stage_ids=[stage.stage_id for stage in mission_plan.stages],
         )
 
+        # Pre-flight planning: read-only scope analysis before first attempt.
+        # If the planning pass recommends decomposition, block proactively rather
+        # than discovering the same thing after 3 failed repair cycles.
+        if config.enable_mission_planning:
+            scope = self._plan_mission(run, config)
+            if scope and scope.get("decomposition_recommended"):
+                run.add(
+                    "mission_planning",
+                    "decomposition_required",
+                    f"Pre-flight planning recommends decomposition before any attempt: "
+                    f"{scope.get('decomposition_reason', 'mission too large for single attempt')}",
+                )
+                decomposition = self._ask_igris_decompose(run, config)
+                return self._blocked_decomposition_required(
+                    run,
+                    "pre_flight_planning",
+                    (
+                        f"Pre-flight planning detected scope too large for single attempt: "
+                        f"{scope.get('decomposition_reason', 'see mission_scope in report')}"
+                    ),
+                    decomposition,
+                    mission_plan=mission_plan,
+                    stage_statuses=stage_statuses,
+                )
+
         repair_cycles = 0
         attempt = 1
         attempt_limit = config.max_rank_attempts
@@ -3929,6 +3964,65 @@ class SelfRepairSupervisor:
         if sum(run.capability_signals.values()) >= CAPABILITY_LIMIT_THRESHOLD:
             return max(run.capability_signals, key=run.capability_signals.get)
         return None
+
+    def _plan_mission(
+        self, run: SupervisorRun, config: RankSupervisorConfig
+    ) -> Dict[str, Any]:
+        """Pre-flight read-only reasoning pass: estimate scope and flag if
+        decomposition is needed BEFORE any code is written.
+
+        Returns a MissionScope dict (may be empty on planning failure — the run
+        proceeds normally in that case so planning never blocks a mission).
+        """
+        planning_goal = (
+            "PLANNING PASS — read-only analysis only, do NOT modify any files.\n\n"
+            f"Mission goal: {config.goal}\n\n"
+            "Analyse the codebase and output ONLY valid JSON with these fields:\n"
+            "- files_to_touch: list of file paths you would need to modify\n"
+            "- estimated_complexity: 'low', 'medium', or 'high'\n"
+            "- decomposition_recommended: true if the mission is too large for a single attempt\n"
+            "- decomposition_reason: one sentence explaining why (if recommended)\n"
+            "- safe_entry_point: the smallest first concrete step\n"
+            "- risks: list of strings describing potential pitfalls\n\n"
+            "Output ONLY the JSON object, nothing else."
+        )
+        run.add(
+            "mission_planning",
+            "running",
+            "Running pre-flight mission scope analysis (read-only)",
+            max_steps=PLANNING_MAX_STEPS,
+            timeout_seconds=PLANNING_TIMEOUT_SECONDS,
+        )
+        result = self.backend.run_reasoning(
+            planning_goal,
+            max_steps=PLANNING_MAX_STEPS,
+            initial_context={"read_only": True, "planning_pass": True},
+            timeout=PLANNING_TIMEOUT_SECONDS,
+        )
+        raw = _safe_redact(
+            result.get("final_summary") or result.get("output") or ""
+        )
+        scope: Dict[str, Any] = {}
+        try:
+            json_match = re.search(r"\{.*\}", raw, re.DOTALL)
+            if json_match:
+                scope = json.loads(json_match.group())
+        except (json.JSONDecodeError, AttributeError):
+            scope = {"raw_output": raw}
+        run.add(
+            "mission_planning",
+            "success" if scope and "estimated_complexity" in scope else "partial",
+            (
+                f"Planning complete. complexity={scope.get('estimated_complexity', '?')} "
+                f"decomposition_recommended={scope.get('decomposition_recommended', False)}"
+            ),
+            estimated_complexity=scope.get("estimated_complexity", "unknown"),
+            decomposition_recommended=bool(scope.get("decomposition_recommended", False)),
+            files_to_touch=list(scope.get("files_to_touch") or []),
+        )
+        run.mission_scope = scope
+        run.report["mission_scope"] = scope
+        return scope
 
     def _ask_igris_decompose(
         self, run: SupervisorRun, config: RankSupervisorConfig
