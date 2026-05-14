@@ -180,6 +180,7 @@ class RankSupervisorConfig:
     max_tokens_per_escalation: int = 600
     api_helper_model: str = "gpt-5.4-mini"
     enable_mission_planning: bool = False
+    allow_auto_subissues: bool = False
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "RankSupervisorConfig":
@@ -207,6 +208,7 @@ class RankSupervisorConfig:
             max_tokens_per_escalation=max(64, int(data.get("max_tokens_per_escalation", 600))),
             api_helper_model=str(data.get("api_helper_model", "gpt-5.4-mini")),
             enable_mission_planning=bool(data.get("enable_mission_planning", False)),
+            allow_auto_subissues=bool(data.get("allow_auto_subissues", False)),
         )
 
 
@@ -350,6 +352,7 @@ class SupervisorBackend(Protocol):
     def merge_pr(self) -> CommandResult: ...
     def pull_main(self) -> CommandResult: ...
     def create_issue(self, title: str, body: str) -> CommandResult: ...
+    def update_issue(self, issue_url: str, comment_body: str) -> CommandResult: ...
     def restore_dangerous_diff(self) -> CommandResult: ...
     def restore_paths(self, paths: List[str]) -> CommandResult: ...
     def call_api_helper(self, packet: Dict[str, Any], model: str, max_tokens: int, timeout: int = 45) -> CommandResult: ...
@@ -656,6 +659,12 @@ class LocalSupervisorBackend:
         if not checkout.success:
             return checkout
         return self._run(["git", "pull", "--rebase", "origin", "main"], timeout=120)
+
+    def update_issue(self, issue_url: str, comment_body: str) -> CommandResult:
+        return self._run(
+            ["gh", "issue", "comment", issue_url, "--body", comment_body],
+            timeout=60,
+        )
 
     def create_issue(self, title: str, body: str) -> CommandResult:
         listed = self._run(
@@ -2449,6 +2458,7 @@ class SelfRepairSupervisor:
                         f"{scope.get('decomposition_reason', 'see mission_scope in report')}"
                     ),
                     decomposition,
+                    config=config,
                     mission_plan=mission_plan,
                     stage_statuses=stage_statuses,
                 )
@@ -2838,6 +2848,7 @@ class SelfRepairSupervisor:
                             "mission requires decomposition."
                         ),
                         decomposition,
+                        config=config,
                         mission_plan=mission_plan,
                         stage_statuses=stage_statuses,
                         cleanup_workspace=True,
@@ -2873,6 +2884,7 @@ class SelfRepairSupervisor:
                             "mission requires decomposition."
                         ),
                         decomposition,
+                        config=config,
                         mission_plan=mission_plan,
                         stage_statuses=stage_statuses,
                         cleanup_workspace=True,
@@ -2920,6 +2932,7 @@ class SelfRepairSupervisor:
                     "mission requires decomposition."
                 ),
                 decomposition,
+                config=config,
                 mission_plan=mission_plan,
                 stage_statuses=stage_statuses,
                 cleanup_workspace=True,
@@ -4366,6 +4379,178 @@ class SelfRepairSupervisor:
             "generated_by": "deterministic_fallback",
         }
 
+    _DESTRUCTIVE_KEYWORDS = frozenset({
+        "drop", "delete", "destroy", "wipe", "format", "truncate",
+        "rm -rf", "reset --hard", "force push", "force-push",
+        "sudo", "kubectl apply", "terraform apply", "deploy production",
+        "database migration", "data migration",
+    })
+
+    @staticmethod
+    def _decomposition_policy(
+        decomposition: Dict[str, Any],
+        config: "RankSupervisorConfig",
+    ) -> str:
+        """Decide how to handle a valid decomposition.
+
+        Returns one of:
+          "auto_create_subissues"       — safe, GitHub enabled, create issues automatically
+          "request_human_approval"      — unsafe or GitHub disabled
+          "block_unsafe_decomposition"  — secret/destructive content detected
+        """
+        # Require valid structure
+        fields_missing = decomposition.get("_fields_missing", [])
+        sub_missions = decomposition.get("sub_missions") or []
+        if fields_missing or not sub_missions:
+            return "request_human_approval"
+
+        # Require explicit opt-in to autonomous sub-issue creation
+        if not config.allow_auto_subissues or config.dry_run:
+            return "request_human_approval"
+
+        # Check for destructive/secret/dangerous content
+        all_text = " ".join([
+            str(decomposition.get("why_too_large", "")),
+            str(decomposition.get("first_sub_mission", "")),
+            *[
+                " ".join([
+                    str(s.get("title", "")),
+                    str(s.get("goal", "")),
+                    *[str(c) for c in (s.get("acceptance_criteria") or [])],
+                ])
+                for s in sub_missions
+            ],
+        ]).lower()
+
+        # Check for secret patterns (raw or already-redacted by _safe_redact)
+        secret_re = re.compile(r"sk-[A-Za-z0-9_\-]{3,}[A-Za-z0-9]{10,}|bearer\s+\S{20,}", re.I)
+        if secret_re.search(all_text) or "***redacted***" in all_text:
+            return "block_unsafe_decomposition"
+
+        # Check for destructive keywords
+        if any(kw in all_text for kw in SelfRepairSupervisor._DESTRUCTIVE_KEYWORDS):
+            return "request_human_approval"
+
+        return "auto_create_subissues"
+
+    def _auto_create_subissues(
+        self,
+        run: SupervisorRun,
+        config: RankSupervisorConfig,
+        decomposition: Dict[str, Any],
+        triggering_signal: str,
+    ) -> List[str]:
+        """Create one GitHub issue per sub_mission and return list of created URLs.
+
+        Each issue body includes parent run context, generated_by, risk, scopes.
+        After creating all issues, posts a summary comment on the parent issue (if
+        a parent URL can be inferred from config.goal or run.report).
+        """
+        sub_missions = decomposition.get("sub_missions") or []
+        generated_by = decomposition.get("generated_by", "unknown")
+        why_too_large = _safe_redact(str(decomposition.get("why_too_large", "")))
+        first_sub = decomposition.get("first_sub_mission", "")
+
+        created_urls: List[str] = []
+        run.add(
+            "subissue_creation",
+            "running",
+            f"Creating {len(sub_missions)} sub-issue(s) from decomposition.",
+            count=len(sub_missions),
+            generated_by=generated_by,
+        )
+
+        for i, sub in enumerate(sub_missions):
+            title = _safe_redact(str(sub.get("title", f"Sub-task {i+1}")))
+            goal_text = _safe_redact(str(sub.get("goal", "")))
+            risk = str(sub.get("risk_level", "medium"))
+            scopes = sub.get("allowed_file_scopes") or []
+            tests = sub.get("tests") or []
+            criteria = sub.get("acceptance_criteria") or []
+            deps = sub.get("dependencies") or []
+
+            scopes_md = "\n".join(f"- `{s}`" for s in scopes) if scopes else "_not specified_"
+            tests_md = "\n".join(f"- `{t}`" for t in tests) if tests else "_not specified_"
+            criteria_md = "\n".join(f"- {c}" for c in criteria) if criteria else "_not specified_"
+            deps_md = ", ".join(deps) if deps else "none"
+
+            body = (
+                f"## Sub-mission {i+1} of {len(sub_missions)}\n\n"
+                f"**Goal:** {goal_text}\n\n"
+                f"**Risk level:** {risk}\n"
+                f"**Dependencies:** {deps_md}\n\n"
+                f"### Acceptance criteria\n{criteria_md}\n\n"
+                f"### File scopes\n{scopes_md}\n\n"
+                f"### Test targets\n{tests_md}\n\n"
+                f"---\n"
+                f"**Parent run:** `{run.run_id}` (rank `{run.rank_id}`)\n"
+                f"**Decomposition source:** `{generated_by}`\n"
+                f"**Trigger signal:** `{triggering_signal}`\n"
+                f"**Why original mission was too large:** {why_too_large}\n"
+                f"**Original goal:** {_safe_redact(config.goal)}\n"
+            )
+
+            result = self.backend.create_issue(title, body)
+            if result.success:
+                url = result.output.strip()
+                created_urls.append(url)
+                run.add(
+                    "subissue_created",
+                    "success",
+                    f"Created sub-issue: {title}",
+                    index=i + 1,
+                    title=title,
+                    url=url,
+                    risk=risk,
+                )
+            else:
+                run.add(
+                    "subissue_created",
+                    "failure",
+                    f"Failed to create sub-issue: {title}",
+                    index=i + 1,
+                    title=title,
+                    error=_safe_redact(result.error),
+                )
+
+        # Post summary comment on parent issue if we can infer the URL.
+        parent_url = self._infer_parent_issue_url(config.goal)
+        if parent_url and created_urls:
+            sub_list = "\n".join(
+                f"- {url} — {sub.get('title','?')}"
+                for url, sub in zip(created_urls, sub_missions)
+            )
+            comment = (
+                f"## Decomposition sub-issues created\n\n"
+                f"Run `{run.run_id}` produced {len(created_urls)} sub-issue(s) "
+                f"via `{generated_by}`:\n\n{sub_list}\n\n"
+                f"First sub-mission to run: **{_safe_redact(first_sub)}**"
+            )
+            comment_result = self.backend.update_issue(parent_url, comment)
+            run.add(
+                "parent_issue_updated",
+                "success" if comment_result.success else "failure",
+                "Posted sub-issue summary to parent issue.",
+                parent_url=parent_url,
+                sub_count=len(created_urls),
+            )
+
+        run.add(
+            "subissue_creation",
+            "success" if created_urls else "failure",
+            f"Sub-issue creation complete. Created {len(created_urls)}/{len(sub_missions)}.",
+            created_count=len(created_urls),
+            total=len(sub_missions),
+            urls=created_urls,
+        )
+        return created_urls
+
+    @staticmethod
+    def _infer_parent_issue_url(goal: str) -> Optional[str]:
+        """Extract a GitHub issue URL from the goal string if present."""
+        m = re.search(r"https://github\.com/[^\s\)\"']+/issues/\d+", goal)
+        return m.group(0) if m else None
+
     def _blocked_decomposition_required(
         self,
         run: SupervisorRun,
@@ -4373,6 +4558,7 @@ class SelfRepairSupervisor:
         detail: str,
         decomposition: Dict[str, Any],
         *,
+        config: Optional[RankSupervisorConfig] = None,
         mission_plan: Optional[MissionPlan] = None,
         stage_statuses: Optional[Dict[str, Dict[str, Any]]] = None,
         cleanup_workspace: bool = False,
@@ -4388,12 +4574,42 @@ class SelfRepairSupervisor:
             cleanup_workspace=cleanup_workspace,
         )
         first_sub = _safe_redact(str(decomposition.get("first_sub_mission", "")))
-        human_approval = bool(decomposition.get("human_approval_required", True))
-        next_action = (
-            "request_approval:decomposition"
-            if human_approval or not first_sub
-            else f"run:{first_sub}"
+
+        # Evaluate policy to decide whether to auto-create sub-issues
+        # If no config was provided, default to requesting human approval.
+        if config is not None:
+            policy = self._decomposition_policy(decomposition, config)
+        else:
+            policy = "request_human_approval"
+
+        run.add(
+            "decomposition_policy",
+            "evaluated",
+            f"Decomposition policy: {policy}",
+            policy=policy,
+            allow_auto_subissues=config.allow_auto_subissues if config is not None else False,
+            allow_github_pr=config.allow_github_pr if config is not None else False,
+            dry_run=config.dry_run if config is not None else True,
         )
+
+        created_urls: List[str] = []
+        if policy == "auto_create_subissues":
+            created_urls = self._auto_create_subissues(run, config, decomposition, triggering_signal)
+            if created_urls:
+                next_action = f"run:{first_sub}" if first_sub else "queued:first_sub_mission"
+            else:
+                # All issue creations failed — fall back to manual approval
+                next_action = "request_approval:decomposition"
+        elif policy == "block_unsafe_decomposition":
+            run.add(
+                "decomposition_policy",
+                "blocked_unsafe",
+                "Decomposition contains unsafe content (secret/destructive); human approval required.",
+            )
+            next_action = "request_approval:decomposition"
+        else:  # "request_human_approval"
+            next_action = "request_approval:decomposition"
+
         # Redact any strings inside sub_missions for safety.
         safe_decomposition: Dict[str, Any] = {}
         for k, v in decomposition.items():
@@ -4407,6 +4623,7 @@ class SelfRepairSupervisor:
                 ]
             else:
                 safe_decomposition[k] = v
+        safe_decomposition["sub_issue_urls"] = created_urls if policy == "auto_create_subissues" else []
         run.report.update({
             "decomposition_required": True,
             "capability_limit_signal": triggering_signal,
