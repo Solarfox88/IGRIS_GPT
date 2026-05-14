@@ -264,39 +264,39 @@ class TestMainBlackBox:
         assert fake_key not in captured.getvalue()
 
     def test_anthropic_call_mocked(self):
-        """Verify full pipeline with mocked anthropic client."""
+        """Verify _call_anthropic pipeline with injected mock module (no real package needed)."""
         good = json.dumps(_good_payload())
         mock_msg = MagicMock()
         mock_msg.content = [MagicMock(text=good)]
         mock_msg.usage.input_tokens = 100
         mock_msg.usage.output_tokens = 50
 
-        with patch.dict(os.environ, {"IGRIS_ANTHROPIC_API_KEY": "sk-ant-fake12345678901234"}):
-            with patch("anthropic.Anthropic") as MockAnthropic:
-                mock_client = MagicMock()
-                MockAnthropic.return_value = mock_client
-                mock_client.messages.create.return_value = mock_msg
+        mock_client = MagicMock()
+        mock_client.messages.create.return_value = mock_msg
+        mock_anthropic_module = MagicMock()
+        mock_anthropic_module.Anthropic.return_value = mock_client
 
-                # Call the internal function directly
-                raw, cost = _h._call_anthropic("sk-ant-fake", "claude-haiku-4-5-20251001", 300, "test ctx", 30)
+        with patch.dict(sys.modules, {"anthropic": mock_anthropic_module}):
+            raw, cost = _h._call_anthropic("sk-ant-fake12345678901234", "claude-haiku-4-5-20251001", 300, "test ctx", 30)
 
         assert "no issue" in raw
         assert cost >= 0.0
 
     def test_openai_call_mocked(self):
-        """Verify full pipeline with mocked openai client."""
+        """Verify _call_openai pipeline with injected mock module (no real package needed)."""
         good = json.dumps(_good_payload())
         mock_resp = MagicMock()
         mock_resp.choices[0].message.content = good
         mock_resp.usage.prompt_tokens = 100
         mock_resp.usage.completion_tokens = 50
 
-        with patch("openai.OpenAI") as MockOpenAI:
-            mock_client = MagicMock()
-            MockOpenAI.return_value = mock_client
-            mock_client.chat.completions.create.return_value = mock_resp
+        mock_client = MagicMock()
+        mock_client.chat.completions.create.return_value = mock_resp
+        mock_openai_module = MagicMock()
+        mock_openai_module.OpenAI.return_value = mock_client
 
-            raw, cost = _h._call_openai("sk-openai-fake", "gpt-4o-mini", 300, "test ctx", 30)
+        with patch.dict(sys.modules, {"openai": mock_openai_module}):
+            raw, cost = _h._call_openai("sk-openai-fake12345678901234", "gpt-4o-mini", 300, "test ctx", 30)
 
         assert "no issue" in raw
         assert cost >= 0.0
