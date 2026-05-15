@@ -175,13 +175,14 @@ class FakeBackend:
         self.restore_paths_calls.append(normalized)
         return self.restore_paths_result
 
-    def call_api_helper(self, packet, model, max_tokens, timeout=45):
+    def call_api_helper(self, packet, model, max_tokens, timeout=45, mode=""):
         self.commands.append(f"api_helper:{model}:{max_tokens}:{timeout}")
         self.api_helper_packets.append({
             "packet": packet,
             "model": model,
             "max_tokens": max_tokens,
             "timeout": timeout,
+            "mode": mode,
         })
         return self.api_helper_result
 
@@ -6260,3 +6261,140 @@ class TestDeterministicDecomposeFallback:
         test_sub = result["sub_missions"][-1]
         assert any("test_session_resume" in t for t in test_sub["tests"]) or \
                any("tests/" in t for t in test_sub["tests"])
+
+
+# ---------------------------------------------------------------------------
+# API helper — Codex-only mode observability in supervisor events
+# ---------------------------------------------------------------------------
+
+
+def _make_escalation_backend(api_helper_mode: str = "", model_resolved: str = "codex-mini-latest") -> FakeBackend:
+    """Return a FakeBackend configured for an escalation scenario."""
+    backend = FakeBackend()
+    backend._api_helper_configured = True
+    backend.full_tests = [CommandResult(True, "ok")] * 10
+    backend.reasoning_results = [
+        {
+            "status": "finished",
+            "stop_reason": "finish",
+            "files_modified": ["igris/core/fix.py"],
+            "final_summary": "done",
+        }
+    ]
+    # Response payload includes observability fields from helper script
+    import json as _json
+    response_payload = {
+        "ok": True,
+        "model": model_resolved,
+        "api_helper_mode": api_helper_mode or "auto",
+        "api_helper_provider": "openai",
+        "api_helper_model_requested": "gpt-5.4-mini",
+        "api_helper_model_resolved": model_resolved,
+        "codex_only": api_helper_mode == "codex_only",
+        "summary": "ok",
+        "diagnosis": "timeout",
+        "likely_supervisor_gap": "missing retry",
+        "suggested_repair_strategy": "bounded retry",
+        "suggested_tests": [],
+        "risk": "low",
+        "risk_notes": [],
+        "do_not_do": [],
+        "confidence": 0.8,
+        "requires_human_or_codex_audit": False,
+        "must_not_complete_product_manually": True,
+        "estimated_cost_usd": 0.002,
+    }
+    backend.api_helper_result = CommandResult(True, _json.dumps(response_payload))
+    return backend
+
+
+class TestApiHelperModeObservability:
+    """Test API helper mode observability via _repair_cycle (same pattern as existing escalation tests)."""
+
+    def _make_run_and_supervisor(self, backend, mode=""):
+        supervisor = SelfRepairSupervisor("/tmp/project", backend=backend)
+        run = SupervisorRun(run_id="run-obs-test", rank_id="A")
+        run.audit_resolver = supervisor._resolve_event_audit
+        config = _config(
+            allow_api_escalation=True,
+            max_api_escalations_per_run=1,
+            max_api_budget_usd=1.0,
+            max_tokens_per_escalation=256,
+            api_helper_mode=mode,
+        )
+        return supervisor, run, config
+
+    def test_auto_mode_request_event_has_mode_field(self):
+        backend = _make_escalation_backend()
+        supervisor, run, config = self._make_run_and_supervisor(backend)
+        supervisor._repair_cycle(run, config, "reasoning_loop_blocked", 1)
+
+        req_events = [e for e in run.events if e.phase == "api_escalation_request"]
+        assert req_events, "Expected api_escalation_request event"
+        assert req_events[0].data.get("api_helper_mode") == "auto"
+        assert req_events[0].data.get("codex_only") is False
+
+    def test_codex_only_mode_request_event_flags_codex_only(self):
+        backend = _make_escalation_backend(api_helper_mode="codex_only", model_resolved="codex-mini-latest")
+        supervisor, run, config = self._make_run_and_supervisor(backend, mode="codex_only")
+        supervisor._repair_cycle(run, config, "reasoning_loop_blocked", 1)
+
+        req_events = [e for e in run.events if e.phase == "api_escalation_request"]
+        assert req_events, "Expected api_escalation_request event"
+        assert req_events[0].data.get("api_helper_mode") == "codex_only"
+        assert req_events[0].data.get("codex_only") is True
+
+    def test_codex_only_mode_passed_to_backend_call(self):
+        backend = _make_escalation_backend(api_helper_mode="codex_only", model_resolved="codex-mini-latest")
+        supervisor, run, config = self._make_run_and_supervisor(backend, mode="codex_only")
+        supervisor._repair_cycle(run, config, "reasoning_loop_blocked", 1)
+
+        assert backend.api_helper_packets, "Expected at least one api_helper call"
+        assert backend.api_helper_packets[-1]["mode"] == "codex_only"
+
+    def test_response_event_includes_model_resolved(self):
+        backend = _make_escalation_backend(api_helper_mode="codex_only", model_resolved="codex-mini-latest")
+        supervisor, run, config = self._make_run_and_supervisor(backend, mode="codex_only")
+        supervisor._repair_cycle(run, config, "reasoning_loop_blocked", 1)
+
+        resp_events = [e for e in run.events if e.phase == "api_escalation_response" and e.status == "success"]
+        assert resp_events, "Expected successful api_escalation_response event"
+        data = resp_events[0].data
+        assert data.get("api_helper_model_resolved") == "codex-mini-latest"
+        assert data.get("api_helper_provider") == "openai"
+        assert data.get("codex_only") is True
+
+    def test_no_secrets_in_escalation_events(self):
+        backend = _make_escalation_backend()
+        supervisor, run, config = self._make_run_and_supervisor(backend)
+        supervisor._repair_cycle(run, config, "reasoning_loop_blocked", 1)
+
+        import json as _json
+        all_event_data = _json.dumps([e.data for e in run.events])
+        assert "sk-" not in all_event_data
+        assert "API_KEY" not in all_event_data
+
+    def test_helper_called_only_on_blocked_or_recovery(self):
+        """Helper must NOT fire during normal successful execution."""
+        backend = FakeBackend()
+        backend._api_helper_configured = True
+        backend.full_tests = [CommandResult(True, "ok")] * 5
+        backend.reasoning_results = [{
+            "status": "finished",
+            "stop_reason": "finish",
+            "files_modified": ["igris/core/fix.py"],
+            "final_summary": "done",
+        }]
+        supervisor = SelfRepairSupervisor("/tmp/project", backend=backend)
+        config = _config(
+            allow_api_escalation=True,
+            max_api_escalations_per_run=3,
+            max_api_budget_usd=5.0,
+            max_repair_cycles=0,
+        )
+        run = supervisor.run(config)
+
+        assert run.status == "completed"
+        assert run.api_escalations_used == 0, (
+            "API helper must not be called during normal successful execution"
+        )

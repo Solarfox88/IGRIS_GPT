@@ -11,7 +11,7 @@ repair planning — it never bypasses safety gates, tests, or CI.
 
 Input (stdin): JSON object
   {
-    "model":      str,   # e.g. "claude-haiku-4-5-20251001"
+    "model":      str,   # e.g. "codex-mini-latest"
     "max_tokens": int,
     "packet":     dict   # sanitized escalation context from supervisor
   }
@@ -20,6 +20,11 @@ Output (stdout): JSON object
   {
     "ok":                            bool,
     "model":                         str,
+    "api_helper_mode":               str,   # "codex_only"|"auto"
+    "api_helper_provider":           str,   # "openai"|"anthropic"
+    "api_helper_model_requested":    str,
+    "api_helper_model_resolved":     str,
+    "codex_only":                    bool,
     "summary":                       str,
     "diagnosis":                     str,
     "likely_supervisor_gap":         str,
@@ -28,7 +33,7 @@ Output (stdout): JSON object
     "risk":                          str,   # "low"|"medium"|"high"
     "risk_notes":                    list[str],
     "do_not_do":                     list[str],
-    "confidence":                    float,  # 0.0–1.0
+    "confidence":                    float,  # 0.0-1.0
     "requires_human_or_codex_audit": bool,
     "must_not_complete_product_manually": bool,
     "estimated_cost_usd":            float
@@ -36,6 +41,24 @@ Output (stdout): JSON object
 
 On any error the script prints a safe JSON error object to stdout and exits 1.
 Secrets are never printed or logged.
+
+Environment variables:
+  IGRIS_API_HELPER_MODE      "codex_only" | "auto" (default: "auto")
+  IGRIS_API_HELPER_PROVIDER  "openai" | "anthropic" — forces provider in auto mode
+  IGRIS_API_HELPER_MODEL     Required in codex_only mode; optional override in auto mode
+  IGRIS_OPENAI_API_KEY       OpenAI key (preferred over OPENAI_API_KEY)
+  OPENAI_API_KEY             OpenAI key fallback
+  IGRIS_ANTHROPIC_API_KEY    Anthropic key (preferred over ANTHROPIC_API_KEY)
+  ANTHROPIC_API_KEY          Anthropic key fallback
+  IGRIS_HELPER_TIMEOUT       API call timeout seconds (default: 45)
+
+Codex-only mode (IGRIS_API_HELPER_MODE=codex_only):
+  - Provider must be OpenAI; Anthropic is rejected
+  - IGRIS_API_HELPER_MODEL must be set explicitly — no fallback to gpt-4o-mini
+  - Missing model → error_code=codex_not_configured
+  - Missing key   → error_code=codex_not_configured
+  - API call fail → error_code=codex_unavailable
+  - No silent fallbacks to any other model or provider
 """
 
 from __future__ import annotations
@@ -66,11 +89,16 @@ def _redact(text: str) -> str:
     return text
 
 
-def _safe_error(msg: str, exit_code: int = 1) -> None:
+def _safe_error(msg: str, exit_code: int = 1, error_code: str = "") -> None:
     """Emit a safe JSON error to stdout and exit."""
-    payload = {
+    payload: Dict[str, Any] = {
         "ok": False,
         "model": "",
+        "api_helper_mode": os.environ.get("IGRIS_API_HELPER_MODE", "auto").strip() or "auto",
+        "api_helper_provider": "",
+        "api_helper_model_requested": "",
+        "api_helper_model_resolved": "",
+        "codex_only": False,
         "summary": "",
         "diagnosis": _redact(str(msg)),
         "likely_supervisor_gap": "",
@@ -85,8 +113,22 @@ def _safe_error(msg: str, exit_code: int = 1) -> None:
         "estimated_cost_usd": 0.0,
         "error": _redact(str(msg)),
     }
+    if error_code:
+        payload["error_code"] = error_code
     print(json.dumps(payload))
     sys.exit(exit_code)
+
+
+# ---------------------------------------------------------------------------
+# Mode resolution
+# ---------------------------------------------------------------------------
+
+def _resolve_mode() -> str:
+    """Return normalised helper mode: 'codex_only' or 'auto'."""
+    raw = os.environ.get("IGRIS_API_HELPER_MODE", "").strip().lower()
+    if raw == "codex_only":
+        return "codex_only"
+    return "auto"
 
 
 # ---------------------------------------------------------------------------
@@ -94,13 +136,14 @@ def _safe_error(msg: str, exit_code: int = 1) -> None:
 # ---------------------------------------------------------------------------
 
 def _resolve_key() -> Tuple[str, str]:
-    """Return (provider, key) or raise RuntimeError."""
-    # Anthropic
+    """Return (provider, key) for auto mode, or raise RuntimeError.
+
+    Priority: Anthropic keys → OpenAI keys.
+    """
     for var in ("IGRIS_ANTHROPIC_API_KEY", "ANTHROPIC_API_KEY"):
         key = os.environ.get(var, "").strip()
         if key:
             return "anthropic", key
-    # OpenAI
     for var in ("IGRIS_OPENAI_API_KEY", "OPENAI_API_KEY"):
         key = os.environ.get(var, "").strip()
         if key:
@@ -111,15 +154,52 @@ def _resolve_key() -> Tuple[str, str]:
     )
 
 
+def _resolve_key_codex_only() -> Tuple[str, str]:
+    """Return ('openai', key) in codex_only mode, or raise with error_code.
+
+    Only OpenAI keys are accepted. Anthropic keys are ignored.
+    Raises RuntimeError with error_code embedded in message on failure.
+    """
+    for var in ("IGRIS_OPENAI_API_KEY", "OPENAI_API_KEY"):
+        key = os.environ.get(var, "").strip()
+        if key:
+            return "openai", key
+    raise RuntimeError(
+        "codex_not_configured: No OpenAI API key found. "
+        "Set OPENAI_API_KEY or IGRIS_OPENAI_API_KEY for codex_only mode. "
+        "Anthropic keys are not accepted in codex_only mode."
+    )
+
+
 def _resolve_model(requested: str, provider: str) -> str:
-    """Use IGRIS_API_HELPER_MODEL override if set, otherwise use requested or provider default."""
+    """Auto-mode model resolution.
+
+    Use IGRIS_API_HELPER_MODEL override if set, otherwise use requested
+    model or provider default (gpt-4o-mini / claude-haiku).
+    """
     override = os.environ.get("IGRIS_API_HELPER_MODEL", "").strip()
     if override:
         return override
-    if requested and requested != "gpt-5.4-mini":
+    if requested and requested not in ("gpt-5.4-mini", ""):
         return requested
     # Sensible defaults per provider
     return "claude-haiku-4-5-20251001" if provider == "anthropic" else "gpt-4o-mini"
+
+
+def _resolve_model_codex_only(requested: str) -> str:
+    """Codex-only model resolution.
+
+    IGRIS_API_HELPER_MODEL is required. No fallback to any default.
+    Raises RuntimeError with error_code on missing config.
+    """
+    model = os.environ.get("IGRIS_API_HELPER_MODEL", "").strip()
+    if model:
+        return model
+    raise RuntimeError(
+        "codex_not_configured: IGRIS_API_HELPER_MODEL is not set. "
+        "In codex_only mode you must explicitly configure the Codex model name. "
+        "No fallback to gpt-4o-mini or any other default is allowed."
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -195,9 +275,9 @@ def _call_anthropic(key: str, model: str, max_tokens: int, context: str, timeout
     text = "".join(
         block.text for block in msg.content if hasattr(block, "text")
     )
-    # Estimate cost (rough: $0.25/M input + $1.25/M output for Haiku)
     input_tokens = getattr(msg.usage, "input_tokens", 0)
     output_tokens = getattr(msg.usage, "output_tokens", 0)
+    # Rough cost: $0.25/M input + $1.25/M output for Haiku
     cost = (input_tokens * 0.25 + output_tokens * 1.25) / 1_000_000
     return text, cost
 
@@ -225,6 +305,7 @@ def _call_openai(key: str, model: str, max_tokens: int, context: str, timeout: i
     usage = resp.usage
     input_tokens = getattr(usage, "prompt_tokens", 0)
     output_tokens = getattr(usage, "completion_tokens", 0)
+    # Rough cost: $0.15/M input + $0.60/M output (gpt-4o-mini tier)
     cost = (input_tokens * 0.15 + output_tokens * 0.60) / 1_000_000
     return text, cost
 
@@ -245,14 +326,29 @@ REQUIRED_FIELDS = (
 )
 
 
-def _parse_response(raw: str, model: str, cost: float) -> Dict[str, Any]:
+def _parse_response(
+    raw: str,
+    model: str,
+    cost: float,
+    *,
+    mode: str = "auto",
+    provider: str = "",
+    model_requested: str = "",
+) -> Dict[str, Any]:
     text = _redact(raw.strip())
-    # Extract JSON from response (model might wrap in markdown)
     match = re.search(r"\{.*\}", text, re.DOTALL)
+    _obs = {
+        "api_helper_mode": mode,
+        "api_helper_provider": provider,
+        "api_helper_model_requested": model_requested,
+        "api_helper_model_resolved": model,
+        "codex_only": mode == "codex_only",
+    }
     if not match:
         return {
             "ok": False,
             "model": model,
+            **_obs,
             "error": "helper returned no JSON object",
             "summary": "",
             "diagnosis": f"Could not parse helper response: {text[:200]}",
@@ -273,6 +369,7 @@ def _parse_response(raw: str, model: str, cost: float) -> Dict[str, Any]:
         return {
             "ok": False,
             "model": model,
+            **_obs,
             "error": f"JSON parse error: {exc}",
             "summary": "",
             "diagnosis": "",
@@ -291,6 +388,7 @@ def _parse_response(raw: str, model: str, cost: float) -> Dict[str, Any]:
     result: Dict[str, Any] = {
         "ok": len(missing) == 0,
         "model": model,
+        **_obs,
         "summary": str(payload.get("summary", "")),
         "diagnosis": str(payload.get("diagnosis", "")),
         "likely_supervisor_gap": str(payload.get("likely_supervisor_gap", "")),
@@ -331,6 +429,35 @@ def main() -> None:
     packet = data.get("packet", {})
     timeout = int(os.environ.get("IGRIS_HELPER_TIMEOUT", "45"))
 
+    # Resolve mode — this determines key/model resolution strategy
+    mode = _resolve_mode()
+    is_codex_only = (mode == "codex_only")
+
+    # Resolve provider and API key
+    if is_codex_only:
+        try:
+            provider, api_key = _resolve_key_codex_only()
+        except RuntimeError as exc:
+            err = str(exc)
+            error_code = "codex_not_configured" if "codex_not_configured" in err else "codex_unavailable"
+            _safe_error(err, error_code=error_code)
+    else:
+        try:
+            provider, api_key = _resolve_key()
+        except RuntimeError as exc:
+            _safe_error(str(exc))
+
+    # Resolve model
+    if is_codex_only:
+        try:
+            model = _resolve_model_codex_only(model_requested)
+        except RuntimeError as exc:
+            err = str(exc)
+            error_code = "codex_not_configured" if "codex_not_configured" in err else "codex_unavailable"
+            _safe_error(err, error_code=error_code)
+    else:
+        model = _resolve_model(model_requested, provider)
+
     # Detect decomposition task and build appropriate context
     is_decomposition = packet.get("task") == "decomposition"
 
@@ -361,14 +488,6 @@ def main() -> None:
 
     context = "\n".join(context_parts)
 
-    # Resolve API key and provider
-    try:
-        provider, api_key = _resolve_key()
-    except RuntimeError as exc:
-        _safe_error(str(exc))
-
-    model = _resolve_model(model_requested, provider)
-
     # Call API
     try:
         if provider == "anthropic":
@@ -376,7 +495,20 @@ def main() -> None:
         else:
             raw_response, cost = _call_openai(api_key, model, max_tokens, context, timeout, system_prompt)
     except Exception as exc:
-        _safe_error(f"API call failed: {_redact(str(exc))}")
+        err_msg = f"API call failed: {_redact(str(exc))}"
+        if is_codex_only:
+            _safe_error(err_msg, error_code="codex_unavailable")
+        else:
+            _safe_error(err_msg)
+
+    # Observability envelope — included in every response
+    _obs = {
+        "api_helper_mode": mode,
+        "api_helper_provider": provider,
+        "api_helper_model_requested": model_requested,
+        "api_helper_model_resolved": model,
+        "codex_only": is_codex_only,
+    }
 
     # Handle decomposition response separately
     if is_decomposition:
@@ -390,6 +522,7 @@ def main() -> None:
         print(json.dumps({
             "ok": bool(decomp.get("why_too_large") and decomp.get("sub_missions")),
             "model": model,
+            **_obs,
             "why_too_large": _redact(str(decomp.get("why_too_large", ""))),
             "sub_missions": [
                 {k: _redact(str(v)) if isinstance(v, str) else v for k, v in s.items()}
@@ -401,7 +534,14 @@ def main() -> None:
         }))
         sys.exit(0)
 
-    result = _parse_response(raw_response, model, cost)
+    result = _parse_response(
+        raw_response,
+        model,
+        cost,
+        mode=mode,
+        provider=provider,
+        model_requested=model_requested,
+    )
     print(json.dumps(result))
     sys.exit(0 if result.get("ok") else 1)
 

@@ -184,6 +184,7 @@ class RankSupervisorConfig:
     enable_mission_planning: bool = False
     allow_auto_subissues: bool = False
     enable_semantic_gate: bool = True
+    api_helper_mode: str = ""
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "RankSupervisorConfig":
@@ -213,6 +214,7 @@ class RankSupervisorConfig:
             enable_mission_planning=bool(data.get("enable_mission_planning", False)),
             allow_auto_subissues=bool(data.get("allow_auto_subissues", False)),
             enable_semantic_gate=bool(data.get("enable_semantic_gate", True)),
+            api_helper_mode=str(data.get("api_helper_mode", "")),
         )
 
 
@@ -409,12 +411,16 @@ class LocalSupervisorBackend:
         *,
         input_text: Optional[str] = None,
         clean_env: bool = False,
+        extra_env: Optional[Dict[str, str]] = None,
     ) -> CommandResult:
         try:
+            env = self._subprocess_env(clean_for_tests=clean_env)
+            if extra_env:
+                env.update(extra_env)
             proc = subprocess.run(
                 cmd,
                 cwd=str(self.project_root),
-                env=self._subprocess_env(clean_for_tests=clean_env),
+                env=env,
                 input=input_text,
                 text=True,
                 stdout=subprocess.PIPE,
@@ -723,6 +729,7 @@ class LocalSupervisorBackend:
         model: str,
         max_tokens: int,
         timeout: int = 45,
+        mode: str = "",
     ) -> CommandResult:
         helper_command = str(os.getenv("IGRIS_API_HELPER_COMMAND", "")).strip()
         if not helper_command:
@@ -731,7 +738,13 @@ class LocalSupervisorBackend:
         if not cmd:
             return CommandResult(False, "", "API helper command is empty after parsing.", 2)
         payload = json.dumps({"model": model, "max_tokens": max_tokens, "packet": packet})
-        return self._run(cmd, timeout=timeout, input_text=payload)
+        # Forward mode to helper via env var so the subprocess enforces codex_only policy.
+        # We only override if the caller explicitly requested a mode — otherwise let the
+        # process-level env (set by the operator in .env) take precedence.
+        extra_env: Dict[str, str] = {}
+        if mode:
+            extra_env["IGRIS_API_HELPER_MODE"] = mode
+        return self._run(cmd, timeout=timeout, input_text=payload, extra_env=extra_env or None)
 
     def api_helper_is_configured(self) -> bool:
         """Return True when IGRIS_API_HELPER_COMMAND env var is set and non-empty."""
@@ -1453,6 +1466,11 @@ class SelfRepairSupervisor:
                 budget_type="unconfigured",
             )
             return None
+        # Resolve effective mode: config field takes precedence over env var so
+        # that per-run config can override the operator .env setting.
+        effective_mode = config.api_helper_mode.strip() or os.getenv("IGRIS_API_HELPER_MODE", "").strip() or "auto"
+        is_codex_only = effective_mode == "codex_only"
+
         packet = self._build_api_escalation_packet(run, config, failure=failure, cycle=cycle, stage_statuses=stage_statuses)
         run.add(
             "api_escalation_request",
@@ -1460,6 +1478,9 @@ class SelfRepairSupervisor:
             "Calling API helper for advisory diagnosis and recovery plan.",
             model=config.api_helper_model,
             max_tokens=config.max_tokens_per_escalation,
+            api_helper_mode=effective_mode,
+            api_helper_model_requested=config.api_helper_model,
+            codex_only=is_codex_only,
             packet=packet,
         )
         result = self.backend.call_api_helper(
@@ -1467,27 +1488,35 @@ class SelfRepairSupervisor:
             model=config.api_helper_model,
             max_tokens=config.max_tokens_per_escalation,
             timeout=min(60, config.reasoning_timeout_seconds),
+            mode=effective_mode,
         )
         # Only count as a used escalation when the helper was actually called
         # (configured, regardless of whether it succeeded).
         run.api_escalations_used += 1
         if not result.success:
-            run.add("api_escalation_response", "failure", _command_detail(result))
+            run.add("api_escalation_response", "failure", _command_detail(result),
+                    api_helper_mode=effective_mode, codex_only=is_codex_only)
             return None
         try:
             raw_payload = json.loads(result.output or "{}")
         except json.JSONDecodeError:
-            run.add("api_escalation_response", "failure", "API helper returned invalid JSON.")
+            run.add("api_escalation_response", "failure", "API helper returned invalid JSON.",
+                    api_helper_mode=effective_mode, codex_only=is_codex_only)
             return None
         valid, advice, error = self._validate_helper_response(raw_payload)
         if not valid:
-            run.add("api_escalation_response", "failure", error, payload=self._sanitize_escalation_value(raw_payload))
+            run.add("api_escalation_response", "failure", error,
+                    api_helper_mode=effective_mode, codex_only=is_codex_only,
+                    payload=self._sanitize_escalation_value(raw_payload))
             return None
         try:
             estimated_cost_usd = max(0.0, float(raw_payload.get("estimated_cost_usd", 0.0)))
         except (TypeError, ValueError):
             estimated_cost_usd = 0.0
         run.api_budget_used_usd += estimated_cost_usd
+        # Extract observability fields from helper response
+        model_resolved = str(raw_payload.get("api_helper_model_resolved", raw_payload.get("model", "")))
+        helper_provider = str(raw_payload.get("api_helper_provider", ""))
         run.add(
             "api_escalation_response",
             "success",
@@ -1495,6 +1524,11 @@ class SelfRepairSupervisor:
             advice=self._sanitize_escalation_value(advice),
             estimated_cost_usd=estimated_cost_usd,
             helper_is_authority=False,
+            api_helper_mode=effective_mode,
+            api_helper_provider=helper_provider,
+            api_helper_model_requested=config.api_helper_model,
+            api_helper_model_resolved=model_resolved,
+            codex_only=is_codex_only,
         )
         return advice
 
