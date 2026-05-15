@@ -327,3 +327,243 @@ class TestMainBlackBox:
                 for field in _h.REQUIRED_FIELDS:
                     assert field in output, f"Missing field: {field}"
                 assert output["ok"] is True
+
+
+# ---------------------------------------------------------------------------
+# _resolve_mode
+# ---------------------------------------------------------------------------
+
+
+class TestResolveMode:
+    def test_default_is_auto(self):
+        with patch.dict(os.environ, {}, clear=True):
+            assert _h._resolve_mode() == "auto"
+
+    def test_codex_only_recognised(self):
+        with patch.dict(os.environ, {"IGRIS_API_HELPER_MODE": "codex_only"}):
+            assert _h._resolve_mode() == "codex_only"
+
+    def test_unknown_value_falls_back_to_auto(self):
+        with patch.dict(os.environ, {"IGRIS_API_HELPER_MODE": "experimental"}):
+            assert _h._resolve_mode() == "auto"
+
+    def test_empty_string_is_auto(self):
+        with patch.dict(os.environ, {"IGRIS_API_HELPER_MODE": ""}):
+            assert _h._resolve_mode() == "auto"
+
+
+# ---------------------------------------------------------------------------
+# _resolve_key_codex_only
+# ---------------------------------------------------------------------------
+
+
+class TestResolveKeyCodexOnly:
+    def test_accepts_openai_key(self):
+        env = {"OPENAI_API_KEY": "sk-openai-abc"}
+        with patch.dict(os.environ, env, clear=True):
+            provider, key = _h._resolve_key_codex_only()
+        assert provider == "openai"
+        assert key == "sk-openai-abc"
+
+    def test_prefers_igris_openai_key(self):
+        env = {"IGRIS_OPENAI_API_KEY": "sk-igris", "OPENAI_API_KEY": "sk-fallback"}
+        with patch.dict(os.environ, env, clear=True):
+            provider, key = _h._resolve_key_codex_only()
+        assert key == "sk-igris"
+
+    def test_rejects_anthropic_only_env(self):
+        env = {"ANTHROPIC_API_KEY": "sk-ant-x", "IGRIS_ANTHROPIC_API_KEY": "sk-ant-y"}
+        with patch.dict(os.environ, env, clear=True):
+            with pytest.raises(RuntimeError, match="codex_not_configured"):
+                _h._resolve_key_codex_only()
+
+    def test_raises_when_no_openai_key(self):
+        with patch.dict(os.environ, {}, clear=True):
+            with pytest.raises(RuntimeError, match="codex_not_configured"):
+                _h._resolve_key_codex_only()
+
+
+# ---------------------------------------------------------------------------
+# _resolve_model_codex_only
+# ---------------------------------------------------------------------------
+
+
+class TestResolveModelCodexOnly:
+    def test_uses_igris_api_helper_model(self):
+        with patch.dict(os.environ, {"IGRIS_API_HELPER_MODEL": "codex-mini-latest"}):
+            assert _h._resolve_model_codex_only("gpt-5.4-mini") == "codex-mini-latest"
+
+    def test_raises_when_model_not_set(self):
+        with patch.dict(os.environ, {}, clear=True):
+            with pytest.raises(RuntimeError, match="codex_not_configured"):
+                _h._resolve_model_codex_only("")
+
+    def test_does_not_fall_back_to_gpt4o_mini(self):
+        with patch.dict(os.environ, {}, clear=True):
+            with pytest.raises(RuntimeError):
+                _h._resolve_model_codex_only("gpt-5.4-mini")
+
+    def test_does_not_fall_back_to_claude_haiku(self):
+        with patch.dict(os.environ, {}, clear=True):
+            with pytest.raises(RuntimeError):
+                model = _h._resolve_model_codex_only("")
+                # Should never reach here
+                assert "haiku" not in model.lower()
+
+
+# ---------------------------------------------------------------------------
+# codex_only mode — black-box via subprocess
+# ---------------------------------------------------------------------------
+
+
+class TestCodexOnlyBlackBox:
+    def test_codex_only_without_model_emits_codex_not_configured(self):
+        inp = json.dumps({"model": "gpt-5.4-mini", "max_tokens": 100, "packet": {}})
+        proc = _run_helper(
+            inp,
+            env_extra={
+                "IGRIS_API_HELPER_MODE": "codex_only",
+                "OPENAI_API_KEY": "sk-openai-fake12345678901234",
+                # IGRIS_API_HELPER_MODEL intentionally not set
+            },
+        )
+        assert proc.returncode == 1
+        out = json.loads(proc.stdout)
+        assert out["ok"] is False
+        assert out.get("error_code") == "codex_not_configured"
+
+    def test_codex_only_without_openai_key_emits_codex_not_configured(self):
+        inp = json.dumps({"model": "codex-mini-latest", "max_tokens": 100, "packet": {}})
+        proc = _run_helper(
+            inp,
+            env_extra={
+                "IGRIS_API_HELPER_MODE": "codex_only",
+                "IGRIS_API_HELPER_MODEL": "codex-mini-latest",
+                "ANTHROPIC_API_KEY": "sk-ant-fake12345678901234",
+                # No OpenAI key
+            },
+        )
+        assert proc.returncode == 1
+        out = json.loads(proc.stdout)
+        assert out["ok"] is False
+        assert out.get("error_code") == "codex_not_configured"
+
+    def test_codex_only_anthropic_key_alone_is_rejected(self):
+        inp = json.dumps({"model": "codex-mini-latest", "max_tokens": 100, "packet": {}})
+        proc = _run_helper(
+            inp,
+            env_extra={
+                "IGRIS_API_HELPER_MODE": "codex_only",
+                "IGRIS_API_HELPER_MODEL": "codex-mini-latest",
+                "ANTHROPIC_API_KEY": "sk-ant-fake12345678901234",
+                "IGRIS_ANTHROPIC_API_KEY": "sk-ant-igris12345678901234",
+            },
+        )
+        assert proc.returncode == 1
+        out = json.loads(proc.stdout)
+        assert out.get("error_code") == "codex_not_configured"
+        # Make sure it didn't silently use anthropic
+        assert out.get("api_helper_provider", "") != "anthropic"
+
+    def test_codex_only_no_fallback_to_gpt4o_mini_on_missing_model(self):
+        inp = json.dumps({"model": "gpt-5.4-mini", "max_tokens": 100, "packet": {}})
+        proc = _run_helper(
+            inp,
+            env_extra={
+                "IGRIS_API_HELPER_MODE": "codex_only",
+                "OPENAI_API_KEY": "sk-openai-fake12345678901234",
+                # IGRIS_API_HELPER_MODEL not set → must fail, not fall back
+            },
+        )
+        out = json.loads(proc.stdout)
+        assert out["ok"] is False
+        assert out.get("error_code") == "codex_not_configured"
+        assert out.get("api_helper_model_resolved", "gpt-4o-mini") != "gpt-4o-mini"
+
+    def test_codex_only_no_secrets_in_error_output(self):
+        inp = json.dumps({"model": "codex-mini-latest", "max_tokens": 100, "packet": {}})
+        proc = _run_helper(
+            inp,
+            env_extra={
+                "IGRIS_API_HELPER_MODE": "codex_only",
+                "IGRIS_API_HELPER_MODEL": "codex-mini-latest",
+                # No key — will fail
+            },
+        )
+        assert "sk-" not in proc.stdout
+        assert "sk-" not in proc.stderr
+
+
+# ---------------------------------------------------------------------------
+# Observability fields in output
+# ---------------------------------------------------------------------------
+
+
+class TestObservabilityFields:
+    def _run_main_with_mock(self, mode: str, provider: str, model: str) -> dict:
+        """Run main() with mocked API call, return parsed output."""
+        import io
+
+        good = json.dumps({
+            "ok": True,
+            "summary": "ok",
+            "diagnosis": "fine",
+            "likely_supervisor_gap": "none",
+            "suggested_repair_strategy": "nothing",
+            "suggested_tests": [],
+            "risk": "low",
+            "risk_notes": [],
+            "do_not_do": [],
+            "confidence": 0.9,
+            "requires_human_or_codex_audit": False,
+            "must_not_complete_product_manually": True,
+            "estimated_cost_usd": 0.001,
+        })
+        inp = json.dumps({"model": model, "max_tokens": 300, "packet": {"failure_class": "timeout"}})
+        env_patch = {"IGRIS_API_HELPER_MODE": mode}
+        if mode == "codex_only":
+            env_patch["IGRIS_API_HELPER_MODEL"] = model
+
+        with patch.object(_h, "_resolve_key", return_value=(provider, "sk-fake-key-12345678901234")):
+            with patch.object(_h, "_resolve_key_codex_only", return_value=("openai", "sk-fake-key-12345678901234")):
+                mock_call = MagicMock(return_value=(good, 0.001))
+                call_fn = "_call_openai" if provider == "openai" else "_call_anthropic"
+                with patch.object(_h, call_fn, mock_call):
+                    with patch.dict(os.environ, env_patch):
+                        old_stdin, old_stdout = sys.stdin, sys.stdout
+                        sys.stdin = io.StringIO(inp)
+                        captured = io.StringIO()
+                        sys.stdout = captured
+                        try:
+                            with pytest.raises(SystemExit):
+                                _h.main()
+                        finally:
+                            sys.stdin = old_stdin
+                            sys.stdout = old_stdout
+        return json.loads(captured.getvalue())
+
+    def test_auto_mode_includes_observability_fields(self):
+        out = self._run_main_with_mock("auto", "anthropic", "claude-haiku-4-5-20251001")
+        assert out["api_helper_mode"] == "auto"
+        assert out["codex_only"] is False
+        assert "api_helper_provider" in out
+        assert "api_helper_model_requested" in out
+        assert "api_helper_model_resolved" in out
+
+    def test_codex_only_mode_sets_codex_only_true(self):
+        out = self._run_main_with_mock("codex_only", "openai", "codex-mini-latest")
+        assert out["api_helper_mode"] == "codex_only"
+        assert out["codex_only"] is True
+        assert out["api_helper_provider"] == "openai"
+
+    def test_model_requested_and_resolved_differ_when_overridden(self):
+        out = self._run_main_with_mock("auto", "anthropic", "gpt-5.4-mini")
+        # Requested was the sentinel, resolved should be the real default
+        assert "api_helper_model_requested" in out
+        assert "api_helper_model_resolved" in out
+
+    def test_no_secrets_in_success_output(self):
+        out = self._run_main_with_mock("auto", "anthropic", "claude-haiku-4-5-20251001")
+        output_str = json.dumps(out)
+        assert "sk-fake-key" not in output_str
+        assert "ANTHROPIC_API_KEY" not in output_str
