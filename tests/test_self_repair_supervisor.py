@@ -6159,3 +6159,104 @@ def test_model_aware_escalation_hint_stored_in_mission_scope():
     hint = result.mission_scope.get("escalation_strategy_hint")
     # FakeBackend returns a valid advice payload, so hint should be non-empty
     assert isinstance(hint, str)
+
+
+# ---------------------------------------------------------------------------
+# _deterministic_decompose_fallback — parser correctness
+# ---------------------------------------------------------------------------
+
+_SIGNALS = {"reasoning_timeout": 1, "no_diff_repair": 1}
+_decompose = SelfRepairSupervisor._deterministic_decompose_fallback
+
+
+class TestDeterministicDecomposeFallback:
+    def test_endpoint_goal_produces_impl_and_test_submissions(self):
+        goal = (
+            "Implement issue #350: GET /api/diagnostics/session-resume. "
+            "Use the GitHub issue body as source of truth. "
+            "Implement real session-resume diagnostics, not a stub. "
+            "Add targeted tests in tests/test_session_resume.py. "
+            "If too large, decompose semantically before implementation."
+        )
+        result = _decompose(goal, _SIGNALS)
+        subs = result["sub_missions"]
+        # Must produce 2 sub-missions: implementation + tests
+        assert len(subs) == 2, f"Expected 2, got {len(subs)}: {[s['title'] for s in subs]}"
+        titles = [s["title"].lower() for s in subs]
+        assert any("impl" in t or "backend" in t or "endpoint" in t for t in titles)
+        assert any("test" in t for t in titles)
+
+    def test_endpoint_goal_does_not_split_on_periods(self):
+        goal = (
+            "Implement GET /api/diagnostics/session-resume. "
+            "Use real data. Not a stub. Add tests in tests/test_session_resume.py."
+        )
+        result = _decompose(goal, _SIGNALS)
+        subs = result["sub_missions"]
+        # None of the sub-missions should be a sentence fragment like "not a stub"
+        for s in subs:
+            assert len(s["goal"]) >= 30, f"Fragment too short: {s['goal']!r}"
+            assert s["goal"].lower() not in ("not a stub", "use real data", "py")
+
+    def test_bulleted_goal_splits_on_bullets(self):
+        goal = (
+            "Complete the following tasks:\n"
+            "- Implement the endpoint in server.py\n"
+            "- Add zombie run detection logic\n"
+            "- Write tests in tests/test_session_resume.py\n"
+            "- Update the API documentation"
+        )
+        result = _decompose(goal, _SIGNALS)
+        subs = result["sub_missions"]
+        assert len(subs) >= 2
+        goals_text = " ".join(s["goal"].lower() for s in subs)
+        assert "endpoint" in goals_text or "server" in goals_text
+        assert "zombie" in goals_text or "test" in goals_text
+
+    def test_semicolon_goal_splits_on_semicolons(self):
+        goal = (
+            "Implement the session-resume endpoint; "
+            "add zombie run detection using the run store; "
+            "write integration tests for the new endpoint"
+        )
+        result = _decompose(goal, _SIGNALS)
+        subs = result["sub_missions"]
+        assert len(subs) == 3
+        assert all(len(s["goal"]) >= 30 for s in subs)
+
+    def test_generic_goal_produces_single_submission(self):
+        goal = "Fix arithmetic rounding in the cost calculator module"
+        result = _decompose(goal, _SIGNALS)
+        subs = result["sub_missions"]
+        assert len(subs) == 1
+        assert "rounding" in subs[0]["goal"].lower() or "arithmetic" in subs[0]["goal"].lower()
+
+    def test_always_has_required_fields(self):
+        goal = "Implement GET /api/health endpoint and add tests"
+        result = _decompose(goal, _SIGNALS)
+        assert "why_too_large" in result
+        assert "sub_missions" in result
+        assert "first_sub_mission" in result
+        assert "human_approval_required" in result
+        assert result["generated_by"] == "deterministic_fallback"
+        for s in result["sub_missions"]:
+            for field in ("title", "goal", "dependencies", "acceptance_criteria",
+                          "allowed_file_scopes", "tests", "risk_level"):
+                assert field in s, f"Missing field {field!r} in sub-mission"
+
+    def test_endpoint_file_scope_includes_server(self):
+        goal = "Implement GET /api/diagnostics/session-resume endpoint"
+        result = _decompose(goal, _SIGNALS)
+        impl_sub = result["sub_missions"][0]
+        scopes = impl_sub["allowed_file_scopes"]
+        assert any("server" in s or "igris/web" in s or "igris/core" in s for s in scopes)
+
+    def test_test_file_path_extracted_from_goal(self):
+        goal = (
+            "Implement GET /api/diagnostics/session-resume. "
+            "Add tests in tests/test_session_resume.py."
+        )
+        result = _decompose(goal, _SIGNALS)
+        test_sub = result["sub_missions"][-1]
+        assert any("test_session_resume" in t for t in test_sub["tests"]) or \
+               any("tests/" in t for t in test_sub["tests"])

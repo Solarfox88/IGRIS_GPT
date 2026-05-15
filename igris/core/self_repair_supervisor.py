@@ -4343,15 +4343,14 @@ class SelfRepairSupervisor:
     ) -> Dict[str, Any]:
         """Always produce a syntactically complete decomposition from the goal text.
 
-        Parsing strategy:
-        1. If ':' is present, split on ':' and tokenise the RHS on commas/semicolons/periods.
-        2. Otherwise split the whole goal on ', ' and '. '.
-        3. Filter fragments shorter than 10 chars and known noise phrases.
-        4. Create at most 4 sub_missions from the remaining components.
+        Parsing strategy (in order of priority):
+        1. Numbered/bulleted list items in the goal (\\n- / \\n* / \\n1. / \\n2. etc.)
+        2. Semicolon-separated clauses (;)
+        3. Semantic split: if goal mentions endpoint/API → 2 sub-missions
+           (backend implementation + test coverage). Never split on '.' or ','
+           because those are sentence/decimal separators, not list boundaries.
+        4. Last resort: treat the entire goal as a single sub-mission.
         """
-        _NOISE = frozenset({
-            "no secrets", "add tests", "no code", "output json only",
-        })
 
         def _infer_risk(text: str) -> str:
             t = text.lower()
@@ -4364,7 +4363,7 @@ class SelfRepairSupervisor:
         def _infer_file_scopes(text: str) -> List[str]:
             t = text.lower()
             if any(k in t for k in ("endpoint", "api", "server", "route")):
-                return ["igris/web/server.py"]
+                return ["igris/web/server.py", "igris/core/"]
             if any(k in t for k in ("dashboard", "badge", "ui", "card")):
                 return ["igris/web/static/**", "igris/web/templates/**"]
             if "test" in t:
@@ -4374,52 +4373,103 @@ class SelfRepairSupervisor:
             return ["igris/**"]
 
         def _infer_test_targets(text: str) -> List[str]:
-            t = text.lower()
-            if "test" in t:
+            # Extract explicit test file paths like tests/test_foo.py
+            matches = re.findall(r"tests/[\w/]+\.py", text)
+            if matches:
+                return matches
+            if "test" in text.lower():
                 return ["tests/"]
             return []
 
-        # Parse components from goal
-        safe_goal = _safe_redact(str(goal))
-        if ":" in safe_goal:
-            rhs = safe_goal.split(":", 1)[1]
-            raw_parts = re.split(r"[,;.]", rhs)
-        else:
-            raw_parts = re.split(r",\s+|\.\s+", safe_goal)
-
-        components: List[str] = []
-        for part in raw_parts:
-            stripped = part.strip()
-            if len(stripped) < 10:
-                continue
-            if stripped.lower() in _NOISE:
-                continue
-            components.append(stripped)
-
-        # Ensure at least one component
-        if not components:
-            components = [safe_goal[:200] or "Complete mission"]
-
-        components = components[:4]
-
-        sub_missions = []
-        for component in components:
-            title = component[:40].capitalize()
-            sub_missions.append({
-                "title": title,
-                "goal": _safe_redact(component),
+        def _make_sub(title: str, goal_text: str) -> Dict[str, Any]:
+            safe = _safe_redact(goal_text)
+            return {
+                "title": title[:60],
+                "goal": safe,
                 "dependencies": [],
-                "acceptance_criteria": [f"{title} works as described"],
-                "allowed_file_scopes": _infer_file_scopes(component),
-                "tests": _infer_test_targets(component),
-                "risk_level": _infer_risk(component),
+                "acceptance_criteria": [f"{title} implemented and validated"],
+                "allowed_file_scopes": _infer_file_scopes(goal_text),
+                "tests": _infer_test_targets(goal_text),
+                "risk_level": _infer_risk(goal_text),
                 "human_approval_required": False,
-            })
+            }
 
+        safe_goal = _safe_redact(str(goal))
+
+        # --- Strategy 1: explicit bulleted/numbered list items ---
+        bullet_parts = re.split(r"\n\s*(?:[-*]|\d+\.)\s+", safe_goal)
+        # Only use bullet split if it produced ≥2 meaningful items (each ≥30 chars)
+        bullet_items = [p.strip() for p in bullet_parts if len(p.strip()) >= 30]
+        if len(bullet_items) >= 2:
+            components = bullet_items[:4]
+            sub_missions = [_make_sub(c[:50].capitalize(), c) for c in components]
+            why = (
+                f"Mission contains {len(components)} explicit list items requiring separate "
+                f"reasoning passes. Signals: {signals}"
+            )
+            return {
+                "why_too_large": _safe_redact(why),
+                "sub_missions": sub_missions,
+                "first_sub_mission": sub_missions[0]["title"],
+                "human_approval_required": True,
+                "generated_by": "deterministic_fallback",
+            }
+
+        # --- Strategy 2: semicolon-separated clauses ---
+        semi_parts = [p.strip() for p in safe_goal.split(";") if len(p.strip()) >= 30]
+        if len(semi_parts) >= 2:
+            components = semi_parts[:4]
+            sub_missions = [_make_sub(c[:50].capitalize(), c) for c in components]
+            why = (
+                f"Mission contains {len(components)} semicolon-delimited components. "
+                f"Signals: {signals}"
+            )
+            return {
+                "why_too_large": _safe_redact(why),
+                "sub_missions": sub_missions,
+                "first_sub_mission": sub_missions[0]["title"],
+                "human_approval_required": True,
+                "generated_by": "deterministic_fallback",
+            }
+
+        # --- Strategy 3: semantic split for endpoint/API missions ---
+        gl = safe_goal.lower()
+        is_endpoint_mission = any(k in gl for k in ("endpoint", "/api/", "get /", "post /", "put /"))
+        has_test_requirement = "test" in gl
+        if is_endpoint_mission:
+            # Sub-mission 1: backend implementation
+            impl_goal = (
+                f"{safe_goal.rstrip('.')}. "
+                "Focus on implementing the backend endpoint logic only. "
+                "Do not write tests in this sub-mission."
+            )
+            # Sub-mission 2: test coverage (only if tests mentioned)
+            sub_missions = [_make_sub("Backend endpoint implementation", impl_goal)]
+            if has_test_requirement:
+                test_files = _infer_test_targets(safe_goal) or ["tests/"]
+                test_goal = (
+                    f"Add comprehensive test coverage for: {safe_goal[:200]}. "
+                    f"Write tests in {', '.join(test_files)}. "
+                    "Assume the endpoint is already implemented."
+                )
+                sub_missions.append(_make_sub("Test coverage", test_goal))
+            return {
+                "why_too_large": _safe_redact(
+                    f"Endpoint mission split into {len(sub_missions)} semantic sub-missions "
+                    f"(implementation + tests). Signals: {signals}"
+                ),
+                "sub_missions": sub_missions,
+                "first_sub_mission": sub_missions[0]["title"],
+                "human_approval_required": True,
+                "generated_by": "deterministic_fallback",
+            }
+
+        # --- Strategy 4: single sub-mission (whole goal, scoped) ---
+        sub_missions = [_make_sub("Complete mission", safe_goal)]
         return {
             "why_too_large": _safe_redact(
-                f"Mission contains {len(components)} distinct components requiring separate "
-                f"reasoning passes. Signals: {signals}"
+                f"Mission could not be structurally decomposed; presented as single bounded "
+                f"sub-mission for focused retry. Signals: {signals}"
             ),
             "sub_missions": sub_missions,
             "first_sub_mission": sub_missions[0]["title"],
