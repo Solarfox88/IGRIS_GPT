@@ -402,6 +402,40 @@ REQUIRED_FIELDS = (
 )
 
 
+def _extract_first_json_object(text: str) -> Optional[str]:
+    """Return the first complete JSON object in text using a brace counter.
+
+    The greedy regex approach fails when the model appends extra text with
+    braces after the JSON block — this handles nested objects and strings
+    containing braces/quotes correctly.
+    """
+    start = text.find("{")
+    if start == -1:
+        return None
+    depth = 0
+    in_string = False
+    escape = False
+    for i, ch in enumerate(text[start:], start):
+        if escape:
+            escape = False
+            continue
+        if ch == "\\" and in_string:
+            escape = True
+            continue
+        if ch == '"':
+            in_string = not in_string
+            continue
+        if in_string:
+            continue
+        if ch == "{":
+            depth += 1
+        elif ch == "}":
+            depth -= 1
+            if depth == 0:
+                return text[start : i + 1]
+    return None
+
+
 def _parse_response(
     raw: str,
     model: str,
@@ -412,7 +446,7 @@ def _parse_response(
     model_requested: str = "",
 ) -> Dict[str, Any]:
     text = _redact(raw.strip())
-    match = re.search(r"\{.*\}", text, re.DOTALL)
+    extracted = _extract_first_json_object(text)
     _obs = {
         "api_helper_mode": mode,
         "api_helper_provider": provider,
@@ -420,7 +454,7 @@ def _parse_response(
         "api_helper_model_resolved": model,
         "codex_only": mode == "codex_only",
     }
-    if not match:
+    if not extracted:
         return {
             "ok": False,
             "model": model,
@@ -440,7 +474,7 @@ def _parse_response(
             "estimated_cost_usd": cost,
         }
     try:
-        payload = json.loads(match.group())
+        payload = json.loads(extracted)
     except json.JSONDecodeError as exc:
         return {
             "ok": False,
@@ -592,9 +626,9 @@ def main() -> None:
     if is_decomposition:
         decomp: Dict[str, Any] = {}
         try:
-            m = re.search(r"\{.*\}", raw_response, re.DOTALL)
-            if m:
-                decomp = json.loads(m.group())
+            extracted_decomp = _extract_first_json_object(raw_response)
+            if extracted_decomp:
+                decomp = json.loads(extracted_decomp)
         except (json.JSONDecodeError, AttributeError):
             pass
         print(json.dumps({
