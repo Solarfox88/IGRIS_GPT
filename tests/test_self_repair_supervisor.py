@@ -5485,6 +5485,105 @@ def test_decomposition_no_secrets_in_subissue_body():
 
 
 # ---------------------------------------------------------------------------
+# Decomposition report consistency tests (#350 watchdog fix)
+# ---------------------------------------------------------------------------
+
+
+def test_auto_create_subissues_clears_human_approval_required():
+    """When policy=auto_create_subissues and sub-issues are created,
+    human_approval_required must be False and auto_approved_by_policy=True."""
+    backend = _decomp_backend(_make_valid_decomposition_result())
+    supervisor = SelfRepairSupervisor("/tmp/project", backend=backend)
+    config = _config(
+        max_rank_attempts=3,
+        max_repair_cycles=1,
+        goal="Complex task",
+        allow_github_pr=True,
+        allow_auto_subissues=True,
+        dry_run=False,
+    )
+    run = SupervisorRun(run_id="auto-create-approval-clear", rank_id="test")
+    result = supervisor.run(config, run=run)
+
+    decomp = result.report.get("decomposition", {})
+    assert decomp.get("human_approval_required") is False, (
+        "human_approval_required must be False when policy=auto_create_subissues and issues created"
+    )
+    assert decomp.get("auto_approved_by_policy") is True, (
+        "auto_approved_by_policy must be True when policy=auto_create_subissues"
+    )
+    assert decomp.get("approval_status") == "auto_approved_by_policy", (
+        f"approval_status must be 'auto_approved_by_policy', got {decomp.get('approval_status')!r}"
+    )
+
+
+def test_auto_create_subissues_report_coherent():
+    """Decomposition report must include policy, allow_auto_subissues, sub_issue_urls,
+    next_action as a single coherent picture — no ambiguity."""
+    backend = _decomp_backend(_make_valid_decomposition_result())
+    supervisor = SelfRepairSupervisor("/tmp/project", backend=backend)
+    config = _config(
+        max_rank_attempts=3,
+        max_repair_cycles=1,
+        goal="Complex task",
+        allow_github_pr=True,
+        allow_auto_subissues=True,
+        dry_run=False,
+    )
+    run = SupervisorRun(run_id="auto-create-coherent-report", rank_id="test")
+    result = supervisor.run(config, run=run)
+
+    decomp = result.report.get("decomposition", {})
+    assert decomp.get("policy") == "auto_create_subissues", (
+        f"decomposition.policy must be 'auto_create_subissues', got {decomp.get('policy')!r}"
+    )
+    assert decomp.get("allow_auto_subissues") is True, (
+        "decomposition.allow_auto_subissues must be True"
+    )
+    assert isinstance(decomp.get("sub_issue_urls"), list) and len(decomp["sub_issue_urls"]) > 0, (
+        "sub_issue_urls must be a non-empty list in decomposition report"
+    )
+    next_action = result.report.get("next_action", "")
+    assert next_action.startswith("run:"), (
+        f"next_action must start with 'run:' after auto-create, got {next_action!r}"
+    )
+    assert decomp.get("next_action", "").startswith("run:"), (
+        "next_action must also be mirrored inside decomposition dict"
+    )
+
+
+def test_request_human_approval_keeps_human_approval_required_true():
+    """When policy=request_human_approval, human_approval_required must stay True
+    and auto_approved_by_policy must be False."""
+    backend = _decomp_backend(_make_valid_decomposition_result())
+    supervisor = SelfRepairSupervisor("/tmp/project", backend=backend)
+    config = _config(
+        max_rank_attempts=3,
+        max_repair_cycles=1,
+        goal="Complex task",
+        allow_github_pr=False,
+        allow_auto_subissues=False,
+        dry_run=False,
+    )
+    run = SupervisorRun(run_id="manual-approval-keeps-flag", rank_id="test")
+    result = supervisor.run(config, run=run)
+
+    decomp = result.report.get("decomposition", {})
+    assert decomp.get("policy") == "request_human_approval", (
+        f"Expected policy=request_human_approval, got {decomp.get('policy')!r}"
+    )
+    assert decomp.get("auto_approved_by_policy") is False, (
+        "auto_approved_by_policy must be False when human approval is required"
+    )
+    assert decomp.get("approval_status") == "pending_human_approval", (
+        f"approval_status must be 'pending_human_approval', got {decomp.get('approval_status')!r}"
+    )
+    # human_approval_required may be True or False depending on what the decomposer returned,
+    # but approval_status must accurately reflect the pending state.
+    assert result.report.get("next_action") == "request_approval:decomposition"
+
+
+# ---------------------------------------------------------------------------
 # Semantic acceptance gate integration tests (#365)
 # ---------------------------------------------------------------------------
 

@@ -4756,6 +4756,23 @@ class SelfRepairSupervisor:
             else:
                 safe_decomposition[k] = v
         safe_decomposition["sub_issue_urls"] = created_urls if policy == "auto_create_subissues" else []
+        safe_decomposition["policy"] = policy
+        safe_decomposition["allow_auto_subissues"] = (
+            config.allow_auto_subissues if config is not None else False
+        )
+        safe_decomposition["next_action"] = next_action
+        # Resolve the approval ambiguity: if the policy already auto-approved the
+        # decomposition (sub-issues created autonomously), human review is not needed
+        # and the original human_approval_required=True from the LLM response is
+        # overridden.  For all other policies human_approval_required keeps its
+        # original value so callers can gate correctly.
+        if policy == "auto_create_subissues" and created_urls:
+            safe_decomposition["human_approval_required"] = False
+            safe_decomposition["auto_approved_by_policy"] = True
+            safe_decomposition["approval_status"] = "auto_approved_by_policy"
+        else:
+            safe_decomposition.setdefault("auto_approved_by_policy", False)
+            safe_decomposition.setdefault("approval_status", "pending_human_approval")
         run.report.update({
             "decomposition_required": True,
             "capability_limit_signal": triggering_signal,
