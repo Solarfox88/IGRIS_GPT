@@ -175,6 +175,7 @@ MODEL_PROFILES = (
     "local_coder",
     "cheap_cloud_reasoning",
     "strong_cloud_reasoning",
+    "endpoint_implementation",
     "risk_reviewer",
     "embedding_memory",
 )
@@ -188,6 +189,10 @@ TASK_PROFILE_MAP: Dict[str, str] = {
     "code_generation": "cheap_cloud_reasoning",
     "patch_generation": "cheap_cloud_reasoning",
     "plan_generation": "cheap_cloud_reasoning",
+    # Cloud-first profiles for tasks that repeatedly fail or require real implementations
+    "semantic_repair": "endpoint_implementation",
+    "endpoint_implementation": "endpoint_implementation",
+    "stub_repair": "endpoint_implementation",
     "risk_review": "risk_reviewer",
     "architecture_review": "strong_cloud_reasoning",
     "security_review": "strong_cloud_reasoning",
@@ -235,11 +240,12 @@ class ProviderConfig:
 # Default provider configurations
 def _build_default_providers() -> Dict[str, ProviderConfig]:
     """Build default provider configs from environment."""
+    import os
     providers: Dict[str, ProviderConfig] = {}
 
     # Ollama (local)
-    ollama_url = getattr(CONFIG, "local_llm_base_url", "http://127.0.0.1:11434")
-    ollama_model = getattr(CONFIG, "local_llm_model", "phi4-mini")
+    ollama_url = CONFIG.local_llm.base_url
+    ollama_model = CONFIG.local_llm.model
     providers["ollama"] = ProviderConfig(
         name="ollama",
         base_url=str(ollama_url),
@@ -250,11 +256,19 @@ def _build_default_providers() -> Dict[str, ProviderConfig]:
         is_local=True,
     )
 
-    # OpenAI (fallback cloud)
+    # OpenAI — model resolved from:
+    #   1. IGRIS_EXECUTION_FALLBACK_MODEL env var (execution-specific override)
+    #   2. CONFIG.fallback_llm.model (from FALLBACK_LLM_MODEL in .env)
+    #   3. gpt-4o-mini (safe default)
+    openai_model = (
+        os.environ.get("IGRIS_EXECUTION_FALLBACK_MODEL")
+        or CONFIG.fallback_llm.model
+        or "gpt-4o-mini"
+    )
     providers["openai"] = ProviderConfig(
         name="openai",
         base_url="https://api.openai.com/v1",
-        model=str(getattr(CONFIG, "fallback_llm_model", "gpt-4o-mini")),
+        model=str(openai_model),
         api_key_env="OPENAI_API_KEY",
         cost_per_1k_input=0.15,
         cost_per_1k_output=0.60,
@@ -472,6 +486,9 @@ class ModelOrchestrator:
             "local_coder": ["ollama", "deepseek", "openai"],
             "cheap_cloud_reasoning": ["deepseek", "openai", "ollama"],
             "strong_cloud_reasoning": ["anthropic", "openai", "deepseek"],
+            # Cloud-first: never starts with Ollama — used for endpoint/API implementation
+            # and repeated semantic failures where local model repeatedly produces stubs.
+            "endpoint_implementation": ["openai", "anthropic", "deepseek"],
             "risk_reviewer": ["deepseek", "openai", "ollama"],
             "embedding_memory": ["ollama", "openai"],
         }

@@ -140,6 +140,12 @@ class LoopResult:
     files_modified: List[str] = field(default_factory=list)
     errors: List[str] = field(default_factory=list)
     final_summary: str = ""
+    # Orchestrator observability
+    reasoning_execution_provider: str = ""
+    reasoning_execution_model: str = ""
+    reasoning_execution_profile: str = ""
+    orchestrator_used: bool = False
+    local_model_available: bool = False
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -156,6 +162,11 @@ class LoopResult:
             "files_modified": self.files_modified,
             "errors": [redact_secrets(e) for e in self.errors],
             "final_summary": redact_secrets(self.final_summary),
+            "reasoning_execution_provider": self.reasoning_execution_provider,
+            "reasoning_execution_model": self.reasoning_execution_model,
+            "reasoning_execution_profile": self.reasoning_execution_profile,
+            "orchestrator_used": self.orchestrator_used,
+            "local_model_available": self.local_model_available,
         }
 
 
@@ -180,12 +191,16 @@ class AgentReasoningLoop:
         max_steps: int = DEFAULT_MAX_STEPS,
         max_consecutive_errors: int = DEFAULT_MAX_CONSECUTIVE_ERRORS,
         role: str = "coder",
+        task_type: str = "code_reasoning",
+        preferred_profile: Optional[str] = None,
     ):
         import os
         self.project_root = project_root or os.environ.get("PROJECT_ROOT", ".")
         self.max_steps = max_steps
         self.max_consecutive_errors = max_consecutive_errors
         self.role = role
+        self.task_type = task_type
+        self.preferred_profile = preferred_profile
 
         # State
         self._steps: List[LoopStep] = []
@@ -195,6 +210,11 @@ class AgentReasoningLoop:
         self._world_state: Dict[str, Any] = {}
         self._consecutive_errors = 0
         self._stop_reason = ""
+        # Orchestrator observability — updated on first successful LLM call
+        self._reasoning_provider: str = ""
+        self._reasoning_model: str = ""
+        self._reasoning_profile: str = ""
+        self._orchestrator_used: bool = False
 
         # Anti-repeat guard: tracks (action_type, params_key) -> count
         self._action_history: List[Dict[str, Any]] = []
@@ -280,8 +300,26 @@ class AgentReasoningLoop:
         result.files_modified = list(set(self._files_modified))
         result.total_duration_ms = int((time.monotonic() - t0) * 1000)
         result.final_summary = self._build_summary(result)
+        # Propagate orchestrator observability
+        result.reasoning_execution_provider = self._reasoning_provider
+        result.reasoning_execution_model = self._reasoning_model
+        result.reasoning_execution_profile = self._reasoning_profile
+        result.orchestrator_used = self._orchestrator_used
+        result.local_model_available = self._local_model_available()
 
         return result
+
+    def _local_model_available(self) -> bool:
+        """Return True if the local Ollama model is reachable."""
+        import urllib.request
+        import urllib.error
+        from igris.models.config import CONFIG
+        url = f"{CONFIG.local_llm.base_url.rstrip('/')}/api/tags"
+        try:
+            with urllib.request.urlopen(url, timeout=2.0):
+                return True
+        except Exception:
+            return False
 
     def _suppress_human_gate(self) -> bool:
         return bool(
@@ -597,11 +635,19 @@ class AgentReasoningLoop:
         ]
 
         orch_result = orch.complete(
-            task_type="code_reasoning",
+            task_type=self.task_type,
             messages=messages,
             system_prompt=system_prompt,
             json_mode=True,
+            preferred_profile=self.preferred_profile,
         )
+
+        # Record orchestrator observability on first successful call
+        if orch_result.success and not self._orchestrator_used:
+            self._orchestrator_used = True
+            self._reasoning_provider = orch_result.provider
+            self._reasoning_model = orch_result.model
+            self._reasoning_profile = orch_result.profile
 
         if not orch_result.success or orch_result.profile == "deterministic":
             # No LLM available — return blocked action
