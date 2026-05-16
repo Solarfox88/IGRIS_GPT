@@ -347,7 +347,7 @@ class SupervisorBackend(Protocol):
     def git_status(self) -> CommandResult: ...
     def git_log_head(self) -> CommandResult: ...
     def create_branch(self, branch: str) -> CommandResult: ...
-    def run_reasoning(self, goal: str, max_steps: int, initial_context: Dict[str, Any], timeout: int = 300) -> Dict[str, Any]: ...
+    def run_reasoning(self, goal: str, max_steps: int, initial_context: Dict[str, Any], timeout: int = 300, task_type: str = "code_reasoning", preferred_profile: Optional[str] = None) -> Dict[str, Any]: ...
     def git_diff_stat(self) -> CommandResult: ...
     def git_diff(self) -> CommandResult: ...
     def run_tests(self, targets: Optional[List[str]] = None, timeout: int = 120, hard_cap: int = 3600) -> CommandResult: ...
@@ -571,12 +571,16 @@ class LocalSupervisorBackend:
         max_steps: int,
         initial_context: Dict[str, Any],
         timeout: int = 300,
+        task_type: str = "code_reasoning",
+        preferred_profile: Optional[str] = None,
     ) -> Dict[str, Any]:
         payload = json.dumps({
             "project_root": str(self.project_root),
             "goal": goal,
             "max_steps": max_steps,
             "initial_context": initial_context,
+            "task_type": task_type,
+            "preferred_profile": preferred_profile,
         })
         result = self._run(
             [str(self.project_root / ".venv/bin/python"), "-m", "igris.core.supervisor_reasoning_worker"],
@@ -2164,18 +2168,25 @@ class SelfRepairSupervisor:
                     "mission_stage_validation": stage.validation,
                     "mission_stage_repair_strategy": stage.repair_strategy,
                 })
+                rank_task_type = (
+                    "semantic_repair"
+                    if stage.stage_id and "endpoint" in str(stage.stage_id).lower()
+                    else "code_reasoning"
+                )
                 run.add(
                     "rank_reasoning",
                     "running",
                     f"Running staged mission reasoning: {stage.stage_id}",
                     stage_id=stage.stage_id,
                     timeout_seconds=config.reasoning_timeout_seconds,
+                    task_type=rank_task_type,
                 )
                 result = self.backend.run_reasoning(
                     stage_goal,
                     max_steps=140,
                     initial_context=stage_context,
                     timeout=config.reasoning_timeout_seconds,
+                    task_type=rank_task_type,
                 )
                 status = str(result.get("status", ""))
                 stop_reason = str(result.get("stop_reason", ""))
@@ -2198,6 +2209,11 @@ class SelfRepairSupervisor:
                     stop_reason=stop_reason,
                     files_modified=files_modified,
                     attempted_write_paths=attempted_write_paths,
+                    orchestrator_used=result.get("orchestrator_used", False),
+                    reasoning_execution_provider=result.get("reasoning_execution_provider", ""),
+                    reasoning_execution_model=result.get("reasoning_execution_model", ""),
+                    reasoning_execution_profile=result.get("reasoning_execution_profile", ""),
+                    local_model_available=result.get("local_model_available", False),
                 )
                 after_diff = self.backend.git_diff()
                 after_paths = set(_diff_changed_paths(after_diff.output))
@@ -3433,13 +3449,44 @@ class SelfRepairSupervisor:
             "api_helper_advice": helper_advice or {},
             "api_helper_advisory_only": True,
         })
+        # Escalate to cloud-first execution for repeated semantic failures or
+        # when the local model is unavailable (would otherwise silently degrade
+        # to deterministic fallback producing empty/stub output).
+        repair_task_type = "code_reasoning"
+        repair_profile: Optional[str] = None
+        if failure in {"semantic_incomplete", "stub_detected"}:
+            repair_task_type = "semantic_repair"
+        elif failure in {"missing_tests", "pytest_failure"} and cycle > 1:
+            repair_task_type = "code_generation"
+        env_profile = os.environ.get("IGRIS_EXECUTION_PREFERRED_PROFILE", "")
+        if env_profile:
+            repair_profile = env_profile
+        run.add(
+            "repair_reasoning",
+            "running",
+            f"Starting repair reasoning cycle {cycle}",
+            task_type=repair_task_type,
+            preferred_profile=repair_profile,
+            failure_class=failure,
+        )
         result = self.backend.run_reasoning(
             repair_goal,
             max_steps=160,
             initial_context=repair_context,
             timeout=config.reasoning_timeout_seconds,
+            task_type=repair_task_type,
+            preferred_profile=repair_profile,
         )
-        run.add("repair_reasoning", str(result.get("status", "")), result.get("final_summary", ""))
+        run.add(
+            "repair_reasoning",
+            str(result.get("status", "")),
+            result.get("final_summary", ""),
+            orchestrator_used=result.get("orchestrator_used", False),
+            reasoning_execution_provider=result.get("reasoning_execution_provider", ""),
+            reasoning_execution_model=result.get("reasoning_execution_model", ""),
+            reasoning_execution_profile=result.get("reasoning_execution_profile", ""),
+            local_model_available=result.get("local_model_available", False),
+        )
         # Record a reasoning_timeout signal when repair reasoning itself times out —
         # that also indicates the model cannot make progress on this mission.
         if str(result.get("stop_reason", "")) in {"reasoning_timeout", "budget_exceeded"}:

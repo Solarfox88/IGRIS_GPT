@@ -13,6 +13,8 @@ def main() -> int:
     loop = AgentReasoningLoop(
         project_root=str(payload["project_root"]),
         max_steps=int(payload["max_steps"]),
+        task_type=str(payload.get("task_type") or "code_reasoning"),
+        preferred_profile=payload.get("preferred_profile") or None,
     )
     result = loop.run(
         goal=str(payload["goal"]),

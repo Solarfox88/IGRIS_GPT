@@ -89,12 +89,16 @@ class FakeBackend:
         self.commands.append(f"branch:{branch}")
         return CommandResult(True, branch)
 
-    def run_reasoning(self, goal, max_steps, initial_context, timeout=300):
+    def run_reasoning(self, goal, max_steps, initial_context, timeout=300,
+                      task_type="code_reasoning", preferred_profile=None):
         self.commands.append(f"reasoning:{initial_context}")
         self.commands.append(f"reasoning_timeout:{timeout}")
         self.reasoning_goals.append(goal)
         self.last_reasoning_context = initial_context
         self.reasoning_contexts.append(initial_context)
+        # Track execution routing fields for observability tests
+        self.last_task_type = task_type
+        self.last_preferred_profile = preferred_profile
         if self.reasoning_results:
             return self.reasoning_results.pop(0)
         return {
@@ -103,6 +107,11 @@ class FakeBackend:
             "files_modified": ["igris/core/fix.py"],
             "final_summary": "repair",
             "goal": goal,
+            "orchestrator_used": True,
+            "reasoning_execution_provider": "openai",
+            "reasoning_execution_model": "gpt-4o-mini",
+            "reasoning_execution_profile": task_type,
+            "local_model_available": False,
         }
 
     def git_diff_stat(self):
@@ -6496,4 +6505,145 @@ class TestApiHelperModeObservability:
         assert run.status == "completed"
         assert run.api_escalations_used == 0, (
             "API helper must not be called during normal successful execution"
+        )
+
+
+# ---------------------------------------------------------------------------
+# Execution routing observability tests (#350 watchdog)
+# ---------------------------------------------------------------------------
+
+class TestExecutionRoutingObservability:
+    """Verify task_type escalation and observability in repair_reasoning events."""
+
+    def _make_semantic_backend(self, semantic_incomplete_cycles=2):
+        """FakeBackend that fails semantic gate N times then succeeds."""
+        backend = FakeBackend()
+        backend.semantic_results = [False] * semantic_incomplete_cycles + [True]
+        backend.full_tests = [CommandResult(True, "ok")] * 10
+        return backend
+
+    def test_semantic_incomplete_repair_uses_semantic_repair_task_type(self):
+        """When failure_class=semantic_incomplete, repair_reasoning must use
+        task_type=semantic_repair (cloud-first profile, not code_reasoning)."""
+        backend = FakeBackend()
+        backend.full_tests = [CommandResult(True, "ok")] * 10
+        backend.reasoning_results = [
+            {
+                "status": "finished",
+                "stop_reason": "finish",
+                "files_modified": ["igris/web/server.py"],
+                "final_summary": "stub fix attempted",
+                "orchestrator_used": True,
+                "reasoning_execution_provider": "openai",
+                "reasoning_execution_model": "gpt-4o-mini",
+                "reasoning_execution_profile": "endpoint_implementation",
+                "local_model_available": False,
+            }
+        ] * 5
+        supervisor = SelfRepairSupervisor("/tmp/project", backend=backend)
+        config = _config(
+            max_rank_attempts=1,
+            max_repair_cycles=2,
+        )
+        run = SupervisorRun(run_id="semantic-task-type", rank_id="test")
+        supervisor._repair_cycle(
+            run=run,
+            failure="semantic_incomplete",
+            config=config,
+            cycle=1,
+        )
+        assert backend.last_task_type == "semantic_repair", (
+            f"Expected task_type=semantic_repair for semantic_incomplete, "
+            f"got {backend.last_task_type!r}"
+        )
+
+    def test_repair_reasoning_events_include_orchestrator_fields(self):
+        """repair_reasoning events must include orchestrator observability fields."""
+        backend = FakeBackend()
+        backend.full_tests = [CommandResult(True, "ok")] * 10
+        backend.reasoning_results = [
+            {
+                "status": "finished",
+                "stop_reason": "finish",
+                "files_modified": ["igris/web/server.py"],
+                "final_summary": "done",
+                "orchestrator_used": True,
+                "reasoning_execution_provider": "openai",
+                "reasoning_execution_model": "gpt-4o-mini",
+                "reasoning_execution_profile": "endpoint_implementation",
+                "local_model_available": False,
+            }
+        ] * 5
+        supervisor = SelfRepairSupervisor("/tmp/project", backend=backend)
+        config = _config(max_rank_attempts=1, max_repair_cycles=1)
+        run = SupervisorRun(run_id="obs-fields-test", rank_id="test")
+        supervisor._repair_cycle(
+            run=run,
+            failure="semantic_incomplete",
+            config=config,
+            cycle=1,
+        )
+        repair_events = [
+            e for e in run.events
+            if e.phase == "repair_reasoning" and e.status not in ("running",)
+        ]
+        assert repair_events, "Expected at least one repair_reasoning event"
+        ev = repair_events[-1]
+        assert "orchestrator_used" in ev.data, "repair_reasoning event must have orchestrator_used"
+        assert "reasoning_execution_provider" in ev.data
+        assert "reasoning_execution_model" in ev.data
+        assert "reasoning_execution_profile" in ev.data
+        assert "local_model_available" in ev.data
+
+    def test_api_helper_model_separate_from_execution_model(self):
+        """API helper observability fields must use different keys than execution fields.
+        They represent different concepts: advisory vs. execution backend."""
+        from igris.core.self_repair_supervisor import SupervisorEvent
+        # The two distinct field names must never be the same key
+        api_field = "api_helper_model_resolved"
+        exec_field = "reasoning_execution_model"
+        assert api_field != exec_field, (
+            "API helper model field and execution model field must be distinct keys"
+        )
+        # Verify repair_reasoning events include execution field (structural check)
+        backend = FakeBackend()
+        backend.full_tests = [CommandResult(True, "ok")] * 5
+        supervisor = SelfRepairSupervisor("/tmp/project", backend=backend)
+        config = _config(max_rank_attempts=1, max_repair_cycles=1)
+        run = SupervisorRun(run_id="field-separation", rank_id="test")
+        supervisor._repair_cycle(
+            run=run,
+            failure="semantic_incomplete",
+            config=config,
+            cycle=1,
+        )
+        repair_events = [
+            e for e in run.events
+            if e.phase == "repair_reasoning" and e.status not in ("running",)
+        ]
+        assert repair_events, "Expected repair_reasoning event"
+        # execution field must be present in repair events
+        assert exec_field in repair_events[-1].data, (
+            f"{exec_field!r} must be in repair_reasoning event data"
+        )
+        # api_helper field must NOT be in repair_reasoning events (it belongs to api_escalation)
+        assert api_field not in repair_events[-1].data, (
+            f"repair_reasoning must not contain {api_field!r} — that belongs to api_escalation"
+        )
+
+    def test_normal_failure_uses_code_reasoning_task_type(self):
+        """For non-semantic failures (pytest_failure), task_type must be code_reasoning."""
+        backend = FakeBackend()
+        backend.full_tests = [CommandResult(True, "ok")] * 10
+        supervisor = SelfRepairSupervisor("/tmp/project", backend=backend)
+        config = _config(max_rank_attempts=1, max_repair_cycles=1)
+        run = SupervisorRun(run_id="pytest-task-type", rank_id="test")
+        supervisor._repair_cycle(
+            run=run,
+            failure="pytest_failure",
+            config=config,
+            cycle=1,
+        )
+        assert backend.last_task_type == "code_reasoning", (
+            f"pytest_failure should use code_reasoning, got {backend.last_task_type!r}"
         )

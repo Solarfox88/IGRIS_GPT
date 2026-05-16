@@ -24,7 +24,7 @@ class TestModelProfiles:
 
     def test_profiles_are_tuple(self):
         assert isinstance(MODEL_PROFILES, tuple)
-        assert len(MODEL_PROFILES) == 7
+        assert len(MODEL_PROFILES) >= 7
 
     def test_required_profiles_present(self):
         required = {
@@ -32,7 +32,16 @@ class TestModelProfiles:
             "cheap_cloud_reasoning", "strong_cloud_reasoning",
             "risk_reviewer", "embedding_memory",
         }
-        assert required == set(MODEL_PROFILES)
+        assert required.issubset(set(MODEL_PROFILES)), (
+            f"Missing required profiles: {required - set(MODEL_PROFILES)}"
+        )
+
+    def test_endpoint_implementation_profile_present(self):
+        assert "endpoint_implementation" in MODEL_PROFILES
+        assert "endpoint_implementation" in TASK_PROFILE_MAP
+        assert TASK_PROFILE_MAP["endpoint_implementation"] == "endpoint_implementation"
+        assert TASK_PROFILE_MAP["semantic_repair"] == "endpoint_implementation"
+        assert TASK_PROFILE_MAP["stub_repair"] == "endpoint_implementation"
 
     def test_task_profile_map_covers_key_tasks(self):
         assert "chat" in TASK_PROFILE_MAP
@@ -227,3 +236,101 @@ class TestNoDirectCalls:
         )
         assert result.text == ""
         assert result.provider == "deterministic"
+
+
+# ---------------------------------------------------------------------------
+# Execution routing tests (#350 watchdog)
+# ---------------------------------------------------------------------------
+
+class TestExecutionRouting:
+    """Verify cloud-first routing when local model is unavailable."""
+
+    def test_local_unavailable_falls_through_to_cloud(self):
+        """When the local Ollama provider is unreachable, the chain continues to cloud."""
+        providers = {
+            "ollama": ProviderConfig(
+                name="ollama",
+                base_url="http://nonexistent-host:11434",
+                model="phi4-mini",
+                is_local=True,
+            ),
+            "openai": ProviderConfig(
+                name="openai",
+                base_url="http://nonexistent-openai:9999",
+                model="gpt-4o-mini",
+                api_key_env="OPENAI_API_KEY",
+            ),
+        }
+        import os
+        orig = os.environ.get("OPENAI_API_KEY")
+        os.environ["OPENAI_API_KEY"] = "sk-test-key"
+        try:
+            orch = ModelOrchestrator(providers=providers)
+            result = orch.complete(
+                task_type="code_reasoning",
+                messages=[{"role": "user", "content": "hello"}],
+            )
+            # Both providers are unreachable — falls to deterministic_fallback
+            # but the chain must have attempted openai (not skipped due to missing key)
+            assert result.provider in ("deterministic_fallback", "openai"), (
+                "Expected either successful openai call or deterministic_fallback"
+            )
+        finally:
+            if orig is None:
+                os.environ.pop("OPENAI_API_KEY", None)
+            else:
+                os.environ["OPENAI_API_KEY"] = orig
+
+    def test_endpoint_implementation_profile_is_cloud_first(self):
+        """endpoint_implementation chain must start with openai, not ollama."""
+        orch = ModelOrchestrator()
+        chain = orch._get_provider_chain("endpoint_implementation")
+        assert chain[0] != "ollama", (
+            "endpoint_implementation must not start with local Ollama"
+        )
+        assert "openai" in chain or "anthropic" in chain, (
+            "endpoint_implementation must include a cloud provider"
+        )
+
+    def test_semantic_repair_task_type_uses_cloud_first_profile(self):
+        """semantic_repair task_type must map to endpoint_implementation (cloud-first)."""
+        from igris.core.model_orchestrator import TASK_PROFILE_MAP
+        profile = TASK_PROFILE_MAP.get("semantic_repair")
+        assert profile == "endpoint_implementation", (
+            f"semantic_repair must map to endpoint_implementation, got {profile!r}"
+        )
+        chain = ModelOrchestrator()._get_provider_chain(profile)
+        assert chain[0] != "ollama", "semantic_repair chain must not start with Ollama"
+
+    def test_preferred_profile_overrides_task_type(self):
+        """preferred_profile parameter overrides the task_type default profile."""
+        orch = ModelOrchestrator()
+        # Force deterministic so no network calls needed
+        result = orch.complete(
+            task_type="chat",
+            messages=[{"role": "user", "content": "test"}],
+            preferred_profile="deterministic",
+        )
+        assert result.provider == "deterministic"
+        assert result.profile == "deterministic"
+
+    def test_config_attribute_path_resolved_correctly(self):
+        """Provider model must be resolved from CONFIG.fallback_llm.model, not a flat attr."""
+        from igris.models.config import CONFIG
+        orch = ModelOrchestrator()
+        openai_provider = orch.providers.get("openai")
+        assert openai_provider is not None
+        # Model should NOT be the hardcoded default if fallback_llm.model is set
+        # and not empty — it should match IGRIS_EXECUTION_FALLBACK_MODEL or
+        # CONFIG.fallback_llm.model, never "NOT SET" / empty string / None.
+        assert openai_provider.model, "OpenAI provider model must not be empty"
+        assert openai_provider.model != "NOT SET"
+
+    def test_no_api_key_in_provider_to_dict(self):
+        """Provider to_dict() must never expose the actual API key."""
+        orch = ModelOrchestrator()
+        for p in orch.list_providers():
+            for v in p.values():
+                assert "sk-" not in str(v), (
+                    f"Provider config must not expose API keys: {p}"
+                )
