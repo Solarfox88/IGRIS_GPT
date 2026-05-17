@@ -849,7 +849,11 @@ def _has_destructive_diff(diff: str) -> bool:
                 continue
             python_removed_lines.append(line)
 
-    critical = ("def create_app", "class ", "import ")
+    # Removing `import` lines is not inherently destructive — the model often
+    # reorganises the import block when adding new endpoints, and the test suite
+    # catches any broken imports.  Only structural deletions (app factory,
+    # class bodies) are treated as destructive.
+    critical = ("def create_app", "class ")
     return any(any(token in line for token in critical) for line in python_removed_lines)
 
 
