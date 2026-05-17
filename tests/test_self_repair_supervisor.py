@@ -558,6 +558,41 @@ index 1111111..2222222 100644
     )
 
 
+class TestSupervisorRunIsZombie:
+    def _make_run(self, status: str = "running", last_event_age_seconds: float = 0.0):
+        import time
+        run = SupervisorRun(run_id="z", rank_id="r", status=status)
+        run.add("start", "running", "started")
+        run.events[-1].timestamp = time.time() - last_event_age_seconds
+        return run
+
+    def test_completed_run_is_not_zombie(self):
+        run = self._make_run(status="completed", last_event_age_seconds=9999)
+        assert not run.is_zombie()
+
+    def test_recently_active_run_is_not_zombie(self):
+        run = self._make_run(status="running", last_event_age_seconds=60)
+        assert not run.is_zombie(threshold_seconds=1800)
+
+    def test_run_stuck_long_but_active_is_not_zombie(self):
+        """A run that started 3 hours ago but had an event 10 minutes ago is active."""
+        import time
+        run = SupervisorRun(run_id="z", rank_id="r", status="running")
+        run.add("start", "running", "started")
+        run.events[-1].timestamp = time.time() - 10800  # started 3h ago
+        run.add("progress", "running", "still going")
+        run.events[-1].timestamp = time.time() - 600    # last update 10 min ago
+        assert not run.is_zombie(threshold_seconds=1800)
+
+    def test_run_with_no_recent_events_is_zombie(self):
+        run = self._make_run(status="running", last_event_age_seconds=3600)
+        assert run.is_zombie(threshold_seconds=1800)
+
+    def test_run_with_no_events_is_not_zombie(self):
+        run = SupervisorRun(run_id="z", rank_id="r", status="running")
+        assert not run.is_zombie()
+
+
 def test_failure_classifier_detects_invalid_bootstrap_smoke_failure():
     smoke = CommandResult(False, '{"app":"IGRIS_GPT","rank":"A++","status":"ok","capability":"ui-visible-supervised"}', "Invalid bootstrap response for /api/health", 1)
 

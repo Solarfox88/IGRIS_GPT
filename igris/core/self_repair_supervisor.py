@@ -326,16 +326,25 @@ class SupervisorRun:
         """Unix timestamp of the first event, or None if no events exist."""
         return self.events[0].timestamp if self.events else None
 
-    def is_zombie(self, threshold_seconds: float = 3600.0) -> bool:
-        """Return True if the run appears stuck: status is 'running' and it has
-        been active longer than threshold_seconds without reaching a terminal state."""
+    @property
+    def last_updated_at(self) -> Optional[float]:
+        """Unix timestamp of the most recent event, or None if no events exist."""
+        return self.events[-1].timestamp if self.events else None
+
+    def is_zombie(self, threshold_seconds: float = 1800.0) -> bool:
+        """Return True if the run is stuck: status is 'running' but no new event
+        has been recorded in the last threshold_seconds.
+
+        A long-running but active session is not a zombie — only one that has
+        stopped producing events (no actions, no updates) for an extended period.
+        """
         import time
         if self.status not in ("running", "cancelling"):
             return False
-        t0 = self.started_at
-        if t0 is None:
+        last = self.last_updated_at
+        if last is None:
             return False
-        return (time.time() - t0) > threshold_seconds
+        return (time.time() - last) > threshold_seconds
 
     def to_dict(self) -> Dict[str, Any]:
         return {
