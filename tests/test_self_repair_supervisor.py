@@ -438,6 +438,41 @@ index 1111111..2222222 100644
     assert failure != "invalid_bootstrap"
 
 
+def test_failure_classifier_does_not_flag_import_reorganisation_as_destructive():
+    """Removing import lines while adding a new endpoint must not be flagged as destructive.
+
+    When the model adds a new endpoint to server.py it often reorganises the import block,
+    producing removed '-import ...' lines.  These are not structural deletions and the test
+    suite will catch any broken imports, so they must not trigger destructive_diff.
+    """
+    diff = """\
+diff --git a/igris/web/server.py b/igris/web/server.py
+index 1111111..2222222 100644
+--- a/igris/web/server.py
++++ b/igris/web/server.py
+@@ -1,8 +1,10 @@
+-import os
+-import json
+-from typing import Dict
++import json
++import os
++from typing import Dict, Optional
++from datetime import datetime, timezone
+
+ from fastapi import FastAPI
+
++
++@app.get("/api/diagnostics/session-resume")
++async def session_resume():
++    return {"session_id": "x", "resume_protocol_active": False,
++            "last_heartbeat_utc": None, "pending_tasks_count": 0}
+"""
+    failure = classify_failure(diff=diff)
+    assert failure != "destructive_diff", (
+        "import reorganisation in server.py must not be classified as destructive_diff"
+    )
+
+
 def test_failure_classifier_does_not_mark_html_class_changes_as_destructive():
     diff = """diff --git a/igris/web/templates/index.html b/igris/web/templates/index.html
 index 1111111..2222222 100644
