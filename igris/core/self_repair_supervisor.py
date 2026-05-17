@@ -321,6 +321,22 @@ class SupervisorRun:
         if callable(self.update_hook):
             self.update_hook(self)
 
+    @property
+    def started_at(self) -> Optional[float]:
+        """Unix timestamp of the first event, or None if no events exist."""
+        return self.events[0].timestamp if self.events else None
+
+    def is_zombie(self, threshold_seconds: float = 3600.0) -> bool:
+        """Return True if the run appears stuck: status is 'running' and it has
+        been active longer than threshold_seconds without reaching a terminal state."""
+        import time
+        if self.status not in ("running", "cancelling"):
+            return False
+        t0 = self.started_at
+        if t0 is None:
+            return False
+        return (time.time() - t0) > threshold_seconds
+
     def to_dict(self) -> Dict[str, Any]:
         return {
             "run_id": self.run_id,
