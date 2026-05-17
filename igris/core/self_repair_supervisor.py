@@ -639,8 +639,16 @@ class LocalSupervisorBackend:
     def git_diff(self) -> CommandResult:
         return self._run(["git", "diff"], timeout=10)
 
-    def run_tests(self, targets: Optional[List[str]] = None, timeout: int = 120, hard_cap: int = 3600) -> CommandResult:
+    def run_tests(
+        self,
+        targets: Optional[List[str]] = None,
+        timeout: int = 120,
+        hard_cap: int = 3600,
+        exclude_slow: bool = False,
+    ) -> CommandResult:
         cmd = [str(self.project_root / ".venv/bin/python"), "-m", "pytest", "-q"]
+        if exclude_slow:
+            cmd.extend(["-m", "not slow"])
         if targets:
             cmd.extend(targets)
         return self._run_adaptive(cmd, idle_timeout=timeout, hard_cap=hard_cap, clean_env=True)
@@ -2547,7 +2555,7 @@ class SelfRepairSupervisor:
             "Running baseline pytest",
             timeout_seconds=config.test_timeout_seconds,
         )
-        baseline = self.backend.run_tests(timeout=config.test_timeout_seconds, hard_cap=config.test_hard_cap_seconds)
+        baseline = self.backend.run_tests(timeout=config.test_timeout_seconds, hard_cap=config.test_hard_cap_seconds, exclude_slow=True)
         run.add("baseline_tests", "success" if baseline.success else "failure", _command_detail(baseline))
         cancelled = self._cancel_if_requested(run)
         if cancelled is not None:
@@ -2867,7 +2875,7 @@ class SelfRepairSupervisor:
                     "Running full pytest",
                     timeout_seconds=config.test_timeout_seconds,
                 )
-                full = self.backend.run_tests(timeout=config.test_timeout_seconds, hard_cap=config.test_hard_cap_seconds)
+                full = self.backend.run_tests(timeout=config.test_timeout_seconds, hard_cap=config.test_hard_cap_seconds, exclude_slow=True)
                 run.add("smoke", "running", "Running final smoke")
                 final_smoke = self.backend.smoke(config.required_smoke_endpoints, restart_command)
                 run.add("targeted_tests", "success" if targeted.success else "failure", _command_detail(targeted))
@@ -3799,7 +3807,7 @@ class SelfRepairSupervisor:
             "Running repair validation pytest",
             timeout_seconds=config.test_timeout_seconds,
         )
-        tests = self.backend.run_tests(timeout=config.test_timeout_seconds, hard_cap=config.test_hard_cap_seconds)
+        tests = self.backend.run_tests(timeout=config.test_timeout_seconds, hard_cap=config.test_hard_cap_seconds, exclude_slow=True)
         run.add("repair_tests", "success" if tests.success else "failure", _command_detail(tests))
         if not tests.success and "Command killed:" in (tests.error or ""):
             # Repair validation also hung — counts against the same capability-limit budget.

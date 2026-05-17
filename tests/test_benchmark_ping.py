@@ -170,8 +170,14 @@ class TestPhaseGovernor:
 # Full deterministic benchmark
 # ---------------------------------------------------------------------------
 
+@pytest.mark.slow
 class TestDeterministicBenchmark:
-    """Test full deterministic benchmark execution."""
+    """Test full deterministic benchmark execution.
+
+    Marked slow: run_deterministic() spawns a pytest subprocess that collects
+    the full test suite, causing >300s of silence in a parent pytest process.
+    Excluded from supervised baseline runs (which use -m 'not slow').
+    """
 
     def test_runs_all_phases(self):
         runner = BenchmarkRunner(project_root=str(Path(__file__).parent.parent))

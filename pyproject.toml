@@ -26,6 +26,12 @@ dev = [
     "pytest-cov",
 ]
 
+[tool.pytest.ini_options]
+asyncio_mode = "strict"
+markers = [
+    "slow: integration tests that spawn subprocesses or external services (excluded from supervised baseline)",
+]
+
 [tool.setuptools]
 package-dir = { "" = "." }
 
