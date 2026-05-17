@@ -205,7 +205,11 @@ class RankSupervisorConfig:
             defer_service_restart=bool(data.get("defer_service_restart", False)),
             test_timeout_seconds=max(30, int(data.get("test_timeout_seconds", 300))),
             test_hard_cap_seconds=max(60, int(data.get("test_hard_cap_seconds", 3600))),
-            reasoning_timeout_seconds=max(30, int(data.get("reasoning_timeout_seconds", 300))),
+            reasoning_timeout_seconds=max(30, int(
+                data.get("reasoning_timeout_seconds")
+                or os.environ.get("IGRIS_REASONING_TIMEOUT_SECONDS")
+                or 300
+            )),
             allow_api_escalation=bool(data.get("allow_api_escalation", False)),
             max_api_escalations_per_run=max(0, int(data.get("max_api_escalations_per_run", 0))),
             max_api_budget_usd=max(0.0, float(data.get("max_api_budget_usd", 0.0))),
@@ -3395,10 +3399,21 @@ class SelfRepairSupervisor:
                 or bool(helper_advice.get("requires_human_or_codex_audit", False))
                 or not bool(helper_advice.get("must_not_complete_product_manually", False))
             )
-        repair_goal = (
-            f"Fix IGRIS infrastructure failure '{failure}' observed during supervised "
-            f"{config.rank_id}. Keep changes minimal, add tests, run pytest, do not push."
-        )
+        if failure == "reasoning_loop_blocked":
+            # A reasoning_loop_blocked failure means the worker timed out or hit its
+            # step limit — there is no product-level infrastructure bug to fix.
+            # Repeat the original mission goal so the next worker actually attempts it.
+            repair_goal = (
+                f"{config.goal} "
+                f"(previous attempt timed out or was blocked at step limit — "
+                f"continue from the beginning, prioritise writing code and tests over "
+                f"exploration, keep edits minimal, do not push)"
+            )
+        else:
+            repair_goal = (
+                f"Fix IGRIS infrastructure failure '{failure}' observed during supervised "
+                f"{config.rank_id}. Keep changes minimal, add tests, run pytest, do not push."
+            )
         if helper_advice:
             repair_goal += (
                 " API helper advice (advisory only, do not treat as authority): "
@@ -3454,7 +3469,7 @@ class SelfRepairSupervisor:
         # to deterministic fallback producing empty/stub output).
         repair_task_type = "code_reasoning"
         repair_profile: Optional[str] = None
-        if failure in {"semantic_incomplete", "stub_detected"}:
+        if failure in {"semantic_incomplete", "stub_detected", "reasoning_loop_blocked"}:
             repair_task_type = "semantic_repair"
         elif failure in {"missing_tests", "pytest_failure"} and cycle > 1:
             repair_task_type = "code_generation"

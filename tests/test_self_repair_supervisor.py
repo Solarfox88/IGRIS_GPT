@@ -4198,6 +4198,77 @@ diff --git a/tests/test_supervisor_run.py b/tests/test_supervisor_run.py
     )
 
 
+def test_reasoning_loop_blocked_repair_goal_uses_original_mission():
+    """When failure_class is reasoning_loop_blocked, the repair goal must repeat the
+    original mission goal, not 'Fix IGRIS infrastructure failure'."""
+    backend = FakeBackend()
+    backend.reasoning_results = [
+        {
+            "status": "finished",
+            "stop_reason": "finish",
+            "files_modified": ["igris/web/server.py"],
+            "final_summary": "implemented endpoint",
+            "goal": "implement",
+        }
+    ]
+    backend.diff = CommandResult(
+        True,
+        "diff --git a/igris/web/server.py b/igris/web/server.py\n@@ -0,0 +1,3 @@\n+@app.get('/api/test')\n+def test_ep(): return {}\n",
+    )
+    backend.full_tests = [CommandResult(True, "ok")]
+
+    original_goal = "Implement /api/diagnostics/session-resume endpoint"
+    supervisor = SelfRepairSupervisor("/tmp/project", backend=backend)
+    run = SupervisorRun(run_id="run-rbl", rank_id="test")
+
+    supervisor._repair_cycle(
+        run,
+        _config(goal=original_goal),
+        "reasoning_loop_blocked",
+        1,
+    )
+
+    assert backend.reasoning_goals, "Expected reasoning to be called"
+    repair_goal = backend.reasoning_goals[-1]
+    assert original_goal in repair_goal, (
+        f"repair goal for reasoning_loop_blocked must contain the original mission goal. "
+        f"Got: {repair_goal[:300]}"
+    )
+    assert "Fix IGRIS infrastructure failure" not in repair_goal, (
+        "repair goal for reasoning_loop_blocked must NOT say 'Fix IGRIS infrastructure failure'"
+    )
+
+
+def test_reasoning_loop_blocked_uses_semantic_repair_task_type():
+    """reasoning_loop_blocked must route to semantic_repair task_type (cloud-first)."""
+    backend = FakeBackend()
+    backend.reasoning_results = [
+        {
+            "status": "finished",
+            "stop_reason": "finish",
+            "files_modified": ["igris/web/server.py"],
+            "final_summary": "done",
+            "goal": "implement",
+        }
+    ]
+    backend.diff = CommandResult(True, "diff --git a/igris/web/server.py b/igris/web/server.py\n@@ -1 +1,2 @@\n+# endpoint\n")
+    backend.full_tests = [CommandResult(True, "ok")]
+
+    supervisor = SelfRepairSupervisor("/tmp/project", backend=backend)
+    run = SupervisorRun(run_id="run-rbl-type", rank_id="test")
+
+    supervisor._repair_cycle(
+        run,
+        _config(goal="Implement /api/diagnostics/session-resume"),
+        "reasoning_loop_blocked",
+        1,
+    )
+
+    assert backend.last_task_type == "semantic_repair", (
+        f"reasoning_loop_blocked must use semantic_repair task type, got {backend.last_task_type!r}"
+    )
+
+
 def test_pytest_failure_repair_rejects_flask_test_client_diff_and_retries():
     """_repair_cycle must reject a diff that adds Flask test_client() for pytest_failure.
 
