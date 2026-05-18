@@ -640,6 +640,7 @@ class AgentReasoningLoop:
             system_prompt=system_prompt,
             json_mode=True,
             preferred_profile=self.preferred_profile,
+            timeout=120.0,
         )
 
         # Record orchestrator observability on first successful call

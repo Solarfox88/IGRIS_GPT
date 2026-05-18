@@ -4901,6 +4901,49 @@ def test_repeated_reasoning_timeout_triggers_decomposition_required():
            result.report.get("next_action", "").startswith("request_approval:")
 
 
+def test_explicit_blocked_stop_reason_triggers_decomposition_required():
+    """When the LLM explicitly returns blocked (self-aware refusal), the supervisor
+    must accumulate reasoning_timeout signals and decompose — not exhaust repair
+    cycles and return a generic blocked.
+
+    stop_reason='blocked' with a summary that does NOT contain the LLM-unavailable
+    string should be treated the same as 'reasoning_timeout' for capability-signal
+    accounting — it means the model was reached but refused the task.
+    """
+    backend = FakeBackend()
+    blocked_result = {
+        "status": "blocked",
+        "stop_reason": "blocked",
+        "files_modified": [],
+        # No "No suitable LLM provider available" here — model WAS reached but refused.
+        "final_summary": "Loop abc123: blocked\nGoal: ...\nStop: blocked\nBlocked detail: action=blocked; reason=Task complexity exceeds local model capability",
+    }
+    backend.reasoning_results = [
+        blocked_result,                      # attempt-1: blocked → reasoning_timeout=1
+        blocked_result,                      # repair-cycle: blocked → reasoning_timeout=2
+        _decomposition_reasoning_result(),   # decomposition call
+    ]
+    backend.diff_stat = CommandResult(False, "")
+    backend.diff = CommandResult(True, "")
+    backend.full_tests = [CommandResult(True, "ok")] * 10
+
+    supervisor = SelfRepairSupervisor("/tmp/project", backend=backend)
+    config = _config(
+        max_rank_attempts=3,
+        max_repair_cycles=1,
+        goal="Implement GET /api/diagnostics/session-resume for issue #350",
+    )
+    run = SupervisorRun(run_id="cap-blocked", rank_id="test")
+    result = supervisor.run(config, run=run)
+
+    assert result.failure_class == "decomposition_required", (
+        f"Expected decomposition_required, got {result.failure_class!r}. "
+        "blocked stop_reason must count as reasoning_timeout capability signal."
+    )
+    assert result.capability_signals.get("reasoning_timeout", 0) >= CAPABILITY_LIMIT_THRESHOLD
+    assert result.report.get("decomposition_required") is True
+
+
 def test_repeated_no_diff_repair_triggers_decomposition_required():
     """When repair cycles repeatedly produce no diff, capability limit is detected.
 

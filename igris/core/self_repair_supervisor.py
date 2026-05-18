@@ -3058,10 +3058,11 @@ class SelfRepairSupervisor:
                         failure = "missing_ui_visibility"
                 else:
                     failure = classify_failure(reasoning, diff.output, targeted, full, final_smoke)
-                    # Record reasoning_timeout signal when the model timed out without
-                    # producing a usable diff — a strong indicator of capability limit.
+                    # Record reasoning_timeout signal when the model timed out, hit
+                    # budget, or explicitly refused the task — all indicate capability
+                    # limit that should trigger decomposition after N occurrences.
                     if failure == "reasoning_loop_blocked" and stop_reason in {
-                        "reasoning_timeout", "budget_exceeded"
+                        "reasoning_timeout", "budget_exceeded", "blocked",
                     }:
                         self._record_capability_signal(run, "reasoning_timeout")
             # Record pytest_hang when the full test subprocess was killed for
@@ -3824,9 +3825,9 @@ class SelfRepairSupervisor:
             estimated_cost=step_cost,
             same_failure_count=run.same_failure_count,
         )
-        # Record a reasoning_timeout signal when repair reasoning itself times out —
-        # that also indicates the model cannot make progress on this mission.
-        if str(result.get("stop_reason", "")) in {"reasoning_timeout", "budget_exceeded"}:
+        # Record a reasoning_timeout signal when repair reasoning times out, hits
+        # budget, or explicitly refuses — all indicate the model cannot make progress.
+        if str(result.get("stop_reason", "")) in {"reasoning_timeout", "budget_exceeded", "blocked"}:
             self._record_capability_signal(run, "reasoning_timeout")
         diff_stat = self.backend.git_diff_stat()
         diff = self.backend.git_diff()
