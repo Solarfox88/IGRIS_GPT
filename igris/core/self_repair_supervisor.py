@@ -313,6 +313,9 @@ class SupervisorRun:
     same_failure_count: int = 0
     last_repair_failure: str = ""
     execution_budget_used_usd: float = 0.0
+    autorun_child_run_id: str = ""
+    autorun_policy: str = ""
+    autorun_skipped_reason: str = ""
 
     def add(self, phase: str, status: str, detail: str = "", **data: Any) -> None:
         event = SupervisorEvent(phase=phase, status=status, detail=detail, data=data)
@@ -377,6 +380,9 @@ class SupervisorRun:
             "strategy_used": self.strategy_used,
             "same_failure_count": self.same_failure_count,
             "execution_budget_used_usd": round(self.execution_budget_used_usd, 6),
+            "autorun_child_run_id": self.autorun_child_run_id,
+            "autorun_policy": self.autorun_policy,
+            "autorun_skipped_reason": self.autorun_skipped_reason,
         }
 
 
@@ -398,6 +404,7 @@ class SupervisorBackend(Protocol):
     def pull_main(self) -> CommandResult: ...
     def create_issue(self, title: str, body: str) -> CommandResult: ...
     def update_issue(self, issue_url: str, comment_body: str) -> CommandResult: ...
+    def fetch_issue(self, issue_url: str) -> CommandResult: ...
     def restore_dangerous_diff(self) -> CommandResult: ...
     def restore_paths(self, paths: List[str]) -> CommandResult: ...
     def call_api_helper(self, packet: Dict[str, Any], model: str, max_tokens: int, timeout: int = 45) -> CommandResult: ...
@@ -741,6 +748,12 @@ class LocalSupervisorBackend:
             except json.JSONDecodeError:
                 pass
         return self._run(["gh", "issue", "create", "--title", title, "--body", body], timeout=120)
+
+    def fetch_issue(self, issue_url: str) -> CommandResult:
+        return self._run(
+            ["gh", "issue", "view", issue_url, "--json", "title,body,number"],
+            timeout=60,
+        )
 
     def restore_dangerous_diff(self) -> CommandResult:
         restore = self._run(["git", "restore", "--worktree", "--staged", "."], timeout=60)
@@ -5051,6 +5064,181 @@ class SelfRepairSupervisor:
         m = re.search(r"https://github\.com/[^\s\)\"']+/issues/\d+", goal)
         return m.group(0) if m else None
 
+    @staticmethod
+    def _autorun_guards(
+        run: "SupervisorRun",
+        config: "RankSupervisorConfig",
+        decomposition: Dict[str, Any],
+        created_urls: List[str],
+    ) -> Tuple[bool, str]:
+        """Check all guards before auto-queuing a child run.
+
+        Returns (ok, reason) — if ok is False, reason explains why autorun is skipped.
+        """
+        if not config.allow_auto_subissues:
+            return False, "allow_auto_subissues=False"
+        if config.dry_run:
+            return False, "dry_run=True"
+        if not created_urls:
+            return False, "no_sub_issue_urls"
+        approval = decomposition.get("approval_status", "")
+        if approval != "auto_approved_by_policy":
+            return False, f"approval_status={approval!r} (not auto_approved)"
+        if decomposition.get("decomposition_cycle_detected"):
+            return False, "decomposition_cycle_detected"
+
+        # Anti-loop: first sub-issue must not be the same as any URL referenced in parent goal
+        first_url = created_urls[0]
+        parent_goal_lower = config.goal.lower()
+        # Extract issue numbers from first_url and goal
+        import re as _re
+        first_num_m = _re.search(r"/issues/(\d+)", first_url)
+        if first_num_m:
+            first_num = first_num_m.group(1)
+            if f"/issues/{first_num}" in parent_goal_lower or f"#{first_num}" in parent_goal_lower:
+                return False, f"anti_loop: sub-issue #{first_num} matches parent goal"
+
+        # Check if a run for this sub-issue URL is already active
+        from igris.core.self_repair_supervisor import RUN_LOCK, RUN_STORE
+        with RUN_LOCK:
+            active_runs = list(RUN_STORE.values())
+        for r in active_runs:
+            if r.run_id == run.run_id:
+                continue
+            if r.status in ("running", "cancelling"):
+                if first_url in r.goal or first_url in str(r.report):
+                    return False, f"sub_issue_already_running: run_id={r.run_id}"
+
+        # Budget check (0 means unlimited)
+        max_cost_per_run = SelfRepairSupervisor._get_max_cost_per_run()
+        if max_cost_per_run > 0 and run.execution_budget_used_usd >= max_cost_per_run:
+            return False, f"budget_exceeded: {run.execution_budget_used_usd:.4f}>={max_cost_per_run:.4f}"
+
+        return True, ""
+
+    def _autorun_first_subissue(
+        self,
+        run: "SupervisorRun",
+        config: "RankSupervisorConfig",
+        decomposition: Dict[str, Any],
+        created_urls: List[str],
+        triggering_signal: str,
+    ) -> Optional[str]:
+        """Fetch the first sub-issue from GitHub and queue a child supervised run.
+
+        Returns the child run_id on success, None if skipped or failed.
+        """
+        from igris.core.self_repair_supervisor import start_supervised_rank_async
+        import re as _re
+
+        ok, skip_reason = self._autorun_guards(run, config, decomposition, created_urls)
+        if not ok:
+            run.add(
+                "submission_autorun_skipped",
+                "skipped",
+                f"Auto-run skipped: {skip_reason}",
+                reason=skip_reason,
+            )
+            run.autorun_skipped_reason = skip_reason
+            run.report.update({
+                "autorun_policy": "skipped",
+                "autorun_skipped_reason": skip_reason,
+            })
+            return None
+
+        first_url = created_urls[0]
+        run.add(
+            "submission_autorun_queued",
+            "running",
+            f"Fetching sub-issue to prepare child run: {_safe_redact(first_url)}",
+            sub_issue_url=_safe_redact(first_url),
+        )
+
+        # Fetch sub-issue data from GitHub
+        fetch_result = self.backend.fetch_issue(first_url)
+        if not fetch_result.success:
+            reason = f"fetch_issue_failed: {_safe_redact(fetch_result.error)[:120]}"
+            run.add("submission_autorun_skipped", "failure", reason, sub_issue_url=_safe_redact(first_url))
+            run.autorun_skipped_reason = reason
+            run.report.update({"autorun_policy": "skipped", "autorun_skipped_reason": reason})
+            return None
+
+        try:
+            issue_data = json.loads(fetch_result.output or "{}")
+        except json.JSONDecodeError:
+            issue_data = {}
+
+        issue_title = _safe_redact(str(issue_data.get("title", "") or ""))
+        issue_body = _safe_redact(str(issue_data.get("body", "") or ""))
+        issue_number = issue_data.get("number", "")
+
+        # Build goal from sub-issue title + body (first 2000 chars of body)
+        body_excerpt = issue_body[:2000].strip()
+        child_goal = f"{issue_title}\n\n{body_excerpt}" if body_excerpt else issue_title
+        if not child_goal.strip():
+            child_goal = decomposition.get("first_sub_mission", first_url)
+
+        # Derive child rank_id from parent + issue number
+        child_rank_id = f"{run.rank_id}-sub{issue_number}" if issue_number else f"{run.rank_id}-sub1"
+
+        # Inherit parent config but override goal and rank_id
+        child_data: Dict[str, Any] = {
+            "goal": child_goal,
+            "rank_id": child_rank_id,
+            "max_rank_attempts": config.max_rank_attempts,
+            "max_repair_cycles": config.max_repair_cycles,
+            "allow_github_pr": config.allow_github_pr,
+            "allow_merge_if_green": config.allow_merge_if_green,
+            "service_restart_command": config.service_restart_command,
+            "required_smoke_endpoints": list(config.required_smoke_endpoints),
+            "test_timeout_seconds": config.test_timeout_seconds,
+            "test_hard_cap_seconds": config.test_hard_cap_seconds,
+            "reasoning_timeout_seconds": config.reasoning_timeout_seconds,
+            "allow_api_escalation": config.allow_api_escalation,
+            "max_api_escalations_per_run": config.max_api_escalations_per_run,
+            "max_api_budget_usd": config.max_api_budget_usd,
+            "max_tokens_per_escalation": config.max_tokens_per_escalation,
+            "api_helper_model": config.api_helper_model,
+            "enable_mission_planning": config.enable_mission_planning,
+            "allow_auto_subissues": config.allow_auto_subissues,
+            "enable_semantic_gate": config.enable_semantic_gate,
+            "api_helper_mode": config.api_helper_mode,
+            # Mark so child knows its parent
+            "_parent_run_id": run.run_id,
+            "_parent_sub_issue_url": first_url,
+            "_parent_triggering_signal": triggering_signal,
+        }
+
+        try:
+            child_run = start_supervised_rank_async(child_data, project_root=str(self.project_root))
+            child_run_id = child_run.run_id
+        except Exception as exc:
+            reason = f"child_run_start_failed: {_safe_redact(str(exc))[:120]}"
+            run.add("submission_autorun_skipped", "failure", reason, sub_issue_url=_safe_redact(first_url))
+            run.autorun_skipped_reason = reason
+            run.report.update({"autorun_policy": "skipped", "autorun_skipped_reason": reason})
+            return None
+
+        run.autorun_child_run_id = child_run_id
+        run.autorun_policy = "auto_create_subissues"
+        run.add(
+            "submission_autorun_run_id",
+            "success",
+            f"Child run {child_run_id} queued for sub-issue {_safe_redact(first_url)}",
+            child_run_id=child_run_id,
+            sub_issue_url=_safe_redact(first_url),
+            sub_issue_title=issue_title,
+            child_rank_id=child_rank_id,
+        )
+        run.report.update({
+            "next_subissue_url": _safe_redact(first_url),
+            "next_subissue_number": str(issue_number),
+            "autorun_child_run_id": child_run_id,
+            "autorun_policy": "auto_create_subissues",
+            "autorun_skipped_reason": "",
+        })
+        return child_run_id
+
     def _blocked_decomposition_required(
         self,
         run: SupervisorRun,
@@ -5149,6 +5337,12 @@ class SelfRepairSupervisor:
         })
         run.decomposition = safe_decomposition
         run.touch()
+
+        # Auto-queue child run on first sub-issue if policy approved it
+        if policy == "auto_create_subissues" and created_urls and config is not None:
+            self._autorun_first_subissue(run, config, safe_decomposition, created_urls, triggering_signal)
+            run.touch()
+
         return run
 
     # ------------------------------------------------------------------
