@@ -7468,3 +7468,93 @@ class TestAutoRunSubissue:
 
         assert result_id is None
         assert run.autorun_skipped_reason == "dry_run=True"
+
+    def test_autorun_skipped_max_depth(self):
+        """No child run when autochain_depth >= 2 (infinite cascade guard)."""
+        from unittest.mock import patch
+
+        supervisor, backend = self._make_supervisor()
+        config = _config(allow_auto_subissues=True, allow_github_pr=True, dry_run=False, autochain_depth=2)
+        run = SupervisorRun(run_id="parent-9", rank_id="A")
+
+        decomp = {
+            "approval_status": "auto_approved_by_policy",
+            "decomposition_cycle_detected": False,
+        }
+        created_urls = ["https://github.com/org/repo/issues/71"]
+
+        with patch(
+            "igris.core.self_repair_supervisor.start_supervised_rank_async",
+        ) as mock_start:
+            result_id = supervisor._autorun_first_subissue(
+                run, config, decomp, created_urls, "no_diff_repair"
+            )
+            mock_start.assert_not_called()
+
+        assert result_id is None
+        assert "max_autochain_depth" in run.autorun_skipped_reason
+
+    def test_autochain_depth_incremented_in_child(self):
+        """Child data must have autochain_depth = parent_depth + 1."""
+        from unittest.mock import patch, MagicMock
+
+        supervisor, backend = self._make_supervisor()
+        config = _config(allow_auto_subissues=True, allow_github_pr=True, dry_run=False, autochain_depth=0)
+        run = SupervisorRun(run_id="parent-10", rank_id="A")
+
+        decomp = {
+            "approval_status": "auto_approved_by_policy",
+            "decomposition_cycle_detected": False,
+        }
+        created_urls = ["https://github.com/org/repo/issues/72"]
+
+        captured = {}
+
+        def fake_start(data, project_root):
+            captured["data"] = data
+            m = MagicMock()
+            m.run_id = "child-depth-test"
+            return m
+
+        with patch(
+            "igris.core.self_repair_supervisor.start_supervised_rank_async",
+            side_effect=fake_start,
+        ):
+            supervisor._autorun_first_subissue(
+                run, config, decomp, created_urls, "no_diff_repair"
+            )
+
+        assert captured.get("data", {}).get("autochain_depth") == 1
+
+    def test_autorun_depth_1_still_chains(self):
+        """At depth=1 (child), auto-chain still works (below max=2)."""
+        from unittest.mock import patch, MagicMock
+
+        supervisor, backend = self._make_supervisor()
+        config = _config(allow_auto_subissues=True, allow_github_pr=True, dry_run=False, autochain_depth=1)
+        run = SupervisorRun(run_id="parent-11", rank_id="A")
+
+        decomp = {
+            "approval_status": "auto_approved_by_policy",
+            "decomposition_cycle_detected": False,
+        }
+        created_urls = ["https://github.com/org/repo/issues/73"]
+
+        captured = {}
+
+        def fake_start(data, project_root):
+            captured["data"] = data
+            m = MagicMock()
+            m.run_id = "grandchild-test"
+            return m
+
+        with patch(
+            "igris.core.self_repair_supervisor.start_supervised_rank_async",
+            side_effect=fake_start,
+        ):
+            result_id = supervisor._autorun_first_subissue(
+                run, config, decomp, created_urls, "no_diff_repair"
+            )
+
+        assert result_id == "grandchild-test"
+        assert captured.get("data", {}).get("autochain_depth") == 2

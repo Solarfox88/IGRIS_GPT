@@ -185,6 +185,9 @@ class RankSupervisorConfig:
     allow_auto_subissues: bool = False
     enable_semantic_gate: bool = True
     api_helper_mode: str = ""
+    # Depth counter incremented each time a child run is spawned via auto-chain.
+    # Guards against infinite cascade: parent→child→grandchild→... stops at depth 2.
+    autochain_depth: int = 0
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "RankSupervisorConfig":
@@ -219,6 +222,7 @@ class RankSupervisorConfig:
             allow_auto_subissues=bool(data.get("allow_auto_subissues", False)),
             enable_semantic_gate=bool(data.get("enable_semantic_gate", True)),
             api_helper_mode=str(data.get("api_helper_mode", "")),
+            autochain_depth=max(0, int(data.get("autochain_depth", 0) or data.get("_autochain_depth", 0))),
         )
 
 
@@ -5079,6 +5083,10 @@ class SelfRepairSupervisor:
             return False, "allow_auto_subissues=False"
         if config.dry_run:
             return False, "dry_run=True"
+        # Cascade depth guard: stop auto-chaining after 2 levels (parent→child→grandchild)
+        _MAX_AUTOCHAIN_DEPTH = 2
+        if config.autochain_depth >= _MAX_AUTOCHAIN_DEPTH:
+            return False, f"max_autochain_depth: depth={config.autochain_depth}>={_MAX_AUTOCHAIN_DEPTH}"
         if not created_urls:
             return False, "no_sub_issue_urls"
         approval = decomposition.get("approval_status", "")
@@ -5203,6 +5211,8 @@ class SelfRepairSupervisor:
             "allow_auto_subissues": config.allow_auto_subissues,
             "enable_semantic_gate": config.enable_semantic_gate,
             "api_helper_mode": config.api_helper_mode,
+            # Increment depth so grandchild hits max_autochain_depth guard
+            "autochain_depth": config.autochain_depth + 1,
             # Mark so child knows its parent
             "_parent_run_id": run.run_id,
             "_parent_sub_issue_url": first_url,
