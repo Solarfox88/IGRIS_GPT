@@ -587,9 +587,15 @@ class ModelOrchestrator:
         )
 
         try:
+            import time as _time
             content_parts: list = []
+            deadline = _time.monotonic() + timeout
             with urllib.request.urlopen(req, timeout=timeout) as resp:
                 for raw_line in resp:
+                    # Cap total streaming wall-clock time so a slow model
+                    # cannot hold the connection open past the caller's budget.
+                    if _time.monotonic() > deadline:
+                        break
                     chunk = json.loads(raw_line.decode("utf-8"))
                     part = chunk.get("message", {}).get("content", "")
                     if part:
