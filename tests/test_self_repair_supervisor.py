@@ -1568,7 +1568,13 @@ def test_supervisor_does_not_noop_complete_when_ui_contract_is_not_satisfied(mon
     assert run.failure_class in {"reasoning_loop_blocked", "wrong_file_edit"}
 
 
-def test_supervisor_blocks_immediately_when_llm_provider_is_unavailable():
+def test_supervisor_decomposes_immediately_when_llm_provider_is_unavailable():
+    """When LLM is unavailable, the supervisor must decompose immediately (no repair cycles).
+
+    Repair cycles cannot succeed without a working model, so the run decomposes
+    rather than blocking — allowing the auto-chain to hand the task to a sub-mission
+    that may reach a capable cloud provider.
+    """
     backend = FakeBackend()
     backend.reasoning_results = [
         {
@@ -1578,6 +1584,8 @@ def test_supervisor_blocks_immediately_when_llm_provider_is_unavailable():
             "final_summary": "No suitable LLM provider available; deterministic fallback",
             "goal": "Add /api/rank/s-dashboard endpoint and tests",
         }
+        # No 2nd result needed: _ask_igris_decompose falls through to
+        # deterministic fallback when the queue is empty.
     ]
     backend.targeted = CommandResult(
         False,
@@ -1596,12 +1604,12 @@ def test_supervisor_blocks_immediately_when_llm_provider_is_unavailable():
     )
 
     assert run.status == "blocked"
-    assert run.failure_class == "infrastructure_bug"
-    assert not any(event.phase == "repair_issue" for event in run.events)
-    assert any(
-        event.phase == "blocked"
-        and "No suitable LLM provider available" in event.detail
-        for event in run.events
+    assert run.failure_class == "decomposition_required", (
+        f"Expected decomposition_required (LLM unavailable → decompose), "
+        f"got {run.failure_class!r}"
+    )
+    assert not any(event.phase == "repair_issue" for event in run.events), (
+        "No repair cycles should run when LLM is unavailable"
     )
 
 
