@@ -174,6 +174,9 @@ class FakeBackend:
         self.commands.append(f"update_issue:{issue_url}")
         return CommandResult(True, "updated")
 
+    def fetch_issue(self, issue_url: str) -> CommandResult:
+        return CommandResult(True, json.dumps({"title": "Fake sub-issue", "body": "Implement the endpoint.", "number": 999}), "", 0)
+
     def restore_dangerous_diff(self):
         self.commands.append("restore")
         return self.restore_result
@@ -7130,3 +7133,338 @@ class TestCostPolicyExecutionStrategy:
         start_event = repair_events[0]
         assert "strategy_used" in start_event.data
         assert "same_failure_count" in start_event.data
+
+
+# ---------------------------------------------------------------------------
+# TestAutoRunSubissue — auto-chain sub-mission runs after decomposition
+# ---------------------------------------------------------------------------
+
+class TestAutoRunSubissue:
+    """Tests for the auto-chain feature: after decomposition with auto_create_subissues
+    policy, the supervisor queues a child run on the first sub-issue."""
+
+    # -----------------------------------------------------------------------
+    # Helpers
+    # -----------------------------------------------------------------------
+
+    @staticmethod
+    def _make_supervisor(fetch_ok: bool = True):
+        backend = FakeBackend()
+        # create_issue returns "https://github.com/org/repo/issues/42" to make URLs realistic
+        backend.create_issue = lambda title, body: CommandResult(
+            True, "https://github.com/org/repo/issues/42", "", 0
+        )
+        if fetch_ok:
+            backend.fetch_issue = lambda url: CommandResult(
+                True,
+                json.dumps({"title": "Fake sub-issue", "body": "Implement the endpoint.", "number": 999}),
+                "",
+                0,
+            )
+        else:
+            backend.fetch_issue = lambda url: CommandResult(False, "", "gh: not found", 1)
+        supervisor = SelfRepairSupervisor("/tmp/project", backend=backend)
+        return supervisor, backend
+
+    @staticmethod
+    def _valid_decomposition():
+        """A well-formed decomposition that passes _decomposition_policy checks."""
+        return {
+            "why_too_large": "Original mission required 5+ file changes across unrelated modules.",
+            "sub_missions": [{
+                "title": "Implement sub-task A",
+                "goal": "Add endpoint /api/foo",
+                "dependencies": [],
+                "acceptance_criteria": ["GET /api/foo returns 200"],
+                "allowed_file_scopes": ["igris/web/server.py", "tests/test_foo.py"],
+                "tests": ["tests/test_foo.py"],
+                "risk_level": "low",
+                "human_approval_required": False,
+            }],
+            "first_sub_mission": "Implement sub-task A",
+            "human_approval_required": False,
+        }
+
+    @staticmethod
+    def _auto_config(**overrides):
+        """Config with allow_auto_subissues=True and dry_run=False (via allow_github_pr)."""
+        data = {
+            "goal": "Rank A controlled task with tests",
+            "rank_id": "A",
+            "max_rank_attempts": 2,
+            "max_repair_cycles": 1,
+            "allow_github_pr": True,
+            "allow_merge_if_green": False,
+            "allow_auto_subissues": True,
+            "enable_semantic_gate": False,
+        }
+        data.update(overrides)
+        return RankSupervisorConfig.from_dict(data)
+
+    @staticmethod
+    def _fake_child_run():
+        run = SupervisorRun(run_id="child-run-42", rank_id="A-sub999")
+        run.status = "running"
+        return run
+
+    # -----------------------------------------------------------------------
+    # 1. Happy path: autorun queued when auto_approved
+    # -----------------------------------------------------------------------
+
+    def test_autorun_queued_when_auto_approved(self):
+        """After decomposition with auto_approved_by_policy, a child run is queued."""
+        from unittest.mock import patch, MagicMock
+
+        supervisor, backend = self._make_supervisor()
+        config = self._auto_config()
+        run = SupervisorRun(run_id="parent-1", rank_id="A")
+        decomposition = self._valid_decomposition()
+
+        fake_child = self._fake_child_run()
+        with patch(
+            "igris.core.self_repair_supervisor.start_supervised_rank_async",
+            return_value=fake_child,
+        ):
+            result = supervisor._blocked_decomposition_required(
+                run, "reasoning_timeout", "Task too large", decomposition, config=config
+            )
+
+        # Child run should be recorded
+        assert result.autorun_child_run_id == "child-run-42", (
+            f"Expected child_run_id='child-run-42', got {result.autorun_child_run_id!r}"
+        )
+        assert result.autorun_policy == "auto_create_subissues"
+
+        # Event submission_autorun_run_id must be present
+        event_phases = [e.phase for e in result.events]
+        assert "submission_autorun_run_id" in event_phases, (
+            f"Expected submission_autorun_run_id event; got phases: {event_phases}"
+        )
+
+        # autorun_child_run_id in report
+        assert result.report.get("autorun_child_run_id") == "child-run-42"
+
+    # -----------------------------------------------------------------------
+    # 2. Skipped when allow_auto_subissues=False
+    # -----------------------------------------------------------------------
+
+    def test_autorun_skipped_when_allow_auto_subissues_false(self):
+        """No child run is queued when allow_auto_subissues=False."""
+        from unittest.mock import patch
+
+        supervisor, backend = self._make_supervisor()
+        config = self._auto_config(allow_auto_subissues=False)
+        run = SupervisorRun(run_id="parent-2", rank_id="A")
+        decomposition = self._valid_decomposition()
+
+        with patch(
+            "igris.core.self_repair_supervisor.start_supervised_rank_async",
+        ) as mock_start:
+            result = supervisor._blocked_decomposition_required(
+                run, "reasoning_timeout", "Task too large", decomposition, config=config
+            )
+            mock_start.assert_not_called()
+
+        assert result.autorun_child_run_id == ""
+        skipped_events = [e for e in result.events if e.phase == "submission_autorun_skipped"]
+        # Policy should be request_human_approval when allow_auto_subissues=False,
+        # so _autorun_first_subissue is not even called; guard catches it
+        # OR the policy path prevents calling _autorun_first_subissue altogether.
+        # Either way: no child run id.
+        assert result.autorun_child_run_id == ""
+
+    # -----------------------------------------------------------------------
+    # 3. Skipped when cycle detected
+    # -----------------------------------------------------------------------
+
+    def test_autorun_skipped_when_cycle_detected(self):
+        """No child run when decomposition_cycle_detected=True."""
+        from unittest.mock import patch
+
+        supervisor, backend = self._make_supervisor()
+        config = self._auto_config()
+        run = SupervisorRun(run_id="parent-3", rank_id="A")
+        decomposition = self._valid_decomposition()
+
+        with patch(
+            "igris.core.self_repair_supervisor.start_supervised_rank_async",
+        ) as mock_start:
+            # We call _autorun_first_subissue directly with a decomposition that has cycle
+            # and approval_status set (bypassing _blocked_decomposition_required policy path)
+            decomp_with_cycle = {
+                "approval_status": "auto_approved_by_policy",
+                "decomposition_cycle_detected": True,
+            }
+            created_urls = ["https://github.com/org/repo/issues/50"]
+            result_id = supervisor._autorun_first_subissue(
+                run, config, decomp_with_cycle, created_urls, "reasoning_timeout"
+            )
+            mock_start.assert_not_called()
+
+        assert result_id is None
+        assert run.autorun_skipped_reason == "decomposition_cycle_detected"
+
+    # -----------------------------------------------------------------------
+    # 4. Skipped when budget exceeded
+    # -----------------------------------------------------------------------
+
+    def test_autorun_skipped_when_budget_exceeded(self):
+        """No child run when execution_budget_used_usd >= IGRIS_MAX_COST_PER_RUN."""
+        import os
+        from unittest.mock import patch
+
+        supervisor, backend = self._make_supervisor()
+        config = self._auto_config()
+        run = SupervisorRun(run_id="parent-4", rank_id="A")
+        run.execution_budget_used_usd = 999.0
+
+        decomp = {
+            "approval_status": "auto_approved_by_policy",
+            "decomposition_cycle_detected": False,
+        }
+        created_urls = ["https://github.com/org/repo/issues/51"]
+
+        with patch.dict(os.environ, {"IGRIS_MAX_COST_PER_RUN": "0.001"}):
+            with patch(
+                "igris.core.self_repair_supervisor.start_supervised_rank_async",
+            ) as mock_start:
+                result_id = supervisor._autorun_first_subissue(
+                    run, config, decomp, created_urls, "reasoning_timeout"
+                )
+                mock_start.assert_not_called()
+
+        assert result_id is None
+        assert "budget_exceeded" in run.autorun_skipped_reason
+
+    # -----------------------------------------------------------------------
+    # 5. Skipped when sub-issue already running
+    # -----------------------------------------------------------------------
+
+    def test_autorun_skipped_when_sub_issue_already_running(self):
+        """No child run when an existing run already references the same sub-issue URL."""
+        from unittest.mock import patch
+
+        supervisor, backend = self._make_supervisor()
+        config = self._auto_config()
+        run = SupervisorRun(run_id="parent-5", rank_id="A")
+
+        first_url = "https://github.com/org/repo/issues/60"
+        # Plant a "running" run that references the same URL in its goal
+        existing = SupervisorRun(run_id="existing-run", rank_id="B")
+        existing.status = "running"
+        existing.goal = f"Work on {first_url}"
+
+        decomp = {
+            "approval_status": "auto_approved_by_policy",
+            "decomposition_cycle_detected": False,
+        }
+        created_urls = [first_url]
+
+        from igris.core.self_repair_supervisor import RUN_STORE, RUN_LOCK
+        with RUN_LOCK:
+            RUN_STORE["existing-run"] = existing
+
+        try:
+            with patch(
+                "igris.core.self_repair_supervisor.start_supervised_rank_async",
+            ) as mock_start:
+                result_id = supervisor._autorun_first_subissue(
+                    run, config, decomp, created_urls, "reasoning_timeout"
+                )
+                mock_start.assert_not_called()
+        finally:
+            with RUN_LOCK:
+                RUN_STORE.pop("existing-run", None)
+
+        assert result_id is None
+        assert "sub_issue_already_running" in run.autorun_skipped_reason
+
+    # -----------------------------------------------------------------------
+    # 6. Report fields populated
+    # -----------------------------------------------------------------------
+
+    def test_autorun_report_fields(self):
+        """autorun_child_run_id, autorun_policy, next_subissue_url appear in report."""
+        from unittest.mock import patch
+
+        supervisor, backend = self._make_supervisor()
+        config = self._auto_config()
+        run = SupervisorRun(run_id="parent-6", rank_id="A")
+        decomposition = self._valid_decomposition()
+
+        fake_child = self._fake_child_run()
+        with patch(
+            "igris.core.self_repair_supervisor.start_supervised_rank_async",
+            return_value=fake_child,
+        ):
+            result = supervisor._blocked_decomposition_required(
+                run, "reasoning_timeout", "Task too large", decomposition, config=config
+            )
+
+        assert "autorun_child_run_id" in result.report
+        assert "autorun_policy" in result.report
+        assert result.report.get("autorun_policy") == "auto_create_subissues"
+        assert "next_subissue_url" in result.report
+
+    # -----------------------------------------------------------------------
+    # 7. No secrets in autorun events
+    # -----------------------------------------------------------------------
+
+    def test_autorun_no_secrets(self):
+        """No API keys or secrets appear in autorun events."""
+        from unittest.mock import patch
+        from igris.core.safety import detect_secret_like_content
+
+        supervisor, backend = self._make_supervisor()
+        config = self._auto_config()
+        run = SupervisorRun(run_id="parent-7", rank_id="A")
+        decomposition = self._valid_decomposition()
+
+        fake_child = self._fake_child_run()
+        with patch(
+            "igris.core.self_repair_supervisor.start_supervised_rank_async",
+            return_value=fake_child,
+        ):
+            result = supervisor._blocked_decomposition_required(
+                run, "reasoning_timeout", "Task too large", decomposition, config=config
+            )
+
+        autorun_events = [
+            e for e in result.events
+            if e.phase.startswith("submission_autorun")
+        ]
+        assert autorun_events, "Expected at least one submission_autorun event"
+        serialized = json.dumps([e.to_dict() for e in autorun_events])
+        assert not detect_secret_like_content(serialized), (
+            f"Secret-like content found in autorun events: {serialized[:200]}"
+        )
+
+    # -----------------------------------------------------------------------
+    # 8. Skipped when dry_run=True
+    # -----------------------------------------------------------------------
+
+    def test_autorun_skipped_dry_run(self):
+        """No child run when dry_run=True even if allow_auto_subissues=True."""
+        from unittest.mock import patch
+
+        supervisor, backend = self._make_supervisor()
+        # dry_run=True (default when allow_github_pr=False)
+        config = _config(allow_auto_subissues=True, dry_run=True)
+        run = SupervisorRun(run_id="parent-8", rank_id="A")
+
+        decomp = {
+            "approval_status": "auto_approved_by_policy",
+            "decomposition_cycle_detected": False,
+        }
+        created_urls = ["https://github.com/org/repo/issues/70"]
+
+        with patch(
+            "igris.core.self_repair_supervisor.start_supervised_rank_async",
+        ) as mock_start:
+            result_id = supervisor._autorun_first_subissue(
+                run, config, decomp, created_urls, "reasoning_timeout"
+            )
+            mock_start.assert_not_called()
+
+        assert result_id is None
+        assert run.autorun_skipped_reason == "dry_run=True"

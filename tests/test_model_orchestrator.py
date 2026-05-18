@@ -77,9 +77,9 @@ class TestProviderConfig:
         assert "api_key" not in d or isinstance(d.get("api_key"), str) is False
 
     def test_local_provider(self):
-        p = ProviderConfig(name="ollama", is_local=True, cost_per_1k_input=0.0)
+        p = ProviderConfig(name="ollama", is_local=True, input_cost_per_1m_tokens=0.0)
         assert p.is_local is True
-        assert p.cost_per_1k_input == 0.0
+        assert p.input_cost_per_1m_tokens == 0.0
 
 
 # ---------------------------------------------------------------------------
@@ -334,3 +334,108 @@ class TestExecutionRouting:
                 assert "sk-" not in str(v), (
                     f"Provider config must not expose API keys: {p}"
                 )
+
+
+# ---------------------------------------------------------------------------
+# Cost calculation tests — per-1M token formula
+# ---------------------------------------------------------------------------
+
+class TestCostCalculation:
+    """Verify cost estimates use per-1M token rates, not per-1K."""
+
+    def _make_provider(self, input_rate: float, output_rate: float) -> ProviderConfig:
+        return ProviderConfig(
+            name="test_provider",
+            input_cost_per_1m_tokens=input_rate,
+            output_cost_per_1m_tokens=output_rate,
+        )
+
+    def test_1m_input_tokens_exact(self):
+        """1M input tokens at $2.50/1M must cost exactly $2.50, not $2500."""
+        provider = self._make_provider(input_rate=2.50, output_rate=10.00)
+        input_tokens = 1_000_000
+        output_tokens = 0
+        cost = (
+            (input_tokens / 1_000_000) * provider.input_cost_per_1m_tokens
+            + (output_tokens / 1_000_000) * provider.output_cost_per_1m_tokens
+        )
+        assert cost == pytest.approx(2.50), (
+            f"1M input tokens at $2.50/1M should cost $2.50, got ${cost}"
+        )
+
+    def test_1m_output_tokens_exact(self):
+        """1M output tokens at $10.00/1M must cost exactly $10.00."""
+        provider = self._make_provider(input_rate=2.50, output_rate=10.00)
+        input_tokens = 0
+        output_tokens = 1_000_000
+        cost = (
+            (input_tokens / 1_000_000) * provider.input_cost_per_1m_tokens
+            + (output_tokens / 1_000_000) * provider.output_cost_per_1m_tokens
+        )
+        assert cost == pytest.approx(10.00), (
+            f"1M output tokens at $10.00/1M should cost $10.00, got ${cost}"
+        )
+
+    def test_1k_tokens_is_fraction_of_cent(self):
+        """1K input tokens at $0.15/1M must cost $0.00015 (not $0.15)."""
+        provider = self._make_provider(input_rate=0.15, output_rate=0.60)
+        input_tokens = 1_000
+        output_tokens = 0
+        cost = (
+            (input_tokens / 1_000_000) * provider.input_cost_per_1m_tokens
+            + (output_tokens / 1_000_000) * provider.output_cost_per_1m_tokens
+        )
+        assert cost == pytest.approx(0.00015), (
+            f"1K input tokens at $0.15/1M should cost $0.00015, got ${cost}"
+        )
+
+    def test_openai_strong_provider_rates(self):
+        """openai_strong default rates must be $2.50/$10.00 per 1M."""
+        orch = ModelOrchestrator()
+        provider = orch.providers.get("openai_strong")
+        assert provider is not None, "openai_strong provider must exist"
+        assert provider.input_cost_per_1m_tokens == pytest.approx(2.50)
+        assert provider.output_cost_per_1m_tokens == pytest.approx(10.00)
+
+    def test_openai_provider_rates(self):
+        """openai (gpt-4o-mini) default rates must be $0.15/$0.60 per 1M."""
+        orch = ModelOrchestrator()
+        provider = orch.providers.get("openai")
+        assert provider is not None
+        assert provider.input_cost_per_1m_tokens == pytest.approx(0.15)
+        assert provider.output_cost_per_1m_tokens == pytest.approx(0.60)
+
+    def test_anthropic_provider_rates(self):
+        """anthropic default rates must be $3.00/$15.00 per 1M (not $0.003/$0.015)."""
+        orch = ModelOrchestrator()
+        provider = orch.providers.get("anthropic")
+        assert provider is not None
+        assert provider.input_cost_per_1m_tokens == pytest.approx(3.0)
+        assert provider.output_cost_per_1m_tokens == pytest.approx(15.0)
+
+    def test_deepseek_provider_rates(self):
+        """deepseek default rates must be ~$0.14/$0.28 per 1M."""
+        orch = ModelOrchestrator()
+        provider = orch.providers.get("deepseek")
+        assert provider is not None
+        assert provider.input_cost_per_1m_tokens == pytest.approx(0.14)
+        assert provider.output_cost_per_1m_tokens == pytest.approx(0.28)
+
+    def test_to_dict_exposes_per_1m_field_names(self):
+        """ProviderConfig.to_dict() must use per-1M field names."""
+        provider = self._make_provider(input_rate=2.50, output_rate=10.00)
+        d = provider.to_dict()
+        assert "input_cost_per_1m_tokens" in d, "to_dict() must have input_cost_per_1m_tokens"
+        assert "output_cost_per_1m_tokens" in d, "to_dict() must have output_cost_per_1m_tokens"
+        assert "cost_per_1k_input" not in d, "to_dict() must not expose old per-1K field name"
+        assert "cost_per_1k_output" not in d, "to_dict() must not expose old per-1K field name"
+        assert d["input_cost_per_1m_tokens"] == pytest.approx(2.50)
+        assert d["output_cost_per_1m_tokens"] == pytest.approx(10.00)
+
+    def test_ollama_zero_cost(self):
+        """Local ollama provider must have zero cost rates."""
+        orch = ModelOrchestrator()
+        provider = orch.providers.get("ollama")
+        assert provider is not None
+        assert provider.input_cost_per_1m_tokens == 0.0
+        assert provider.output_cost_per_1m_tokens == 0.0

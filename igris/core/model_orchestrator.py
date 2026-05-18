@@ -221,8 +221,8 @@ class ProviderConfig:
     base_url: str = ""
     model: str = ""
     api_key_env: str = ""  # env var name, never the actual key
-    cost_per_1k_input: float = 0.0
-    cost_per_1k_output: float = 0.0
+    input_cost_per_1m_tokens: float = 0.0
+    output_cost_per_1m_tokens: float = 0.0
     max_context: int = 4096
     supports_json_mode: bool = False
     is_local: bool = False
@@ -234,8 +234,8 @@ class ProviderConfig:
             "base_url": self.base_url,
             "model": self.model,
             "api_key_env": self.api_key_env,
-            "cost_per_1k_input": self.cost_per_1k_input,
-            "cost_per_1k_output": self.cost_per_1k_output,
+            "input_cost_per_1m_tokens": self.input_cost_per_1m_tokens,
+            "output_cost_per_1m_tokens": self.output_cost_per_1m_tokens,
             "max_context": self.max_context,
             "supports_json_mode": self.supports_json_mode,
             "is_local": self.is_local,
@@ -256,8 +256,8 @@ def _build_default_providers() -> Dict[str, ProviderConfig]:
         name="ollama",
         base_url=str(ollama_url),
         model=str(ollama_model),
-        cost_per_1k_input=0.0,
-        cost_per_1k_output=0.0,
+        input_cost_per_1m_tokens=0.0,
+        output_cost_per_1m_tokens=0.0,
         max_context=4096,
         is_local=True,
     )
@@ -276,8 +276,8 @@ def _build_default_providers() -> Dict[str, ProviderConfig]:
         base_url="https://api.openai.com/v1",
         model=str(openai_model),
         api_key_env="OPENAI_API_KEY",
-        cost_per_1k_input=0.15,
-        cost_per_1k_output=0.60,
+        input_cost_per_1m_tokens=0.15,    # gpt-4o-mini: $0.15/1M input tokens
+        output_cost_per_1m_tokens=0.60,   # gpt-4o-mini: $0.60/1M output tokens
         max_context=128000,
         supports_json_mode=True,
     )
@@ -291,8 +291,8 @@ def _build_default_providers() -> Dict[str, ProviderConfig]:
         base_url="https://api.openai.com/v1",
         model=str(openai_strong_model),
         api_key_env="OPENAI_API_KEY",
-        cost_per_1k_input=2.50,
-        cost_per_1k_output=10.00,
+        input_cost_per_1m_tokens=2.50,    # gpt-4o: $2.50/1M input tokens
+        output_cost_per_1m_tokens=10.00,  # gpt-4o: $10.00/1M output tokens
         max_context=128000,
         supports_json_mode=True,
     )
@@ -303,8 +303,8 @@ def _build_default_providers() -> Dict[str, ProviderConfig]:
         base_url="https://api.deepseek.com/v1",
         model="deepseek-chat",
         api_key_env="DEEPSEEK_API_KEY",
-        cost_per_1k_input=0.014,
-        cost_per_1k_output=0.028,
+        input_cost_per_1m_tokens=0.14,    # deepseek-chat: ~$0.14/1M input tokens
+        output_cost_per_1m_tokens=0.28,   # deepseek-chat: ~$0.28/1M output tokens
         max_context=64000,
         supports_json_mode=True,
     )
@@ -315,8 +315,8 @@ def _build_default_providers() -> Dict[str, ProviderConfig]:
         base_url="https://api.anthropic.com/v1",
         model="claude-sonnet-4-20250514",
         api_key_env="ANTHROPIC_API_KEY",
-        cost_per_1k_input=0.003,
-        cost_per_1k_output=0.015,
+        input_cost_per_1m_tokens=3.0,     # claude-sonnet-4: $3.00/1M input tokens
+        output_cost_per_1m_tokens=15.0,   # claude-sonnet-4: $15.00/1M output tokens
         max_context=200000,
         supports_json_mode=True,
     )
@@ -647,8 +647,8 @@ class ModelOrchestrator:
                 input_tokens = usage.get("prompt_tokens", 0)
                 output_tokens = usage.get("completion_tokens", 0)
                 cost = (
-                    (input_tokens / 1000) * provider.cost_per_1k_input +
-                    (output_tokens / 1000) * provider.cost_per_1k_output
+                    (input_tokens / 1_000_000) * provider.input_cost_per_1m_tokens +
+                    (output_tokens / 1_000_000) * provider.output_cost_per_1m_tokens
                 )
                 return OrchestratorResult(
                     text=content,
