@@ -99,6 +99,30 @@ def _pick_next_roadmap_issue(
     return None
 
 
+def _create_skip_issue(project_root: str, issue_number: int, failure_count: int) -> None:
+    """Open a GitHub issue to record that the watchdog skipped a roadmap issue."""
+    try:
+        title = f"Watchdog: skipped roadmap issue #{issue_number} after {failure_count} consecutive failures"
+        body = (
+            f"The IGRIS watchdog skipped roadmap issue #{issue_number} because it failed "
+            f"{failure_count} consecutive times without producing a passing diff.\n\n"
+            f"This indicates a capability ceiling for the current model configuration on this task.\n\n"
+            f"**Actions:**\n"
+            f"- Review the failure logs for issue #{issue_number}\n"
+            f"- Consider decomposing the issue into smaller sub-tasks\n"
+            f"- Or upgrade the reasoning model configuration\n\n"
+            f"_Auto-created by the IGRIS watchdog._"
+        )
+        subprocess.run(
+            ["gh", "issue", "create", "--title", title, "--body", body,
+             "--label", "watchdog,capability-ceiling"],
+            cwd=project_root, capture_output=True, text=True, timeout=30,
+        )
+        _watchdog_logger.info("Watchdog: created skip issue for roadmap #%d", issue_number)
+    except Exception as exc:
+        _watchdog_logger.warning("Watchdog: failed to create skip issue: %s", exc)
+
+
 async def _watchdog_loop(project_root: str) -> None:
     """Background task: start the next roadmap issue when no run is active.
 
@@ -139,6 +163,7 @@ async def _watchdog_loop(project_root: str) -> None:
                                     _last_issue_num, count,
                                 )
                                 _skipped_issues.add(_last_issue_num)
+                                _create_skip_issue(project_root, _last_issue_num, count)
                         elif last_run.status == "done":
                             _issue_failures.pop(_last_issue_num, None)
                     _last_run_id = None
