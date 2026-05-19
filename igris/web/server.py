@@ -4,10 +4,14 @@ FastAPI application for IGRIS_GPT.
 
 from __future__ import annotations
 
+import asyncio
 import json
+import logging
 import mimetypes
 import os
+import subprocess
 import time
+from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Dict, List, Optional
 
@@ -54,9 +58,93 @@ TEMPLATES_DIR = MODULE_DIR / "templates"
 STATIC_DIR = MODULE_DIR / "static"
 
 
+_watchdog_logger = logging.getLogger("igris.watchdog")
+
+_WATCHDOG_POLL_SECONDS = 60
+_WATCHDOG_COOLDOWN_SECONDS = 30
+_REPAIR_ISSUE_PATTERNS = ("supervised repair for", "supervised repair:", "repair for reasoning", "repair for pytest")
+
+
+def _pick_next_roadmap_issue(project_root: str) -> Optional[Dict]:
+    """Query GitHub for the next actionable roadmap issue.
+
+    Returns a dict with 'number', 'title', 'body' or None if nothing found.
+    Skips repair/orphan issues and issues already being worked on.
+    """
+    try:
+        result = subprocess.run(
+            ["gh", "issue", "list", "--label", "roadmap", "--state", "open",
+             "--limit", "50", "--json", "number,title,body,labels"],
+            cwd=project_root, capture_output=True, text=True, timeout=30,
+        )
+        if result.returncode != 0:
+            return None
+        issues = json.loads(result.stdout or "[]")
+    except Exception:
+        return None
+
+    for issue in sorted(issues, key=lambda i: i.get("number", 9999)):
+        title = issue.get("title", "").lower()
+        if any(pat in title for pat in _REPAIR_ISSUE_PATTERNS):
+            continue
+        return issue
+    return None
+
+
+async def _watchdog_loop(project_root: str) -> None:
+    """Background task: start the next roadmap issue when no run is active."""
+    from igris.core.self_repair_supervisor import (
+        list_active_supervised_runs,
+        start_supervised_rank_async,
+    )
+    await asyncio.sleep(_WATCHDOG_COOLDOWN_SECONDS)
+    while True:
+        try:
+            active = list_active_supervised_runs()
+            if not active:
+                issue = _pick_next_roadmap_issue(project_root)
+                if issue:
+                    number = issue["number"]
+                    title = issue.get("title", f"issue #{number}")
+                    body = issue.get("body", "")
+                    goal = f"Implement GitHub issue #{number}: {title}\n\n{body[:1000]}"
+                    _watchdog_logger.info("Watchdog: starting run for issue #%s — %s", number, title)
+                    start_supervised_rank_async(
+                        {
+                            "goal": goal,
+                            "github_issue": number,
+                            "allow_merge_if_green": True,
+                            "allow_auto_subissues": True,
+                            "autochain_depth": 0,
+                        },
+                        project_root=project_root,
+                    )
+                    await asyncio.sleep(_WATCHDOG_COOLDOWN_SECONDS)
+                else:
+                    _watchdog_logger.debug("Watchdog: no actionable roadmap issue found")
+        except Exception as exc:
+            _watchdog_logger.warning("Watchdog error: %s", exc)
+        await asyncio.sleep(_WATCHDOG_POLL_SECONDS)
+
+
+@asynccontextmanager
+async def _lifespan(app: FastAPI):
+    project_root = str(Path(__file__).resolve().parents[2])
+    task = asyncio.create_task(_watchdog_loop(project_root))
+    _watchdog_logger.info("Watchdog started (poll=%ds)", _WATCHDOG_POLL_SECONDS)
+    try:
+        yield
+    finally:
+        task.cancel()
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
+
+
 def create_app() -> FastAPI:
     """Create and configure the FastAPI application."""
-    app = FastAPI(title="IGRIS_GPT", version="0.1.0")
+    app = FastAPI(title="IGRIS_GPT", version="0.1.0", lifespan=_lifespan)
 
     @app.get('/api/diagnostics/session-resume')
     async def session_resume():
