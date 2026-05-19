@@ -7742,3 +7742,38 @@ class TestAutoRunSubissue:
             f"At max autochain depth={SelfRepairSupervisor._MAX_AUTOCHAIN_DEPTH}, "
             "policy must be 'request_human_approval' to prevent orphaned issue creation"
         )
+
+
+def test_rank_supervisor_config_default_repair_cycles():
+    """RankSupervisorConfig must default max_repair_cycles to 2, not 0.
+    A default of 0 means every run that hits semantic_incomplete or
+    other repairable failures is blocked immediately without any retry."""
+    from igris.core.self_repair_supervisor import RankSupervisorConfig
+    config = RankSupervisorConfig(goal="test")
+    assert config.max_repair_cycles == 2, (
+        f"Default max_repair_cycles must be 2, got {config.max_repair_cycles}"
+    )
+
+
+def test_pick_next_roadmap_issue_skips_repair_issues(monkeypatch):
+    """_pick_next_roadmap_issue must skip orphaned repair issues
+    (title contains 'supervised repair for') and return the next
+    clean roadmap issue by number."""
+    import json
+    import subprocess as sp
+    from igris.web.server import _pick_next_roadmap_issue
+
+    fake_issues = [
+        {"number": 10, "title": "roadmap-autonomy-418: supervised repair for reasoning_loop_blocked", "body": "", "labels": []},
+        {"number": 11, "title": "Supervisor: autonomous roadmap task selection", "body": "...", "labels": [{"name": "roadmap"}]},
+        {"number": 12, "title": "supervised repair for pytest_failure", "body": "", "labels": []},
+    ]
+
+    class FakeResult:
+        returncode = 0
+        stdout = json.dumps(fake_issues)
+
+    monkeypatch.setattr(sp, "run", lambda *a, **kw: FakeResult())
+    issue = _pick_next_roadmap_issue("/tmp")
+    assert issue is not None
+    assert issue["number"] == 11, "Must skip repair issues and return first clean issue"

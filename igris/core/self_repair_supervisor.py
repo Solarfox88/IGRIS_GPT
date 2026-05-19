@@ -158,7 +158,7 @@ class RankSupervisorConfig:
     goal: str
     rank_id: str = "rank"
     max_rank_attempts: int = 1
-    max_repair_cycles: int = 0
+    max_repair_cycles: int = 2
     allow_github_pr: bool = False
     allow_merge_if_green: bool = False
     service_restart_command: str = ""
