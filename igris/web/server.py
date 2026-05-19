@@ -62,14 +62,18 @@ _watchdog_logger = logging.getLogger("igris.watchdog")
 
 _WATCHDOG_POLL_SECONDS = 60
 _WATCHDOG_COOLDOWN_SECONDS = 30
+_WATCHDOG_MAX_CONSECUTIVE_FAILURES = 3
 _REPAIR_ISSUE_PATTERNS = ("supervised repair for", "supervised repair:", "repair for reasoning", "repair for pytest")
 
 
-def _pick_next_roadmap_issue(project_root: str) -> Optional[Dict]:
+def _pick_next_roadmap_issue(
+    project_root: str,
+    skip_issues: Optional[set] = None,
+) -> Optional[Dict]:
     """Query GitHub for the next actionable roadmap issue.
 
     Returns a dict with 'number', 'title', 'body' or None if nothing found.
-    Skips repair/orphan issues and issues already being worked on.
+    Skips repair/orphan issues and any issue numbers in skip_issues.
     """
     try:
         result = subprocess.run(
@@ -83,33 +87,71 @@ def _pick_next_roadmap_issue(project_root: str) -> Optional[Dict]:
     except Exception:
         return None
 
+    skip = skip_issues or set()
     for issue in sorted(issues, key=lambda i: i.get("number", 9999)):
+        number = issue.get("number")
         title = issue.get("title", "").lower()
         if any(pat in title for pat in _REPAIR_ISSUE_PATTERNS):
+            continue
+        if number in skip:
             continue
         return issue
     return None
 
 
 async def _watchdog_loop(project_root: str) -> None:
-    """Background task: start the next roadmap issue when no run is active."""
+    """Background task: start the next roadmap issue when no run is active.
+
+    Tracks consecutive failures per issue and skips issues that have failed
+    _WATCHDOG_MAX_CONSECUTIVE_FAILURES times in this server session, moving
+    on to the next lowest-numbered roadmap issue instead of retrying forever.
+    """
     from igris.core.self_repair_supervisor import (
         list_active_supervised_runs,
+        list_supervised_runs,
         start_supervised_rank_async,
     )
+    # Per-issue consecutive failure counter and skip set (reset on server restart)
+    _issue_failures: Dict[int, int] = {}
+    _skipped_issues: set = set()
+    _last_run_id: Optional[str] = None
+    _last_issue_num: Optional[int] = None
+
     await asyncio.sleep(_WATCHDOG_COOLDOWN_SECONDS)
     while True:
         try:
             active = list_active_supervised_runs()
             if not active:
-                issue = _pick_next_roadmap_issue(project_root)
+                # Account for the outcome of the run we last launched
+                if _last_run_id is not None and _last_issue_num is not None:
+                    all_runs = list_supervised_runs()
+                    last_run = next((r for r in all_runs if r.run_id == _last_run_id), None)
+                    if last_run:
+                        if last_run.status in ("blocked", "failed"):
+                            count = _issue_failures.get(_last_issue_num, 0) + 1
+                            _issue_failures[_last_issue_num] = count
+                            _watchdog_logger.info(
+                                "Watchdog: issue #%d failed (consecutive=%d)", _last_issue_num, count
+                            )
+                            if count >= _WATCHDOG_MAX_CONSECUTIVE_FAILURES:
+                                _watchdog_logger.warning(
+                                    "Watchdog: issue #%d skipped after %d consecutive failures",
+                                    _last_issue_num, count,
+                                )
+                                _skipped_issues.add(_last_issue_num)
+                        elif last_run.status == "done":
+                            _issue_failures.pop(_last_issue_num, None)
+                    _last_run_id = None
+                    _last_issue_num = None
+
+                issue = _pick_next_roadmap_issue(project_root, skip_issues=_skipped_issues)
                 if issue:
                     number = issue["number"]
                     title = issue.get("title", f"issue #{number}")
                     body = issue.get("body", "")
                     goal = f"Implement GitHub issue #{number}: {title}\n\n{body[:1000]}"
                     _watchdog_logger.info("Watchdog: starting run for issue #%s — %s", number, title)
-                    start_supervised_rank_async(
+                    launched = start_supervised_rank_async(
                         {
                             "goal": goal,
                             "github_issue": number,
@@ -119,9 +161,13 @@ async def _watchdog_loop(project_root: str) -> None:
                         },
                         project_root=project_root,
                     )
+                    _last_run_id = launched.run_id
+                    _last_issue_num = number
                     await asyncio.sleep(_WATCHDOG_COOLDOWN_SECONDS)
                 else:
-                    _watchdog_logger.debug("Watchdog: no actionable roadmap issue found")
+                    _watchdog_logger.debug(
+                        "Watchdog: no actionable roadmap issue found (skipped=%s)", _skipped_issues
+                    )
         except Exception as exc:
             _watchdog_logger.warning("Watchdog error: %s", exc)
         await asyncio.sleep(_WATCHDOG_POLL_SECONDS)

@@ -7841,3 +7841,39 @@ def test_pick_next_roadmap_issue_skips_repair_issues(monkeypatch):
     issue = _pick_next_roadmap_issue("/tmp")
     assert issue is not None
     assert issue["number"] == 11, "Must skip repair issues and return first clean issue"
+
+
+def test_pick_next_roadmap_issue_respects_skip_set(monkeypatch):
+    """_pick_next_roadmap_issue must skip any issue number in the skip_issues set,
+    so the watchdog can move on from a repeatedly-failing issue."""
+    import json
+    import subprocess as sp
+    from igris.web.server import _pick_next_roadmap_issue
+
+    fake_issues = [
+        {"number": 11, "title": "Sprint 11: Harden LLM defaults", "body": "", "labels": [{"name": "roadmap"}]},
+        {"number": 12, "title": "Sprint 12: Add memory layer", "body": "", "labels": [{"name": "roadmap"}]},
+        {"number": 13, "title": "Sprint 13: UI dashboard", "body": "", "labels": [{"name": "roadmap"}]},
+    ]
+
+    class FakeResult:
+        returncode = 0
+        stdout = json.dumps(fake_issues)
+
+    monkeypatch.setattr(sp, "run", lambda *a, **kw: FakeResult())
+
+    # Without skip_issues, picks lowest: #11
+    issue = _pick_next_roadmap_issue("/tmp")
+    assert issue["number"] == 11
+
+    # With #11 in skip set, picks #12
+    issue = _pick_next_roadmap_issue("/tmp", skip_issues={11})
+    assert issue["number"] == 12, "Must skip issue #11 and return #12"
+
+    # With #11 and #12 skipped, picks #13
+    issue = _pick_next_roadmap_issue("/tmp", skip_issues={11, 12})
+    assert issue["number"] == 13, "Must skip #11 and #12 and return #13"
+
+    # With all skipped, returns None
+    issue = _pick_next_roadmap_issue("/tmp", skip_issues={11, 12, 13})
+    assert issue is None, "All issues skipped — must return None"
