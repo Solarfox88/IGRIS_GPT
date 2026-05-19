@@ -297,15 +297,31 @@ def _build_default_providers() -> Dict[str, ProviderConfig]:
         supports_json_mode=True,
     )
 
-    # DeepSeek (cheap cloud reasoning)
+    # DeepSeek V4-Flash (cheap cloud reasoning — primary)
+    # SWE-bench Verified 79%, LiveCodeBench 91.6%, 1M context, cache hit $0.0028/1M
+    deepseek_model = os.environ.get("DEEPSEEK_MODEL") or "deepseek-v4-flash"
     providers["deepseek"] = ProviderConfig(
         name="deepseek",
         base_url="https://api.deepseek.com/v1",
-        model="deepseek-chat",
+        model=str(deepseek_model),
         api_key_env="DEEPSEEK_API_KEY",
-        input_cost_per_1m_tokens=0.14,    # deepseek-chat: ~$0.14/1M input tokens
-        output_cost_per_1m_tokens=0.28,   # deepseek-chat: ~$0.28/1M output tokens
-        max_context=64000,
+        input_cost_per_1m_tokens=0.14,    # cache miss $0.14/1M; cache hit $0.0028/1M
+        output_cost_per_1m_tokens=0.28,
+        max_context=1000000,
+        supports_json_mode=True,
+    )
+
+    # DeepSeek V4-Pro (strong cloud reasoning — competitive with Claude Opus 4.7)
+    # SWE-bench Verified 80.6%, Codeforces ELO 3206, 1M context
+    deepseek_strong_model = os.environ.get("DEEPSEEK_STRONG_MODEL") or "deepseek-v4-pro"
+    providers["deepseek_strong"] = ProviderConfig(
+        name="deepseek_strong",
+        base_url="https://api.deepseek.com/v1",
+        model=str(deepseek_strong_model),
+        api_key_env="DEEPSEEK_API_KEY",
+        input_cost_per_1m_tokens=0.435,   # 75% discount through May 2026; normal $1.74/1M
+        output_cost_per_1m_tokens=0.87,
+        max_context=1000000,
         supports_json_mode=True,
     )
 
@@ -506,15 +522,15 @@ class ModelOrchestrator:
             "local_light": ["ollama", "deepseek", "openai"],
             "local_coder": ["ollama", "deepseek", "openai"],
             "cheap_cloud_reasoning": ["deepseek", "openai", "ollama"],
-            "strong_cloud_reasoning": ["anthropic", "openai", "deepseek"],
+            "strong_cloud_reasoning": ["deepseek_strong", "anthropic", "openai"],
             # Cloud-first: never starts with Ollama — used for endpoint/API implementation
             # and repeated semantic failures where local model repeatedly produces stubs.
-            "endpoint_implementation": ["openai", "anthropic", "deepseek"],
+            "endpoint_implementation": ["deepseek", "openai", "anthropic"],
             "risk_reviewer": ["deepseek", "openai", "ollama"],
             "embedding_memory": ["ollama", "openai"],
             # Cost-policy profiles for helper-guided execution strategy
-            "mini_execution": ["openai", "deepseek"],
-            "strong_execution": ["openai_strong", "openai", "deepseek"],
+            "mini_execution": ["deepseek", "openai"],
+            "strong_execution": ["deepseek_strong", "openai_strong", "openai"],
         }
         return chains.get(profile, ["ollama", "openai"])
 
