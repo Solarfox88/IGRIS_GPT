@@ -730,7 +730,15 @@ class LocalSupervisorBackend:
             add = self._run(["git", "add", *files], timeout=30)
             if not add.success:
                 return add
-        return self._run(["git", "commit", "-m", message], timeout=60)
+        result = self._run(["git", "commit", "-m", message], timeout=60)
+        if not result.success and (
+            "nothing to commit" not in result.error
+            and "not staged" in result.output + result.error
+        ):
+            # Stage all tracked modified files and retry once.
+            self._run(["git", "add", "-u"], timeout=30)
+            result = self._run(["git", "commit", "-m", message], timeout=60)
+        return result
 
     def push_branch(self, branch: str) -> CommandResult:
         if branch in {"main", "master"} or branch.startswith("-"):

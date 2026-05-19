@@ -774,6 +774,38 @@ def test_subprocess_env_clean_without_forward_strips_api_keys():
     assert "OPENAI_API_KEY" not in env
 
 
+def test_commit_retries_with_git_add_u_on_unstaged_changes(monkeypatch, tmp_path):
+    """When commit fails because files are modified but not staged,
+    the backend should run 'git add -u' and retry the commit once."""
+    import igris.core.self_repair_supervisor as mod
+
+    calls = []
+
+    class Proc:
+        def __init__(self, returncode=0, stdout="", stderr=""):
+            self.returncode = returncode
+            self.stdout = stdout
+            self.stderr = stderr
+
+    def fake_run(cmd, **kwargs):
+        calls.append(cmd)
+        if cmd[:2] == ["git", "commit"] and len(calls) == 1:
+            return Proc(returncode=1, stdout="", stderr="Changes not staged for commit")
+        if cmd[:3] == ["git", "add", "-u"]:
+            return Proc(returncode=0)
+        if cmd[:2] == ["git", "commit"] and len(calls) > 1:
+            return Proc(returncode=0, stdout="[branch abc123] feat: done")
+        return Proc(returncode=0)
+
+    monkeypatch.setattr(mod.subprocess, "run", fake_run)
+    result = LocalSupervisorBackend(str(tmp_path)).commit("feat: done")
+
+    assert result.success
+    assert any(c[:3] == ["git", "add", "-u"] for c in calls), "git add -u must be called on unstaged failure"
+    commit_calls = [c for c in calls if c[:2] == ["git", "commit"]]
+    assert len(commit_calls) == 2, "commit must be retried once"
+
+
 def test_local_backend_rejects_bootstrap_smoke_payloads(monkeypatch, tmp_path):
     import igris.core.self_repair_supervisor as mod
 
