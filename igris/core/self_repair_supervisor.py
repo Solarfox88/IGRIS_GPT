@@ -3897,6 +3897,11 @@ class SelfRepairSupervisor:
         # budget, or explicitly refuses — all indicate the model cannot make progress.
         if str(result.get("stop_reason", "")) in {"reasoning_timeout", "budget_exceeded", "blocked"}:
             self._record_capability_signal(run, "reasoning_timeout")
+        # Record a capability signal when repair also hits max_steps — the escalated
+        # model (strong_execution) exhausted its step budget too, confirming a
+        # capability ceiling rather than a transient model availability issue.
+        if str(result.get("stop_reason", "")) == "max_steps" and repair_profile == "strong_execution":
+            self._record_capability_signal(run, "max_steps_ceiling")
         diff_stat = self.backend.git_diff_stat()
         diff = self.backend.git_diff()
         run.add("repair_diff_stat", "success" if diff_stat.success else "failure", _command_detail(diff_stat))
