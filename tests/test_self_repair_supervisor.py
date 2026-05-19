@@ -7808,6 +7808,17 @@ def test_rank_supervisor_config_default_repair_cycles():
     )
 
 
+def test_rank_supervisor_config_from_dict_default_repair_cycles():
+    """from_dict without max_repair_cycles must inherit the class default (2), not hard-code 0.
+    The watchdog calls start_supervised_rank_async without max_repair_cycles, so this
+    path must not silently disable repair."""
+    from igris.core.self_repair_supervisor import RankSupervisorConfig
+    config = RankSupervisorConfig.from_dict({"goal": "test goal"})
+    assert config.max_repair_cycles == 2, (
+        f"from_dict without explicit max_repair_cycles must default to 2, got {config.max_repair_cycles}"
+    )
+
+
 def test_pick_next_roadmap_issue_skips_repair_issues(monkeypatch):
     """_pick_next_roadmap_issue must skip orphaned repair issues
     (title contains 'supervised repair for') and return the next

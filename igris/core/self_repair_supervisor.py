@@ -195,7 +195,7 @@ class RankSupervisorConfig:
             goal=str(data.get("goal", "")),
             rank_id=str(data.get("rank_id", "rank")),
             max_rank_attempts=max(1, int(data.get("max_rank_attempts", 1))),
-            max_repair_cycles=max(0, int(data.get("max_repair_cycles", 0))),
+            max_repair_cycles=max(0, int(data.get("max_repair_cycles", cls.max_repair_cycles))),
             allow_github_pr=bool(data.get("allow_github_pr", False)),
             allow_merge_if_green=bool(data.get("allow_merge_if_green", False)),
             service_restart_command=str(data.get("service_restart_command", "")),
