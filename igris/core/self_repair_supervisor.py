@@ -641,6 +641,11 @@ class LocalSupervisorBackend:
         task_type: str = "code_reasoning",
         preferred_profile: Optional[str] = None,
     ) -> Dict[str, Any]:
+        import tempfile
+        # Create heartbeat file path so the worker can write progress updates.
+        # The path is included in the result so callers can surface it in events.
+        hb_fd, heartbeat_path = tempfile.mkstemp(prefix="igris_reasoning_hb_", suffix=".json")
+        os.close(hb_fd)
         payload = json.dumps({
             "project_root": str(self.project_root),
             "goal": goal,
@@ -648,6 +653,7 @@ class LocalSupervisorBackend:
             "initial_context": initial_context,
             "task_type": task_type,
             "preferred_profile": preferred_profile,
+            "heartbeat_path": heartbeat_path,
         })
         result = self._run(
             [str(self.project_root / ".venv/bin/python"), "-m", "igris.core.supervisor_reasoning_worker"],
@@ -2847,6 +2853,12 @@ class SelfRepairSupervisor:
                     loop_id=reasoning.get("loop_id", ""),
                     stop_reason=stop_reason,
                     files_modified=modified_files,
+                    steps_completed=reasoning.get("steps_completed", 0),
+                    orchestrator_used=reasoning.get("orchestrator_used", False),
+                    reasoning_execution_provider=reasoning.get("reasoning_execution_provider", ""),
+                    reasoning_execution_model=reasoning.get("reasoning_execution_model", ""),
+                    reasoning_execution_profile=reasoning.get("reasoning_execution_profile", ""),
+                    local_model_available=reasoning.get("local_model_available", False),
                 )
                 if reasoning_status == "finished":
                     self._set_stage_status(
@@ -2875,6 +2887,12 @@ class SelfRepairSupervisor:
                 loop_id=reasoning.get("loop_id", ""),
                 stop_reason=stop_reason,
                 files_modified=modified_files,
+                steps_completed=reasoning.get("steps_completed", 0),
+                orchestrator_used=reasoning.get("orchestrator_used", False),
+                reasoning_execution_provider=reasoning.get("reasoning_execution_provider", ""),
+                reasoning_execution_model=reasoning.get("reasoning_execution_model", ""),
+                reasoning_execution_profile=reasoning.get("reasoning_execution_profile", ""),
+                local_model_available=reasoning.get("local_model_available", False),
                 ui_visibility_required=ui_visibility_required,
                 ui_visibility_changed=ui_visibility_changed,
                 mission_orchestration_mode=mission_plan.mode,
