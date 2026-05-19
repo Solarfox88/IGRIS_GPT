@@ -3821,6 +3821,11 @@ class SelfRepairSupervisor:
             repair_task_type = "semantic_repair"
         elif failure in {"missing_tests", "pytest_failure"} and cycle > 1:
             repair_task_type = "code_generation"
+        elif failure == "max_steps":
+            # Reasoning hit the step ceiling without making progress — the cheap model
+            # couldn't complete the task. Escalate to strong_execution (gpt-4o) so the
+            # repair attempt uses a more capable model rather than repeating the same failure.
+            repair_profile = "strong_execution"
         # Strategy profile takes precedence, then env override, then task default.
         if strategy_profile:
             repair_profile = strategy_profile
