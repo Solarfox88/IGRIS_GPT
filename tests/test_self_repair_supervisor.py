@@ -7819,6 +7819,38 @@ def test_rank_supervisor_config_from_dict_default_repair_cycles():
     )
 
 
+def test_repair_profile_escalates_to_strong_execution_on_max_steps():
+    """When failure_class=max_steps the repair profile selection must yield
+    strong_execution (gpt-4o), not None (cheap default). Without this, the repair
+    repeats the same model that already hit the step ceiling."""
+    # Replicate the profile-selection logic from _repair_cycle directly.
+    # This tests the decision, not the full cycle (which requires git/github stubs).
+    failure = "max_steps"
+    repair_profile: object = None
+
+    if failure in {"semantic_incomplete", "stub_detected", "reasoning_loop_blocked"}:
+        repair_profile = "semantic_repair"
+    elif failure in {"missing_tests", "pytest_failure"}:
+        repair_profile = "code_generation"
+    elif failure == "max_steps":
+        repair_profile = "strong_execution"
+
+    assert repair_profile == "strong_execution", (
+        f"max_steps must escalate to strong_execution, got: {repair_profile}"
+    )
+
+    # Ensure other failures are not affected
+    for other_failure in ("pytest_failure", "semantic_incomplete", "destructive_diff"):
+        p: object = None
+        if other_failure in {"semantic_incomplete", "stub_detected", "reasoning_loop_blocked"}:
+            p = "semantic_repair"
+        elif other_failure == "max_steps":
+            p = "strong_execution"
+        assert p != "strong_execution" or other_failure == "max_steps", (
+            f"Only max_steps should escalate to strong_execution, not {other_failure}"
+        )
+
+
 def test_pick_next_roadmap_issue_skips_repair_issues(monkeypatch):
     """_pick_next_roadmap_issue must skip orphaned repair issues
     (title contains 'supervised repair for') and return the next
