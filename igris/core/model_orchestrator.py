@@ -558,7 +558,13 @@ class ModelOrchestrator:
         system_prompt: Optional[str],
         timeout: float,
     ) -> OrchestratorResult:
-        """Call Ollama API."""
+        """Call Ollama API using streaming mode.
+
+        Streaming is used instead of batch so that the socket timeout applies
+        to each individual chunk rather than the entire generation.  This
+        prevents phi4-mini (and other slow local models) from timing out on
+        the first byte when generating long responses.
+        """
         import urllib.request
         import urllib.error
 
@@ -571,7 +577,7 @@ class ModelOrchestrator:
         payload = json.dumps({
             "model": provider.model,
             "messages": full_messages,
-            "stream": False,
+            "stream": True,
         }).encode("utf-8")
 
         req = urllib.request.Request(
@@ -581,15 +587,28 @@ class ModelOrchestrator:
         )
 
         try:
+            import time as _time
+            content_parts: list = []
+            deadline = _time.monotonic() + timeout
             with urllib.request.urlopen(req, timeout=timeout) as resp:
-                data = json.loads(resp.read().decode("utf-8"))
-                content = data.get("message", {}).get("content", "")
-                return OrchestratorResult(
-                    text=content,
-                    provider="ollama",
-                    model=provider.model,
-                    success=bool(content),
-                )
+                for raw_line in resp:
+                    # Cap total streaming wall-clock time so a slow model
+                    # cannot hold the connection open past the caller's budget.
+                    if _time.monotonic() > deadline:
+                        break
+                    chunk = json.loads(raw_line.decode("utf-8"))
+                    part = chunk.get("message", {}).get("content", "")
+                    if part:
+                        content_parts.append(part)
+                    if chunk.get("done"):
+                        break
+            content = "".join(content_parts)
+            return OrchestratorResult(
+                text=content,
+                provider="ollama",
+                model=provider.model,
+                success=bool(content),
+            )
         except (urllib.error.URLError, urllib.error.HTTPError, OSError,
                 ValueError, TimeoutError, ConnectionError) as e:
             raise RuntimeError(f"Ollama call failed: {e}") from e

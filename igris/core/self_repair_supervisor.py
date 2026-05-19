@@ -3083,10 +3083,18 @@ class SelfRepairSupervisor:
                 for key in ("final_summary", "error", "stop_reason")
             )
             if failure == "infrastructure_bug" and _is_llm_provider_unavailable(reasoning_text):
-                return self._blocked(
+                # LLM unavailability is a structural capability wall — no repair cycle
+                # will succeed without a working model.  Decompose immediately so the
+                # auto-chain can hand the task to a sub-mission that may reach a cloud
+                # provider, rather than blocking the entire run indefinitely.
+                self._record_capability_signal(run, "reasoning_timeout")
+                decomposition = self._ask_igris_decompose(run, config)
+                return self._blocked_decomposition_required(
                     run,
-                    "infrastructure_bug",
-                    "No suitable LLM provider available",
+                    "reasoning_timeout",
+                    "LLM unavailable — decomposing to sub-mission for capable model",
+                    decomposition,
+                    config=config,
                     mission_plan=mission_plan,
                     stage_statuses=stage_statuses,
                     cleanup_workspace=True,
