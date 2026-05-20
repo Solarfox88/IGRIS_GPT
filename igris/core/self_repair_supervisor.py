@@ -156,6 +156,15 @@ class CommandResult:
     helper_model: str = ""
     helper_ab_active: bool = False
     helper_ab_alt_model: str = ""
+    # Shadow mode fields (Epic #445)
+    helper_ab_shadow_mode: bool = False
+    helper_primary_score: float = 0.0
+    helper_alt_score: float = 0.0
+    helper_primary_cost_usd: float = 0.0
+    helper_alt_cost_usd: float = 0.0
+    helper_primary_latency_ms: int = 0
+    helper_alt_latency_ms: int = 0
+    helper_switch_recommendation: bool = False
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -851,32 +860,115 @@ class LocalSupervisorBackend:
         if not cmd:
             return CommandResult(False, "", "API helper command is empty after parsing.", 2)
 
-        # A/B test: optionally route a fraction of calls to an alternative model.
-        # IGRIS_ENABLE_HELPER_AB_TEST=true activates; split defaults to 0.5.
-        # Alt model is advice-only — same contract as primary helper.
-        actual_model = model
-        ab_active = False
+        # Shadow mode A/B (Epic #445): always call primary; call shadow in parallel for scoring.
+        # Primary result is always returned — shadow is never used for decisions.
         alt_model = str(os.getenv("IGRIS_API_HELPER_ALT_MODEL", "")).strip()
-        if alt_model and str(os.getenv("IGRIS_ENABLE_HELPER_AB_TEST", "false")).lower() == "true":
-            import random as _random
-            split = float(os.getenv("IGRIS_HELPER_AB_SPLIT", "0.5") or "0.5")
-            if _random.random() < split:
-                actual_model = alt_model
-                ab_active = True
+        ab_enabled = (
+            bool(alt_model)
+            and str(os.getenv("IGRIS_ENABLE_HELPER_AB_TEST", "false")).lower() == "true"
+        )
+        shadow_mode = str(os.getenv("IGRIS_HELPER_AB_SHADOW_MODE", "true")).lower() != "false"
 
-        payload = json.dumps({"model": actual_model, "max_tokens": max_tokens, "packet": packet})
-        extra_env: Dict[str, str] = {}
+        # Call primary
+        import time as _time
+        primary_env: Dict[str, str] = {}
         if mode:
-            extra_env["IGRIS_API_HELPER_MODE"] = mode
-        if ab_active:
-            # Signal to the helper subprocess which arm is active for its own telemetry.
-            extra_env["IGRIS_HELPER_AB_ARM"] = "alt"
-        result = self._run(cmd, timeout=timeout, input_text=payload, extra_env=extra_env or None)
-        # Attach A/B metadata so callers can record telemetry.
-        result.helper_model = actual_model
-        result.helper_ab_active = ab_active
-        result.helper_ab_alt_model = alt_model if ab_active else ""
+            primary_env["IGRIS_API_HELPER_MODE"] = mode
+        primary_payload = json.dumps({"model": model, "max_tokens": max_tokens, "packet": packet})
+        t0 = _time.monotonic()
+        result = self._run(cmd, timeout=timeout, input_text=primary_payload, extra_env=primary_env or None)
+        result.helper_primary_latency_ms = int((_time.monotonic() - t0) * 1000)
+        result.helper_model = model
+        result.helper_ab_active = ab_enabled
+        result.helper_ab_alt_model = alt_model if ab_enabled else ""
+
+        # Launch shadow call if enabled
+        if ab_enabled and shadow_mode and alt_model:
+            self._run_shadow_helper(
+                cmd=cmd,
+                alt_model=alt_model,
+                packet=packet,
+                max_tokens=max_tokens,
+                timeout=timeout,
+                primary_result=result,
+            )
+
         return result
+
+    def _run_shadow_helper(
+        self,
+        *,
+        cmd,
+        alt_model: str,
+        packet,
+        max_tokens: int,
+        timeout: int,
+        primary_result: "CommandResult",
+    ) -> None:
+        """Call shadow helper and score both. Non-fatal — never changes primary output."""
+        try:
+            import time as _time
+            import json as _json
+            from igris.core.helper_ab_eval import (
+                score_helper_response,
+                make_ab_record,
+                save_ab_result,
+                is_safe_to_switch,
+                load_ab_results,
+            )
+            alt_provider = str(os.getenv("IGRIS_API_HELPER_ALT_PROVIDER", "deepseek")).strip()
+            shadow_env = {
+                "IGRIS_API_HELPER_MODE": "auto",
+                "IGRIS_API_HELPER_PROVIDER": alt_provider,
+                "IGRIS_HELPER_AB_ARM": "alt",
+            }
+            shadow_payload = _json.dumps({"model": alt_model, "max_tokens": max_tokens, "packet": packet})
+            t0 = _time.monotonic()
+            shadow_result = self._run(cmd, timeout=timeout, input_text=shadow_payload, extra_env=shadow_env)
+            alt_latency_ms = int((_time.monotonic() - t0) * 1000)
+
+            try:
+                primary_parsed = _json.loads(primary_result.output) if primary_result.output else {}
+            except _json.JSONDecodeError:
+                primary_parsed = {}
+            try:
+                alt_parsed = _json.loads(shadow_result.output) if shadow_result.output else {}
+            except _json.JSONDecodeError:
+                alt_parsed = {}
+
+            empty_case: Dict[str, Any] = {}
+            primary_score_r = score_helper_response(primary_parsed, empty_case)
+            alt_score_r = score_helper_response(alt_parsed, empty_case)
+            primary_cost = float(primary_parsed.get("estimated_cost_usd", 0.0))
+            alt_cost = float(alt_parsed.get("estimated_cost_usd", 0.0))
+
+            record = make_ab_record(
+                case_id=str(packet.get("failure_class", "unknown")),
+                primary_model=primary_result.helper_model,
+                alt_model=alt_model,
+                primary_score=primary_score_r["total"],
+                alt_score=alt_score_r["total"],
+                primary_breakdown=primary_score_r["breakdown"],
+                alt_breakdown=alt_score_r["breakdown"],
+                primary_cost_usd=primary_cost,
+                alt_cost_usd=alt_cost,
+                primary_latency_ms=primary_result.helper_primary_latency_ms,
+                alt_latency_ms=alt_latency_ms,
+            )
+            ab_path = str(os.getenv("IGRIS_HELPER_AB_RESULTS_PATH", ".igris/helper_ab_results.json"))
+            save_ab_result(record, ab_path)
+            all_records = load_ab_results(ab_path)
+            safe, _ = is_safe_to_switch(all_records)
+
+            primary_result.helper_ab_shadow_mode = True
+            primary_result.helper_primary_score = primary_score_r["total"]
+            primary_result.helper_alt_score = alt_score_r["total"]
+            primary_result.helper_primary_cost_usd = primary_cost
+            primary_result.helper_alt_cost_usd = alt_cost
+            primary_result.helper_alt_latency_ms = alt_latency_ms
+            primary_result.helper_switch_recommendation = safe
+        except Exception:
+            pass  # shadow mode is non-fatal
 
     def api_helper_is_configured(self) -> bool:
         """Return True when IGRIS_API_HELPER_COMMAND env var is set and non-empty."""
@@ -1762,6 +1854,11 @@ class SelfRepairSupervisor:
             helper_model=result.helper_model or config.api_helper_model,
             helper_alt_model=result.helper_ab_alt_model,
             helper_ab_active=result.helper_ab_active,
+            helper_ab_shadow_mode=result.helper_ab_shadow_mode,
+            helper_primary_score=result.helper_primary_score,
+            helper_alt_score=result.helper_alt_score,
+            helper_alt_used_for_decision=False,
+            helper_switch_recommendation=result.helper_switch_recommendation,
             codex_only=is_codex_only,
         )
         return advice

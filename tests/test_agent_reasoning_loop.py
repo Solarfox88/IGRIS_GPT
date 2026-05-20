@@ -341,8 +341,22 @@ class TestRunDeterministic:
     """Test loop run behaviour — marked slow: makes real LLM calls when providers are configured."""
 
     def test_run_blocks_without_llm(self):
-        loop = AgentReasoningLoop(project_root="/tmp", max_steps=3)
-        result = loop.run(goal="Test goal", mission_id="m-test")
+        from unittest.mock import patch
+        from igris.core.model_orchestrator import OrchestratorResult
+        # Mock out the orchestrator so no real LLM calls are made.
+        # This test is about the no-LLM code path only.
+        failed_result = OrchestratorResult(
+            success=False, text="", provider="deterministic_fallback",
+            model="none", profile="deterministic",
+            error="No LLM available (test mock)",
+            fallback_used=True,
+        )
+        with patch(
+            "igris.core.model_orchestrator.ModelOrchestrator.complete",
+            return_value=failed_result,
+        ):
+            loop = AgentReasoningLoop(project_root="/tmp", max_steps=3)
+            result = loop.run(goal="Test goal", mission_id="m-test")
         # Without LLM, every step returns "blocked" on first attempt
         assert result.status in ("blocked", "stopped")
         assert result.total_steps >= 1

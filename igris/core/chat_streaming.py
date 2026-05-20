@@ -164,7 +164,17 @@ def chat_stream_sync(
                 provider = CONFIG.fallback_llm.provider
                 model = CONFIG.fallback_llm.model
                 fallback_used = True
-                routing_reason = f"fallback provider ({tier} tier)"
+                routing_reason = f"{CONFIG.fallback_llm.provider} fallback ({tier} tier)"
+
+    if response_text is None and tier in ("auto", "fallback"):
+        if CONFIG.openai_chat_fallback.api_key:
+            from igris.core.chat_engine import _try_openai_secondary_fallback
+            response_text = _try_openai_secondary_fallback(messages)
+            if response_text:
+                provider = CONFIG.openai_chat_fallback.provider
+                model = CONFIG.openai_chat_fallback.model
+                fallback_used = True
+                routing_reason = f"OpenAI secondary fallback ({tier} tier)"
 
     if response_text is None:
         response_text = _build_fallback_response(message)

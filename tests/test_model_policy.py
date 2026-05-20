@@ -136,19 +136,15 @@ def test_helper_ab_not_triggered_when_disabled():
 
 
 def test_helper_ab_uses_alt_model_when_enabled():
-    """When IGRIS_ENABLE_HELPER_AB_TEST=true and split=1.0, alt model is always used."""
-    from igris.core.self_repair_supervisor import LocalSupervisorBackend
+    """Shadow mode: AB enabled -> both helpers called, primary result always returned."""
+    from igris.core.self_repair_supervisor import LocalSupervisorBackend, CommandResult
     from pathlib import Path
 
     backend = LocalSupervisorBackend(project_root=Path("/tmp"))
-
-    called_models = []
+    call_count = {"n": 0}
 
     def fake_run(cmd, timeout=30, input_text=None, extra_env=None, **kw):
-        from igris.core.self_repair_supervisor import CommandResult
-        import json
-        payload = json.loads(input_text or "{}")
-        called_models.append(payload.get("model", ""))
+        call_count["n"] += 1
         return CommandResult(success=False, output="", error="not configured", returncode=2)
 
     backend._run = fake_run
@@ -156,8 +152,10 @@ def test_helper_ab_uses_alt_model_when_enabled():
     with patch.dict(os.environ, {
         "IGRIS_API_HELPER_COMMAND": "echo",
         "IGRIS_ENABLE_HELPER_AB_TEST": "true",
+        "IGRIS_HELPER_AB_SHADOW_MODE": "true",
         "IGRIS_API_HELPER_ALT_MODEL": "deepseek-v4-pro",
-        "IGRIS_HELPER_AB_SPLIT": "1.0",  # always route to alt
+        "IGRIS_API_HELPER_ALT_PROVIDER": "deepseek",
+        "IGRIS_HELPER_AB_RESULTS_PATH": "/tmp/test_model_policy_ab.json",
     }):
         result = backend.call_api_helper(
             packet={"goal": "test"},
@@ -165,11 +163,11 @@ def test_helper_ab_uses_alt_model_when_enabled():
             max_tokens=600,
         )
 
+    # Shadow mode: primary always controls
     assert result.helper_ab_active
     assert result.helper_ab_alt_model == "deepseek-v4-pro"
-    assert result.helper_model == "deepseek-v4-pro"
-    if called_models:
-        assert called_models[0] == "deepseek-v4-pro"
+    assert result.helper_model == "gpt-5.3-codex"
+    assert call_count["n"] == 2
 
 
 # ---------------------------------------------------------------------------
