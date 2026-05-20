@@ -25,6 +25,7 @@ _log = logging.getLogger(__name__)
 # Minimum success-rate thresholds per task type
 _SUCCESS_THRESHOLD: Dict[str, float] = {
     "default": 0.70,
+    "code_reasoning": 0.60,  # generic tasks: prefer cheaper model first
     "backend_endpoint": 0.80,
     "security_review": 0.90,
     "devops_runtime": 0.90,
@@ -116,6 +117,11 @@ _DOCS_KEYWORDS = frozenset([
 _TEST_KEYWORDS = frozenset([
     "test", "pytest", "coverage", "assert", "fixture", "mock",
 ])
+_SUPERVISOR_KEYWORDS = frozenset([
+    "supervisor", "watchdog", "orchestrator", "routing", "gate",
+    "repair cycle", "reasoning worker", "subprocess", "timeout",
+    "wall-clock", "pipeline", "escalation", "capability", "profile",
+])
 _BACKEND_KEYWORDS = frozenset([
     "endpoint", "/api/", "api route", "backend", "handler", "controller",
     "implement get", "implement post", "implement put", "implement delete",
@@ -196,10 +202,18 @@ def _classify_goal(request: AssignmentRequest) -> Tuple[str, str, List[str]]:
         reasons.append("backend/endpoint keywords or required_tests")
         return "backend_coder", "backend_endpoint", reasons
 
-    # Test-only (no backend change)
-    if _contains_any(goal, _TEST_KEYWORDS) and not _contains_any(goal, _BACKEND_KEYWORDS):
-        reasons.append("test keywords without backend change")
+    # Test-only (no backend change, no supervisor/fix work)
+    if (_contains_any(goal, _TEST_KEYWORDS)
+            and not _contains_any(goal, _BACKEND_KEYWORDS)
+            and not _contains_any(goal, _REPAIR_KEYWORDS)
+            and not _contains_any(goal, _SUPERVISOR_KEYWORDS)):
+        reasons.append("test keywords without backend/repair/supervisor change")
         return "tester", "test_only", reasons
+
+    # Supervisor/infra fix — repair keywords + supervisor context → complex_implementation
+    if _contains_any(goal, _REPAIR_KEYWORDS) and _contains_any(goal, _SUPERVISOR_KEYWORDS):
+        reasons.append("repair + supervisor keywords → complex_implementation")
+        return "backend_coder", "complex_implementation", reasons
 
     # Docs / small refactor
     if _contains_any(goal, _DOCS_KEYWORDS) or _contains_any(goal, _REPAIR_KEYWORDS):
@@ -379,6 +393,20 @@ def _build_candidates(agent_role: str, task_type: str, request: AssignmentReques
             bootstrap_success_prob=0.65,
             bootstrap_cost_per_attempt=0.50,
             budget_tier="medium",
+        ))
+
+    # Medium cloud — for generic code_reasoning tasks before escalating to strong
+    if task_type == "code_reasoning" and not force_strong and not force_decompose:
+        candidates.append(_Candidate(
+            profile="cheap_cloud_reasoning",
+            strategy="cloud_reasoning_direct",
+            preferred_model="deepseek-v4-flash",
+            fallback_model_path=["gpt-4o-mini"],
+            codex_helper=False,
+            decompose=False,
+            bootstrap_success_prob=0.62,
+            bootstrap_cost_per_attempt=0.25,
+            budget_tier="low",
         ))
 
     # Strong execution — always available as last resort or when forced
