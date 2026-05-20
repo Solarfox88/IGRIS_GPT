@@ -169,6 +169,35 @@ async def _watchdog_loop(project_root: str) -> None:
                     _last_run_id = None
                     _last_issue_num = None
 
+                # Clean up any dirty workspace left by an interrupted run (e.g. service restart
+                # during active execution sends SIGTERM with no chance for _cleanup_blocked_workspace).
+                _ws = await asyncio.get_event_loop().run_in_executor(
+                    None,
+                    lambda: __import__("subprocess").run(
+                        ["git", "status", "--porcelain"],
+                        capture_output=True, text=True, cwd=project_root,
+                    )
+                )
+                if _ws.returncode == 0 and _ws.stdout.strip():
+                    _watchdog_logger.warning(
+                        "Watchdog: dirty workspace detected before launch — running cleanup: %s",
+                        _ws.stdout.strip()[:200],
+                    )
+                    await asyncio.get_event_loop().run_in_executor(
+                        None,
+                        lambda: __import__("subprocess").run(
+                            ["git", "restore", "--worktree", "--staged", "."],
+                            capture_output=True, cwd=project_root,
+                        )
+                    )
+                    await asyncio.get_event_loop().run_in_executor(
+                        None,
+                        lambda: __import__("subprocess").run(
+                            ["git", "clean", "-fd", "--", "igris", "tests", "docs"],
+                            capture_output=True, cwd=project_root,
+                        )
+                    )
+
                 issue = _pick_next_roadmap_issue(project_root, skip_issues=_skipped_issues)
                 if issue:
                     number = issue["number"]
