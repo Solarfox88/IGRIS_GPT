@@ -184,7 +184,7 @@ async def _watchdog_loop(project_root: str) -> None:
                             "github_issue": number,
                             "allow_merge_if_green": True,
                             "allow_auto_subissues": True,
-                            "autochain_depth": 1,
+                            "autochain_depth": 0,
                             "allow_api_escalation": True,
                             "max_api_escalations_per_run": _max_escalations,
                             "max_api_budget_usd": _run_budget,
