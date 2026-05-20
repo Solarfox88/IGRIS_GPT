@@ -177,14 +177,16 @@ async def _watchdog_loop(project_root: str) -> None:
                     goal = f"Implement GitHub issue #{number}: {title}\n\n{body[:1000]}"
                     _watchdog_logger.info("Watchdog: starting run for issue #%s — %s", number, title)
                     _run_budget = max(0.0, float(os.getenv("IGRIS_MAX_COST_PER_RUN", "3.0") or "3.0"))
+                    _max_escalations = max(0, int(os.getenv("IGRIS_MAX_ESCALATIONS_PER_RUN", "3") or "3"))
                     launched = start_supervised_rank_async(
                         {
                             "goal": goal,
                             "github_issue": number,
                             "allow_merge_if_green": True,
                             "allow_auto_subissues": True,
-                            "autochain_depth": 0,
+                            "autochain_depth": 1,
                             "allow_api_escalation": True,
+                            "max_api_escalations_per_run": _max_escalations,
                             "max_api_budget_usd": _run_budget,
                         },
                         project_root=project_root,
