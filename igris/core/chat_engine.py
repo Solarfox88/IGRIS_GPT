@@ -76,11 +76,18 @@ def _build_fallback_response(message: str) -> str:
 
 
 def _try_ollama(messages: list[dict[str, str]], model: str, base_url: str,
-                timeout: float = 10.0) -> Optional[str]:
-    """Attempt to get a response from the Ollama API."""
+                timeout: float = 5.0) -> Optional[str]:
+    """Attempt to get a response from the Ollama API.
+
+    Uses a threading wall-clock timeout so slow models (e.g. phi4-mini on CPU)
+    don't block the caller indefinitely. Socket-level timeout alone is
+    insufficient: Ollama streams HTTP headers immediately, resetting the
+    socket idle timer on every byte even when generation is still running.
+    """
     import urllib.request
     import urllib.error
     import json
+    import threading
 
     url = f"{base_url.rstrip('/')}/api/chat"
     payload = json.dumps({
@@ -95,14 +102,27 @@ def _try_ollama(messages: list[dict[str, str]], model: str, base_url: str,
         headers={"Content-Type": "application/json"},
         method="POST",
     )
-    try:
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
-            data = json.loads(resp.read().decode("utf-8"))
-            content = data.get("message", {}).get("content", "")
-            return content if content else None
-    except (urllib.error.URLError, urllib.error.HTTPError, OSError, ValueError,
-            TimeoutError, ConnectionError):
+
+    result: list = [None]
+    exc_holder: list = [None]
+
+    def _do_request() -> None:
+        try:
+            with urllib.request.urlopen(req, timeout=timeout) as resp:
+                data = json.loads(resp.read().decode("utf-8"))
+                txt = data.get("message", {}).get("content", "")
+                result[0] = txt if txt else None
+        except Exception as exc:
+            exc_holder[0] = exc
+
+    t = threading.Thread(target=_do_request, daemon=True)
+    t.start()
+    t.join(timeout=timeout)
+    if t.is_alive():
+        return None  # Ollama too slow — skip, fall through to cloud fallback
+    if exc_holder[0]:
         return None
+    return result[0]
 
 
 def chat(
