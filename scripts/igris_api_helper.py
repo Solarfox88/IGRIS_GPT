@@ -106,6 +106,8 @@ def _safe_error(msg: str, exit_code: int = 1, error_code: str = "") -> None:
         "diagnosis": _redact(str(msg)),
         "likely_supervisor_gap": "",
         "suggested_repair_strategy": "",
+        "execution_plan": [],
+        "acceptance_matrix": [],
         "suggested_tests": [],
         "risk": "unknown",
         "risk_notes": [],
@@ -141,8 +143,34 @@ def _resolve_mode() -> str:
 def _resolve_key() -> Tuple[str, str]:
     """Return (provider, key) for auto mode, or raise RuntimeError.
 
-    Priority: Anthropic keys → OpenAI keys.
+    If IGRIS_API_HELPER_PROVIDER is set, forces that provider.
+    Otherwise priority: Anthropic -> OpenAI -> DeepSeek.
     """
+    forced = os.environ.get("IGRIS_API_HELPER_PROVIDER", "").strip().lower()
+    if forced == "deepseek":
+        key = os.environ.get("DEEPSEEK_API_KEY", "").strip()
+        if key:
+            return "deepseek", key
+        raise RuntimeError(
+            "IGRIS_API_HELPER_PROVIDER=deepseek but no DEEPSEEK_API_KEY configured."
+        )
+    if forced == "anthropic":
+        for var in ("IGRIS_ANTHROPIC_API_KEY", "ANTHROPIC_API_KEY"):
+            key = os.environ.get(var, "").strip()
+            if key:
+                return "anthropic", key
+        raise RuntimeError(
+            "IGRIS_API_HELPER_PROVIDER=anthropic but no ANTHROPIC_API_KEY configured."
+        )
+    if forced == "openai":
+        for var in ("IGRIS_OPENAI_API_KEY", "OPENAI_API_KEY"):
+            key = os.environ.get(var, "").strip()
+            if key:
+                return "openai", key
+        raise RuntimeError(
+            "IGRIS_API_HELPER_PROVIDER=openai but no OPENAI_API_KEY configured."
+        )
+    # Auto mode: Anthropic -> OpenAI -> DeepSeek
     for var in ("IGRIS_ANTHROPIC_API_KEY", "ANTHROPIC_API_KEY"):
         key = os.environ.get(var, "").strip()
         if key:
@@ -151,9 +179,11 @@ def _resolve_key() -> Tuple[str, str]:
         key = os.environ.get(var, "").strip()
         if key:
             return "openai", key
+    key = os.environ.get("DEEPSEEK_API_KEY", "").strip()
+    if key:
+        return "deepseek", key
     raise RuntimeError(
-        "No API key configured. Set ANTHROPIC_API_KEY, IGRIS_ANTHROPIC_API_KEY, "
-        "OPENAI_API_KEY, or IGRIS_OPENAI_API_KEY."
+        "No API key configured. Set ANTHROPIC_API_KEY, OPENAI_API_KEY, or DEEPSEEK_API_KEY."
     )
 
 
@@ -386,6 +416,45 @@ def _call_openai_responses(key: str, model: str, max_tokens: int, context: str, 
     return text, cost
 
 
+def _call_deepseek(key: str, model: str, max_tokens: int, context: str, timeout: int, system_prompt: str = _SYSTEM_PROMPT) -> Tuple[str, float]:
+    """Call DeepSeek via OpenAI-compatible /v1/chat/completions."""
+    _DEEPSEEK_BASE = "https://api.deepseek.com/v1"
+    payload = json.dumps({
+        "model": model,
+        "max_tokens": max(64, min(max_tokens, 8192)),
+        "messages": [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": context},
+        ],
+    }).encode()
+    req = urllib.request.Request(
+        f"{_DEEPSEEK_BASE}/chat/completions",
+        data=payload,
+        headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"},
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=float(timeout)) as resp:
+            raw = resp.read()
+    except urllib.error.HTTPError as exc:
+        body = ""
+        try:
+            body = exc.read().decode(errors="replace")[:300]
+        except Exception:
+            pass
+        raise RuntimeError(f"HTTP {exc.code}: {_redact(body)}")
+    except urllib.error.URLError as exc:
+        raise RuntimeError(f"URL error: {_redact(str(exc.reason))}")
+    data = json.loads(raw)
+    text = str(data["choices"][0]["message"]["content"])
+    usage = data.get("usage", {})
+    input_tokens = int(usage.get("prompt_tokens", 0))
+    output_tokens = int(usage.get("completion_tokens", 0))
+    # DeepSeek V4 Pro: $0.435/$0.87 per 1M
+    cost = (input_tokens * 0.435 + output_tokens * 0.87) / 1_000_000
+    return text, cost
+
+
 # ---------------------------------------------------------------------------
 # Parse and validate response
 # ---------------------------------------------------------------------------
@@ -464,6 +533,8 @@ def _parse_response(
             "diagnosis": f"Could not parse helper response: {text[:200]}",
             "likely_supervisor_gap": "",
             "suggested_repair_strategy": "",
+            "execution_plan": [],
+            "acceptance_matrix": [],
             "suggested_tests": [],
             "risk": "unknown",
             "risk_notes": [],
@@ -485,6 +556,8 @@ def _parse_response(
             "diagnosis": "",
             "likely_supervisor_gap": "",
             "suggested_repair_strategy": "",
+            "execution_plan": [],
+            "acceptance_matrix": [],
             "suggested_tests": [],
             "risk": "unknown",
             "risk_notes": [],
@@ -503,6 +576,8 @@ def _parse_response(
         "diagnosis": str(payload.get("diagnosis", "")),
         "likely_supervisor_gap": str(payload.get("likely_supervisor_gap", "")),
         "suggested_repair_strategy": str(payload.get("suggested_repair_strategy", "")),
+        "execution_plan": list(payload.get("execution_plan") or []),
+        "acceptance_matrix": list(payload.get("acceptance_matrix") or []),
         "suggested_tests": list(payload.get("suggested_tests") or []),
         "risk": str(payload.get("risk", "unknown")),
         "risk_notes": list(payload.get("risk_notes") or []),
@@ -602,6 +677,8 @@ def main() -> None:
     try:
         if provider == "anthropic":
             raw_response, cost = _call_anthropic(api_key, model, max_tokens, context, timeout, system_prompt)
+        elif provider == "deepseek":
+            raw_response, cost = _call_deepseek(api_key, model, max_tokens, context, timeout, system_prompt)
         elif _is_codex_model(model):
             raw_response, cost = _call_openai_responses(api_key, model, max_tokens, context, timeout, system_prompt)
         else:
