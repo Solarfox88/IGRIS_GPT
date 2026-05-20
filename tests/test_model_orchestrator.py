@@ -176,7 +176,9 @@ class TestModelOrchestrator:
     def test_provider_chain_strong_cloud(self):
         orch = ModelOrchestrator()
         chain = orch._get_provider_chain("strong_cloud_reasoning")
-        assert chain[0] == "anthropic"
+        # DeepSeek V4 Pro is primary for strong_cloud_reasoning (PR #441); anthropic is fallback
+        assert chain[0] == "deepseek_strong"
+        assert "anthropic" in chain
 
     def test_history_tracking(self):
         orch = ModelOrchestrator()

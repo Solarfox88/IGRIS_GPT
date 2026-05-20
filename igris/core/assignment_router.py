@@ -333,12 +333,12 @@ def _build_candidates(agent_role: str, task_type: str, request: AssignmentReques
         candidates.append(_Candidate(
             profile="mini_execution",
             strategy="mini_direct",
-            preferred_model="gpt-4o-mini",
-            fallback_model_path=["deepseek-v4-flash"],
+            preferred_model="deepseek-v4-flash",   # primary: DeepSeek V4 Flash
+            fallback_model_path=["gpt-4o-mini"],   # fallback: OpenAI mini
             codex_helper=False,
             decompose=False,
             bootstrap_success_prob=0.75,
-            bootstrap_cost_per_attempt=0.20,
+            bootstrap_cost_per_attempt=0.08,       # deepseek much cheaper than gpt-4o-mini
             budget_tier="low",
         ))
 
@@ -346,12 +346,12 @@ def _build_candidates(agent_role: str, task_type: str, request: AssignmentReques
         candidates.append(_Candidate(
             profile="mini_execution",
             strategy="debug_mini",
-            preferred_model="gpt-4o-mini",
-            fallback_model_path=["deepseek-v4-flash", "gpt-4o"],
+            preferred_model="deepseek-v4-flash",   # primary: DeepSeek V4 Flash
+            fallback_model_path=["gpt-4o-mini", "gpt-4o"],
             codex_helper=False,
             decompose=False,
             bootstrap_success_prob=0.70,
-            bootstrap_cost_per_attempt=0.25,
+            bootstrap_cost_per_attempt=0.10,
             budget_tier="low",
         ))
 
@@ -359,12 +359,12 @@ def _build_candidates(agent_role: str, task_type: str, request: AssignmentReques
         candidates.append(_Candidate(
             profile="mini_execution",
             strategy="helper_advice_then_mini_execution",
-            preferred_model="gpt-4o-mini",
-            fallback_model_path=["gpt-4o"],
+            preferred_model="deepseek-v4-flash",   # primary: DeepSeek V4 Flash
+            fallback_model_path=["gpt-4o-mini", "gpt-4o"],
             codex_helper=True,
             decompose=False,
             bootstrap_success_prob=0.72,
-            bootstrap_cost_per_attempt=0.40,
+            bootstrap_cost_per_attempt=0.15,
             budget_tier="medium",
         ))
 

@@ -152,6 +152,10 @@ class CommandResult:
     output: str = ""
     error: str = ""
     returncode: int = 0
+    # Telemetry fields set by call_api_helper for helper A/B test tracking
+    helper_model: str = ""
+    helper_ab_active: bool = False
+    helper_ab_alt_model: str = ""
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -846,14 +850,33 @@ class LocalSupervisorBackend:
         cmd = shlex.split(helper_command)
         if not cmd:
             return CommandResult(False, "", "API helper command is empty after parsing.", 2)
-        payload = json.dumps({"model": model, "max_tokens": max_tokens, "packet": packet})
-        # Forward mode to helper via env var so the subprocess enforces codex_only policy.
-        # We only override if the caller explicitly requested a mode — otherwise let the
-        # process-level env (set by the operator in .env) take precedence.
+
+        # A/B test: optionally route a fraction of calls to an alternative model.
+        # IGRIS_ENABLE_HELPER_AB_TEST=true activates; split defaults to 0.5.
+        # Alt model is advice-only — same contract as primary helper.
+        actual_model = model
+        ab_active = False
+        alt_model = str(os.getenv("IGRIS_API_HELPER_ALT_MODEL", "")).strip()
+        if alt_model and str(os.getenv("IGRIS_ENABLE_HELPER_AB_TEST", "false")).lower() == "true":
+            import random as _random
+            split = float(os.getenv("IGRIS_HELPER_AB_SPLIT", "0.5") or "0.5")
+            if _random.random() < split:
+                actual_model = alt_model
+                ab_active = True
+
+        payload = json.dumps({"model": actual_model, "max_tokens": max_tokens, "packet": packet})
         extra_env: Dict[str, str] = {}
         if mode:
             extra_env["IGRIS_API_HELPER_MODE"] = mode
-        return self._run(cmd, timeout=timeout, input_text=payload, extra_env=extra_env or None)
+        if ab_active:
+            # Signal to the helper subprocess which arm is active for its own telemetry.
+            extra_env["IGRIS_HELPER_AB_ARM"] = "alt"
+        result = self._run(cmd, timeout=timeout, input_text=payload, extra_env=extra_env or None)
+        # Attach A/B metadata so callers can record telemetry.
+        result.helper_model = actual_model
+        result.helper_ab_active = ab_active
+        result.helper_ab_alt_model = alt_model if ab_active else ""
+        return result
 
     def api_helper_is_configured(self) -> bool:
         """Return True when IGRIS_API_HELPER_COMMAND env var is set and non-empty."""
@@ -1736,6 +1759,9 @@ class SelfRepairSupervisor:
             api_helper_provider=helper_provider,
             api_helper_model_requested=config.api_helper_model,
             api_helper_model_resolved=model_resolved,
+            helper_model=result.helper_model or config.api_helper_model,
+            helper_alt_model=result.helper_ab_alt_model,
+            helper_ab_active=result.helper_ab_active,
             codex_only=is_codex_only,
         )
         return advice
@@ -2914,6 +2940,8 @@ class SelfRepairSupervisor:
                     reasoning_execution_provider=reasoning.get("reasoning_execution_provider", ""),
                     reasoning_execution_model=reasoning.get("reasoning_execution_model", ""),
                     reasoning_execution_profile=reasoning.get("reasoning_execution_profile", ""),
+                    execution_provider=reasoning.get("reasoning_execution_provider", ""),
+                    execution_model=reasoning.get("reasoning_execution_model", ""),
                     local_model_available=reasoning.get("local_model_available", False),
                 )
                 if reasoning_status == "finished":
@@ -5557,6 +5585,13 @@ class SelfRepairSupervisor:
             return
         try:
             outcomes_path = str(project_root / ".igris" / "assignment_outcomes.json")
+            total_cost = run.execution_budget_used_usd + run.api_budget_used_usd
+            attempts = run.repair_cycles_used + 1
+            cost_per_success = (
+                round(total_cost / attempts, 6)
+                if run.status == "completed" and attempts > 0
+                else None
+            )
             record = {
                 "task_signature": compute_task_signature(getattr(run, "goal", "") or ""),
                 "goal_excerpt": (getattr(run, "goal", "") or "")[:200],
@@ -5569,8 +5604,13 @@ class SelfRepairSupervisor:
                 "outcome": run.status,
                 "failure_class": run.failure_class,
                 "capability_signals": dict(run.capability_signals),
-                "cost_usd": run.execution_budget_used_usd,
-                "attempts": run.repair_cycles_used + 1,
+                "cost_usd": total_cost,
+                "execution_cost_usd": run.execution_budget_used_usd,
+                "helper_cost_usd": run.api_budget_used_usd,
+                "cost_per_success": cost_per_success,
+                "attempts": attempts,
+                "execution_provider": "",
+                "execution_model": "",
                 "created_at": run.created_at.isoformat() if hasattr(run, "created_at") and run.created_at else "",
             }
             save_assignment_outcome(outcomes_path, record)
