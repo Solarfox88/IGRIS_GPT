@@ -43,6 +43,7 @@ ALLOWED_PATTERNS = (
     "*.json",
     "*.yaml",
     "*.yml",
+    ".env.example",
     "docs/**",
     "igris/**/*.py",
     "igris/web/static/**",
