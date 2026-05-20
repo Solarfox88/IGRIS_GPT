@@ -161,7 +161,7 @@ def chat(
     response_text = _try_ollama(messages, model, base_url)
 
     if response_text is None:
-        # Try fallback (OpenAI) if API key is configured
+        # Try primary cloud fallback (DeepSeek by default)
         if CONFIG.fallback_llm.api_key:
             fallback_text = _try_openai_fallback(messages)
             if fallback_text:
@@ -169,14 +169,25 @@ def chat(
                 provider = CONFIG.fallback_llm.provider
                 model = CONFIG.fallback_llm.model
                 fallback_used = True
-                routing_reason = "local LLM unavailable, using OpenAI fallback"
+                routing_reason = f"local LLM unavailable, using {CONFIG.fallback_llm.provider} fallback"
 
-        if response_text is None:
-            response_text = _build_fallback_response(message)
-            provider = "deterministic"
-            model = "fallback"
-            fallback_used = True
-            routing_reason = "LLM unavailable, using deterministic fallback"
+    if response_text is None:
+        # Try secondary OpenAI fallback when DeepSeek is also unreachable
+        if CONFIG.openai_chat_fallback.api_key:
+            secondary_text = _try_openai_secondary_fallback(messages)
+            if secondary_text:
+                response_text = secondary_text
+                provider = CONFIG.openai_chat_fallback.provider
+                model = CONFIG.openai_chat_fallback.model
+                fallback_used = True
+                routing_reason = "primary cloud unavailable, using OpenAI secondary fallback"
+
+    if response_text is None:
+        response_text = _build_fallback_response(message)
+        provider = "deterministic"
+        model = "fallback"
+        fallback_used = True
+        routing_reason = "LLM unavailable, using deterministic fallback"
 
     latency_ms = int((time.monotonic() - t0) * 1000)
 
@@ -191,7 +202,7 @@ def chat(
 
 
 def _try_openai_fallback(messages: list[dict[str, str]]) -> Optional[str]:
-    """Attempt to get a response from OpenAI API."""
+    """Attempt to get a response from the primary cloud fallback (DeepSeek by default)."""
     import urllib.request
     import urllib.error
     import json
@@ -204,6 +215,40 @@ def _try_openai_fallback(messages: list[dict[str, str]]) -> Optional[str]:
     url = f"{base_url.rstrip('/')}/chat/completions"
     payload = json.dumps({
         "model": CONFIG.fallback_llm.model,
+        "messages": messages,
+    }).encode("utf-8")
+
+    req = urllib.request.Request(
+        url,
+        data=payload,
+        headers={
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {api_key}",
+        },
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+            return data.get("choices", [{}])[0].get("message", {}).get("content")
+    except (urllib.error.URLError, urllib.error.HTTPError, OSError, ValueError,
+            TimeoutError, ConnectionError):
+        return None
+
+
+def _try_openai_secondary_fallback(messages: list[dict[str, str]]) -> Optional[str]:
+    """Attempt to get a response from secondary OpenAI fallback (behind DeepSeek)."""
+    import urllib.request
+    import urllib.error
+    import json
+
+    api_key = CONFIG.openai_chat_fallback.api_key
+    if not api_key:
+        return None
+
+    url = "https://api.openai.com/v1/chat/completions"
+    payload = json.dumps({
+        "model": CONFIG.openai_chat_fallback.model,
         "messages": messages,
     }).encode("utf-8")
 

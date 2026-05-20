@@ -8,4 +8,4 @@ def test_config_defaults():
     cfg = Config.load()
     assert cfg.local_llm.provider == "ollama"
     assert cfg.local_llm.model == "phi4-mini"
-    assert cfg.fallback_llm.provider == "openai"
+    assert cfg.fallback_llm.provider == "deepseek"

@@ -53,6 +53,7 @@ class VastAIConfig(BaseModel):
 class Config(BaseModel):
     local_llm: LLMConfig
     fallback_llm: LLMConfig
+    openai_chat_fallback: LLMConfig  # secondary OpenAI fallback behind DeepSeek
     vastai: VastAIConfig = VastAIConfig()
     auto_commit: bool = False
     auto_push: bool = False
@@ -67,9 +68,22 @@ class Config(BaseModel):
             model=normalize_model_name(os.getenv("LOCAL_LLM_MODEL", "phi4-mini")),
             base_url=os.getenv("LOCAL_LLM_BASE_URL", "http://127.0.0.1:11434"),
         )
+        fallback_provider = os.getenv("FALLBACK_LLM_PROVIDER", "deepseek")
+        # Auto-select API key by provider: deepseek uses DEEPSEEK_API_KEY, others use OPENAI_API_KEY
+        if fallback_provider == "deepseek":
+            fallback_api_key = os.getenv("DEEPSEEK_API_KEY") or os.getenv("OPENAI_API_KEY")
+        else:
+            fallback_api_key = os.getenv("OPENAI_API_KEY")
         fallback_llm = LLMConfig(
-            provider=os.getenv("FALLBACK_LLM_PROVIDER", "openai"),
-            model=normalize_model_name(os.getenv("FALLBACK_LLM_MODEL", "gpt-4o-mini")),
+            provider=fallback_provider,
+            model=normalize_model_name(os.getenv("FALLBACK_LLM_MODEL", "deepseek-v4-flash")),
+            base_url=os.getenv("FALLBACK_LLM_BASE_URL") or None,
+            api_key=fallback_api_key,
+        )
+        # Secondary OpenAI fallback — used when DeepSeek is unreachable
+        openai_chat_fallback = LLMConfig(
+            provider="openai",
+            model=normalize_model_name(os.getenv("OPENAI_CHAT_FALLBACK_MODEL", "gpt-4o-mini")),
             api_key=os.getenv("OPENAI_API_KEY"),
         )
         vastai = VastAIConfig(
@@ -86,6 +100,7 @@ class Config(BaseModel):
         return cls(
             local_llm=local_llm,
             fallback_llm=fallback_llm,
+            openai_chat_fallback=openai_chat_fallback,
             vastai=vastai,
             auto_commit=auto_commit,
             auto_push=auto_push,

@@ -264,11 +264,12 @@ def _build_default_providers() -> Dict[str, ProviderConfig]:
 
     # OpenAI (mini) — model resolved from:
     #   1. IGRIS_EXECUTION_FALLBACK_MODEL env var (execution-specific override)
-    #   2. CONFIG.fallback_llm.model (from FALLBACK_LLM_MODEL in .env)
+    #   2. OPENAI_CHAT_FALLBACK_MODEL env var
     #   3. gpt-4o-mini (safe default)
+    # Note: CONFIG.fallback_llm is now DeepSeek — do not use it for OpenAI provider.
     openai_model = (
         os.environ.get("IGRIS_EXECUTION_FALLBACK_MODEL")
-        or CONFIG.fallback_llm.model
+        or os.environ.get("OPENAI_CHAT_FALLBACK_MODEL")
         or "gpt-4o-mini"
     )
     providers["openai"] = ProviderConfig(
