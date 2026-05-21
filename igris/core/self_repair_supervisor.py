@@ -2969,7 +2969,12 @@ class SelfRepairSupervisor:
             return cancelled
         if not status.success:
             return self._blocked(run, "infrastructure_bug", "Unable to read git status")
-        if status.output.strip():
+        # Ignore untracked files (lines starting with "??") — they don't conflict with
+        # git checkout/merge and are often leftover artefacts from previous runs.
+        tracked_dirty = "\n".join(
+            line for line in status.output.splitlines() if line and not line.startswith("??")
+        ).strip()
+        if tracked_dirty:
             return self._blocked(run, "workspace_dirty", "Workspace is not clean")
 
         head = self.backend.git_log_head()
