@@ -3692,8 +3692,15 @@ class SelfRepairSupervisor:
 
     @staticmethod
     def _goal_requires_ui_visibility(goal: str) -> bool:
+        import re as _re
         lowered = goal.lower()
-        return any(token in lowered for token in ("ui", "dashboard", "frontend", "visible"))
+        # Use word-boundary matching to avoid false positives from substrings
+        # (e.g. Italian "qui" contains "ui", "visible" matches "visibility" correctly).
+        _UI_PATTERNS = _re.compile(
+            r"\b(ui|dashboard|frontend)\b|visib",
+            _re.IGNORECASE,
+        )
+        return bool(_UI_PATTERNS.search(lowered))
 
     @staticmethod
     def _goal_targets_rank_ui_card(goal: str) -> bool:
