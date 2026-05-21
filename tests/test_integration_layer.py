@@ -380,7 +380,9 @@ class TestRunMission:
     def test_llm_unavailable_path(self, tmp_path):
         """Test when no LLM is available (common in test env)."""
         layer = IntegrationLayer(project_root=str(tmp_path), max_steps=3)
-        report = layer.run_mission(goal="No LLM test")
+        with patch("igris.core.model_orchestrator.ModelOrchestrator.complete",
+                   side_effect=ConnectionRefusedError("no LLM")):
+            report = layer.run_mission(goal="No LLM test")
         # Without LLM, loop blocks on first step
         assert report.status in ("blocked", "stopped", "completed")
         assert isinstance(report.to_dict(), dict)

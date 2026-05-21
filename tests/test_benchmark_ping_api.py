@@ -1,9 +1,22 @@
 """API tests for Benchmark /api/ping endpoints — Epic #64."""
 
+import json
 import pytest
+from unittest.mock import patch
 from fastapi.testclient import TestClient
+from igris.core.model_orchestrator import OrchestratorResult
 
 from igris.web.server import create_app
+
+
+def _fast_finish(*a, **k):
+    """Mock LLM that returns finish immediately — avoids 30s Ollama timeout."""
+    return OrchestratorResult(
+        success=True,
+        text=json.dumps({"action_type": "finish", "reason": "mocked", "mode": "coder"}),
+        provider="mock",
+        model="mock",
+    )
 
 
 @pytest.fixture
@@ -25,11 +38,12 @@ class TestPingAPI:
 class TestBenchmarkRunAPI:
     """Test POST /api/benchmark/run."""
 
-    @pytest.mark.slow
     def test_deterministic(self, client):
-        resp = client.post("/api/benchmark/run", json={
-            "mode": "deterministic",
-        })
+        with patch("igris.core.model_orchestrator.ModelOrchestrator.complete",
+                   side_effect=_fast_finish):
+            resp = client.post("/api/benchmark/run", json={
+                "mode": "deterministic",
+            })
         assert resp.status_code == 200
         data = resp.json()
         assert "benchmark_id" in data
@@ -39,12 +53,13 @@ class TestBenchmarkRunAPI:
         assert data["mode"] == "deterministic"
         assert data["total_phases"] == 8
 
-    @pytest.mark.slow
     def test_integration_degraded(self, client):
-        resp = client.post("/api/benchmark/run", json={
-            "mode": "integration",
-            "max_steps": 2,
-        })
+        with patch("igris.core.model_orchestrator.ModelOrchestrator.complete",
+                   side_effect=_fast_finish):
+            resp = client.post("/api/benchmark/run", json={
+                "mode": "integration",
+                "max_steps": 2,
+            })
         assert resp.status_code == 200
         data = resp.json()
         assert data["mode"] == "integration"

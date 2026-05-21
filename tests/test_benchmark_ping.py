@@ -4,9 +4,12 @@ Validates the benchmark harness, each phase independently, and the
 full deterministic benchmark execution.
 """
 
+import json
 import pytest
 import os
 from pathlib import Path
+from unittest.mock import patch
+from igris.core.model_orchestrator import OrchestratorResult
 
 from igris.core.benchmark_ping import (
     BenchmarkRunner,
@@ -14,6 +17,16 @@ from igris.core.benchmark_ping import (
     BENCHMARK_GOAL,
     BENCHMARK_PHASES,
 )
+
+
+def _fast_finish(*a, **k):
+    """Mock LLM that returns finish immediately — avoids 30s Ollama timeout."""
+    return OrchestratorResult(
+        success=True,
+        text=json.dumps({"action_type": "finish", "reason": "mocked", "mode": "coder"}),
+        provider="mock",
+        model="mock",
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -98,15 +111,16 @@ class TestPhaseContextManager:
         assert "context_manager" in result.phases_completed
 
 
-@pytest.mark.slow
 class TestPhaseReasoningLoop:
-    """Test reasoning loop phase — marked slow: calls _phase_reasoning_loop which uses real LLM."""
+    """Test reasoning loop phase — LLM mocked so no real Ollama call."""
 
     def test_loop_runs(self, tmp_path):
         runner = BenchmarkRunner(project_root=str(tmp_path))
         result = BenchmarkResult()
-        runner._phase_reasoning_loop(result)
-        # Without LLM, loop still completes (degraded mode)
+        with patch("igris.core.model_orchestrator.ModelOrchestrator.complete",
+                   side_effect=_fast_finish):
+            runner._phase_reasoning_loop(result)
+        # Loop completes (mocked LLM returns finish immediately)
         assert result.reasoning_loop_ok is True
         assert "reasoning_loop" in result.phases_completed
 
@@ -172,18 +186,14 @@ class TestPhaseGovernor:
 # Full deterministic benchmark
 # ---------------------------------------------------------------------------
 
-@pytest.mark.slow
 class TestDeterministicBenchmark:
-    """Test full deterministic benchmark execution.
-
-    Marked slow: run_deterministic() spawns a pytest subprocess that collects
-    the full test suite, causing >300s of silence in a parent pytest process.
-    Excluded from supervised baseline runs (which use -m 'not slow').
-    """
+    """Test full deterministic benchmark execution — LLM mocked."""
 
     def test_runs_all_phases(self):
         runner = BenchmarkRunner(project_root=str(Path(__file__).parent.parent))
-        result = runner.run_deterministic()
+        with patch("igris.core.model_orchestrator.ModelOrchestrator.complete",
+                   side_effect=_fast_finish):
+            result = runner.run_deterministic()
         assert result.mode == "deterministic"
         assert result.total_phases == 8
         assert result.status in ("passed", "partial")
@@ -194,7 +204,9 @@ class TestDeterministicBenchmark:
 
     def test_report_format(self):
         runner = BenchmarkRunner(project_root=str(Path(__file__).parent.parent))
-        result = runner.run_deterministic()
+        with patch("igris.core.model_orchestrator.ModelOrchestrator.complete",
+                   side_effect=_fast_finish):
+            result = runner.run_deterministic()
         report = result.final_report
         assert "Status:" in report
         assert "Phases" in report
@@ -202,7 +214,9 @@ class TestDeterministicBenchmark:
 
     def test_phases_tracked(self):
         runner = BenchmarkRunner(project_root=str(Path(__file__).parent.parent))
-        result = runner.run_deterministic()
+        with patch("igris.core.model_orchestrator.ModelOrchestrator.complete",
+                   side_effect=_fast_finish):
+            result = runner.run_deterministic()
         # At minimum, these should pass in test environment
         assert "code_navigation" in result.phases_completed
         assert "context_manager" in result.phases_completed
@@ -215,13 +229,14 @@ class TestDeterministicBenchmark:
 # Integration benchmark (degraded — no LLM)
 # ---------------------------------------------------------------------------
 
-@pytest.mark.slow
 class TestIntegrationBenchmark:
-    """Test integration benchmark — marked slow: runs the full LLM integration pipeline."""
+    """Test integration benchmark — LLM mocked so no real Ollama call."""
 
     def test_runs_without_llm(self, tmp_path):
         runner = BenchmarkRunner(project_root=str(tmp_path))
-        result = runner.run_integration(max_steps=2)
+        with patch("igris.core.model_orchestrator.ModelOrchestrator.complete",
+                   side_effect=_fast_finish):
+            result = runner.run_integration(max_steps=2)
         assert result.mode == "integration"
         assert result.status in ("passed", "partial")
         assert isinstance(result.to_dict(), dict)
