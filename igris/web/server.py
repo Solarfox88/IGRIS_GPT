@@ -152,6 +152,34 @@ async def _watchdog_loop(project_root: str) -> None:
                     last_run = next((r for r in all_runs if r.run_id == _last_run_id), None)
                     if last_run:
                         if last_run.status in ("blocked", "failed"):
+                            # If the blocked run spawned child runs via decomposition, wait for
+                            # them — there is a brief window where the child is registered in
+                            # RUN_STORE but not yet visible to list_active_supervised_runs().
+                            child_run_ids = [
+                                e.get("data", {}).get("child_run_id") or ""
+                                for e in getattr(last_run, "events", [])
+                                if e.get("phase") == "submission_autorun_run_id"
+                            ]
+                            child_run_ids = [rid for rid in child_run_ids if rid]
+                            if not child_run_ids:
+                                # Also check for child run IDs stored in event detail
+                                child_run_ids = [
+                                    e.get("detail", "").split("Child run ")[-1].split(" ")[0]
+                                    for e in getattr(last_run, "events", [])
+                                    if e.get("phase") == "submission_autorun_run_id"
+                                    and "Child run" in e.get("detail", "")
+                                ]
+                                child_run_ids = [rid for rid in child_run_ids if len(rid) == 12]
+                            if child_run_ids:
+                                _watchdog_logger.info(
+                                    "Watchdog: blocked run #%s spawned child runs %s — deferring next launch",
+                                    _last_run_id, child_run_ids,
+                                )
+                                # Re-check active after a brief pause to let children register
+                                await asyncio.sleep(5)
+                                if list_active_supervised_runs():
+                                    await asyncio.sleep(_WATCHDOG_POLL_SECONDS)
+                                    continue
                             count = _issue_failures.get(_last_issue_num, 0) + 1
                             _issue_failures[_last_issue_num] = count
                             _watchdog_logger.info(
