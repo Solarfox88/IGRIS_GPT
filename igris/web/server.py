@@ -20,6 +20,11 @@ _re = re
 _sig = signal
 _sp = subprocess
 _time = time
+
+try:
+    import uvicorn as uvicorn  # noqa: PLC0414 — module-level for test patching
+except ImportError:  # pragma: no cover
+    uvicorn = None  # type: ignore
 from pathlib import Path
 from typing import Dict, List, Optional
 
@@ -3176,5 +3181,4 @@ def run_app(application: FastAPI, host: str = "0.0.0.0", port: int = 7778) -> No
                         os.kill(stale_pid, _sig.SIGKILL)
                     except ProcessLookupError:
                         pass
-    import uvicorn
     uvicorn.run(application, host=host, port=port, log_level="info")
