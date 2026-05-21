@@ -63,7 +63,35 @@ _watchdog_logger = logging.getLogger("igris.watchdog")
 _WATCHDOG_POLL_SECONDS = 60
 _WATCHDOG_COOLDOWN_SECONDS = 30
 _WATCHDOG_MAX_CONSECUTIVE_FAILURES = 3
+# Runs that confirm a structural ceiling are skipped after just 1 failure —
+# the strong model already exhausted its step budget, further runs waste budget.
+_WATCHDOG_CEILING_SKIP_AFTER = 1
 _REPAIR_ISSUE_PATTERNS = ("supervised repair for", "supervised repair:", "repair for reasoning", "repair for pytest")
+# Persisted skip list path — survives server restarts so IGRIS won't retry
+# a ceiling issue every time the service restarts after another run.
+_WATCHDOG_SKIPPED_PATH = ".igris/watchdog_skipped_issues.json"
+
+
+def _load_skipped_issues(project_root: str) -> set:
+    """Load the persisted set of skipped issue numbers from disk."""
+    path = os.path.join(project_root, _WATCHDOG_SKIPPED_PATH)
+    try:
+        with open(path) as f:
+            data = json.load(f)
+        return {int(n) for n in data.get("skipped", [])}
+    except (OSError, json.JSONDecodeError, ValueError, KeyError):
+        return set()
+
+
+def _save_skipped_issues(project_root: str, skipped: set) -> None:
+    """Persist the set of skipped issue numbers to disk."""
+    path = os.path.join(project_root, _WATCHDOG_SKIPPED_PATH)
+    try:
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "w") as f:
+            json.dump({"skipped": sorted(skipped)}, f)
+    except OSError as exc:
+        _watchdog_logger.warning("Watchdog: failed to persist skipped issues: %s", exc)
 
 
 def _pick_next_roadmap_issue(
@@ -135,9 +163,16 @@ async def _watchdog_loop(project_root: str) -> None:
         list_supervised_runs,
         start_supervised_rank_async,
     )
-    # Per-issue consecutive failure counter and skip set (reset on server restart)
+    # Per-issue consecutive failure counter.  The skip set is persisted to disk
+    # so it survives server restarts — IGRIS won't retry a capability-ceiling
+    # issue every time the service restarts after another successful run.
     _issue_failures: Dict[int, int] = {}
-    _skipped_issues: set = set()
+    _skipped_issues: set = _load_skipped_issues(project_root)
+    if _skipped_issues:
+        _watchdog_logger.info(
+            "Watchdog: loaded %d persisted skipped issues: %s",
+            len(_skipped_issues), sorted(_skipped_issues),
+        )
     _last_run_id: Optional[str] = None
     _last_issue_num: Optional[int] = None
 
@@ -185,17 +220,30 @@ async def _watchdog_loop(project_root: str) -> None:
                                 if list_active_supervised_runs():
                                     await asyncio.sleep(_WATCHDOG_POLL_SECONDS)
                                     continue
+                            # capability_ceiling_reached means the strong model confirmed
+                            # there is no way forward — skip after just 1 failure.
+                            is_ceiling = (
+                                getattr(last_run, "failure_class", "") == "capability_ceiling_reached"
+                            )
+                            threshold = (
+                                _WATCHDOG_CEILING_SKIP_AFTER if is_ceiling
+                                else _WATCHDOG_MAX_CONSECUTIVE_FAILURES
+                            )
                             count = _issue_failures.get(_last_issue_num, 0) + 1
                             _issue_failures[_last_issue_num] = count
                             _watchdog_logger.info(
-                                "Watchdog: issue #%d failed (consecutive=%d)", _last_issue_num, count
+                                "Watchdog: issue #%d failed (consecutive=%d, failure_class=%s)",
+                                _last_issue_num, count,
+                                getattr(last_run, "failure_class", ""),
                             )
-                            if count >= _WATCHDOG_MAX_CONSECUTIVE_FAILURES:
+                            if count >= threshold:
                                 _watchdog_logger.warning(
-                                    "Watchdog: issue #%d skipped after %d consecutive failures",
-                                    _last_issue_num, count,
+                                    "Watchdog: issue #%d skipped after %d consecutive failures "
+                                    "(ceiling=%s, threshold=%d)",
+                                    _last_issue_num, count, is_ceiling, threshold,
                                 )
                                 _skipped_issues.add(_last_issue_num)
+                                _save_skipped_issues(project_root, _skipped_issues)
                                 _create_skip_issue(project_root, _last_issue_num, count)
                         elif last_run.status == "done":
                             _issue_failures.pop(_last_issue_num, None)

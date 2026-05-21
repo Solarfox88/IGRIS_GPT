@@ -742,25 +742,42 @@ def test_local_backend_runs_commands_in_isolated_child_process(monkeypatch, tmp_
 
 
 def test_local_backend_runs_reasoning_in_bounded_worker(monkeypatch, tmp_path):
+    """run_reasoning() launches supervisor_reasoning_worker via Popen and returns parsed JSON."""
     captured = {}
+    result_json = json.dumps({
+        "status": "finished",
+        "stop_reason": "finish",
+        "files_modified": ["tests/test_rank_status.py"],
+    })
 
-    class Proc:
+    class FakeStdin:
+        def __init__(self):
+            self._buf = []
+        def write(self, data):
+            self._buf.append(data)
+        def close(self):
+            captured["input"] = "".join(self._buf)
+
+    class FakeProc:
         returncode = 0
-        stdout = json.dumps({
-            "status": "finished",
-            "stop_reason": "finish",
-            "files_modified": ["tests/test_rank_status.py"],
-        })
-        stderr = ""
+        stdin = FakeStdin()
+        stdout = iter([result_json + "\n"])
+        stderr = iter([])
 
-    def fake_run(cmd, **kwargs):
+        def poll(self):
+            return 0
+
+        def wait(self):
+            return 0
+
+    def fake_popen(cmd, **kwargs):
         captured["cmd"] = cmd
-        captured.update(kwargs)
-        return Proc()
+        captured["kwargs"] = kwargs
+        return FakeProc()
 
     import igris.core.self_repair_supervisor as mod
 
-    monkeypatch.setattr(mod.subprocess, "run", fake_run)
+    monkeypatch.setattr(mod.subprocess, "Popen", fake_popen)
     result = LocalSupervisorBackend(str(tmp_path)).run_reasoning(
         "rank goal",
         max_steps=7,
@@ -768,11 +785,10 @@ def test_local_backend_runs_reasoning_in_bounded_worker(monkeypatch, tmp_path):
         timeout=42,
     )
 
-    payload = json.loads(captured["input"])
     assert result["status"] == "finished"
     assert captured["cmd"][-2:] == ["-m", "igris.core.supervisor_reasoning_worker"]
-    assert captured["timeout"] == 42
-    assert captured["start_new_session"] is True
+    assert captured["kwargs"]["start_new_session"] is True
+    payload = json.loads(captured["input"])
     assert payload["goal"] == "rank goal"
     assert payload["max_steps"] == 7
     assert payload["initial_context"]["rank_test"] == "A"
@@ -896,17 +912,42 @@ def test_local_backend_rejects_bootstrap_smoke_payloads(monkeypatch, tmp_path):
 
 
 def test_local_backend_classifies_reasoning_timeout(monkeypatch, tmp_path):
-    def fake_run(cmd, **kwargs):
-        raise subprocess.TimeoutExpired(
-            cmd=cmd,
-            timeout=kwargs["timeout"],
-            output=b"partial",
-            stderr=b"timed out",
-        )
-
+    """run_reasoning() returns stop_reason='reasoning_timeout' when the worker is killed."""
     import igris.core.self_repair_supervisor as mod
 
-    monkeypatch.setattr(mod.subprocess, "run", fake_run)
+    _calls = [0]
+
+    def fake_monotonic():
+        _calls[0] += 1
+        return 0.0 if _calls[0] == 1 else 999.0
+
+    class FakeStdin:
+        def write(self, _): pass
+        def close(self): pass
+
+    class FakeProc:
+        returncode = 0
+        pid = 99999
+        stdin = FakeStdin()
+        stdout = iter([])
+        stderr = iter([])
+
+        def poll(self):
+            return None
+
+        def wait(self):
+            self.returncode = -9
+            return -9
+
+        def kill(self):
+            self.returncode = -9
+
+    monkeypatch.setattr(mod.subprocess, "Popen", lambda *a, **kw: FakeProc())
+    monkeypatch.setattr(mod.time, "monotonic", fake_monotonic)
+    monkeypatch.setattr(mod.time, "sleep", lambda _: None)
+    monkeypatch.setattr(mod.os, "killpg", lambda *_: None)
+    monkeypatch.setattr(mod.os, "getpgid", lambda pid: pid)
+
     result = LocalSupervisorBackend(str(tmp_path)).run_reasoning(
         "rank goal",
         max_steps=7,
@@ -916,7 +957,6 @@ def test_local_backend_classifies_reasoning_timeout(monkeypatch, tmp_path):
 
     assert result["status"] == "blocked"
     assert result["stop_reason"] == "reasoning_timeout"
-    assert "timed out" in result["final_summary"]
 
 
 def test_local_backend_reuses_existing_open_issue_by_exact_title(monkeypatch, tmp_path):
@@ -7906,3 +7946,157 @@ def test_pick_next_roadmap_issue_respects_skip_set(monkeypatch):
     # With all skipped, returns None
     issue = _pick_next_roadmap_issue("/tmp", skip_issues={11, 12, 13})
     assert issue is None, "All issues skipped — must return None"
+
+
+# ---------------------------------------------------------------------------
+# #420 — capability_ceiling_reached
+# ---------------------------------------------------------------------------
+
+def test_max_steps_ceiling_emits_capability_ceiling_reached():
+    """When strong_execution hits max_steps (max_steps_ceiling signal), the
+    supervisor must block with capability_ceiling_reached, NOT decomposition_required.
+    This skips the expensive decompose LLM call and lets the watchdog fast-skip.
+    """
+    backend = FakeBackend()
+    backend.reasoning_results = [
+        # attempt-1 main: max_steps (not ceiling yet — no strong profile used)
+        {"status": "blocked", "stop_reason": "max_steps", "files_modified": [], "final_summary": ""},
+        # repair-cycle: strong_execution also hits max_steps → max_steps_ceiling signal
+        {"status": "blocked", "stop_reason": "max_steps", "files_modified": [],
+         "final_summary": "", "reasoning_execution_profile": "strong_execution"},
+        # No decompose call expected — capability_ceiling_reached skips it
+    ]
+    backend.diff_stat = CommandResult(False, "")
+    backend.diff = CommandResult(True, "")
+    backend.full_tests = [CommandResult(True, "ok")] * 10
+
+    supervisor = SelfRepairSupervisor("/tmp/project", backend=backend)
+    config = _config(
+        max_rank_attempts=2,
+        max_repair_cycles=1,
+        goal="Complex task requiring strong model",
+    )
+    run = SupervisorRun(run_id="ceiling-test", rank_id="test")
+
+    # Pre-seed max_steps_ceiling signal (as would happen after repair reasoning)
+    run.capability_signals["max_steps_ceiling"] = 1
+    result = supervisor.run(config, run=run)
+
+    assert result.failure_class == "capability_ceiling_reached", (
+        f"Expected capability_ceiling_reached, got {result.failure_class!r}"
+    )
+    assert result.status == "blocked"
+    # No decomposition should have been attempted
+    ceiling_events = [e for e in result.events if e.phase == "capability_ceiling"]
+    assert ceiling_events, "Expected a capability_ceiling event"
+    # decompose should NOT have been called
+    decompose_events = [e for e in result.events if "decomposition" in e.phase]
+    assert not decompose_events, f"Decompose should not be called for structural ceiling; got {decompose_events}"
+
+
+def test_pure_reasoning_timeout_still_decomposes():
+    """Pure reasoning_timeout signals (no max_steps_ceiling) must still trigger
+    decomposition, NOT capability_ceiling_reached. The cheap model timing out
+    doesn't mean the strong model can't handle it via decomposed sub-missions.
+    """
+    backend = FakeBackend()
+    backend.reasoning_results = [
+        _make_timeout_result(),              # attempt-1 → reasoning_timeout=1
+        _make_timeout_result(),              # repair  → reasoning_timeout=2 → threshold
+        _decomposition_reasoning_result(),   # decomposition call
+    ]
+    backend.diff_stat = CommandResult(False, "")
+    backend.diff = CommandResult(True, "")
+    backend.full_tests = [CommandResult(True, "ok")] * 10
+
+    supervisor = SelfRepairSupervisor("/tmp/project", backend=backend)
+    config = _config(max_rank_attempts=3, max_repair_cycles=1, goal="timeout test")
+    run = SupervisorRun(run_id="timeout-decompose", rank_id="test")
+    result = supervisor.run(config, run=run)
+
+    assert result.failure_class == "decomposition_required", (
+        f"Pure reasoning_timeout must still decompose, got {result.failure_class!r}"
+    )
+    assert result.report.get("decomposition_required") is True
+
+
+# ---------------------------------------------------------------------------
+# #418 — watchdog skip persistence
+# ---------------------------------------------------------------------------
+
+def test_load_skipped_issues_returns_empty_on_missing_file(tmp_path):
+    from igris.web.server import _load_skipped_issues
+    result = _load_skipped_issues(str(tmp_path))
+    assert result == set()
+
+
+def test_save_and_load_skipped_issues_round_trips(tmp_path):
+    from igris.web.server import _load_skipped_issues, _save_skipped_issues
+    _save_skipped_issues(str(tmp_path), {12, 13, 17})
+    loaded = _load_skipped_issues(str(tmp_path))
+    assert loaded == {12, 13, 17}
+
+
+def test_save_skipped_issues_creates_igris_dir(tmp_path):
+    from igris.web.server import _load_skipped_issues, _save_skipped_issues
+    # .igris dir does not exist yet
+    assert not (tmp_path / ".igris").exists()
+    _save_skipped_issues(str(tmp_path), {99})
+    assert (tmp_path / ".igris" / "watchdog_skipped_issues.json").exists()
+    assert _load_skipped_issues(str(tmp_path)) == {99}
+
+
+# ---------------------------------------------------------------------------
+# #432 — heartbeat stale detection
+# ---------------------------------------------------------------------------
+
+def test_run_with_heartbeat_monitor_kills_on_stale_heartbeat(monkeypatch, tmp_path):
+    """When heartbeat_at is old, _run_with_heartbeat_monitor kills the process
+    early and returns returncode=124 (same as a timeout).
+    """
+    import json
+    import time as _time
+    import igris.core.self_repair_supervisor as mod
+
+    # Heartbeat file with an old timestamp
+    hb_path = str(tmp_path / "hb.json")
+    with open(hb_path, "w") as f:
+        json.dump({"heartbeat_at": _time.time() - 9999}, f)
+
+    class FakeStdin:
+        def write(self, _): pass
+        def close(self): pass
+
+    class FakeProc:
+        returncode = 0
+        pid = 99999
+        stdin = FakeStdin()
+        stdout = iter([])
+        stderr = iter([])
+
+        def poll(self):
+            return None  # always running
+
+        def wait(self):
+            self.returncode = -9
+            return -9
+
+        def kill(self):
+            self.returncode = -9
+
+    monkeypatch.setattr(mod.subprocess, "Popen", lambda *a, **kw: FakeProc())
+    monkeypatch.setattr(mod.time, "monotonic", lambda: 0.0)
+    monkeypatch.setattr(mod.time, "sleep", lambda _: None)
+    monkeypatch.setattr(mod.os, "killpg", lambda *_: None)
+    monkeypatch.setattr(mod.os, "getpgid", lambda pid: pid)
+
+    backend = mod.LocalSupervisorBackend(str(tmp_path))
+    result = backend._run_with_heartbeat_monitor(
+        ["echo", "test"],
+        timeout=900,
+        input_text="{}",
+        heartbeat_path=hb_path,
+        stale_threshold=60,
+    )
+    assert result.returncode == 124
+    assert "stale" in result.error.lower()

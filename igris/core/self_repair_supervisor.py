@@ -643,6 +643,132 @@ class LocalSupervisorBackend:
             returncode=proc.returncode,
         )
 
+    # Seconds without a heartbeat update before the worker is considered stale.
+    # Workers write every 30s; 120s allows ~3 missed beats before we kill early.
+    _HEARTBEAT_STALE_SECONDS = 120
+
+    def _run_with_heartbeat_monitor(
+        self,
+        cmd: List[str],
+        timeout: int,
+        *,
+        input_text: str,
+        heartbeat_path: str,
+        stale_threshold: int = _HEARTBEAT_STALE_SECONDS,
+        forward_credentials: bool = False,
+    ) -> CommandResult:
+        """Run a subprocess, killing it early if its heartbeat file goes stale.
+
+        Uses Popen so we can poll both process state and the heartbeat file
+        simultaneously, rather than blocking on subprocess.run() for the full
+        timeout when the worker silently hangs.
+        """
+        env = self._subprocess_env(forward_credentials=forward_credentials)
+        try:
+            proc = subprocess.Popen(
+                cmd,
+                cwd=str(self.project_root),
+                env=env,
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                start_new_session=True,
+                close_fds=True,
+            )
+        except OSError as exc:
+            return CommandResult(False, "", str(exc), 1)
+
+        stdout_parts: List[str] = []
+        stderr_parts: List[str] = []
+
+        def _read_pipe(pipe: Any, parts: List[str]) -> None:
+            try:
+                for line in pipe:
+                    parts.append(line)
+            except (OSError, ValueError):
+                pass
+
+        def _write_stdin() -> None:
+            try:
+                proc.stdin.write(input_text)  # type: ignore[union-attr]
+            except OSError:
+                pass
+            finally:
+                try:
+                    proc.stdin.close()  # type: ignore[union-attr]
+                except OSError:
+                    pass
+
+        threading.Thread(target=_write_stdin, daemon=True).start()
+        out_thread = threading.Thread(target=_read_pipe, args=(proc.stdout, stdout_parts), daemon=True)
+        err_thread = threading.Thread(target=_read_pipe, args=(proc.stderr, stderr_parts), daemon=True)
+        out_thread.start()
+        err_thread.start()
+
+        start_mono = time.monotonic()
+        last_hb_at: Optional[float] = None
+        kill_reason = ""
+
+        def _kill(reason: str) -> None:
+            nonlocal kill_reason
+            kill_reason = reason
+            try:
+                os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+            except OSError:
+                try:
+                    proc.kill()
+                except OSError:
+                    pass
+
+        _POLL = 5
+        while True:
+            time.sleep(_POLL)
+            elapsed = time.monotonic() - start_mono
+
+            if proc.poll() is not None:
+                break
+
+            if elapsed >= timeout:
+                _kill("Reasoning timeout")
+                break
+
+            # Read heartbeat_at from the progress file.
+            try:
+                with open(heartbeat_path) as _f:
+                    hb = json.load(_f)
+                hb_at = float(hb.get("heartbeat_at", 0))
+                if hb_at > 0:
+                    last_hb_at = hb_at
+            except (OSError, json.JSONDecodeError, ValueError, KeyError):
+                pass
+
+            now = time.time()
+            if last_hb_at is not None and (now - last_hb_at) > stale_threshold:
+                _kill(
+                    f"Reasoning worker heartbeat stale "
+                    f"({int(now - last_hb_at)}s since last update)"
+                )
+                break
+            elif last_hb_at is None and elapsed > stale_threshold + 60:
+                _kill("Reasoning worker never wrote a heartbeat; possible crash or startup failure")
+                break
+
+        proc.wait()
+        out_thread.join(timeout=5)
+        err_thread.join(timeout=5)
+
+        try:
+            os.unlink(heartbeat_path)
+        except OSError:
+            pass
+
+        stdout = "".join(stdout_parts)
+        stderr = "".join(stderr_parts) or kill_reason
+        if kill_reason:
+            return CommandResult(False, stdout, stderr, 124)
+        return CommandResult(proc.returncode == 0, stdout, stderr, proc.returncode)
+
     def git_status(self) -> CommandResult:
         return self._run(["git", "status", "--short"], timeout=10)
 
@@ -664,8 +790,6 @@ class LocalSupervisorBackend:
         preferred_profile: Optional[str] = None,
     ) -> Dict[str, Any]:
         import tempfile
-        # Create heartbeat file path so the worker can write progress updates.
-        # The path is included in the result so callers can surface it in events.
         hb_fd, heartbeat_path = tempfile.mkstemp(prefix="igris_reasoning_hb_", suffix=".json")
         os.close(hb_fd)
         payload = json.dumps({
@@ -677,10 +801,11 @@ class LocalSupervisorBackend:
             "preferred_profile": preferred_profile,
             "heartbeat_path": heartbeat_path,
         })
-        result = self._run(
+        result = self._run_with_heartbeat_monitor(
             [str(self.project_root / ".venv/bin/python"), "-m", "igris.core.supervisor_reasoning_worker"],
             timeout=timeout,
             input_text=payload,
+            heartbeat_path=heartbeat_path,
             forward_credentials=True,
         )
         if result.success:
@@ -3435,19 +3560,8 @@ class SelfRepairSupervisor:
             if failure not in REPAIRABLE_FAILURES or repair_cycles >= config.max_repair_cycles:
                 triggering_signal = self._detect_capability_limit(run)
                 if triggering_signal:
-                    decomposition = self._ask_igris_decompose(run, config)
-                    return self._blocked_decomposition_required(
-                        run,
-                        triggering_signal,
-                        (
-                            f"Capability limit detected ({triggering_signal} × "
-                            f"{run.capability_signals[triggering_signal]}); "
-                            "mission requires decomposition."
-                        ),
-                        decomposition,
-                        config=config,
-                        mission_plan=mission_plan,
-                        stage_statuses=stage_statuses,
+                    return self._handle_capability_limit(
+                        run, triggering_signal, config, mission_plan, stage_statuses,
                         cleanup_workspace=True,
                     )
                 return self._blocked(
@@ -3471,19 +3585,8 @@ class SelfRepairSupervisor:
             ):
                 triggering_signal = self._detect_capability_limit(run)
                 if triggering_signal:
-                    decomposition = self._ask_igris_decompose(run, config)
-                    return self._blocked_decomposition_required(
-                        run,
-                        triggering_signal,
-                        (
-                            f"Capability limit detected ({triggering_signal} × "
-                            f"{run.capability_signals[triggering_signal]}); "
-                            "mission requires decomposition."
-                        ),
-                        decomposition,
-                        config=config,
-                        mission_plan=mission_plan,
-                        stage_statuses=stage_statuses,
+                    return self._handle_capability_limit(
+                        run, triggering_signal, config, mission_plan, stage_statuses,
                         cleanup_workspace=True,
                     )
                 return self._blocked(
@@ -3519,20 +3622,9 @@ class SelfRepairSupervisor:
 
         triggering_signal = self._detect_capability_limit(run)
         if triggering_signal:
-            decomposition = self._ask_igris_decompose(run, config)
             self._persist_assignment_outcome(run, self.project_root, assignment_decision)
-            return self._blocked_decomposition_required(
-                run,
-                triggering_signal,
-                (
-                    f"Capability limit detected ({triggering_signal} × "
-                    f"{run.capability_signals[triggering_signal]}); "
-                    "mission requires decomposition."
-                ),
-                decomposition,
-                config=config,
-                mission_plan=mission_plan,
-                stage_statuses=stage_statuses,
+            return self._handle_capability_limit(
+                run, triggering_signal, config, mission_plan, stage_statuses,
                 cleanup_workspace=True,
             )
         self._persist_assignment_outcome(run, self.project_root, assignment_decision)
@@ -4768,6 +4860,71 @@ class SelfRepairSupervisor:
         if sum(run.capability_signals.values()) >= CAPABILITY_LIMIT_THRESHOLD:
             return max(run.capability_signals, key=run.capability_signals.get)
         return None
+
+    @staticmethod
+    def _is_structural_ceiling(run: SupervisorRun, triggering_signal: str) -> bool:
+        """Return True when the capability limit is structural, not transient.
+
+        Only `max_steps_ceiling` (strong_execution profile exhausted its step budget)
+        qualifies as a true structural ceiling.  Pure `reasoning_timeout` or
+        `no_diff_repair` signals indicate transient failures where decomposition may
+        still help — these go through the normal decompose path.
+        """
+        return run.capability_signals.get("max_steps_ceiling", 0) >= 1
+
+    def _handle_capability_limit(
+        self,
+        run: SupervisorRun,
+        triggering_signal: str,
+        config: "RankSupervisorConfig",
+        mission_plan: Optional["MissionPlan"],
+        stage_statuses: Optional[Dict[str, Dict[str, Any]]],
+        *,
+        cleanup_workspace: bool = True,
+    ) -> SupervisorRun:
+        """Block with `capability_ceiling_reached` or `decomposition_required`.
+
+        When the ceiling is structural (strong model already exhausted), skip the
+        expensive decompose LLM call and emit `capability_ceiling_reached` so the
+        watchdog can skip the issue immediately after the first failure.
+        """
+        if self._is_structural_ceiling(run, triggering_signal):
+            run.add(
+                "capability_ceiling",
+                "detected",
+                f"Structural capability ceiling confirmed ({triggering_signal} × "
+                f"{run.capability_signals.get(triggering_signal, 0)}); "
+                "no stronger model available — skipping decomposition call.",
+                triggering_signal=triggering_signal,
+                capability_signals=dict(run.capability_signals),
+            )
+            return self._blocked(
+                run,
+                "capability_ceiling_reached",
+                (
+                    f"Capability ceiling reached ({triggering_signal} × "
+                    f"{run.capability_signals.get(triggering_signal, 0)}); "
+                    "model cannot make further progress on this mission."
+                ),
+                mission_plan=mission_plan,
+                stage_statuses=stage_statuses,
+                cleanup_workspace=cleanup_workspace,
+            )
+        decomposition = self._ask_igris_decompose(run, config)
+        return self._blocked_decomposition_required(
+            run,
+            triggering_signal,
+            (
+                f"Capability limit detected ({triggering_signal} × "
+                f"{run.capability_signals[triggering_signal]}); "
+                "mission requires decomposition."
+            ),
+            decomposition,
+            config=config,
+            mission_plan=mission_plan,
+            stage_statuses=stage_statuses,
+            cleanup_workspace=cleanup_workspace,
+        )
 
     def _plan_mission(
         self, run: SupervisorRun, config: RankSupervisorConfig
