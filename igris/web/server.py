@@ -9,9 +9,22 @@ import json
 import logging
 import mimetypes
 import os
+import re
+import signal
 import subprocess
 import time
 from contextlib import asynccontextmanager
+
+# Module-level aliases so tests can patch them by name
+_re = re
+_sig = signal
+_sp = subprocess
+_time = time
+
+try:
+    import uvicorn as uvicorn  # noqa: PLC0414 — module-level for test patching
+except ImportError:  # pragma: no cover
+    uvicorn = None  # type: ignore
 from pathlib import Path
 from typing import Dict, List, Optional
 
@@ -318,10 +331,14 @@ async def _lifespan(app: FastAPI):
     project_root = str(Path(__file__).resolve().parents[2])
     task = asyncio.create_task(_watchdog_loop(project_root))
     _watchdog_logger.info("Watchdog started (poll=%ds)", _WATCHDOG_POLL_SECONDS)
+    from igris.core.meta_watchdog import start_smw
+    smw_task = start_smw(project_root)
+    logging.getLogger("igris.smw").info("SMW started (poll=%ds)", 120)
     try:
         yield
     finally:
         task.cancel()
+        smw_task.cancel()
         try:
             await task
         except asyncio.CancelledError:
@@ -983,6 +1000,21 @@ def create_app() -> FastAPI:
     @app.get("/api/health")
     async def api_health() -> Dict[str, object]:
         return {"status": "ok", "version": app.version, "time": time.time()}
+
+    @app.get("/api/smw/health")
+    async def api_smw_health() -> Dict[str, object]:
+        from igris.core.smw_patterns import detect_patterns
+        from igris.core.smw_sensors import take_snapshot
+        from dataclasses import asdict
+        snapshot = await take_snapshot(str(CONFIG.project_root))
+        patterns = detect_patterns(snapshot)
+        return {
+            "snapshot": asdict(snapshot),
+            "active_patterns": [
+                {"name": p.pattern.name, "severity": p.pattern.severity, "evidence": p.evidence}
+                for p in patterns
+            ],
+        }
 
     @app.get("/api/readiness")
     async def api_readiness() -> Dict[str, object]:
@@ -3132,5 +3164,21 @@ def run_app(application: FastAPI, host: str = "0.0.0.0", port: int = 7778) -> No
         load_dotenv(dotenv_path=Path(__file__).resolve().parents[2] / ".env", override=False)
     except ImportError:
         pass
-    import uvicorn
+    # Kill any stale IGRIS process on the same port before starting
+    _ss = _sp.run(["ss", "-tlnp"], capture_output=True, text=True)
+    for _line in _ss.stdout.splitlines():
+        if f":{port}" in _line and "python" in _line:
+            _m = _re.search(r"pid=(\d+)", _line)
+            if _m:
+                stale_pid = int(_m.group(1))
+                if stale_pid != os.getpid():
+                    logging.getLogger("igris.startup").warning(
+                        "Startup: stale IGRIS process %d on port %d — killing", stale_pid, port
+                    )
+                    try:
+                        os.kill(stale_pid, _sig.SIGTERM)
+                        _time.sleep(2)
+                        os.kill(stale_pid, _sig.SIGKILL)
+                    except ProcessLookupError:
+                        pass
     uvicorn.run(application, host=host, port=port, log_level="info")
