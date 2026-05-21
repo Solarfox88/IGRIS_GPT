@@ -4109,6 +4109,25 @@ class SelfRepairSupervisor:
         # capability ceiling rather than a transient model availability issue.
         if str(result.get("stop_reason", "")) == "max_steps" and repair_profile == "strong_execution":
             self._record_capability_signal(run, "max_steps_ceiling")
+        # Restore working tree when reasoning timed out. Partial changes from an
+        # interrupted worker are unreliable (e.g. broken imports in test files) and
+        # must never reach repair_tests. For pytest_failure, try to re-scaffold the
+        # targeted test to preserve mission progress. For all other failures, return
+        # False so the outer loop can detect capability limits and trigger decomposition.
+        if str(result.get("stop_reason", "")) == "reasoning_timeout":
+            _restore_or_preserve(
+                "Repair reasoning timed out; restoring working tree to prevent broken "
+                "partial changes from reaching repair_tests.",
+                force_restore=True,
+            )
+            if failure == "pytest_failure" and self._re_scaffold_targeted_test_if_missing(run, config):
+                run.add(
+                    "repair_completion",
+                    "degraded",
+                    "Restored failed pytest repair and re-scaffolded targeted tests to preserve mission progress.",
+                )
+                return True
+            return False
         diff_stat = self.backend.git_diff_stat()
         diff = self.backend.git_diff()
         run.add("repair_diff_stat", "success" if diff_stat.success else "failure", _command_detail(diff_stat))

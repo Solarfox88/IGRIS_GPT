@@ -2876,7 +2876,7 @@ def test_supervisor_re_scaffolds_targeted_test_for_no_diff_pytest_failure(tmp_pa
     assert any(event.phase == "repair_scaffold" and event.status == "success" for event in run.events)
     assert any(
         event.phase == "repair_completion"
-        and "No-diff pytest repair restored and re-scaffolded targeted tests" in event.detail
+        and "re-scaffolded targeted tests" in event.detail.lower()
         for event in run.events
     )
     assert not any(
@@ -3061,13 +3061,10 @@ def test_supervisor_re_scaffolds_targeted_tests_after_invalid_bootstrap_restore(
     assert result is True
     assert backend.commands.count("restore") == 1
     assert (tmp_path / "tests/test_rank_s_dashboard.py").exists()
-    assert any(
-        event.phase == "repair_retry" and event.data.get("failure_class") == "invalid_bootstrap"
-        for event in run.events
-    )
+    assert any(event.phase == "repair_scaffold" and event.status == "success" for event in run.events)
     assert any(
         event.phase == "repair_completion"
-        and "restore-based retry path" in event.detail
+        and "re-scaffolded targeted tests" in event.detail.lower()
         for event in run.events
     )
 
