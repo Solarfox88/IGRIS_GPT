@@ -8100,3 +8100,111 @@ def test_run_with_heartbeat_monitor_kills_on_stale_heartbeat(monkeypatch, tmp_pa
     )
     assert result.returncode == 124
     assert "stale" in result.error.lower()
+
+# ─── Bundle A tests ───────────────────────────────────────────────────────────
+import time as _time_mod
+from unittest.mock import MagicMock, patch
+
+def test_test_runner_timeout_in_repairable_failures():
+    from igris.core.self_repair_supervisor import REPAIRABLE_FAILURES
+    assert "test_runner_timeout" in REPAIRABLE_FAILURES
+
+def test_classify_failure_test_runner_timeout_targeted():
+    from igris.core.self_repair_supervisor import classify_failure
+    targeted = MagicMock()
+    targeted.returncode = 124
+    targeted.success = False
+    targeted.output = ""
+    targeted.error = ""
+    full = MagicMock()
+    full.returncode = 0
+    full.success = True
+    assert classify_failure(targeted_tests=targeted, full_tests=full) == "test_runner_timeout"
+
+def test_classify_failure_test_runner_timeout_full():
+    from igris.core.self_repair_supervisor import classify_failure
+    targeted = MagicMock()
+    targeted.returncode = 0
+    targeted.success = True
+    full = MagicMock()
+    full.returncode = 124
+    full.success = False
+    full.output = ""
+    full.error = ""
+    assert classify_failure(targeted_tests=targeted, full_tests=full) == "test_runner_timeout"
+
+def test_classify_failure_normal_pytest_not_misclassified():
+    from igris.core.self_repair_supervisor import classify_failure
+    targeted = MagicMock()
+    targeted.returncode = 1
+    targeted.success = False
+    targeted.output = "FAILED tests/test_foo.py"
+    targeted.error = ""
+    assert classify_failure(targeted_tests=targeted) == "pytest_failure"
+
+def test_env_var_timeout_default():
+    import os
+    os.environ.pop("IGRIS_TEST_RUNNER_TIMEOUT_SECONDS", None)
+    from igris.core.self_repair_supervisor import RankSupervisorConfig
+    cfg = RankSupervisorConfig()
+    assert cfg.test_timeout_seconds == 300
+
+def test_watchdog_logs_stall_warning():
+    from igris.web import server
+    mock_run = MagicMock()
+    mock_run.run_id = "stale_run"
+    mock_ts = MagicMock()
+    mock_ts.timestamp.return_value = _time_mod.time() - 700
+    mock_run.last_event.timestamp = mock_ts
+    with patch.object(server, "_watchdog_logger") as mock_logger:
+        _now = _time_mod.time()
+        for _ar in [mock_run]:
+            _last = getattr(_ar, "last_event", None)
+            if _last is not None:
+                _ts = getattr(_last, "timestamp", None)
+                if _ts is not None:
+                    _elapsed = _now - _ts.timestamp()
+                    if _elapsed > 600:
+                        server._watchdog_logger.warning(
+                            "Watchdog: active run %s has not emitted events for %ds — possible hang",
+                            _ar.run_id, int(_elapsed),
+                        )
+        mock_logger.warning.assert_called_once()
+        call_args = mock_logger.warning.call_args[0]
+        assert "possible hang" in call_args[0]
+        assert "stale_run" in str(call_args)
+
+def test_reasoning_loop_repair_prompt_cycle1():
+    from igris.core.self_repair_supervisor import SelfRepairSupervisor
+    prompt = SelfRepairSupervisor._build_reasoning_loop_repair_prompt(
+        "stage1", "implement feature X", "", 1
+    )
+    assert "minimal" in prompt.lower()
+    assert "Do not optimize" in prompt
+
+def test_reasoning_loop_repair_prompt_cycle2():
+    from igris.core.self_repair_supervisor import SelfRepairSupervisor
+    prompt = SelfRepairSupervisor._build_reasoning_loop_repair_prompt(
+        "stage1", "implement feature X", "", 2
+    )
+    assert "REPAIR CYCLE 2" in prompt
+    assert "smallest" in prompt.lower()
+
+def test_wrong_file_edit_repair_prompt_lists_paths():
+    from igris.core.self_repair_supervisor import SelfRepairSupervisor
+    prompt = SelfRepairSupervisor._build_wrong_file_edit_repair_prompt(
+        stage_id="backend_api_change",
+        goal="add endpoint",
+        wrong_paths=["igris/web/templates/x.html"],
+        allowed_families=["igris/core/"],
+        repair_cycle=1,
+    )
+    assert "igris/web/templates/x.html" in prompt
+    assert "igris/core/" in prompt
+
+def test_wrong_file_edit_repair_prompt_cycle2_adds_hard_constraint():
+    from igris.core.self_repair_supervisor import SelfRepairSupervisor
+    prompt = SelfRepairSupervisor._build_wrong_file_edit_repair_prompt(
+        "s", "goal", ["bad/file.py"], ["good/"], 2
+    )
+    assert "under any circumstance" in prompt or "output ONLY" in prompt
