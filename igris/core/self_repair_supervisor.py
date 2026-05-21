@@ -49,6 +49,7 @@ REPAIRABLE_FAILURES = {
     "invalid_bootstrap",
     "syntax_error",
     "semantic_incomplete",
+    "test_runner_timeout",
 }
 
 # Signals that accumulate across repair cycles to indicate model capability limits.
@@ -193,7 +194,7 @@ class RankSupervisorConfig:
     # the timer resets on every line; only a hung/stuck process is killed.
     # 300s (5 min) accommodates individual slow integration tests that may take
     # 2-3 min without printing, while still catching genuinely hung processes.
-    test_timeout_seconds: int = 300
+    test_timeout_seconds: int = int(os.getenv("IGRIS_TEST_RUNNER_TIMEOUT_SECONDS", "300"))
     # Absolute ceiling: kill unconditionally after this many seconds regardless
     # of output activity (safety net against infinite-loop tests).
     test_hard_cap_seconds: int = 3600
@@ -1141,6 +1142,10 @@ def classify_failure(
         return "destructive_diff"
     if _is_llm_provider_unavailable(reasoning_text):
         return "infrastructure_bug"
+    if targeted_tests and targeted_tests.returncode == 124:
+        return "test_runner_timeout"
+    if full_tests and full_tests.returncode == 124:
+        return "test_runner_timeout"
     if targeted_tests and not targeted_tests.success:
         if _is_missing_test_target_error(targeted_tests):
             return "missing_tests"
@@ -2154,7 +2159,10 @@ class SelfRepairSupervisor:
                 rollback_policy="No rollback needed; no edits expected.",
                 preserved_progress_policy="Always preserve stage output metadata.",
                 failure_classification=["reasoning_loop_blocked", "max_steps", "ask_user"],
-                repair_strategy="Retry with explicit stage scope and stricter instructions.",
+                repair_strategy=(
+                    "On reasoning_loop_blocked: reduce scope, request minimal change only. "
+                    "Cycle 2+: escalate to API helper with full reasoning context."
+                ),
                 report_entry="Understanding/locating stage result.",
             ),
             MissionStage(
@@ -2167,7 +2175,11 @@ class SelfRepairSupervisor:
                 rollback_policy="Restore only unsafe/off-contract backend edits.",
                 preserved_progress_policy="Preserve validated backend edits through later stage repairs.",
                 failure_classification=["wrong_file_edit", "syntax_error", "reasoning_loop_blocked"],
-                repair_strategy="Stage-scoped repair that keeps validated earlier stages.",
+                repair_strategy=(
+                    "Stage-scoped repair that keeps validated earlier stages. "
+                    "On reasoning_loop_blocked: reduce scope, request minimal change only. "
+                    "Cycle 2+: escalate to API helper with full reasoning context."
+                ),
                 report_entry="Backend/API stage result.",
             ),
             MissionStage(
@@ -2179,7 +2191,7 @@ class SelfRepairSupervisor:
                 validation=["targeted pytest files"],
                 rollback_policy="Restore only unsafe/off-contract test edits.",
                 preserved_progress_policy="Preserve validated backend tests on later failures.",
-                failure_classification=["missing_tests", "wrong_file_edit", "pytest_failure"],
+                failure_classification=["missing_tests", "wrong_file_edit", "pytest_failure", "test_runner_timeout"],
                 repair_strategy="Repair missing/invalid tests without deleting validated code.",
                 report_entry="Backend tests stage result.",
             ),
@@ -2196,7 +2208,7 @@ class SelfRepairSupervisor:
                 validation=["UI/dashboard smoke checks"],
                 rollback_policy="Restore only unsafe/off-contract UI edits.",
                 preserved_progress_policy="Do not discard validated backend/test stages on UI failure.",
-                failure_classification=["missing_ui_visibility", "wrong_file_edit", "pytest_failure"],
+                failure_classification=["missing_ui_visibility", "wrong_file_edit", "pytest_failure", "test_runner_timeout"],
                 repair_strategy="Repair only UI stage scope while preserving validated prior stages.",
                 report_entry="UI/dashboard stage result.",
             ),
@@ -2209,7 +2221,7 @@ class SelfRepairSupervisor:
                 validation=["targeted ui/dashboard tests"],
                 rollback_policy="Restore only unsafe/off-contract test edits.",
                 preserved_progress_policy="Preserve validated backend/UI changes.",
-                failure_classification=["pytest_failure", "wrong_file_edit", "missing_tests"],
+                failure_classification=["pytest_failure", "wrong_file_edit", "missing_tests", "test_runner_timeout"],
                 repair_strategy="Stage-scoped test repair only; do not rewrite unrelated tests.",
                 report_entry="UI/dashboard tests stage result.",
             ),
@@ -2235,7 +2247,7 @@ class SelfRepairSupervisor:
                 validation=["pytest -q <targets>"],
                 rollback_policy="No restore for test execution itself.",
                 preserved_progress_policy="Preserve validated code when targeted tests fail and repair tests only.",
-                failure_classification=["missing_tests", "pytest_failure"],
+                failure_classification=["missing_tests", "pytest_failure", "test_runner_timeout"],
                 repair_strategy="Repair targeted failures with stage-scoped cycle.",
                 report_entry="Targeted tests stage result.",
             ),
@@ -2248,7 +2260,7 @@ class SelfRepairSupervisor:
                 validation=["pytest -q"],
                 rollback_policy="No restore for test execution itself.",
                 preserved_progress_policy="Preserve validated stages and repair only failing scope.",
-                failure_classification=["pytest_failure"],
+                failure_classification=["pytest_failure", "test_runner_timeout"],
                 repair_strategy="Repair failing scope while keeping validated progress.",
                 report_entry="Full pytest stage result.",
             ),
@@ -3821,6 +3833,79 @@ class SelfRepairSupervisor:
         return "rank card" in lowered and "ui" in lowered
 
     @staticmethod
+    def _build_reasoning_loop_repair_prompt(
+        stage_id: str,
+        goal: str,
+        previous_reasoning_output: str,
+        repair_cycle: int,
+    ) -> str:
+        """
+        Costruisce un repair goal progressivo per reasoning_loop_blocked.
+
+        Ciclo 1: semplifica il task, output minimo, approccio incrementale.
+        Ciclo 2+: suddividi nel componente più piccolo risolvibile, ignora ottimizzazioni.
+        """
+        _ = previous_reasoning_output
+        if repair_cycle <= 1:
+            return (
+                f"{goal} "
+                f"(REPAIR CYCLE {repair_cycle} — previous attempt on stage '{stage_id}' "
+                f"timed out or exceeded reasoning budget. "
+                f"Focus ONLY on the minimal change needed. "
+                f"Do not optimize, refactor, or add features beyond what the goal strictly requires. "
+                f"Use an incremental approach: implement the smallest complete unit first, verify it, then stop. "
+                f"Prioritise writing code and tests over exploration. Keep edits minimal, do not push.)"
+            )
+        return (
+            f"{goal} "
+            f"(REPAIR CYCLE {repair_cycle} — previous attempts on stage '{stage_id}' "
+            f"were repeatedly blocked. "
+            f"Break the task down to its single smallest resolvable sub-component. "
+            f"Ignore all non-critical aspects, optimisations, and edge cases. "
+            f"Implement only what is strictly necessary to satisfy the goal, nothing more. "
+            f"Do not push.)"
+        )
+
+    @staticmethod
+    def _build_wrong_file_edit_repair_prompt(
+        stage_id: str,
+        goal: str,
+        wrong_paths: List[str],
+        allowed_families: List[str],
+        repair_cycle: int,
+    ) -> str:
+        """
+        Costruisce un repair goal per wrong_file_edit che:
+        1. Elenca i file modificati fuori scope
+        2. Elenca i file consentiti per lo stage
+        3. Chiede di ripetere SOLO la modifica consentita
+        4. Al ciclo 2+: aggiunge vincolo hard
+        """
+        wrong_list = "\n".join(f"  - {p}" for p in wrong_paths) if wrong_paths else "  - (unknown paths)"
+        allowed_list = (
+            "\n".join(f"  - {fam}" for fam in allowed_families)
+            if allowed_families
+            else "  - (mission-owned minimal scope)"
+        )
+        prompt = (
+            f"{goal} "
+            f"(REPAIR CYCLE {repair_cycle} — previous attempt on stage '{stage_id}' "
+            f"modified files outside the allowed scope.\n"
+            f"Files wrongly modified:\n{wrong_list}\n"
+            f"Allowed file families:\n{allowed_list}\n"
+            f"You MUST only modify files belonging to the allowed families listed above. "
+            f"Repeat your edit but restrict ALL changes to the allowed files. "
+            f"Do not touch any file outside the allowed families.)"
+        )
+        if repair_cycle >= 2:
+            prompt += (
+                " If you cannot complete the task within the allowed files, "
+                "output ONLY the changes to allowed files and stop. "
+                "Do not modify any file outside the allowed list under any circumstance."
+            )
+        return prompt
+
+    @staticmethod
     def _has_ui_visibility_change(files_modified: List[str]) -> bool:
         ui_markers = (
             "igris/web/templates/",
@@ -4011,15 +4096,15 @@ class SelfRepairSupervisor:
                 or bool(helper_advice.get("requires_human_or_codex_audit", False))
                 or not bool(helper_advice.get("must_not_complete_product_manually", False))
             )
+        _wrong_paths: List[str] = []
+        _allowed: List[str] = []
+
         if failure == "reasoning_loop_blocked":
-            # A reasoning_loop_blocked failure means the worker timed out or hit its
-            # step limit — there is no product-level infrastructure bug to fix.
-            # Repeat the original mission goal so the next worker actually attempts it.
-            repair_goal = (
-                f"{config.goal} "
-                f"(previous attempt timed out or was blocked at step limit — "
-                f"continue from the beginning, prioritise writing code and tests over "
-                f"exploration, keep edits minimal, do not push)"
+            repair_goal = self._build_reasoning_loop_repair_prompt(
+                stage_id=getattr(run, "stage_id", "unknown"),
+                goal=config.goal,
+                previous_reasoning_output="",
+                repair_cycle=cycle,
             )
         elif failure == "semantic_incomplete":
             # The previous attempt produced a stub (# Placeholder, pass, hardcoded empty
@@ -4033,6 +4118,24 @@ class SelfRepairSupervisor:
                 f"Write a real implementation with actual logic — no placeholder comments, "
                 f"no 'pass', no hardcoded empty strings. "
                 f"Keep changes minimal, add tests, run pytest, do not push.)"
+            )
+        elif failure == "wrong_file_edit":
+            for ev in reversed(getattr(run, "events", [])):
+                ev_data = ev.data if hasattr(ev, "data") else (ev if isinstance(ev, dict) else {})
+                if ev_data.get("files_modified"):
+                    _wrong_paths = list(ev_data["files_modified"])
+                    break
+            if stage_statuses:
+                for _st in stage_statuses.values():
+                    if _st.get("status") == "running":
+                        _allowed = list(_st.get("allowed_file_families", []))
+                        break
+            repair_goal = self._build_wrong_file_edit_repair_prompt(
+                stage_id=getattr(run, "stage_id", "unknown"),
+                goal=config.goal,
+                wrong_paths=_wrong_paths,
+                allowed_families=_allowed,
+                repair_cycle=cycle,
             )
         else:
             repair_goal = (
@@ -4115,6 +4218,15 @@ class SelfRepairSupervisor:
             "api_helper_advice": helper_advice or {},
             "api_helper_advisory_only": True,
         })
+        if failure == "wrong_file_edit" and _wrong_paths:
+            repair_context["constraint_wrong_file_history"] = {
+                "previous_wrong_paths": _wrong_paths,
+                "allowed_families": _allowed,
+                "instruction": (
+                    "You MUST only modify files in allowed_families. "
+                    "Any edit outside this list will be reverted and counted as a failure."
+                ),
+            }
 
         # Determine execution strategy when helper has provided an execution plan.
         has_execution_plan = bool(helper_advice and str(helper_advice.get("execution_plan", "")).strip())
@@ -5855,7 +5967,7 @@ class SelfRepairSupervisor:
         # Record capability-related failures so future runs can learn from history.
         # Skip infrastructure/baseline failures — they're environment issues, not
         # capability limits, and would pollute similarity matching.
-        _SKIP_MEMORY_CLASSES = frozenset({"pytest_failure", "workspace_dirty", "infrastructure_bug"})
+        _SKIP_MEMORY_CLASSES = frozenset({"pytest_failure", "workspace_dirty", "infrastructure_bug", "test_runner_timeout"})
         if failure not in _SKIP_MEMORY_CLASSES and hasattr(self, "_failure_memory"):
             try:
                 self._failure_memory.record(

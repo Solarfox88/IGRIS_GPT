@@ -193,6 +193,25 @@ async def _watchdog_loop(project_root: str) -> None:
     while True:
         try:
             active = list_active_supervised_runs()
+            if active:
+                _now = _time.time()
+                for _ar in active:
+                    _last = getattr(_ar, "last_event", None)
+                    if _last is not None:
+                        _ts = getattr(_last, "timestamp", None)
+                        if _ts is not None:
+                            try:
+                                _elapsed = _now - (
+                                    _ts.timestamp() if hasattr(_ts, "timestamp") else float(_ts)
+                                )
+                                if _elapsed > 600:
+                                    _watchdog_logger.warning(
+                                        "Watchdog: active run %s has not emitted events for %ds — possible hang",
+                                        _ar.run_id,
+                                        int(_elapsed),
+                                    )
+                            except Exception:
+                                pass
             if not active:
                 # Account for the outcome of the run we last launched
                 if _last_run_id is not None and _last_issue_num is not None:
