@@ -155,19 +155,24 @@ async def _watchdog_loop(project_root: str) -> None:
                             # If the blocked run spawned child runs via decomposition, wait for
                             # them — there is a brief window where the child is registered in
                             # RUN_STORE but not yet visible to list_active_supervised_runs().
+                            def _ev_phase(e: Any) -> str:
+                                return e.phase if hasattr(e, "phase") else e.get("phase", "")
+                            def _ev_detail(e: Any) -> str:
+                                return e.detail if hasattr(e, "detail") else e.get("detail", "")
+                            def _ev_data(e: Any) -> dict:
+                                return e.data if hasattr(e, "data") else e.get("data", {})
                             child_run_ids = [
-                                e.get("data", {}).get("child_run_id") or ""
+                                (_ev_data(e) or {}).get("child_run_id") or ""
                                 for e in getattr(last_run, "events", [])
-                                if e.get("phase") == "submission_autorun_run_id"
+                                if _ev_phase(e) == "submission_autorun_run_id"
                             ]
                             child_run_ids = [rid for rid in child_run_ids if rid]
                             if not child_run_ids:
-                                # Also check for child run IDs stored in event detail
                                 child_run_ids = [
-                                    e.get("detail", "").split("Child run ")[-1].split(" ")[0]
+                                    _ev_detail(e).split("Child run ")[-1].split(" ")[0]
                                     for e in getattr(last_run, "events", [])
-                                    if e.get("phase") == "submission_autorun_run_id"
-                                    and "Child run" in e.get("detail", "")
+                                    if _ev_phase(e) == "submission_autorun_run_id"
+                                    and "Child run" in _ev_detail(e)
                                 ]
                                 child_run_ids = [rid for rid in child_run_ids if len(rid) == 12]
                             if child_run_ids:
