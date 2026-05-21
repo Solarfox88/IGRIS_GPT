@@ -35,6 +35,7 @@ from igris.core.helper_ab_eval import (
     make_ab_record,
     save_ab_result,
     is_safe_to_switch,
+    SCORE_WEIGHTS,
 )
 
 
@@ -83,7 +84,7 @@ def _call_helper(
 
 
 # ---------------------------------------------------------------------------
-# Table formatting
+# Formatting
 # ---------------------------------------------------------------------------
 
 def _fmt(v: float, digits: int = 3) -> str:
@@ -91,11 +92,12 @@ def _fmt(v: float, digits: int = 3) -> str:
 
 
 def _print_table(rows: List[Dict[str, Any]], primary: str, candidate: str) -> None:
-    header = f"{'case_id':<45} {'p_score':>7} {'c_score':>7} {'p_cost':>9} {'c_cost':>9} {'winner':<8} {'switch'}"
+    header = f"{'case_id':<45} {'p_score':>7} {'c_score':>7} {'p_cost':>9} {'c_cost':>9} {'winner':<8} {'valid'}"
     print()
     print(header)
     print("-" * len(header))
     for r in rows:
+        validity = r.get("ab_validity", "valid")
         print(
             f"{r['case_id']:<45} "
             f"{_fmt(r['primary_score']):>7} "
@@ -103,12 +105,13 @@ def _print_table(rows: List[Dict[str, Any]], primary: str, candidate: str) -> No
             f"${_fmt(r['primary_cost_usd'], 6):>8} "
             f"${_fmt(r['alt_cost_usd'], 6):>8} "
             f"{r['winner']:<8} "
-            f"{'YES' if r['safe_to_switch'] else 'no'}"
+            f"{validity}"
         )
     print()
 
-    # Summary stats
     if rows:
+        valid_rows = [r for r in rows if r.get("ab_validity", "valid") != "model_mismatch"]
+        mismatch_rows = [r for r in rows if r.get("ab_validity") == "model_mismatch"]
         avg_p = sum(r["primary_score"] for r in rows) / len(rows)
         avg_c = sum(r["alt_score"] for r in rows) / len(rows)
         tot_p = sum(r["primary_cost_usd"] for r in rows)
@@ -116,10 +119,73 @@ def _print_table(rows: List[Dict[str, Any]], primary: str, candidate: str) -> No
         wins_p = sum(1 for r in rows if r["winner"] == "primary")
         wins_c = sum(1 for r in rows if r["winner"] == "alt")
         ties = sum(1 for r in rows if r["winner"] == "tie")
-        print(f"Summary: {len(rows)} cases")
+
+        print(f"Summary: {len(rows)} cases ({len(valid_rows)} valid, {len(mismatch_rows)} model_mismatch)")
         print(f"  {primary:>30}: avg_score={_fmt(avg_p)}  total_cost=${_fmt(tot_p, 6)}  wins={wins_p}")
         print(f"  {candidate:>30}: avg_score={_fmt(avg_c)}  total_cost=${_fmt(tot_c, 6)}  wins={wins_c}")
         print(f"  ties={ties}")
+        print()
+
+        # Score breakdown averages per dimension
+        bd_keys = list(SCORE_WEIGHTS.keys()) + ["anti_generic_penalty"]
+        print(f"  {'dimension':<40} {'primary':>8} {'candidate':>10}")
+        print(f"  {'-'*60}")
+        for key in bd_keys:
+            p_avg = sum(r.get("primary_breakdown", {}).get(key, 0.0) for r in rows) / len(rows)
+            c_avg = sum(r.get("alt_breakdown", {}).get(key, 0.0) for r in rows) / len(rows)
+            print(f"  {key:<40} {_fmt(p_avg):>8} {_fmt(c_avg):>10}")
+        print()
+
+
+def _print_switch_report(sw: Dict[str, Any], rows: List[Dict[str, Any]], primary: str, candidate: str) -> None:
+    """Print detailed switch recommendation report."""
+    print("=" * 70)
+    print("SWITCH RECOMMENDATION REPORT")
+    print("=" * 70)
+
+    # Model identity summary
+    p_models = {(r.get("primary_requested_model", ""), r.get("primary_resolved_model", ""),
+                  r.get("primary_served_model", "")) for r in rows}
+    a_models = {(r.get("alt_requested_model", ""), r.get("alt_resolved_model", ""),
+                  r.get("alt_served_model", "")) for r in rows}
+    print(f"\nModel identity:")
+    print(f"  primary requested/resolved/served:")
+    for req, res, srv in sorted(p_models):
+        print(f"    requested={req or 'N/A'!r}  resolved={res or 'N/A'!r}  served={srv or 'N/A'!r}")
+    print(f"  alt requested/resolved/served:")
+    for req, res, srv in sorted(a_models):
+        print(f"    requested={req or 'N/A'!r}  resolved={res or 'N/A'!r}  served={srv or 'N/A'!r}")
+
+    # Record counts
+    print(f"\nRecord counts:")
+    print(f"  organic valid  : {sw['organic_count']}")
+    print(f"  model_mismatch : {sw.get('model_mismatch_count', 0)}")
+    print(f"  synthetic      : {sw['synthetic_count']}")
+    print(f"  failure_classes: {sw['failure_classes_covered']}")
+
+    # Downstream usefulness
+    ds_known = [r for r in rows if r.get("downstream", {}).get("next_run_outcome", "unknown") != "unknown"]
+    print(f"\nDownstream usefulness: {len(ds_known)}/{len(rows)} records with known outcome")
+    if ds_known:
+        outcomes: Dict[str, int] = {}
+        for r in ds_known:
+            o = r.get("downstream", {}).get("next_run_outcome", "unknown")
+            outcomes[o] = outcomes.get(o, 0) + 1
+        for outcome, count in sorted(outcomes.items()):
+            print(f"  {outcome}: {count}")
+
+    # Gate results
+    print(f"\nGate evaluation:")
+    for reason in sw["reasons"]:
+        if reason.endswith("✓"):
+            print(f"  ✓ {reason}")
+        else:
+            print(f"  ✗ {reason}")
+
+    print(f"\n{'safe_to_switch = TRUE' if sw['safe_to_switch'] else 'safe_to_switch = FALSE'}")
+    if not sw["safe_to_switch"] and sw.get("reason_if_not_safe"):
+        print(f"Blockers: {sw['reason_if_not_safe']}")
+    print("=" * 70)
 
 
 # ---------------------------------------------------------------------------
@@ -205,8 +271,11 @@ def evaluate(args: argparse.Namespace) -> int:
         else:
             print(f"ok ({candidate_latency}ms, ${candidate_cost:.6f})")
 
-        primary_score_r = score_helper_response(primary_resp or {}, case)
-        candidate_score_r = score_helper_response(candidate_resp or {}, case)
+        primary_resp = primary_resp or {}
+        candidate_resp = candidate_resp or {}
+
+        primary_score_r = score_helper_response(primary_resp, case)
+        candidate_score_r = score_helper_response(candidate_resp, case)
 
         record = make_ab_record(
             case_id=case_id,
@@ -220,6 +289,18 @@ def evaluate(args: argparse.Namespace) -> int:
             alt_cost_usd=candidate_cost,
             primary_latency_ms=primary_latency,
             alt_latency_ms=candidate_latency,
+            source="synthetic_fixture",
+            primary_requested_model=str(primary_resp.get("api_helper_model_requested", args.primary) or ""),
+            primary_resolved_model=str(primary_resp.get("api_helper_model_resolved", "") or ""),
+            primary_provider_response_model=str(primary_resp.get("model", "") or ""),
+            primary_served_model=str(primary_resp.get("model", "") or ""),
+            primary_provider=str(primary_resp.get("api_helper_provider", args.primary_provider) or ""),
+            alt_requested_model=str(candidate_resp.get("api_helper_model_requested", args.candidate) or ""),
+            alt_resolved_model=str(candidate_resp.get("api_helper_model_resolved", "") or ""),
+            alt_provider_response_model=str(candidate_resp.get("model", "") or ""),
+            alt_served_model=str(candidate_resp.get("model", "") or ""),
+            alt_provider=str(candidate_resp.get("api_helper_provider", args.candidate_provider) or ""),
+            api_helper_mode=args.primary_mode or "",
         )
         rows.append(record)
 
@@ -230,25 +311,18 @@ def evaluate(args: argparse.Namespace) -> int:
 
     _print_table(rows, args.primary, args.candidate)
 
-    # Global switch recommendation
-    all_records = rows
-    safe, reasons = is_safe_to_switch(all_records)
-    print("Switch recommendation:")
-    print(f"  safe_to_switch = {safe}")
-    for r in reasons:
-        print(f"    • {r}")
-    print()
+    sw = is_safe_to_switch(rows)
+    _print_switch_report(sw, rows, args.primary, args.candidate)
 
     if errors:
-        print(f"Errors ({len(errors)}):", file=sys.stderr)
+        print(f"\nErrors ({len(errors)}):", file=sys.stderr)
         for e in errors:
             print(f"  {e}", file=sys.stderr)
-        # Infrastructure errors only — evaluation still completed
         if len(errors) == len(fixture_files) * 2:
-            return 2  # all calls failed
+            return 2
 
-    print(f"Results saved to: {args.out}")
-    return 0  # always 0 unless infra error
+    print(f"\nResults saved to: {args.out}")
+    return 0
 
 
 # ---------------------------------------------------------------------------
