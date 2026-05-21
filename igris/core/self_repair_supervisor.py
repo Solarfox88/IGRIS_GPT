@@ -957,6 +957,18 @@ class LocalSupervisorBackend:
                 primary_latency_ms=primary_result.helper_primary_latency_ms,
                 alt_latency_ms=alt_latency_ms,
                 source="organic_run",
+                # Model identity from provider responses
+                primary_requested_model=str(primary_parsed.get("api_helper_model_requested", "") or ""),
+                primary_resolved_model=str(primary_parsed.get("api_helper_model_resolved", "") or ""),
+                primary_provider_response_model=str(primary_parsed.get("model", "") or ""),
+                primary_served_model=str(primary_parsed.get("model", "") or ""),
+                primary_provider=str(primary_parsed.get("api_helper_provider", "") or ""),
+                alt_requested_model=str(alt_parsed.get("api_helper_model_requested", alt_model) or ""),
+                alt_resolved_model=str(alt_parsed.get("api_helper_model_resolved", "") or ""),
+                alt_provider_response_model=str(alt_parsed.get("model", "") or ""),
+                alt_served_model=str(alt_parsed.get("model", "") or ""),
+                alt_provider=str(alt_parsed.get("api_helper_provider", alt_provider) or ""),
+                api_helper_mode=str(primary_parsed.get("api_helper_mode", "") or ""),
             )
             ab_path = str(os.getenv("IGRIS_HELPER_AB_RESULTS_PATH", ".igris/helper_ab_results.json"))
             save_ab_result(record, ab_path)
