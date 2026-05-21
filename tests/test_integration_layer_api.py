@@ -1,9 +1,22 @@
 """API tests for Integration Layer endpoints — Epic #62."""
 
+import json
 import pytest
+from unittest.mock import patch
 from fastapi.testclient import TestClient
+from igris.core.model_orchestrator import OrchestratorResult
 
 from igris.web.server import create_app
+
+
+def _fast_finish_result(*a, **k):
+    """Mock LLM that returns finish immediately — avoids 30s Ollama timeout."""
+    return OrchestratorResult(
+        success=True,
+        text=json.dumps({"action_type": "finish", "reason": "mocked", "mode": "coder"}),
+        provider="mock",
+        model="mock",
+    )
 
 
 @pytest.fixture
@@ -12,16 +25,17 @@ def client():
     return TestClient(app)
 
 
-@pytest.mark.slow
 class TestIntegrationRunMissionAPI:
     """Test POST /api/integration/run-mission."""
 
     def test_run_mission_basic(self, client):
-        resp = client.post("/api/integration/run-mission", json={
-            "goal": "Test mission",
-            "max_steps": 2,
-            "role": "coder",
-        })
+        with patch("igris.core.model_orchestrator.ModelOrchestrator.complete",
+                   side_effect=_fast_finish_result):
+            resp = client.post("/api/integration/run-mission", json={
+                "goal": "Test mission",
+                "max_steps": 2,
+                "role": "coder",
+            })
         assert resp.status_code == 200
         data = resp.json()
         assert "mission_id" in data
@@ -30,7 +44,9 @@ class TestIntegrationRunMissionAPI:
         assert "total_steps" in data
 
     def test_run_mission_empty_goal(self, client):
-        resp = client.post("/api/integration/run-mission", json={"max_steps": 1})
+        with patch("igris.core.model_orchestrator.ModelOrchestrator.complete",
+                   side_effect=_fast_finish_result):
+            resp = client.post("/api/integration/run-mission", json={"max_steps": 1})
         assert resp.status_code == 200
         data = resp.json()
         assert isinstance(data["total_steps"], int)

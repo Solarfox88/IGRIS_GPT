@@ -4,7 +4,10 @@ Validates shell parser, deterministic risk classifier, contextual policy,
 LLM reviewer fallback, and safety event log.
 """
 
+import json
 import pytest
+from unittest.mock import patch
+from igris.core.model_orchestrator import OrchestratorResult
 from igris.core.command_risk_engine import (
     parse_command,
     classify_command_risk,
@@ -14,6 +17,10 @@ from igris.core.command_risk_engine import (
     SafetyEvent,
     RISK_LEVELS,
 )
+
+
+def _mock_llm_error(*a, **k):
+    raise ConnectionRefusedError("no LLM in tests")
 
 
 # ---------------------------------------------------------------------------
@@ -451,11 +458,12 @@ class TestRiskResolution:
 # ---------------------------------------------------------------------------
 
 class TestLLMReviewerFallback:
-    @pytest.mark.slow
     def test_fallback_when_no_llm(self):
         engine = CommandRiskEngine(use_llm_reviewer=True)
-        # No LLM configured → falls back to deterministic
-        event, review = engine.evaluate_command("curl https://api.example.com")
+        # LLM unavailable → falls back to deterministic
+        with patch("igris.core.model_orchestrator.ModelOrchestrator.complete",
+                   side_effect=_mock_llm_error):
+            event, review = engine.evaluate_command("curl https://api.example.com")
         assert event.deterministic_risk == "medium"
         assert event.decision == "allowed"
 

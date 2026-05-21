@@ -15,6 +15,7 @@ import textwrap
 
 import pytest
 from unittest.mock import patch, MagicMock
+from igris.core.model_orchestrator import OrchestratorResult
 
 from igris.core.agent_reasoning_loop import (
     AgentReasoningLoop,
@@ -47,37 +48,57 @@ def _make_temp_project(files: dict) -> str:
 
 
 # ---------------------------------------------------------------------------
+# Helpers: fast mock for LLM calls
+# ---------------------------------------------------------------------------
+
+def _fast_finish(*a, **k):
+    """Return a fast finish action so tests don't block on Ollama."""
+    return OrchestratorResult(
+        success=True,
+        text=json.dumps({"action_type": "finish", "reason": "mocked", "mode": "coder"}),
+        provider="mock",
+        model="mock",
+    )
+
+
+# ---------------------------------------------------------------------------
 # 1. initial_context string handling
 # ---------------------------------------------------------------------------
 
-@pytest.mark.slow
 class TestInitialContextHandling:
-    """Marked slow: calls AgentReasoningLoop.run() which makes real LLM calls."""
+    """Tests initial_context normalization — LLM mocked so no real Ollama call."""
 
     def test_string_initial_context_normalised(self):
         loop = AgentReasoningLoop(max_steps=1, role="coder")
-        loop.run(goal="test", initial_context="just a note")
+        with patch("igris.core.model_orchestrator.ModelOrchestrator.complete",
+                   side_effect=_fast_finish):
+            loop.run(goal="test", initial_context="just a note")
         assert loop._world_state.get("note") == "just a note"
 
     def test_dict_initial_context_still_works(self):
         loop = AgentReasoningLoop(max_steps=1, role="coder")
-        loop.run(goal="test", initial_context={"key": "val"})
+        with patch("igris.core.model_orchestrator.ModelOrchestrator.complete",
+                   side_effect=_fast_finish):
+            loop.run(goal="test", initial_context={"key": "val"})
         assert loop._world_state.get("key") == "val"
 
     def test_none_initial_context(self):
         loop = AgentReasoningLoop(max_steps=1, role="coder")
-        loop.run(goal="test", initial_context=None)
+        with patch("igris.core.model_orchestrator.ModelOrchestrator.complete",
+                   side_effect=_fast_finish):
+            loop.run(goal="test", initial_context=None)
         assert "note" not in loop._world_state
 
     def test_int_initial_context_normalised(self):
         loop = AgentReasoningLoop(max_steps=1, role="coder")
-        loop.run(goal="test", initial_context=42)
+        with patch("igris.core.model_orchestrator.ModelOrchestrator.complete",
+                   side_effect=_fast_finish):
+            loop.run(goal="test", initial_context=42)
         assert loop._world_state.get("note") == "42"
 
 
-@pytest.mark.slow
 class TestInitialContextAPI:
-    """Marked slow: POSTs to /api/reasoning/run which makes real LLM calls."""
+    """Tests /api/reasoning/run — LLM mocked so no real Ollama call."""
 
     @pytest.fixture
     def client(self):
@@ -87,21 +108,25 @@ class TestInitialContextAPI:
         return TestClient(app)
 
     def test_string_initial_context_api(self, client):
-        resp = client.post("/api/reasoning/run", json={
-            "goal": "test goal",
-            "max_steps": 1,
-            "initial_context": "some string context",
-        })
+        with patch("igris.core.model_orchestrator.ModelOrchestrator.complete",
+                   side_effect=_fast_finish):
+            resp = client.post("/api/reasoning/run", json={
+                "goal": "test goal",
+                "max_steps": 1,
+                "initial_context": "some string context",
+            })
         assert resp.status_code == 200
         data = resp.json()
         assert "loop_id" in data
 
     def test_dict_initial_context_api(self, client):
-        resp = client.post("/api/reasoning/run", json={
-            "goal": "test goal",
-            "max_steps": 1,
-            "initial_context": {"project": "igris"},
-        })
+        with patch("igris.core.model_orchestrator.ModelOrchestrator.complete",
+                   side_effect=_fast_finish):
+            resp = client.post("/api/reasoning/run", json={
+                "goal": "test goal",
+                "max_steps": 1,
+                "initial_context": {"project": "igris"},
+            })
         assert resp.status_code == 200
 
     def test_list_initial_context_api_returns_400(self, client):
@@ -115,11 +140,13 @@ class TestInitialContextAPI:
         assert "error" in data
 
     def test_null_initial_context_api(self, client):
-        resp = client.post("/api/reasoning/run", json={
-            "goal": "test goal",
-            "max_steps": 1,
-            "initial_context": None,
-        })
+        with patch("igris.core.model_orchestrator.ModelOrchestrator.complete",
+                   side_effect=_fast_finish):
+            resp = client.post("/api/reasoning/run", json={
+                "goal": "test goal",
+                "max_steps": 1,
+                "initial_context": None,
+            })
         assert resp.status_code == 200
 
 
