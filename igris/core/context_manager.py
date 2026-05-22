@@ -336,8 +336,16 @@ class ContextManager:
         # 5. Memory context
         graph_items = list(memory_items or [])
         try:
-            from igris.core.memory_graph import MemoryGraph
-            mg = MemoryGraph(self.project_root)
+            import os as _os
+            from igris.core.memory import _get_graph
+            _prev = _os.environ.get("PROJECT_ROOT")
+            if self.project_root:
+                _os.environ["PROJECT_ROOT"] = self.project_root
+            mg = _get_graph()
+            if _prev is None:
+                _os.environ.pop("PROJECT_ROOT", None)
+            elif self.project_root:
+                _os.environ["PROJECT_ROOT"] = _prev
             graph_items.extend(mg.get_lessons_for_goal(goal, limit=5))
             graph_items.extend(mg.query_by_intent(goal, node_type="project_fact", limit=3))
             recipe = mg.get_command_recipe(goal)

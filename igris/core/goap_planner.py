@@ -409,9 +409,8 @@ class GOAPPlanner:
                 # Fallback: use standard sequential plan
                 break
             try:
-                import os
-                from igris.core.memory_graph import MemoryGraph
-                graph = MemoryGraph(os.environ.get("PROJECT_ROOT", "."))
+                from igris.core.memory import _get_graph
+                graph = _get_graph()
                 for action in eligible:
                     history = graph.get_action_history(
                         goal_type=goal.get("type", ""),
