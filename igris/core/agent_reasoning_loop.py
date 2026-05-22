@@ -4,12 +4,16 @@ The cognitive core: observe -> reason -> act -> observe -> repeat.
 
 Loop structure:
     1. build_context (Context Manager)
-    2. model_orchestrator.complete (Model Orchestrator)
-    3. validate action schema (Agent Action Schema)
-    4. route action to gate:
-       - code_navigation -> CodeNavigator (safe, no side effects)
-       - tool_runtime -> ToolRuntime (governed)
-       - command_risk_engine -> risk gate (future, blocks for now)
+    def __init__(
+        self,
+        project_root: Optional[str] = None,
+        max_steps: int = DEFAULT_MAX_STEPS,
+        max_consecutive_errors: int = DEFAULT_MAX_CONSECUTIVE_ERRORS,
+        role: str = "coder",
+        task_type: str = "code_reasoning",
+        preferred_profile: Optional[str] = None,
+        tool_result_budget: int = 16384,  # max bytes for tool result output
+    ):
        - mission_controller -> update plan
        - memory -> record to DecisionMemory
        - human_gate -> ask_user (stop condition)
@@ -53,6 +57,7 @@ STOP_REASONS = (
     "budget_exceeded",
     "risk_blocked",
     "max_steps",
+    "no_diff_repair",
     "governor_stop",
     "llm_unavailable",
 )
@@ -204,6 +209,7 @@ class AgentReasoningLoop:
         project_root: Optional[str] = None,
         max_steps: int = DEFAULT_MAX_STEPS,
         max_consecutive_errors: int = DEFAULT_MAX_CONSECUTIVE_ERRORS,
+        no_diff_steps_max: int = 20,
         role: str = "coder",
         task_type: str = "code_reasoning",
         preferred_profile: Optional[str] = None,
@@ -212,6 +218,7 @@ class AgentReasoningLoop:
         self.project_root = project_root or os.environ.get("PROJECT_ROOT", ".")
         self.max_steps = max_steps
         self.max_consecutive_errors = max_consecutive_errors
+        self.no_diff_steps_max = no_diff_steps_max
         self.role = role
         self.task_type = task_type
         self.preferred_profile = preferred_profile
@@ -223,6 +230,7 @@ class AgentReasoningLoop:
         self._memory_items: List[Dict[str, Any]] = []
         self._world_state: Dict[str, Any] = {}
         self._consecutive_errors = 0
+        self._steps_without_write: int = 0  # no_diff_repair guard
         self._stop_reason = ""
         self._coord: object = None  # lazy AgentCoordinator, reused across steps
         # Orchestrator observability — updated on first successful LLM call
@@ -285,7 +293,12 @@ class AgentReasoningLoop:
                 break
 
             # Execute one step
+            _files_before = len(self._files_modified)
             step = self._execute_step(step_num, goal, mission_id)
+            if len(self._files_modified) > _files_before or step.action_type in WRITE_ACTIONS:
+                self._steps_without_write = 0
+            else:
+                self._steps_without_write += 1
             self._steps.append(step)
             if step_callback is not None:
                 try:
@@ -1829,6 +1842,8 @@ class AgentReasoningLoop:
             return "max_steps"
         if self._consecutive_errors >= self.max_consecutive_errors:
             return "budget_exceeded"
+        if self._steps_without_write >= self.no_diff_steps_max:
+            return "no_diff_repair"
         if self._stop_reason:
             return self._stop_reason
         return None

@@ -212,6 +212,7 @@ class RankSupervisorConfig:
     # Depth counter incremented each time a child run is spawned via auto-chain.
     # Guards against infinite cascade: parent→child→grandchild→... stops at depth 2.
     autochain_depth: int = 0
+    no_diff_steps_max: int = 20
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "RankSupervisorConfig":
@@ -248,6 +249,7 @@ class RankSupervisorConfig:
             allow_roadmap_autoselect=bool(data.get("allow_roadmap_autoselect", False)),
             api_helper_mode=str(data.get("api_helper_mode", "")),
             autochain_depth=max(0, int(data.get("autochain_depth", 0) or data.get("_autochain_depth", 0))),
+            no_diff_steps_max=max(1, int(data.get("no_diff_steps_max", 20))),
         )
 
 
