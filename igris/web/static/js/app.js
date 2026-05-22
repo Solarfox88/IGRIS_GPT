@@ -37,6 +37,8 @@
     d.textContent = String(s);
     return d.innerHTML;
   }
+  var _supervisorMonitorSeq = 0;
+  var _optimisticActiveRun = null;
 
   var SUPERVISED_LAUNCHER_PRESETS = {
     "rank-b": {
@@ -357,6 +359,7 @@
         return;
       }
       window._lastStartedSupervisorRun = resp.data || {};
+      _optimisticActiveRun = resp.data || null;
       if (result) {
         result.innerHTML =
           "Supervised mission started. run_id=<strong>" + esc(String((resp.data || {}).run_id || "")) + "</strong>";
@@ -366,6 +369,7 @@
   }
 
   async function loadSupervisorMonitor() {
+    var seq = ++_supervisorMonitorSeq;
     var monitorEl = $("#dash-supervisor-monitor");
     if (!monitorEl) return;
     monitorEl.innerHTML = "Loading supervisor runs...";
@@ -373,6 +377,7 @@
     try {
       var active = await apiWithTimeout("GET", "/api/rank/runs/active", null, 5000);
       var audit = await apiWithTimeout("GET", "/api/rank/audit/summary", null, 5000);
+      if (seq !== _supervisorMonitorSeq) return;
       if (!active.ok) {
         var errMsg = ((active.data || {}).detail || (active.data || {}).error || ("HTTP " + String(active.status || 0)));
         finalHtml = "Supervisor monitor unavailable: " + esc(String(errMsg));
@@ -381,7 +386,11 @@
         rows.push("<div><strong>Rank / Mission Monitor</strong></div>");
         var runs = (active.data.runs || []).slice();
         var activeRunIds = {};
-        var lastStarted = window._lastStartedSupervisorRun || null;
+        var lastStarted = _optimisticActiveRun || window._lastStartedSupervisorRun || null;
+        if (active.ok && (active.data.runs || []).length === 0) {
+          _optimisticActiveRun = null;
+          window._lastStartedSupervisorRun = null;
+        }
         if (lastStarted && lastStarted.run_id) {
           var found = runs.some(function (item) { return item.run_id === lastStarted.run_id; });
           if (!found) {

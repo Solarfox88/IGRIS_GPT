@@ -304,6 +304,21 @@ async def _watchdog_loop(project_root: str) -> None:
                             capture_output=True, text=True, cwd=project_root,
                         )
                     )
+                    root_untracked = await asyncio.get_event_loop().run_in_executor(
+                        None,
+                        lambda: __import__("subprocess").run(
+                            ["git", "ls-files", "--others", "--exclude-standard", "--directory"],
+                            capture_output=True, text=True, cwd=project_root,
+                        )
+                    )
+                    for item in (root_untracked.stdout or "").splitlines():
+                        item = item.strip().rstrip("/")
+                        if item and "/" not in item and not item.startswith("."):
+                            _p = __import__("os").path.join(project_root, item)
+                            if __import__("os").path.isfile(_p):
+                                __import__("os").unlink(_p)
+                            else:
+                                __import__("shutil").rmtree(_p, ignore_errors=True)
                     clean_res = await asyncio.get_event_loop().run_in_executor(
                         None,
                         lambda: __import__("subprocess").run(

@@ -207,6 +207,7 @@ class RankSupervisorConfig:
     enable_mission_planning: bool = False
     allow_auto_subissues: bool = False
     enable_semantic_gate: bool = True
+    allow_roadmap_autoselect: bool = False
     api_helper_mode: str = ""
     # Depth counter incremented each time a child run is spawned via auto-chain.
     # Guards against infinite cascade: parent→child→grandchild→... stops at depth 2.
@@ -244,6 +245,7 @@ class RankSupervisorConfig:
             enable_mission_planning=bool(data.get("enable_mission_planning", False)),
             allow_auto_subissues=bool(data.get("allow_auto_subissues", False)),
             enable_semantic_gate=bool(data.get("enable_semantic_gate", True)),
+            allow_roadmap_autoselect=bool(data.get("allow_roadmap_autoselect", False)),
             api_helper_mode=str(data.get("api_helper_mode", "")),
             autochain_depth=max(0, int(data.get("autochain_depth", 0) or data.get("_autochain_depth", 0))),
         )
@@ -3092,7 +3094,7 @@ class SelfRepairSupervisor:
         # Pre-flight planning: read-only scope analysis before first attempt.
         # If the planning pass recommends decomposition, block proactively rather
         # than discovering the same thing after 3 failed repair cycles.
-        if config.enable_mission_planning:
+        if config.enable_mission_planning or failure_risk.risk_level == "high":
             scope = self._plan_mission(run, config)
             if scope and scope.get("decomposition_recommended"):
                 run.add(

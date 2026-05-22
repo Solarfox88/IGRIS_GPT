@@ -64,6 +64,7 @@ class FailureRisk:
     similar_count: int = 0
     dominant_failure: str = ""
     notes: List[str] = field(default_factory=list)
+    file_risks: Dict[str, str] = field(default_factory=dict)
 
 
 class FailureMemory:
@@ -72,6 +73,8 @@ class FailureMemory:
     def __init__(self, store_path: Path = _DEFAULT_STORE) -> None:
         self._path = store_path
         self._patterns: List[Dict[str, Any]] = []
+        self._file_patterns: Dict[str, Dict[str, Any]] = {}
+        self._goal_patterns: Dict[str, Dict[str, Any]] = {}
         self._load()
 
     # ------------------------------------------------------------------
@@ -84,6 +87,7 @@ class FailureMemory:
         failure_class: str,
         capability_signals: Optional[Dict[str, int]] = None,
         repair_cycles: int = 0,
+        files_touched: Optional[List[str]] = None,
     ) -> None:
         """Persist a failure pattern from a blocked/failed run."""
         entry: Dict[str, Any] = {
@@ -96,6 +100,19 @@ class FailureMemory:
             "repair_cycles": repair_cycles,
         }
         self._patterns.append(entry)
+        now = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+        for fp in list(files_touched or []):
+            if not fp:
+                continue
+            agg = self._file_patterns.setdefault(fp, {"failure_classes": {}, "total_failures": 0, "last_failure": now})
+            agg["failure_classes"][failure_class] = int(agg["failure_classes"].get(failure_class, 0)) + 1
+            agg["total_failures"] = int(agg.get("total_failures", 0)) + 1
+            agg["last_failure"] = now
+        gk = " ".join(sorted(_keywords(goal)))[:120] or goal[:120]
+        gp = self._goal_patterns.setdefault(gk, {"attempts": 0, "outcomes": [], "last_seen": now})
+        gp["attempts"] = int(gp.get("attempts", 0)) + 1
+        gp["outcomes"] = list(gp.get("outcomes", []))[-9:] + [failure_class]
+        gp["last_seen"] = now
         # Keep rolling window
         if len(self._patterns) > _MAX_PATTERNS:
             self._patterns = self._patterns[-_MAX_PATTERNS:]
@@ -139,11 +156,16 @@ class FailureMemory:
         if all_signals:
             notes.append(f"Accumulated capability signals from history: {all_signals}")
 
+        file_risks: Dict[str, str] = {}
+        for fp, agg in self._file_patterns.items():
+            tf = int(agg.get("total_failures", 0))
+            file_risks[fp] = "high" if tf >= 3 else ("medium" if tf >= 2 else "low")
         return FailureRisk(
             risk_level=risk_level,
             similar_count=count,
             dominant_failure=dominant,
             notes=notes,
+            file_risks=file_risks,
         )
 
     # ------------------------------------------------------------------
@@ -154,16 +176,27 @@ class FailureMemory:
         try:
             raw = self._path.read_text(encoding="utf-8")
             data = json.loads(raw)
-            self._patterns = list(data.get("patterns", []))
+            self._patterns = list(data.get("patterns", data.get("entries", [])))
+            self._file_patterns = dict(data.get("file_patterns", {}))
+            self._goal_patterns = dict(data.get("goal_patterns", {}))
         except (FileNotFoundError, json.JSONDecodeError, AttributeError):
             self._patterns = []
+            self._file_patterns = {}
+            self._goal_patterns = {}
 
     def _save(self) -> None:
         try:
             self._path.parent.mkdir(parents=True, exist_ok=True)
             tmp = self._path.with_suffix(".tmp")
             tmp.write_text(
-                json.dumps({"patterns": self._patterns}, indent=2),
+                json.dumps(
+                    {
+                        "entries": self._patterns,
+                        "file_patterns": self._file_patterns,
+                        "goal_patterns": self._goal_patterns,
+                    },
+                    indent=2,
+                ),
                 encoding="utf-8",
             )
             tmp.replace(self._path)
