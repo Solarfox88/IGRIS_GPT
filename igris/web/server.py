@@ -354,7 +354,21 @@ async def _watchdog_loop(project_root: str) -> None:
                 else:
                     _dirty_cleanup_consecutive_failures = 0
 
-                issue = _pick_next_roadmap_issue(project_root, skip_issues=_skipped_issues)
+                _hint_path = __import__("pathlib").Path(project_root) / ".igris" / "next_roadmap_target.json"
+                _hint_issue = None
+                if _hint_path.exists():
+                    try:
+                        _hint_data = __import__("json").loads(_hint_path.read_text(encoding="utf-8"))
+                        _hint_num = int(_hint_data.get("issue_number", 0))
+                        if _hint_num and _hint_num not in _skipped_issues:
+                            _hint_issue = {"number": _hint_num, "title": _hint_data.get("issue_title", ""), "body": ""}
+                        _hint_path.unlink()
+                    except Exception:
+                        try:
+                            _hint_path.unlink()
+                        except Exception:
+                            pass
+                issue = _hint_issue or _pick_next_roadmap_issue(project_root, skip_issues=_skipped_issues)
                 if issue:
                     number = issue["number"]
                     title = issue.get("title", f"issue #{number}")
