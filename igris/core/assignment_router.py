@@ -10,6 +10,7 @@ Formula:
 from __future__ import annotations
 
 import logging
+import re
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -171,6 +172,15 @@ def _contains_security(text: str) -> bool:
     return _contains_any(t, _SECURITY_KEYWORDS) or _contains_any(t, _SECURITY_KEYWORDS_WHOLE_WORD)
 
 
+def _contains_test_signal(text: str) -> bool:
+    """Test-keyword check. Uses word-boundary for bare 'test' to avoid matching
+    Italian/Spanish 'contesto', 'protesto' etc. Other test keywords are fine as substring."""
+    t = text.lower()
+    if re.search(r'\btest\b', t):
+        return True
+    return _contains_any(t, _TEST_KEYWORDS - {"test"})
+
+
 def _classify_goal(request: AssignmentRequest) -> Tuple[str, str, List[str]]:
     """Return (agent_role, task_type, reasons)."""
     goal = request.goal_text
@@ -226,7 +236,7 @@ def _classify_goal(request: AssignmentRequest) -> Tuple[str, str, List[str]]:
         return "backend_coder", "backend_endpoint", reasons
 
     # Test-only (no backend change, no supervisor/fix work)
-    if (_contains_any(goal, _TEST_KEYWORDS)
+    if (_contains_test_signal(goal)
             and not _contains_any(goal, _BACKEND_KEYWORDS)
             and not _contains_any(goal, _REPAIR_KEYWORDS)
             and not _contains_any(goal, _SUPERVISOR_KEYWORDS)):
