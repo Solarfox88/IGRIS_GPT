@@ -85,6 +85,18 @@ async def wait_port_free(port: int = 7778, timeout: int = 30) -> ActionResult:
     return ActionResult("wait_port_free", False, "timeout", time.time() - t)
 
 
+async def restart_watchdog_cycle(project_root: str) -> ActionResult:
+    """Trigger a fresh watchdog cycle by writing the restart-requested sentinel."""
+    t = time.time()
+    try:
+        import pathlib
+        sentinel = pathlib.Path(project_root) / ".igris" / "watchdog_restart_requested"
+        sentinel.parent.mkdir(parents=True, exist_ok=True)
+        sentinel.touch()
+        return ActionResult("restart_watchdog_cycle", True, "watchdog restart sentinel written", time.time() - t)
+    except OSError as e:
+        return ActionResult("restart_watchdog_cycle", False, str(e), time.time() - t)
+
 async def execute_action(action_name: str, tier: int, dry_run: bool = True, **kwargs: Any) -> ActionResult:
     actions: Dict[str, Callable[..., Any]] = {
         "git_clean_root": git_clean_root,
@@ -95,6 +107,7 @@ async def execute_action(action_name: str, tier: int, dry_run: bool = True, **kw
         "check_issue_list": check_issue_list,
         "restart_igris_service": restart_igris_service,
         "wait_port_free": wait_port_free,
+        "restart_watchdog_cycle": restart_watchdog_cycle,
     }
     if action_name not in actions:
         return ActionResult(action_name, False, "unknown action", 0.0)
