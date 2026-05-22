@@ -5910,6 +5910,32 @@ class SelfRepairSupervisor:
         })
         return child_run_id
 
+
+    def _run_decomposed_parallel(
+        self,
+        sub_goals: List[str],
+        base_max_steps: int = 20,
+        preferred_profile: Optional[str] = None,
+    ) -> List[dict]:
+        """Run decomposed sub-goals in parallel and return run_reasoning-like dicts."""
+        from igris.core.parallel_task_runner import ParallelTask, ParallelTaskRunner
+
+        tasks = [
+            ParallelTask(
+                task_id=f"sub_{i}",
+                goal=goal,
+                max_steps=base_max_steps,
+                preferred_profile=preferred_profile,
+            )
+            for i, goal in enumerate(sub_goals)
+        ]
+        runner = ParallelTaskRunner(self.project_root, max_concurrent=3)
+        parallel_results = runner.run_sync(tasks)
+        return [
+            pr.result.to_dict() if pr.result is not None else {"status": "error", "error": pr.error}
+            for pr in parallel_results
+        ]
+
     def _blocked_decomposition_required(
         self,
         run: SupervisorRun,
