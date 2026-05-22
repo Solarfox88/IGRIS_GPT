@@ -81,8 +81,8 @@ def main() -> int:
         step_callback=_write_progress,
     )
     try:
-        from igris.core.memory_graph import MemoryGraph
-        _mg = MemoryGraph(project_root)
+        from igris.core.memory import _get_graph
+        _mg = _get_graph()
         _mg.flush_session_memory(result.loop_id, getattr(loop, "_memory_items", []))
     except Exception:
         pass
