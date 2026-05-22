@@ -407,7 +407,7 @@ class ContextManager:
             event_type = item.get("event_type", "lesson")
             content = item.get("content", item.get("description", ""))
             if content:
-                lines.append(f"[{event_type}] {content[:200]}")
+                lines.append(f"[{event_type}] {str(content)[:200]}")
         return "\n".join(lines) if lines else "No relevant memory."
 
     def _build_file_context(
