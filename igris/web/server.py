@@ -2125,6 +2125,50 @@ def create_app() -> FastAPI:
             raise HTTPException(status_code=404, detail=f"Crash report {crash_id} not found")
         return report
 
+
+    _WORK_SESSIONS: Dict[str, object] = {}
+
+    @app.post("/api/work-session/start")
+    async def api_work_session_start(request: Request) -> Dict[str, str]:
+        from igris.core.work_session import WorkSession
+        content = await request.json()
+        goal = content.get("goal", "")
+        if not goal:
+            raise HTTPException(status_code=400, detail="goal required")
+        session = WorkSession.create(goal=goal, mission_id=content.get("mission_id"))
+        _WORK_SESSIONS[session.session_id] = session
+        return {"session_id": session.session_id}
+
+    @app.get("/api/work-session/{session_id}")
+    async def api_work_session_get(session_id: str) -> Dict[str, object]:
+        session = _WORK_SESSIONS.get(session_id)
+        if session is None:
+            raise HTTPException(status_code=404, detail="WorkSession not found")
+        return session.to_dict()
+
+    @app.post("/api/work-session/{session_id}/advance")
+    async def api_work_session_advance(session_id: str, request: Request) -> Dict[str, object]:
+        from igris.core.work_session import WorkPhase
+        session = _WORK_SESSIONS.get(session_id)
+        if session is None:
+            raise HTTPException(status_code=404, detail="WorkSession not found")
+        content = await request.json()
+        phase = WorkPhase(content.get("phase", "understand"))
+        session.advance_phase(phase=phase, outcome=content.get("outcome", "success"), notes=content.get("notes", ""))
+        return session.to_dict()
+
+    @app.post("/api/work-session/{session_id}/deliver")
+    async def api_work_session_deliver(session_id: str, request: Request) -> Dict[str, object]:
+        from igris.core.work_session import DeliveryReport
+        session = _WORK_SESSIONS.get(session_id)
+        if session is None:
+            raise HTTPException(status_code=404, detail="WorkSession not found")
+        content = await request.json()
+        report = DeliveryReport(**content)
+        session.complete_deliver(report)
+        session.remember(project_root=str(CONFIG.project_root))
+        return {"status": "delivered", "delivery_report": report.__dict__}
+
     # ---- Mission Controller (Epic #40) ----
 
     @app.post("/api/controller/missions")

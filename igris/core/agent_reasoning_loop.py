@@ -525,6 +525,29 @@ class AgentReasoningLoop:
                 step.duration_ms = int((time.monotonic() - t0) * 1000)
                 return step
 
+            # 2c. Contract validation
+            _contract_allowed, _contract_reason = (True, "")
+            try:
+                from igris.core.agent_contracts import AgentCoordinator
+                _coord = AgentCoordinator(self.project_root)
+                _contract_allowed, _contract_reason = _coord.check_and_record(
+                    role=self.role,
+                    action_type=action.action_type,
+                    goal=goal,
+                )
+            except Exception:
+                pass
+
+            if not _contract_allowed:
+                step.outcome = "skipped"
+                step.error = f"Contract violation: {_contract_reason}"
+                step.result_summary = (
+                    f"Action '{action.action_type}' is not permitted for role "
+                    f"'{self.role}'. Choose an allowed action instead."
+                )
+                step.duration_ms = int((time.monotonic() - t0) * 1000)
+                return step
+
             # 3. Validate action
             validation = self._validate_action(action)
             if not validation.valid:
