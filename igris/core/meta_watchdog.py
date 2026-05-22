@@ -6,7 +6,7 @@ import uuid
 from typing import Dict
 
 from igris.core.smw_actions import execute_action
-from igris.core.smw_diagnosis import diagnose
+from igris.core.smw_diagnosis import diagnose, diagnose_with_llm
 from igris.core.smw_patterns import detect_patterns
 from igris.core.smw_sensors import take_snapshot
 from igris.core.smw_teach import Incident, record_incident, teach_back
@@ -31,6 +31,11 @@ async def _smw_loop(project_root: str) -> None:
                     continue
                 _SMW_COOLDOWN_PATTERNS[name] = detected.detected_at
                 d = diagnose(detected, project_root)
+                if d.needs_llm_help:
+                    try:
+                        d = await diagnose_with_llm(detected, snapshot, project_root)
+                    except Exception as _llm_exc:
+                        logger.warning("SMW LLM diagnosis failed: %s", _llm_exc)
                 actions_applied = []
                 for action_name in d.recommended_actions:
                     result = await execute_action(action_name, tier=d.recommended_tier, dry_run=(d.confidence < 0.6), project_root=project_root, pattern_name=name, evidence=detected.evidence, actions_tried=actions_applied)
@@ -66,10 +71,12 @@ async def _smw_loop(project_root: str) -> None:
                         ci_green = bool(rollup) and all((c.get("conclusion") in {"SUCCESS", "NEUTRAL", "SKIPPED"}) for c in rollup if isinstance(c, dict))
                         if not ci_green:
                             continue
+                        _diff_proc = await asyncio.to_thread(__import__("subprocess").run, ["gh", "pr", "diff", str(number)], capture_output=True, text=True, cwd=project_root)
+                        _pr_diff = _diff_proc.stdout[:8000] if _diff_proc.returncode == 0 else ""
                         req = PRReviewRequest(
                             pr_number=number,
                             pr_title=pr.get("title", ""),
-                            pr_diff="",
+                            pr_diff=_pr_diff,
                             issue_description="",
                             changed_files=[f.get("path", "") for f in (pr.get("files") or []) if isinstance(f, dict)],
                             ci_passed=True,

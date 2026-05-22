@@ -210,6 +210,7 @@ class AgentReasoningLoop:
         self._world_state: Dict[str, Any] = {}
         self._consecutive_errors = 0
         self._stop_reason = ""
+        self._coord: object = None  # lazy AgentCoordinator, reused across steps
         # Orchestrator observability — updated on first successful LLM call
         self._reasoning_provider: str = ""
         self._reasoning_model: str = ""
@@ -528,9 +529,10 @@ class AgentReasoningLoop:
             # 2c. Contract validation
             _contract_allowed, _contract_reason = (True, "")
             try:
-                from igris.core.agent_contracts import AgentCoordinator
-                _coord = AgentCoordinator(self.project_root)
-                _contract_allowed, _contract_reason = _coord.check_and_record(
+                if self._coord is None:
+                    from igris.core.agent_contracts import AgentCoordinator
+                    self._coord = AgentCoordinator(self.project_root)
+                _contract_allowed, _contract_reason = self._coord.check_and_record(
                     role=self.role,
                     action_type=action.action_type,
                     goal=goal,
