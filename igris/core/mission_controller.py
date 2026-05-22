@@ -105,6 +105,7 @@ class ControlledMission:
     paused_at: Optional[str] = None
     blocked_reason: Optional[str] = None
     execution_log: List[Dict[str, Any]] = field(default_factory=list)
+    work_session_id: Optional[str] = None
 
     def _touch(self) -> None:
         self.updated_at = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
@@ -134,6 +135,7 @@ class ControlledMission:
             "paused_at": self.paused_at,
             "blocked_reason": self.blocked_reason,
             "execution_log": self.execution_log[-50:],
+            "work_session_id": self.work_session_id,
         }
 
     @classmethod
@@ -163,6 +165,7 @@ class ControlledMission:
             paused_at=data.get("paused_at"),
             blocked_reason=data.get("blocked_reason"),
             execution_log=data.get("execution_log", []),
+            work_session_id=data.get("work_session_id"),
         )
 
     def explain_state(self) -> Dict[str, Any]:
@@ -576,6 +579,8 @@ class MissionController:
         failed = [t for t in mission.tasks if t.get("status") == "failed"]
         skipped = [t for t in mission.tasks if t.get("status") == "skipped"]
 
+        file_artifacts = [a.path for a in mission.artifacts if a.type == "file" and a.path]
+
         report: Dict[str, Any] = {
             "mission_id": mission.id,
             "title": mission.title,
@@ -603,6 +608,8 @@ class MissionController:
                 "family": t.get("family", ""),
                 "outcome_detail": redact_secrets(t.get("outcome_detail", "")),
             })
+
+        report["delivery_report"] = {"work_session_id": mission.work_session_id or "", "goal": mission.goal, "files_modified": file_artifacts, "diff_summary": "", "test_output": "", "ci_status": "unknown", "pr_url": "", "pr_number": 0, "healthcheck_url": "", "residual_risks": [], "rollback_available": bool(mission.rollback_plan), "run_id": mission.trace_id, "last_failure_class": "", "repair_cycles_used": 0, "capability_signals": {}}
 
         mission.final_report = report
         mission._touch()
