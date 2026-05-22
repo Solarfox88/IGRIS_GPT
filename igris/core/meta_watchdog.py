@@ -55,7 +55,6 @@ async def _smw_loop(project_root: str) -> None:
 
             try:
                 reviewed = {r.pr_number for r in load_review_results(project_root)}
-                pr_list = asyncio.to_thread
                 out = await asyncio.to_thread(__import__("subprocess").run, ["gh", "pr", "list", "--json", "number,title,headRefName,files,statusCheckRollup"], capture_output=True, text=True, cwd=project_root)
                 if out.returncode == 0:
                     prs = __import__("json").loads(out.stdout or "[]")
