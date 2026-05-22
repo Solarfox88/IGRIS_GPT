@@ -62,12 +62,13 @@ def test_agent_coord_set_and_reused():
 @pytest.mark.asyncio
 async def test_meta_watchdog_escalates_unknown_pattern_to_llm():
     from igris.core.smw_diagnosis import Diagnosis
-    from igris.core.smw_patterns import DetectedPattern, KnownPattern
+    from igris.core.smw_patterns import DetectedPattern, Pattern
 
-    fake_pattern = KnownPattern(
+    fake_pattern = Pattern(
         name="totally_unknown_xyz",
         description="x",
         severity="warn",
+        detector=lambda s: False,
         cooldown_seconds=0,
     )
     detected = DetectedPattern(pattern=fake_pattern, evidence="e", detected_at=0.0)
