@@ -1,16 +1,19 @@
 """
-Task orchestrator placeholder.
+Advisory orchestrator — thin coordinator for task sequencing.
 
-In the full implementation the orchestrator would coordinate tasks, ensure
-plans are executed in the right order and interact with the teacher for
-feedback.  For now this is an empty stub.
+Delegates to ModelOrchestrator for all LLM routing. Exists for backward
+compatibility with callers that import Orchestrator by name from this module.
 """
+from __future__ import annotations
+
+from igris.core.model_orchestrator import ModelOrchestrator
 
 
 class Orchestrator:
+    """Thin wrapper around ModelOrchestrator used by legacy advisory endpoints."""
+
     def __init__(self) -> None:
-        pass
+        self._inner = ModelOrchestrator()
 
     def start(self) -> None:
-        # Placeholder start method
-        pass
+        """No-op: ModelOrchestrator initialises lazily on first .complete() call."""

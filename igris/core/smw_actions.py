@@ -86,14 +86,21 @@ async def wait_port_free(port: int = 7778, timeout: int = 30) -> ActionResult:
 
 
 async def restart_watchdog_cycle(project_root: str) -> ActionResult:
-    """Trigger a fresh watchdog cycle by writing the restart-requested sentinel."""
+    """Trigger an immediate watchdog cycle.
+
+    Clears any stale roadmap hint so the watchdog picks a fresh issue on
+    its next 60s poll. Also writes a sentinel file for external consumers.
+    """
     t = time.time()
     try:
-        import pathlib
-        sentinel = pathlib.Path(project_root) / ".igris" / "watchdog_restart_requested"
-        sentinel.parent.mkdir(parents=True, exist_ok=True)
-        sentinel.touch()
-        return ActionResult("restart_watchdog_cycle", True, "watchdog restart sentinel written", time.time() - t)
+        import pathlib, json as _json
+        igris_dir = pathlib.Path(project_root) / ".igris"
+        igris_dir.mkdir(parents=True, exist_ok=True)
+        (igris_dir / "watchdog_restart_requested").touch()
+        hint = igris_dir / "next_roadmap_target.json"
+        if hint.exists():
+            hint.unlink(missing_ok=True)
+        return ActionResult("restart_watchdog_cycle", True, "watchdog restart triggered — stale hint cleared, fresh issue on next poll", time.time() - t)
     except OSError as e:
         return ActionResult("restart_watchdog_cycle", False, str(e), time.time() - t)
 
