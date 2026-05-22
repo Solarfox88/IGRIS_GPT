@@ -6136,14 +6136,20 @@ class SelfRepairSupervisor:
             _logging.getLogger(__name__).warning("Failed to persist assignment outcome: %s", exc)
 
     def _pr_body(self, run: SupervisorRun) -> str:
-        return "\n".join([
+        lines = [
             "## Summary",
             f"- Supervised rank run `{run.run_id}` completed.",
             "",
             "## Safety",
             "- Full pytest passed before merge consideration.",
             "- No direct push to main.",
-        ])
+        ]
+        # Append "Closes #N" so GitHub auto-closes the issue on merge.
+        goal = getattr(run, "goal", "") or ""
+        _m = re.search(r"#(\d+)", goal)
+        if _m:
+            lines += ["", f"Closes #{_m.group(1)}"]
+        return "\n".join(lines)
 
 
 RUN_STORE: Dict[str, SupervisorRun] = {}
