@@ -64,14 +64,9 @@ async def test_meta_watchdog_escalates_unknown_pattern_to_llm():
     from igris.core.smw_diagnosis import Diagnosis
     from igris.core.smw_patterns import DetectedPattern, Pattern
 
-    fake_pattern = Pattern(
-        name="totally_unknown_xyz",
-        description="x",
-        severity="warn",
-        detector=lambda s: False,
-        cooldown_seconds=0,
-    )
-    detected = DetectedPattern(pattern=fake_pattern, evidence="e", detected_at=0.0)
+    fake_snapshot = MagicMock()
+    fake_pattern = Pattern("totally_unknown_xyz", "x", "warn", lambda s: False, 0)
+    detected = DetectedPattern(pattern=fake_pattern, snapshot=fake_snapshot, evidence="e", detected_at=0.0)
 
     static_diag = Diagnosis("totally_unknown_xyz", "pattern non riconosciuto", 0.4, 1,
                              ["open_diagnostic_issue"], "e", True)
