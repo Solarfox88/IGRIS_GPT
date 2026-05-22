@@ -707,7 +707,7 @@ class TestBuildContextProfile:
             system_prompt="", user_message="", total_chars=0,
             truncated_sections=[], token_budget_used=0, context_size_chars=0,
         )
-        with patch("igris.core.agent_reasoning_loop.ContextManager", return_value=mock_ctx):
+        with patch("igris.core.context_manager.ContextManager", return_value=mock_ctx):
             try:
                 loop._build_context("test goal", "mission-1")
             except Exception:
