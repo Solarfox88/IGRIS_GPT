@@ -47,22 +47,31 @@ COST_ESTIMATES: Dict[str, float] = {
 
 
 def choose_provider(for_task: str = "chat") -> Tuple[str, str]:
-    """Return the name and model of the chosen provider and record the choice.
+    """Return (provider_name, model) for the given task, preferring local.
 
-    Currently the logic is simplistic: always use the local provider.  If the
-    fallback API key is missing the fallback provider will not be chosen.
-    This function records the last choice for reporting in both `_last_provider` and
-    `_provider_history`.  In future versions this logic can consider factors
-    such as task complexity, model capabilities, latency and cost budgets.
+    Routing priority:
+      1. Local (Ollama) — if reachable and model is pulled
+      2. Fallback (OpenAI/DeepSeek) — if API key configured
+      3. Local anyway — best-effort even if Ollama is slow/unreachable
     """
     global _last_provider, _provider_history
-    # Determine provider; default to local
-    provider = Provider.LOCAL
-    model = CONFIG.local_llm.model
-    reason = "Using local provider because it is low cost and sufficient for the task."
-    # TODO: add logic for fallback or vastai here based on CONFIG and availability
+    ollama_ok = _check_ollama_model(CONFIG.local_llm.model)
+    fallback_key = bool(CONFIG.fallback_llm.api_key)
+
+    if ollama_ok:
+        provider = Provider.LOCAL
+        model = CONFIG.local_llm.model
+        reason = "Local Ollama available and model pulled — zero cost."
+    elif fallback_key:
+        provider = Provider.FALLBACK
+        model = CONFIG.fallback_llm.model
+        reason = "Ollama unavailable, using configured fallback provider."
+    else:
+        provider = Provider.LOCAL
+        model = CONFIG.local_llm.model
+        reason = "No fallback key configured, attempting local provider anyway."
+
     _last_provider = (provider, model)
-    # Record history entry
     _provider_history.append({
         "provider": provider,
         "model": model,
