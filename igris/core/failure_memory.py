@@ -191,7 +191,7 @@ class FailureMemory:
             tmp.write_text(
                 json.dumps(
                     {
-                        "entries": self._patterns,
+                        "patterns": self._patterns,
                         "file_patterns": self._file_patterns,
                         "goal_patterns": self._goal_patterns,
                     },
