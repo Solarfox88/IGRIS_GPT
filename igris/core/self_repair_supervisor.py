@@ -3125,7 +3125,7 @@ class SelfRepairSupervisor:
         # Pre-flight planning: read-only scope analysis before first attempt.
         # If the planning pass recommends decomposition, block proactively rather
         # than discovering the same thing after 3 failed repair cycles.
-        if config.enable_mission_planning or failure_risk.risk_level == "high":
+        if config.enable_mission_planning:
             scope = self._plan_mission(run, config)
             if scope and scope.get("decomposition_recommended"):
                 run.add(
