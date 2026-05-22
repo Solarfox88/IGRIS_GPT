@@ -634,13 +634,25 @@ class AgentReasoningLoop:
         )
 
     def _build_context(self, goal: str, mission_id: str):
-        """Build context packet for the current step."""
+        """Build context packet for the current step.
+
+        Profile drives token budget: cheap_cloud_reasoning=64k chars,
+        local_coder=16k. Mismatch causes Ollama to silently truncate
+        file context beyond its 4096-token window.
+        """
+        _PROFILE_MAP = {
+            "local_light": "local_light",
+            "local_coder": "local_coder",
+            "mini_execution": "local_coder",
+            "strong_execution": "cheap_cloud_reasoning",
+        }
+        ctx_profile = _PROFILE_MAP.get(self.preferred_profile or "", "cheap_cloud_reasoning")
         from igris.core.context_manager import ContextManager
         ctx = ContextManager(project_root=self.project_root)
         return ctx.build_context(
             goal=goal,
             role=self.role,
-            profile="cheap_cloud_reasoning",
+            profile=ctx_profile,
             mission_id=mission_id,
             world_state=self._world_state,
             recent_actions=[s.to_dict() for s in self._steps[-10:]],
