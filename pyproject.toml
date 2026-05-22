@@ -16,6 +16,7 @@ dependencies = [
     "pydantic>=2.0",
     "python-dotenv",
     "aiofiles",
+    "numpy",
 ]
 
 [project.optional-dependencies]
