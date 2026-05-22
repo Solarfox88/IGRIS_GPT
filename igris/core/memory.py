@@ -39,5 +39,7 @@ def append_memory_event(namespace: str, event: Dict[str, Any]) -> None:
 def recent_memory_events(namespace: str, limit: int = 20) -> List[Dict[str, Any]]:
     rows = _get_graph().query_by_intent(namespace, node_type="run_event", limit=200)
     filtered = [r for r in rows if r.get("content", {}).get("namespace") == namespace]
-    filtered.sort(key=lambda x: x.get("created_at", 0), reverse=True)
-    return filtered[:limit]
+    # Take most recent N, return in ascending order (oldest first) — backward compat
+    recent = sorted(filtered, key=lambda x: x.get("created_at", 0), reverse=True)[:limit]
+    recent.sort(key=lambda x: x.get("created_at", 0))
+    return [{k: v for k, v in r["content"].items() if k != "namespace"} for r in recent]
