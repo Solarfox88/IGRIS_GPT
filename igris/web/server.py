@@ -1024,15 +1024,19 @@ def create_app() -> FastAPI:
     async def api_smw_health() -> Dict[str, object]:
         from igris.core.smw_patterns import detect_patterns
         from igris.core.smw_sensors import take_snapshot
+        from igris.core.smw_weak_signals import get_weak_signal_summary
         from dataclasses import asdict
         snapshot = await take_snapshot(str(CONFIG.project_root))
         patterns = detect_patterns(snapshot)
+        weak = get_weak_signal_summary(str(CONFIG.project_root))
         return {
             "snapshot": asdict(snapshot),
             "active_patterns": [
                 {"name": p.pattern.name, "severity": p.pattern.severity, "evidence": p.evidence}
                 for p in patterns
             ],
+            "weak_signals_active": weak.get("weak_signals_active", []),
+            "metrics": weak.get("metrics", {}),
         }
 
     @app.get("/api/readiness")
