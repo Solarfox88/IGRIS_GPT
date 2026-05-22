@@ -692,3 +692,62 @@ class TestPublicAPI:
             loop.run(goal="test")
         state = loop.get_state()
         assert state["step_count"] == 1
+
+
+class TestBuildContextProfile:
+    """_build_context must use context budget matching the active model."""
+
+    def test_default_profile_uses_cloud(self, tmp_path):
+        from igris.core.agent_reasoning_loop import AgentReasoningLoop
+        loop = AgentReasoningLoop(project_root=str(tmp_path), preferred_profile=None)
+        captured = {}
+        def fake_build_context(goal, role, profile, **kw):
+            captured["profile"] = profile
+            return type("P", (), {"system_prompt": "", "user_message": "", "total_chars": 0,
+                                  "truncated_sections": [], "token_budget_used": 0,
+                                  "context_size_chars": 0})()
+        from igris.core.context_manager import ContextManager
+        from unittest.mock import patch
+        with patch.object(ContextManager, "build_context", fake_build_context):
+            try:
+                loop._build_context("test goal", "mission-1")
+            except Exception:
+                pass
+        assert captured.get("profile") == "cheap_cloud_reasoning"
+
+    def test_mini_execution_uses_local_coder(self, tmp_path):
+        from igris.core.agent_reasoning_loop import AgentReasoningLoop
+        from unittest.mock import patch
+        from igris.core.context_manager import ContextManager
+        loop = AgentReasoningLoop(project_root=str(tmp_path), preferred_profile="mini_execution")
+        captured = {}
+        def fake_build_context(goal, role, profile, **kw):
+            captured["profile"] = profile
+            return type("P", (), {"system_prompt": "", "user_message": "", "total_chars": 0,
+                                  "truncated_sections": [], "token_budget_used": 0,
+                                  "context_size_chars": 0})()
+        with patch.object(ContextManager, "build_context", fake_build_context):
+            try:
+                loop._build_context("test goal", "mission-1")
+            except Exception:
+                pass
+        assert captured.get("profile") == "local_coder"
+
+    def test_strong_execution_uses_cloud(self, tmp_path):
+        from igris.core.agent_reasoning_loop import AgentReasoningLoop
+        from unittest.mock import patch
+        from igris.core.context_manager import ContextManager
+        loop = AgentReasoningLoop(project_root=str(tmp_path), preferred_profile="strong_execution")
+        captured = {}
+        def fake_build_context(goal, role, profile, **kw):
+            captured["profile"] = profile
+            return type("P", (), {"system_prompt": "", "user_message": "", "total_chars": 0,
+                                  "truncated_sections": [], "token_budget_used": 0,
+                                  "context_size_chars": 0})()
+        with patch.object(ContextManager, "build_context", fake_build_context):
+            try:
+                loop._build_context("test goal", "mission-1")
+            except Exception:
+                pass
+        assert captured.get("profile") == "cheap_cloud_reasoning"
+
