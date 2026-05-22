@@ -1,0 +1,17 @@
+[Unit]
+Description=IGRIS GPT Service
+After=network.target
+
+[Service]
+Type=simple
+User=www-data
+WorkingDirectory=/opt/igris
+ExecStart=/usr/bin/python3 -m igris.web.server
+Restart=always
+RestartSec=10
+StartLimitBurst=5
+StartLimitIntervalSec=60
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=multi-user.target
