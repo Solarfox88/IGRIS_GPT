@@ -4,7 +4,7 @@ import asyncio
 import tempfile
 import time
 from pathlib import Path
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 from igris.core import meta_watchdog
 from igris.core.smw_actions import git_clean_root, kill_stale_process, open_diagnostic_issue
@@ -122,6 +122,10 @@ def test_cooldown_prevents_double_fire():
 @patch("igris.web.server._sp.run")
 def test_startup_kills_stale_process(mock_ss, mock_kill, _):
     from igris.web.server import create_app, run_app
-    mock_ss.return_value.stdout = "LISTEN 0 128 *:7778 *:* users:(\"python\",pid=12345,fd=3)"
+    stuck = MagicMock()
+    stuck.stdout = 'LISTEN 0 128 *:7778 *:* users=("python",pid=12345,fd=3)'
+    clear = MagicMock()
+    clear.stdout = ""
+    mock_ss.side_effect = [stuck, clear]
     run_app(create_app(), port=7778)
     assert mock_kill.called

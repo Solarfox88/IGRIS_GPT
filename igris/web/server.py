@@ -188,6 +188,7 @@ async def _watchdog_loop(project_root: str) -> None:
         )
     _last_run_id: Optional[str] = None
     _last_issue_num: Optional[int] = None
+    _dirty_cleanup_consecutive_failures: int = 0
 
     await asyncio.sleep(_WATCHDOG_COOLDOWN_SECONDS)
     while True:
@@ -296,22 +297,78 @@ async def _watchdog_loop(project_root: str) -> None:
                         "Watchdog: dirty workspace detected before launch — running cleanup: %s",
                         _ws.stdout.strip()[:200],
                     )
-                    await asyncio.get_event_loop().run_in_executor(
+                    restore_res = await asyncio.get_event_loop().run_in_executor(
                         None,
                         lambda: __import__("subprocess").run(
                             ["git", "restore", "--worktree", "--staged", "."],
-                            capture_output=True, cwd=project_root,
+                            capture_output=True, text=True, cwd=project_root,
                         )
                     )
-                    await asyncio.get_event_loop().run_in_executor(
+                    root_untracked = await asyncio.get_event_loop().run_in_executor(
+                        None,
+                        lambda: __import__("subprocess").run(
+                            ["git", "ls-files", "--others", "--exclude-standard", "--directory"],
+                            capture_output=True, text=True, cwd=project_root,
+                        )
+                    )
+                    for item in (root_untracked.stdout or "").splitlines():
+                        item = item.strip().rstrip("/")
+                        if item and "/" not in item and not item.startswith("."):
+                            _p = __import__("os").path.join(project_root, item)
+                            if __import__("os").path.isfile(_p):
+                                __import__("os").unlink(_p)
+                            else:
+                                __import__("shutil").rmtree(_p, ignore_errors=True)
+                    clean_res = await asyncio.get_event_loop().run_in_executor(
                         None,
                         lambda: __import__("subprocess").run(
                             ["git", "clean", "-fd", "--", "igris", "tests", "docs", "."],
-                            capture_output=True, cwd=project_root,
+                            capture_output=True, text=True, cwd=project_root,
                         )
                     )
+                    if restore_res.returncode != 0 or clean_res.returncode != 0:
+                        _dirty_cleanup_consecutive_failures += 1
+                        _watchdog_logger.warning(
+                            "Watchdog cleanup failed (%d consecutive): restore=%s clean=%s",
+                            _dirty_cleanup_consecutive_failures,
+                            (restore_res.stderr or restore_res.stdout or "")[:200],
+                            (clean_res.stderr or clean_res.stdout or "")[:200],
+                        )
+                        if _dirty_cleanup_consecutive_failures >= 3:
+                            try:
+                                from igris.core import smw_actions
+                                await smw_actions.execute_action(
+                                    "open_diagnostic_issue",
+                                    tier=2,
+                                    project_root=project_root,
+                                    details={
+                                        "source": "watchdog_cleanup_loop",
+                                        "problematic_file": _ws.stdout.strip().splitlines()[0][:500],
+                                    },
+                                )
+                            except Exception as exc:
+                                _watchdog_logger.warning("Watchdog diagnostic issue action failed: %s", exc)
+                            await asyncio.sleep(300)
+                    else:
+                        _dirty_cleanup_consecutive_failures = 0
+                else:
+                    _dirty_cleanup_consecutive_failures = 0
 
-                issue = _pick_next_roadmap_issue(project_root, skip_issues=_skipped_issues)
+                _hint_path = __import__("pathlib").Path(project_root) / ".igris" / "next_roadmap_target.json"
+                _hint_issue = None
+                if _hint_path.exists():
+                    try:
+                        _hint_data = __import__("json").loads(_hint_path.read_text(encoding="utf-8"))
+                        _hint_num = int(_hint_data.get("issue_number", 0))
+                        if _hint_num and _hint_num not in _skipped_issues:
+                            _hint_issue = {"number": _hint_num, "title": _hint_data.get("issue_title", ""), "body": ""}
+                        _hint_path.unlink()
+                    except Exception:
+                        try:
+                            _hint_path.unlink()
+                        except Exception:
+                            pass
+                issue = _hint_issue or _pick_next_roadmap_issue(project_root, skip_issues=_skipped_issues)
                 if issue:
                     number = issue["number"]
                     title = issue.get("title", f"issue #{number}")
@@ -3187,21 +3244,46 @@ def run_app(application: FastAPI, host: str = "0.0.0.0", port: int = 7778) -> No
         load_dotenv(dotenv_path=Path(__file__).resolve().parents[2] / ".env", override=False)
     except ImportError:
         pass
-    # Kill any stale IGRIS process on the same port before starting
-    _ss = _sp.run(["ss", "-tlnp"], capture_output=True, text=True)
-    for _line in _ss.stdout.splitlines():
-        if f":{port}" in _line and "python" in _line:
-            _m = _re.search(r"pid=(\d+)", _line)
-            if _m:
-                stale_pid = int(_m.group(1))
-                if stale_pid != os.getpid():
-                    logging.getLogger("igris.startup").warning(
-                        "Startup: stale IGRIS process %d on port %d — killing", stale_pid, port
-                    )
-                    try:
-                        os.kill(stale_pid, _sig.SIGTERM)
-                        _time.sleep(2)
-                        os.kill(stale_pid, _sig.SIGKILL)
-                    except ProcessLookupError:
-                        pass
+    startup_logger = logging.getLogger("igris.startup")
+    # Kill any stale IGRIS process on the same port before starting.
+    for attempt in range(1, 4):
+        _ss = _sp.run(["ss", "-tlnp"], capture_output=True, text=True)
+        stale_pids: List[int] = []
+        for _line in _ss.stdout.splitlines():
+            if f":{port}" in _line and "python" in _line:
+                _m = _re.search(r"pid=(\d+)", _line)
+                if _m:
+                    stale_pid = int(_m.group(1))
+                    if stale_pid != os.getpid():
+                        stale_pids.append(stale_pid)
+        if not stale_pids:
+            break
+        for stale_pid in stale_pids:
+            startup_logger.warning("Startup: stale IGRIS process %d on port %d — killing", stale_pid, port)
+            try:
+                os.kill(stale_pid, _sig.SIGTERM)
+                _time.sleep(2)
+                os.kill(stale_pid, _sig.SIGKILL)
+            except ProcessLookupError:
+                pass
+        _time.sleep(1)
+    else:
+        startup_logger.critical("IGRIS startup blocked: port %d occupied after 3 attempts", port)
+        try:
+            _sp.run(
+                [
+                    "gh", "issue", "create",
+                    "--title", f"IGRIS startup blocked: port {port} occupied",
+                    "--body", (
+                        f"IGRIS startup could not free port {port} after 3 attempts. "
+                        "Manual intervention required."
+                    ),
+                ],
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+        except Exception as exc:
+            startup_logger.error("Unable to open diagnostic GitHub issue: %s", exc)
+        raise SystemExit(1)
     uvicorn.run(application, host=host, port=port, log_level="info")

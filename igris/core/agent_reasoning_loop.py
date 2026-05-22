@@ -37,7 +37,7 @@ import re
 import time
 import uuid
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional
 
 from igris.core.safety import redact_secrets
 
@@ -225,6 +225,7 @@ class AgentReasoningLoop:
         goal: str = "",
         mission_id: str = "",
         initial_context: Optional[Dict[str, Any]] = None,
+        step_callback: Optional[Callable[[int, str], None]] = None,
     ) -> LoopResult:
         """Execute the reasoning loop for a given goal.
 
@@ -271,6 +272,11 @@ class AgentReasoningLoop:
             # Execute one step
             step = self._execute_step(step_num, goal, mission_id)
             self._steps.append(step)
+            if step_callback is not None:
+                try:
+                    step_callback(step_num, step.action_type or "unknown")
+                except Exception:
+                    pass
             result.steps.append(step)
 
             # Track outcomes

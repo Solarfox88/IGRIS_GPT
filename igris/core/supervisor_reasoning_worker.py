@@ -7,6 +7,7 @@ import os
 import sys
 import threading
 import time
+from pathlib import Path
 
 from igris.core.agent_reasoning_loop import AgentReasoningLoop
 
@@ -54,14 +55,40 @@ def main() -> int:
         task_type=str(payload.get("task_type") or "code_reasoning"),
         preferred_profile=payload.get("preferred_profile") or None,
     )
+    progress_path = str(Path(project_root) / ".igris" / "reasoning_progress.json")
+
+    def _write_progress(step_num: int, action_type: str) -> None:
+        state["current_step"] = int(step_num)
+        state["last_action_type"] = str(action_type or "unknown")
+        try:
+            Path(progress_path).parent.mkdir(parents=True, exist_ok=True)
+            tmp = Path(progress_path).with_suffix(".tmp")
+            tmp.write_text(json.dumps({
+                "loop_id": getattr(loop, "loop_id", ""),
+                "goal": str(payload.get("goal", ""))[:200],
+                "current_step": int(step_num),
+                "last_action_type": str(action_type or "unknown"),
+                "timestamp": time.time(),
+                "max_steps": int(payload["max_steps"]),
+            }, indent=2), encoding="utf-8")
+            tmp.replace(progress_path)
+        except OSError:
+            pass
+
     result = loop.run(
         goal=str(payload["goal"]),
         initial_context=dict(payload.get("initial_context") or {}),
+        step_callback=_write_progress,
     )
 
     stop_event.set()
     if hb_thread:
         hb_thread.join(timeout=2)
+    if result.status == "finished":
+        try:
+            Path(progress_path).unlink(missing_ok=True)
+        except OSError:
+            pass
 
     result_dict = result.to_dict()
     result_dict["heartbeat_path"] = heartbeat_path

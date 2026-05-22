@@ -207,6 +207,7 @@ class RankSupervisorConfig:
     enable_mission_planning: bool = False
     allow_auto_subissues: bool = False
     enable_semantic_gate: bool = True
+    allow_roadmap_autoselect: bool = False
     api_helper_mode: str = ""
     # Depth counter incremented each time a child run is spawned via auto-chain.
     # Guards against infinite cascade: parent→child→grandchild→... stops at depth 2.
@@ -244,6 +245,7 @@ class RankSupervisorConfig:
             enable_mission_planning=bool(data.get("enable_mission_planning", False)),
             allow_auto_subissues=bool(data.get("allow_auto_subissues", False)),
             enable_semantic_gate=bool(data.get("enable_semantic_gate", True)),
+            allow_roadmap_autoselect=bool(data.get("allow_roadmap_autoselect", False)),
             api_helper_mode=str(data.get("api_helper_mode", "")),
             autochain_depth=max(0, int(data.get("autochain_depth", 0) or data.get("_autochain_depth", 0))),
         )
@@ -2974,6 +2976,37 @@ class SelfRepairSupervisor:
             )
             restart_command = ""
 
+        def _post_run_roadmap_autoselect() -> None:
+            if not config.allow_roadmap_autoselect:
+                return
+            _next = self._select_next_roadmap_issue(config)
+            if not _next:
+                return
+            run.add(
+                "roadmap_next_target",
+                "selected",
+                f"Next roadmap target: #{_next['number']} — {_next.get('title', '')}",
+                issue_number=_next["number"],
+                issue_title=_next.get("title", ""),
+            )
+            try:
+                _hint_path = Path(self.project_root) / ".igris" / "next_roadmap_target.json"
+                _hint_path.parent.mkdir(parents=True, exist_ok=True)
+                _hint_path.write_text(
+                    json.dumps(
+                        {
+                            "issue_number": _next["number"],
+                            "issue_title": _next.get("title", ""),
+                            "selected_at": time.time(),
+                            "selected_by_run": run.run_id,
+                        },
+                        indent=2,
+                    ),
+                    encoding="utf-8",
+                )
+            except Exception as _e:
+                run.add("roadmap_next_target", "write_failed", str(_e))
+
         status = self.backend.git_status()
         run.add("git_status", "success" if status.success else "failure", _command_detail(status))
         cancelled = self._cancel_if_requested(run)
@@ -3562,7 +3595,7 @@ class SelfRepairSupervisor:
 
                 if rank_passed:
                     self._persist_assignment_outcome(run, self.project_root, assignment_decision)
-                    return self._complete_rank(
+                    _done = self._complete_rank(
                         run,
                         config,
                         branch,
@@ -3571,6 +3604,8 @@ class SelfRepairSupervisor:
                         mission_plan=mission_plan,
                         stage_statuses=stage_statuses,
                     )
+                    _post_run_roadmap_autoselect()
+                    return _done
 
             run.failure_class = failure
             run.add("failure", "classified", failure)
@@ -3645,7 +3680,7 @@ class SelfRepairSupervisor:
                 cleanup_workspace=True,
             )
         self._persist_assignment_outcome(run, self.project_root, assignment_decision)
-        return self._blocked(
+        _done = self._blocked(
             run,
             run.failure_class or "max_rank_attempts",
             "Rank attempts exhausted",
@@ -3653,6 +3688,49 @@ class SelfRepairSupervisor:
             stage_statuses=stage_statuses,
             cleanup_workspace=True,
         )
+        _post_run_roadmap_autoselect()
+        return _done
+
+    def _select_next_roadmap_issue(
+        self, config: "RankSupervisorConfig"
+    ) -> Optional[Dict[str, Any]]:
+        """Query GitHub for next roadmap issue. Only for root runs (autochain_depth=0)."""
+        if config.autochain_depth != 0:
+            return None
+        try:
+            import subprocess as _sub
+            result = _sub.run(
+                ["gh", "issue", "list", "--label", "roadmap", "--state", "open",
+                 "--json", "number,title,labels", "--limit", "50"],
+                capture_output=True, text=True, cwd=self.project_root, timeout=30,
+            )
+            if result.returncode != 0:
+                return None
+            issues = json.loads(result.stdout or "[]")
+        except Exception:
+            return None
+
+        EPIC_SKIP = ("epic", "phase", "milestone", "overview", "arch", "design")
+
+        def _is_epic(issue: Dict[str, Any]) -> bool:
+            title = (issue.get("title") or "").lower()
+            labels = [l.get("name", "").lower() for l in (issue.get("labels") or [])]
+            return any(k in title for k in EPIC_SKIP) or "epic" in labels
+
+        def _priority(issue: Dict[str, Any]) -> tuple:
+            labels = [l.get("name", "").lower() for l in (issue.get("labels") or [])]
+            p = 99
+            if any(x in labels for x in ("p1", "priority: high", "priority:high")):
+                p = 1
+            elif any(x in labels for x in ("p2", "priority: medium", "priority:medium")):
+                p = 2
+            return (p, issue.get("number", 9999))
+
+        candidates = [i for i in issues if not _is_epic(i)]
+        if not candidates:
+            return None
+        candidates.sort(key=_priority)
+        return candidates[0]
 
     def _rank_passed(
         self,
