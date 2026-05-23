@@ -5233,6 +5233,11 @@ class SelfRepairSupervisor:
         "DECOMPOSE — no code, output JSON only.\n"
         "Mission: '{goal}'\n"
         "Signals: {signals}\n\n"
+        "Rules:\n"
+        "- Each sub-mission touches at most 1-2 files and is implementable in <40 reasoning steps.\n"
+        "- Prefer 4-8 atomic sub-missions over 2-3 large ones.\n"
+        "- First sub-mission must be self-contained (no deps on later ones).\n"
+        "- Include concrete file paths and function names in each goal.\n\n"
         "Output ONLY:\n"
         '{{"why_too_large":"<reason>","sub_missions":[{{"title":"<t>","goal":"<g>","risk_level":"low"}}],"first_sub_mission":"<t>","human_approval_required":false}}'
     )
@@ -5352,6 +5357,13 @@ class SelfRepairSupervisor:
             "goal": _safe_redact(config.goal),
             "signals": signals,
             "run_id": run.run_id,
+            "decomposition_guidance": (
+                "Prefer 4-8 atomic sub-missions over 2-3 large ones. "
+                "Each sub-mission should touch at most 1-2 files and be implementable "
+                "in fewer than 40 reasoning steps. Include concrete file paths and "
+                "function names in each goal. The first sub-mission must be "
+                "self-contained with no dependencies on later ones."
+            ),
         }
         run.add(
             "decomposition_api_request",
