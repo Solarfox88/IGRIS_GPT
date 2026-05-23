@@ -189,6 +189,16 @@ def _classify_goal(request: AssignmentRequest) -> Tuple[str, str, List[str]]:
     labels = [la.lower() for la in request.issue_labels]
     reasons: List[str] = []
 
+    # Escalation override: accumulated no_diff_repair / combined signals → hard_debugging.
+    # Must run before keyword classification so "fix …" text doesn't fall to documentation.
+    _ndr = signals.get("no_diff_repair", 0)
+    _rto = signals.get("reasoning_timeout", 0)
+    if _ndr >= 3 or (_ndr + _rto) >= 4 or (_ndr >= 2 and request.prior_attempts >= 2):
+        reasons.append(
+            f"escalation: no_diff_repair={_ndr} reasoning_timeout={_rto} prior={request.prior_attempts}"
+        )
+        return "backend_coder", "hard_debugging", reasons
+
     # Failure-class overrides take highest priority
     if failure_class in ("semantic_incomplete", "stub_detected") or signals.get("stub_detected", 0) >= 1:
         reasons.append(f"failure_class={failure_class or 'stub_detected signal'}")
@@ -344,15 +354,27 @@ def _build_candidates(agent_role: str, task_type: str, request: AssignmentReques
     has_stub = signals.get("stub_detected", 0) >= 1 or failure_class in ("semantic_incomplete", "stub_detected")
     has_repeated_no_diff = signals.get("no_diff", 0) >= 2 or failure_class in ("no_diff", "no_diff_repair")
 
+    # Accumulated escalation signals — gpu_reasoning fires BEFORE decomposition
+    no_diff_repair_count = signals.get("no_diff_repair", 0)
+    reasoning_timeout_count = signals.get("reasoning_timeout", 0)
+    needs_gpu_reasoning = (
+        no_diff_repair_count >= 3
+        or (no_diff_repair_count + reasoning_timeout_count) >= 4
+        or (no_diff_repair_count >= 2 and prior >= 2)
+        or task_type in ("hard_debugging", "architecture_review")
+    )
+    # After gpu_reasoning has been tried once, fall back to decomposition
+    gpu_already_tried = needs_gpu_reasoning and prior >= 1
+
     force_decompose = (
         task_type in ("planning", "memory_system")
-        or (has_repeated_no_diff and len(request.goal_text) > 300)
-        or (has_max_steps_ceiling and len(request.goal_text) > 500)
+        or gpu_already_tried
+        or (has_max_steps_ceiling and len(request.goal_text) > 500 and not needs_gpu_reasoning)
     )
     force_strong = (
         has_max_steps_ceiling
         or (is_repair and prior >= 1)
-        or task_type in ("security_review", "devops_runtime")
+        or task_type in ("security_review", "devops_runtime", "hard_debugging")
         or request.risk_level in ("high", "very_high")
     )
     needs_helper = (
@@ -415,6 +437,21 @@ def _build_candidates(agent_role: str, task_type: str, request: AssignmentReques
             budget_tier="medium",
         ))
 
+    # GPU reasoning — lowest expected cost when Vast.ai instance is available.
+    # Only offered on the FIRST assignment attempt; after failure decomposition takes over.
+    if needs_gpu_reasoning and not gpu_already_tried:
+        candidates.append(_Candidate(
+            profile="gpu_reasoning",
+            strategy="gpu_reasoning_direct",
+            preferred_model="deepseek-r1:32b",
+            fallback_model_path=["deepseek-v4-pro", "gpt-4o"],
+            codex_helper=False,
+            decompose=False,
+            bootstrap_success_prob=0.75,
+            bootstrap_cost_per_attempt=0.02,
+            budget_tier="medium",
+        ))
+
     if force_decompose:
         candidates.append(_Candidate(
             profile="cheap_cloud_reasoning",
@@ -429,7 +466,7 @@ def _build_candidates(agent_role: str, task_type: str, request: AssignmentReques
         ))
 
     # Medium cloud — for generic code_reasoning tasks before escalating to strong
-    if task_type == "code_reasoning" and not force_strong and not force_decompose:
+    if task_type == "code_reasoning" and not force_strong and not force_decompose and not needs_gpu_reasoning:
         candidates.append(_Candidate(
             profile="cheap_cloud_reasoning",
             strategy="cloud_reasoning_direct",
@@ -465,6 +502,7 @@ def _profile_to_provider(profile: str) -> str:
         "mini_execution": "openai",
         "strong_execution": "deepseek_strong",
         "strong_cloud_reasoning": "deepseek_strong",
+        "gpu_reasoning": "vastai_ollama",
         "endpoint_implementation": "deepseek",
         "local_light": "ollama",
         "local_coder": "ollama",
