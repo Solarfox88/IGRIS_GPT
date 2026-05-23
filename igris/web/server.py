@@ -870,8 +870,7 @@ def create_app() -> FastAPI:
 
     # ---- Vast.ai (gated) ----
 
-    from igris.layers.advisory.vastai_manager import VastAIManager
-    vastai_mgr = VastAIManager()
+    from igris.layers.advisory.vastai_manager import _SHARED_MANAGER as vastai_mgr
 
     @app.get("/api/vastai/config")
     async def api_vastai_config() -> Dict[str, object]:

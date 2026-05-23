@@ -181,6 +181,8 @@ MODEL_PROFILES = (
     # Cost-policy profiles: mini for helper-guided cheap execution, strong for gpt-4o escalation
     "mini_execution",
     "strong_execution",
+    # GPU profile: Vast.ai instance running deepseek-r1:32b locally, falls back to cloud
+    "gpu_reasoning",
 )
 
 # Task type → recommended profile mapping
@@ -197,9 +199,10 @@ TASK_PROFILE_MAP: Dict[str, str] = {
     "endpoint_implementation": "endpoint_implementation",
     "stub_repair": "endpoint_implementation",
     "risk_review": "risk_reviewer",
-    "architecture_review": "strong_cloud_reasoning",
-    "security_review": "strong_cloud_reasoning",
-    "hard_debugging": "strong_cloud_reasoning",
+    # GPU-first: hard tasks that benefit from a large local reasoning model
+    "architecture_review": "gpu_reasoning",
+    "security_review": "gpu_reasoning",
+    "hard_debugging": "gpu_reasoning",
     "embedding": "embedding_memory",
     "safety_check": "deterministic",
     "policy_check": "deterministic",
@@ -336,6 +339,19 @@ def _build_default_providers() -> Dict[str, ProviderConfig]:
         output_cost_per_1m_tokens=15.0,   # claude-sonnet-4: $15.00/1M output tokens
         max_context=200000,
         supports_json_mode=True,
+    )
+
+    # Vast.ai GPU instance running Ollama — base_url is dynamic (set at call time)
+    # model = deepseek-r1:32b pulled on instance startup via onstart script
+    providers["vastai_ollama"] = ProviderConfig(
+        name="vastai_ollama",
+        base_url="",          # filled dynamically from VastAIManager._SHARED_MANAGER
+        model=str(CONFIG.vastai.model),
+        input_cost_per_1m_tokens=0.0,   # cost is hourly GPU rental, tracked separately
+        output_cost_per_1m_tokens=0.0,
+        max_context=32768,
+        is_local=False,       # remote, but Ollama-protocol
+        available=True,
     )
 
     return providers
@@ -532,12 +548,20 @@ class ModelOrchestrator:
             # Cost-policy profiles for helper-guided execution strategy
             "mini_execution": ["deepseek", "openai"],
             "strong_execution": ["deepseek_strong", "openai_strong", "openai"],
+            # GPU-first: Vast.ai instance with deepseek-r1:32b, then cloud fallback
+            # If instance is not ready yet, auto-provision starts in background
+            # and this call falls through to deepseek_strong transparently.
+            "gpu_reasoning": ["vastai_ollama", "deepseek_strong", "anthropic", "openai_strong"],
         }
         return chains.get(profile, ["ollama", "openai"])
 
     def _check_provider_available(self, provider: ProviderConfig) -> bool:
         """Check if a provider is configured and reachable."""
         import os
+
+        # Vast.ai GPU instance — special path
+        if provider.name == "vastai_ollama":
+            return self._check_vastai_available(provider)
 
         if provider.is_local:
             return True  # Will fail at call time if not running
@@ -548,6 +572,36 @@ class ModelOrchestrator:
                 return False
 
         return True
+
+    def _check_vastai_available(self, provider: ProviderConfig) -> bool:
+        """Check if Vast.ai GPU instance is ready; trigger auto-provision if configured.
+
+        Returns True (and updates provider.base_url) if Ollama is reachable.
+        Returns False if not ready — caller falls through to next provider in chain.
+        If auto_provision=True and no instance running, kicks off background provisioning
+        so the next hard task will find the instance ready.
+        """
+        try:
+            from igris.layers.advisory.vastai_manager import _SHARED_MANAGER as _mgr
+        except ImportError:
+            return False
+
+        endpoint = _mgr.get_ollama_endpoint()
+        if endpoint:
+            # Instance ready — update base_url so _call_ollama uses the right host
+            provider.base_url = endpoint
+            provider.model = _mgr._instance.model if _mgr._instance else provider.model
+            return True
+
+        # Not ready — try to start auto-provision (no-op if already provisioning)
+        started = _mgr.auto_provision_for_orchestrator()
+        if started:
+            import logging as _logging
+            _logging.getLogger(__name__).info(
+                "vastai: auto-provision triggered for gpu_reasoning task; "
+                "falling back to cloud provider for this call"
+            )
+        return False  # fall through to next provider in chain
 
     def _call_provider(
         self,
@@ -560,7 +614,8 @@ class ModelOrchestrator:
         timeout: float,
     ) -> OrchestratorResult:
         """Call a specific provider."""
-        if provider.is_local and provider.name == "ollama":
+        # Ollama protocol: local instance OR remote Vast.ai Ollama instance
+        if provider.name in ("ollama", "vastai_ollama"):
             return self._call_ollama(provider, messages, system_prompt, timeout)
         else:
             return self._call_openai_compatible(

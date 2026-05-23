@@ -16,11 +16,15 @@ Config defaults:
 from __future__ import annotations
 
 import json
+import logging
+import threading
 import time
 import urllib.error
 import urllib.request
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
+
+_log = logging.getLogger(__name__)
 
 from igris.core.safety import redact_secrets
 from igris.models.config import CONFIG
@@ -112,6 +116,10 @@ class VastInstance:
     cost_per_hour: float = 0.0
     created_at: str = ""
     region: str = ""
+    # Orchestrator fields — set once instance is running and reachable
+    instance_host: str = ""   # public IP / hostname
+    ollama_port: int = 11434  # mapped port for Ollama
+    ready: bool = False       # True when Ollama is confirmed reachable
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -122,6 +130,11 @@ class VastInstance:
             "cost_per_hour": self.cost_per_hour,
             "created_at": self.created_at,
             "region": self.region,
+            "ready": self.ready,
+            "ollama_endpoint": (
+                f"http://{self.instance_host}:{self.ollama_port}"
+                if self.ready else ""
+            ),
         }
 
 
@@ -432,6 +445,196 @@ class VastAIManager:
         })
         return {"success": True, "destroyed_instance": old_id}
 
+    # -- Orchestrator integration --
+
+    def get_ollama_endpoint(self) -> Optional[str]:
+        """Return Ollama base_url if a running instance is ready, else None."""
+        if (
+            self._instance
+            and self._instance.ready
+            and self._instance.instance_host
+            and self._instance.status == "running"
+        ):
+            return f"http://{self._instance.instance_host}:{self._instance.ollama_port}"
+        return None
+
+    def auto_provision_for_orchestrator(self, model: Optional[str] = None) -> bool:
+        """Provision a GPU instance autonomously for the orchestrator.
+
+        Gate: VASTAI_AUTO_PROVISION=true (replaces user approval token).
+        All other gates still apply: API key, mode, budget, anti-duplicate.
+        Returns True if provisioning was started or instance is already active.
+        """
+        cfg = CONFIG.vastai
+
+        if not cfg.auto_provision:
+            return False
+        if not cfg.api_key:
+            _log.debug("vastai auto_provision skipped: no API key")
+            return False
+        if cfg.mode == "disabled":
+            _log.debug("vastai auto_provision skipped: mode=disabled")
+            return False
+
+        # Anti-duplicate: already provisioning or running
+        if self._instance and self._instance.status in ("provisioning", "running"):
+            return True
+
+        model = model or cfg.model
+        estimate = self.estimate_cost(model)
+        if not estimate.get("within_budget", False):
+            _log.debug("vastai auto_provision skipped: over budget for %s", model)
+            return False
+
+        try:
+            result = self.search_offers(model=model, max_cost=cfg.max_hourly_cost)
+            if result.error or not result.offers:
+                _log.warning("vastai auto_provision: no offers found — %s", result.error)
+                return False
+            offer_id = result.offers[0]["id"]
+
+            resp = _vastai_request(
+                "PUT",
+                f"/asks/{offer_id}/",
+                cfg.api_key,
+                payload={
+                    "client_id": "me",
+                    # Ollama official image; starts server on port 11434
+                    "image": "ollama/ollama:latest",
+                    "runtype": "ssh",
+                    "disk": 30,
+                    "label": f"igris-orchestrator-{model.replace(':', '-')}",
+                    # Pull model on startup so it's ready for first inference
+                    "onstart": (
+                        "ollama serve &>/var/log/ollama.log & "
+                        "sleep 15 && "
+                        f"ollama pull {model} &>/var/log/ollama_pull.log"
+                    ),
+                    "ports": "11434",  # expose Ollama port
+                },
+            )
+            instance_id = str(resp.get("id") or resp.get("new_contract", ""))
+            if not instance_id:
+                _log.warning("vastai auto_provision: no instance_id in response %s", resp)
+                return False
+
+            self._instance = VastInstance(
+                instance_id=instance_id,
+                status="provisioning",
+                model=model,
+                gpu=result.offers[0].get("gpu", "unknown"),
+                cost_per_hour=result.offers[0].get("cost_per_hour", 0.0),
+                created_at=time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+                region=result.offers[0].get("region", "vast.ai"),
+            )
+            self._provision_history.append({
+                "action": "auto_provision",
+                "instance_id": instance_id,
+                "offer_id": offer_id,
+                "model": model,
+                "timestamp": self._instance.created_at,
+            })
+            _log.info(
+                "vastai auto_provision started: instance_id=%s offer=%s model=%s",
+                instance_id, offer_id, model,
+            )
+
+            # Background thread: polls until Ollama is reachable, then marks ready
+            t = threading.Thread(
+                target=self._poll_until_ready,
+                args=(instance_id, cfg.api_key),
+                daemon=True,
+                name=f"vastai-poll-{instance_id}",
+            )
+            t.start()
+            return True
+
+        except Exception as exc:
+            _log.warning("vastai auto_provision failed: %s", exc)
+            return False
+
+    def _poll_until_ready(
+        self,
+        instance_id: str,
+        api_key: str,
+        max_wait: int = 600,
+        poll_interval: int = 20,
+    ) -> None:
+        """Background thread: poll Vast.ai until instance is running and Ollama responds."""
+        deadline = time.time() + max_wait
+        _log.info("vastai poll started: instance_id=%s max_wait=%ds", instance_id, max_wait)
+
+        while time.time() < deadline:
+            time.sleep(poll_interval)
+            try:
+                data = _vastai_request("GET", f"/instances/{instance_id}/", api_key)
+                # Vast.ai returns {"instances": [...]} or the instance directly
+                instances = data.get("instances", [data])
+                inst = instances[0] if isinstance(instances, list) and instances else data
+
+                actual_status = inst.get("actual_status", "")
+                _log.debug("vastai poll: instance_id=%s status=%s", instance_id, actual_status)
+
+                if actual_status == "running":
+                    ssh_host = inst.get("ssh_host", "")
+                    ports = inst.get("ports", {})
+
+                    # Get mapped external port for Ollama (11434/tcp)
+                    ollama_port = 11434
+                    for port_key in ("11434/tcp", "11434"):
+                        if port_key in ports and ports[port_key]:
+                            try:
+                                ollama_port = int(ports[port_key][0].get("HostPort", 11434))
+                            except (KeyError, ValueError, TypeError):
+                                pass
+                            break
+
+                    if not ssh_host:
+                        _log.debug("vastai poll: running but no ssh_host yet")
+                        continue
+
+                    # Probe Ollama /api/tags to confirm it's actually up
+                    if self._probe_ollama(ssh_host, ollama_port):
+                        if self._instance and self._instance.instance_id == instance_id:
+                            self._instance.instance_host = ssh_host
+                            self._instance.ollama_port = ollama_port
+                            self._instance.ready = True
+                            self._instance.status = "running"
+                        _log.info(
+                            "vastai ready: instance_id=%s endpoint=http://%s:%d",
+                            instance_id, ssh_host, ollama_port,
+                        )
+                        return
+                    else:
+                        _log.debug(
+                            "vastai poll: instance running but Ollama not yet up at %s:%d",
+                            ssh_host, ollama_port,
+                        )
+
+                elif actual_status in ("offline", "exited", "error"):
+                    _log.warning(
+                        "vastai poll: instance_id=%s entered terminal state=%s",
+                        instance_id, actual_status,
+                    )
+                    if self._instance and self._instance.instance_id == instance_id:
+                        self._instance.status = "destroyed"
+                    return
+
+            except Exception as exc:
+                _log.debug("vastai poll error: %s", exc)
+
+        _log.warning("vastai poll timed out after %ds: instance_id=%s", max_wait, instance_id)
+
+    @staticmethod
+    def _probe_ollama(host: str, port: int, timeout: int = 5) -> bool:
+        """Return True if Ollama /api/tags responds at host:port."""
+        try:
+            url = f"http://{host}:{port}/api/tags"
+            with urllib.request.urlopen(url, timeout=timeout) as resp:
+                return resp.status == 200
+        except Exception:
+            return False
+
     # -- Set mode (gated) --
 
     def set_mode(
@@ -464,3 +667,12 @@ class VastAIManager:
             "new_mode": mode,
             "note": "Mode changed in-memory only. Set VASTAI_MODE env var for persistence.",
         }
+
+
+# ---------------------------------------------------------------------------
+# Module-level shared instance
+# ---------------------------------------------------------------------------
+
+#: Singleton used by ModelOrchestrator and the web API so they share state.
+#: Do NOT import VastAIManager and create a new instance — import this instead.
+_SHARED_MANAGER: VastAIManager = VastAIManager()
