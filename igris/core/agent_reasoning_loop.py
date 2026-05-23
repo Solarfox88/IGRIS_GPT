@@ -215,6 +215,8 @@ class AgentReasoningLoop:
         task_type: str = "code_reasoning",
         preferred_profile: Optional[str] = None,
         tool_result_budget: int = DEFAULT_BUDGET_BYTES,
+        issue_number: int = 0,
+        fleet_instance_id: str = "",
     ):
         import os
         self.project_root = project_root or os.environ.get("PROJECT_ROOT", ".")
@@ -225,6 +227,8 @@ class AgentReasoningLoop:
         self.task_type = task_type
         self.preferred_profile = preferred_profile
         self.tool_result_budget = tool_result_budget
+        self.issue_number = issue_number
+        self.fleet_instance_id = fleet_instance_id
 
         # State
         self._steps: List[LoopStep] = []
@@ -234,6 +238,7 @@ class AgentReasoningLoop:
         self._world_state: Dict[str, Any] = {}
         self._consecutive_errors = 0
         self._steps_without_write: int = 0  # no_diff_repair guard
+        self._fleet_tokens_total: int = 0
         self._stop_reason = ""
         self._coord: object = None  # lazy AgentCoordinator, reused across steps
         # Orchestrator observability — updated on first successful LLM call
@@ -514,6 +519,23 @@ class AgentReasoningLoop:
             matched_files = [f for f in matched_files if f]
             self._world_state["search_matched_files"] = matched_files
 
+    def _emit_fleet_heartbeat(self, action_type: str) -> None:
+        """Emit heartbeat to VastAIFleet for phase detection. Never raises."""
+        if not self.fleet_instance_id and not self.issue_number:
+            return
+        try:
+            from igris.layers.advisory.vastai_fleet import _SHARED_FLEET, AgentHeartbeat
+            self._fleet_tokens_total += getattr(self, '_last_step_tokens', 0)
+            _SHARED_FLEET.record_heartbeat(AgentHeartbeat(
+                instance_id=self.fleet_instance_id,
+                issue_number=self.issue_number,
+                action_type=action_type,
+                tokens_generated=self._fleet_tokens_total,
+                tokens_per_sec=0.0,
+            ))
+        except Exception:
+            pass  # fleet errors must never break reasoning
+
     def _execute_step(
         self,
         step_num: int,
@@ -627,6 +649,9 @@ class AgentReasoningLoop:
                         )
                 step.result_data = result_data
                 self._store_tool_result(action.action_type, result_data)
+
+            # 4c-fleet. Emit fleet heartbeat for phase detection and ETC estimation
+            self._emit_fleet_heartbeat(action.action_type)
 
             # 4c. Record for anti-repeat tracking
             if not (action.action_type == "ask_user" and self._suppress_human_gate()):

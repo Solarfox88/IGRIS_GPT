@@ -574,34 +574,33 @@ class ModelOrchestrator:
         return True
 
     def _check_vastai_available(self, provider: ProviderConfig) -> bool:
-        """Check if Vast.ai GPU instance is ready; trigger auto-provision if configured.
+        """Check if Vast.ai GPU instance is ready via fleet; trigger auto-provision if needed.
 
         Returns True (and updates provider.base_url) if Ollama is reachable.
         Returns False if not ready — caller falls through to next provider in chain.
-        If auto_provision=True and no instance running, kicks off background provisioning
-        so the next hard task will find the instance ready.
         """
         try:
-            from igris.layers.advisory.vastai_manager import _SHARED_MANAGER as _mgr
+            from igris.layers.advisory.vastai_fleet import _SHARED_FLEET
         except ImportError:
             return False
 
-        endpoint = _mgr.get_ollama_endpoint()
+        endpoint = _SHARED_FLEET.get_ready_endpoint()
         if endpoint:
-            # Instance ready — update base_url so _call_ollama uses the right host
             provider.base_url = endpoint
-            provider.model = _mgr._instance.model if _mgr._instance else provider.model
             return True
 
-        # Not ready — try to start auto-provision (no-op if already provisioning)
-        started = _mgr.auto_provision_for_orchestrator()
-        if started:
-            import logging as _logging
-            _logging.getLogger(__name__).info(
-                "vastai: auto-provision triggered for gpu_reasoning task; "
-                "falling back to cloud provider for this call"
-            )
-        return False  # fall through to next provider in chain
+        # No instance ready — trigger provisioning via manager, fleet will pick it up
+        try:
+            from igris.layers.advisory.vastai_manager import _SHARED_MANAGER as _mgr
+            started = _mgr.auto_provision_for_orchestrator()
+            if started:
+                import logging as _logging
+                _logging.getLogger(__name__).info(
+                    "vastai: auto-provision triggered; fleet will register instance when ready"
+                )
+        except ImportError:
+            pass
+        return False
 
     def _call_provider(
         self,

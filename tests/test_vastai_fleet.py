@@ -57,7 +57,12 @@ def make_instance(
 
 
 def make_state(instances=None, queue_depth=0):
-    return FleetState(instances=instances or [], queue_depth=queue_depth)
+    from collections import deque
+    from igris.layers.advisory.vastai_fleet import QueuedTask
+    state = FleetState(instances=instances or [])
+    for i in range(queue_depth):
+        state.enqueue(QueuedTask(issue_number=1000 + i))
+    return state
 
 
 def make_policy(**kwargs):
@@ -455,13 +460,18 @@ class TestVastAIFleet:
         assert inst.assigned_issue is None
         assert inst.phase == AgentPhase.IDLE
 
-    def test_release_decrements_queue(self):
+    def test_release_does_not_decrement_queue(self):
+        """Queue is managed independently; release no longer decrements it."""
+        from igris.layers.advisory.vastai_fleet import QueuedTask
         fleet = self._fleet()
         inst = make_instance("a", status=InstanceStatus.BUSY, assigned_issue=1)
         fleet._state.instances.append(inst)
-        fleet._state.queue_depth = 2
+        fleet._state.enqueue(QueuedTask(issue_number=10))
+        fleet._state.enqueue(QueuedTask(issue_number=11))
+        assert fleet._state.queue_depth == 2
         fleet.release("a")
-        assert fleet._state.queue_depth == 1
+        # Queue unchanged — release no longer pops from queue
+        assert fleet._state.queue_depth == 2
 
     def test_release_unknown_id_no_error(self):
         self._fleet().release("nonexistent")

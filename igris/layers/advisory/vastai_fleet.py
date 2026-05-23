@@ -23,6 +23,7 @@ import json
 import logging
 import threading
 import time
+from collections import deque
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from enum import Enum
@@ -76,6 +77,14 @@ class FleetPolicy:
 
 
 @dataclass
+class QueuedTask:
+    issue_number: int
+    task_type: str = "code_reasoning"
+    queued_at: datetime = field(default_factory=datetime.utcnow)
+    callback_id: str = ""  # optional correlation id
+
+
+@dataclass
 class FleetInstance:
     instance_id: str
     host: str
@@ -92,6 +101,8 @@ class FleetInstance:
     tokens_per_sec: float = 0.0
     cost_so_far_usd: float = 0.0
     _stuck_restart_attempted: bool = False
+    secondary_issue: Optional[int] = None
+    secondary_task_type: str = ""
 
     def elapsed_task_minutes(self) -> float:
         if self.task_started_at is None:
@@ -143,8 +154,18 @@ class FleetInstance:
 @dataclass
 class FleetState:
     instances: List[FleetInstance] = field(default_factory=list)
-    queue_depth: int = 0
+    task_queue: deque = field(default_factory=deque)
     _lock: threading.Lock = field(default_factory=threading.Lock, repr=False, compare=False)
+
+    @property
+    def queue_depth(self) -> int:
+        return len(self.task_queue)
+
+    def enqueue(self, task: QueuedTask) -> None:
+        self.task_queue.append(task)
+
+    def dequeue(self) -> Optional[QueuedTask]:
+        return self.task_queue.popleft() if self.task_queue else None
 
     @property
     def busy(self) -> List[FleetInstance]:
@@ -251,6 +272,39 @@ class FleetScheduler:
 
 
 # ---------------------------------------------------------------------------
+# SecondarySlotScheduler
+# ---------------------------------------------------------------------------
+
+class SecondarySlotScheduler:
+    """Routes lightweight tasks to GPU idle windows during TEST_EXECUTION phase.
+
+    When an instance enters TEST_EXECUTION (pytest running, GPU=0%),
+    its GPU slot is free for up to ~90 seconds. A secondary task can be
+    started during this window and preempted when tests finish.
+    """
+
+    def available_slots(self, state: FleetState) -> List[FleetInstance]:
+        """Instances in TEST_EXECUTION with no secondary task assigned."""
+        return [
+            inst for inst in state.busy
+            if inst.phase == AgentPhase.TEST_EXECUTION
+            and inst.secondary_issue is None
+        ]
+
+    def assign_secondary(self, inst: FleetInstance, task: QueuedTask) -> None:
+        """Assign a secondary task to a GPU idle window."""
+        inst.secondary_issue = task.issue_number
+        inst.secondary_task_type = task.task_type
+
+    def clear_secondary(self, inst: FleetInstance) -> Optional[int]:
+        """Clear secondary assignment (primary resumed). Returns the cleared issue number."""
+        issue = inst.secondary_issue
+        inst.secondary_issue = None
+        inst.secondary_task_type = ""
+        return issue
+
+
+# ---------------------------------------------------------------------------
 # FleetMonitor
 # ---------------------------------------------------------------------------
 
@@ -264,6 +318,7 @@ class FleetMonitor:
         self._provision = provision_fn
         self._terminate = terminate_fn
         self._restart_ollama = restart_ollama_fn
+        self._secondary_scheduler = SecondarySlotScheduler()
         self._thread: Optional[threading.Thread] = None
         self._stop_event = threading.Event()
 
@@ -293,8 +348,10 @@ class FleetMonitor:
             self._detect_stuck()
             self._recover_stuck()
             self._evict_idle()
+            self._clear_finished_secondaries()
             decision = self._scheduler.scale_decision(self._state, self._policy)
         self._apply_decision(decision)
+        self._assign_secondary_slots()
         self._emit_status_log()
 
     def _update_costs(self) -> None:
@@ -325,11 +382,11 @@ class FleetMonitor:
                     _log.warning("FleetMonitor: restart failed for %s - terminating", inst.instance_id)
                     inst.status = InstanceStatus.TERMINATED
                     if inst.assigned_issue is not None:
-                        self._state.queue_depth += 1
+                        self._state.enqueue(QueuedTask(issue_number=inst.assigned_issue, task_type=inst.task_type))
             else:
                 inst.status = InstanceStatus.TERMINATED
                 if inst.assigned_issue is not None:
-                    self._state.queue_depth += 1
+                    self._state.enqueue(QueuedTask(issue_number=inst.assigned_issue, task_type=inst.task_type))
 
     def _evict_idle(self) -> None:
         for inst in self._state.idle:
@@ -339,6 +396,26 @@ class FleetMonitor:
                 inst.status = InstanceStatus.TERMINATED
                 self._terminate(inst.instance_id)
 
+    def _clear_finished_secondaries(self) -> None:
+        for inst in self._state.busy:
+            if inst.secondary_issue is not None and inst.phase != AgentPhase.TEST_EXECUTION:
+                cleared = self._secondary_scheduler.clear_secondary(inst)
+                if cleared:
+                    _log.info("FleetMonitor: secondary task #%d preempted (primary resumed)", cleared)
+                    # Re-queue the secondary task so it gets assigned elsewhere
+                    self._state.enqueue(QueuedTask(issue_number=cleared, task_type=inst.secondary_task_type))
+
+    def _assign_secondary_slots(self) -> None:
+        with self._state._lock:
+            slots = self._secondary_scheduler.available_slots(self._state)
+            for slot in slots:
+                task = self._state.dequeue()
+                if task is None:
+                    break
+                self._secondary_scheduler.assign_secondary(slot, task)
+                _log.info("FleetMonitor: secondary task #%d assigned to %s (TEST_EXECUTION window)",
+                          task.issue_number, slot.instance_id)
+
     def _apply_decision(self, decision) -> None:
         if isinstance(decision, ScaleOpenNew):
             _log.info("FleetMonitor: opening %d new instance(s) - %s", decision.count, decision.reason)
@@ -346,8 +423,16 @@ class FleetMonitor:
             with self._state._lock:
                 self._state.instances.extend(new_instances)
         elif isinstance(decision, ScaleAssignWarm):
-            _log.info("FleetMonitor: assign task to warm instance %s - %s",
-                      decision.instance.instance_id, decision.reason)
+            _log.info("FleetMonitor: assign queued task to warm instance %s", decision.instance.instance_id)
+            with self._state._lock:
+                task = self._state.dequeue()
+                if task:
+                    inst = decision.instance
+                    inst.status = InstanceStatus.BUSY
+                    inst.assigned_issue = task.issue_number
+                    inst.task_type = task.task_type
+                    inst.task_started_at = datetime.utcnow()
+                    inst.last_heartbeat = datetime.utcnow()
 
     def _emit_status_log(self) -> None:
         state = self._state
@@ -453,7 +538,7 @@ class VastAIFleet:
                     _log.info("VastAIFleet.acquire: ready instance %s -> issue #%d",
                               inst.instance_id, issue_number)
                     return inst
-            self._state.queue_depth += 1
+            self._state.enqueue(QueuedTask(issue_number=issue_number, task_type=task_type))
             _log.info("VastAIFleet.acquire: no instance available, queue=%d", self._state.queue_depth)
             return None
 
@@ -469,8 +554,6 @@ class VastAIFleet:
             inst.phase = AgentPhase.IDLE
             inst.status = InstanceStatus.IDLE
             inst.last_heartbeat = datetime.utcnow()
-            if self._state.queue_depth > 0:
-                self._state.queue_depth -= 1
 
     def record_heartbeat(self, hb: AgentHeartbeat) -> None:
         self._heartbeat_receiver.record(hb)
@@ -494,6 +577,7 @@ class VastAIFleet:
                 "queue_depth": state.queue_depth,
                 "hourly_cost_usd": round(state.hourly_cost_usd(), 4),
                 "instances": [i.to_dict() for i in state.active],
+                "queue": [{"issue": t.issue_number, "task_type": t.task_type} for t in list(state.task_queue)],
             }
 
     def register_instance(self, inst: FleetInstance) -> None:

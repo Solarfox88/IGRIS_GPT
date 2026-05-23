@@ -934,6 +934,42 @@ def create_app() -> FastAPI:
             raise HTTPException(status_code=400, detail="Mode required")
         return vastai_mgr.set_mode(mode=mode, approval=approval)
 
+    # ---- Fleet API ----
+
+    from igris.layers.advisory.vastai_fleet import _SHARED_FLEET
+
+    @app.get("/api/fleet/status")
+    async def api_fleet_status() -> Dict[str, object]:
+        """Fleet-wide status: all instances, queue, costs."""
+        return _SHARED_FLEET.fleet_status()
+
+    @app.post("/api/fleet/provision")
+    async def api_fleet_provision(request: Request) -> Dict[str, object]:
+        """Manually trigger provisioning of N new fleet instances."""
+        body = await request.json()
+        approval = body.get("approval", "")
+        count = int(body.get("count", 1))
+        if approval != "I_APPROVE_VASTAI_COSTS":
+            raise HTTPException(status_code=403, detail="approval required: I_APPROVE_VASTAI_COSTS")
+        if count < 1 or count > 5:
+            raise HTTPException(status_code=400, detail="count must be 1-5")
+        new_instances = _SHARED_FLEET._provision_instances(count)
+        return {"provisioned": len(new_instances), "fleet": _SHARED_FLEET.fleet_status()}
+
+    @app.post("/api/fleet/release/{instance_id}")
+    async def api_fleet_release(instance_id: str, request: Request) -> Dict[str, object]:
+        """Manually release a fleet instance back to idle."""
+        body = await request.json()
+        outcome = body.get("outcome", "manual_release")
+        _SHARED_FLEET.release(instance_id, outcome=outcome)
+        return {"released": instance_id, "fleet": _SHARED_FLEET.fleet_status()}
+
+    @app.get("/api/fleet/queue")
+    async def api_fleet_queue() -> Dict[str, object]:
+        """Current task queue waiting for GPU instances."""
+        status = _SHARED_FLEET.fleet_status()
+        return {"queue_depth": status["queue_depth"], "queue": status.get("queue", [])}
+
     # ---- Routing / Cost ----
 
     @app.get("/api/routing/history")
