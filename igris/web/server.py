@@ -426,6 +426,14 @@ async def _watchdog_loop(project_root: str) -> None:
                             "allow_api_escalation": True,
                             "max_api_escalations_per_run": _max_escalations,
                             "max_api_budget_usd": _run_budget,
+                            # Allow more read-heavy steps before triggering no_diff_repair.
+                            # Complex multi-file tasks (feat issues) need time to navigate
+                            # to integration targets before the next write. Default 20 is
+                            # too tight when a task spans 3+ files with unfamiliar paths.
+                            "no_diff_steps_max": max(
+                                1,
+                                int(os.getenv("IGRIS_NO_DIFF_STEPS_MAX", "40") or "40"),
+                            ),
                         },
                         project_root=project_root,
                     )
