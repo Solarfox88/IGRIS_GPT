@@ -128,6 +128,18 @@ _BACKEND_KEYWORDS = frozenset([
     "implement get", "implement post", "implement put", "implement delete",
     "implement patch", "router", "fastapi", "flask",
 ])
+# Feature-implementation signals: goals that start with "feat(" or "Implement GitHub issue"
+# with a feat() prefix are new-module implementations, NOT test tasks.
+_FEAT_IMPL_PATTERNS = (
+    "implement github issue #",   # watchdog goal format: "Implement GitHub issue #N: feat(…)"
+    "feat(core)",
+    "feat(supervisor)",
+    "feat(memory)",
+    "feat(watchdog)",
+    "feat(context)",
+    "feat(web)",
+    "feat(layers)",
+)
 _MEMORY_KEYWORDS = frozenset([
     "memory", "synapse", "recall", "vector store", "embedding",
     "knowledge base", "long-term",
@@ -244,6 +256,14 @@ def _classify_goal(request: AssignmentRequest) -> Tuple[str, str, List[str]]:
     if _contains_any(goal, _BACKEND_KEYWORDS) or request.required_tests:
         reasons.append("backend/endpoint keywords or required_tests")
         return "backend_coder", "backend_endpoint", reasons
+
+    # feat(…) issues that come from the watchdog goal format ("Implement GitHub issue #N: feat(…)")
+    # are new-module implementations — even if they mention unit tests in their AC.
+    # Classify them as complex_implementation before the test_only check consumes them.
+    goal_lower = goal.lower()
+    if any(pat in goal_lower for pat in _FEAT_IMPL_PATTERNS):
+        reasons.append("feat(*) implementation goal — complex_implementation override")
+        return "backend_coder", "complex_implementation", reasons
 
     # Test-only (no backend change, no supervisor/fix work)
     if (_contains_test_signal(goal)
