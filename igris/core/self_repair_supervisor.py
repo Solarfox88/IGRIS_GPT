@@ -5655,6 +5655,23 @@ class SelfRepairSupervisor:
             generated_by=generated_by,
         )
 
+        # Build a set of existing open issue titles to deduplicate sub-missions.
+        # Fixes #613: IGRIS was creating identical sub-missions on every decomposition.
+        existing_open_titles: set = set()
+        try:
+            import subprocess as _subp
+            _existing = _subp.run(
+                ["gh", "issue", "list", "--state", "open", "--limit", "50",
+                 "--json", "number,title"],
+                capture_output=True, text=True, cwd=self.project_root, timeout=20,
+            )
+            if _existing.returncode == 0:
+                import json as _json
+                for _issue in _json.loads(_existing.stdout or "[]"):
+                    existing_open_titles.add((_issue.get("title") or "").lower().strip())
+        except Exception:
+            pass  # Dedup is best-effort; if it fails, allow creation to proceed
+
         for i, sub in enumerate(sub_missions):
             title = _safe_redact(str(sub.get("title", f"Sub-task {i+1}")))
             goal_text = _safe_redact(str(sub.get("goal", "")))
@@ -5663,6 +5680,35 @@ class SelfRepairSupervisor:
             tests = sub.get("tests") or []
             criteria = sub.get("acceptance_criteria") or []
             deps = sub.get("dependencies") or []
+
+            # Dedup: skip sub-mission if an open issue with same title already exists
+            if title.lower().strip() in existing_open_titles:
+                # Find existing URL to include in created_urls so autochain works
+                try:
+                    _found = _subp.run(
+                        ["gh", "issue", "list", "--state", "open", "--search", title,
+                         "--json", "number,title", "--limit", "5"],
+                        capture_output=True, text=True, cwd=self.project_root, timeout=20,
+                    )
+                    if _found.returncode == 0:
+                        for _fi in _json.loads(_found.stdout or "[]"):
+                            if (_fi.get("title") or "").lower().strip() == title.lower().strip():
+                                _repo_url = "https://github.com/Solarfox88/IGRIS_GPT"
+                                _existing_url = f"{_repo_url}/issues/{_fi['number']}"
+                                created_urls.append(_existing_url)
+                                run.add(
+                                    "subissue_dedup",
+                                    "skipped",
+                                    f"Sub-mission {i+1} already exists: {title}",
+                                    index=i + 1,
+                                    title=title,
+                                    url=_existing_url,
+                                    reason="dedup:title_match",
+                                )
+                                break
+                except Exception:
+                    pass
+                continue
 
             scopes_md = "\n".join(f"- `{s}`" for s in scopes) if scopes else "_not specified_"
             tests_md = "\n".join(f"- `{t}`" for t in tests) if tests else "_not specified_"
