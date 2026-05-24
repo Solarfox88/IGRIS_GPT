@@ -360,10 +360,14 @@ class VastAIManager:
                 # with "failed to inject CDI devices: unresolvable CDI devices" because
                 # their NVIDIA Container Device Interface spec has stale GPU device IDs.
                 # Hosts with driver >= 590 (cuda=13.1) have correct CDI or legacy runtime.
-                # Also filters storage-opt failures (GV100, cuda=12.8).
+                # Also filters storage-opt failures (GV100, cuda=12.8) and V100 zombie hosts.
                 cuda_ver = float(o.get("cuda_max_good") or 0)
                 if cuda_ver < 13.1:
                     continue
+                # Note: we do NOT filter on direct_port_start/direct_port_end here because
+                # those fields are None in /bundles/ search results for all hosts (they are
+                # only populated on running instances).  V100 zombie hosts (broken agent)
+                # are caught at polling time by the zombie-host detector in _poll_until_ready.
                 if gpu_ram_mb >= vram_mb and dph <= max_cost and is_rentable:
                     offers.append({
                         "id": o.get("id"),
@@ -677,9 +681,20 @@ class VastAIManager:
         max_wait: int = 600,
         poll_interval: int = 20,
     ) -> None:
-        """Background thread: poll Vast.ai until instance is running and Ollama responds."""
+        """Background thread: poll Vast.ai until instance is running and Ollama responds.
+
+        Zombie-host detection (V100 pattern):
+          If cur_state='running' but actual_status=None persists for >5 consecutive
+          polls, the host's Vast.ai daemon is broken — it starts the container but
+          never reports status back to the control plane. Vast.ai docs: actual_status
+          is set by the host agent; with a dead agent it stays null indefinitely.
+          Fix: blacklist the host and destroy — no client-side recovery possible.
+        """
         deadline = time.time() + max_wait
         _log.info("vastai poll started: instance_id=%s max_wait=%ds", instance_id, max_wait)
+        # Count consecutive polls where cur_state=running but actual_status=None
+        _zombie_polls = 0
+        _ZOMBIE_THRESHOLD = 5  # ~100s with poll_interval=20
 
         while time.time() < deadline:
             time.sleep(poll_interval)
@@ -690,7 +705,38 @@ class VastAIManager:
                 inst = instances[0] if isinstance(instances, list) and instances else data
 
                 actual_status = inst.get("actual_status", "")
-                _log.debug("vastai poll: instance_id=%s status=%s", instance_id, actual_status)
+                cur_state = inst.get("cur_state", "")
+                _log.debug(
+                    "vastai poll: instance_id=%s cur_state=%s actual_status=%s",
+                    instance_id, cur_state, actual_status,
+                )
+
+                # Zombie-host detection: cur_state=running but actual_status stays null.
+                # Confirmed on Tesla V100 (host 166.113.48.43) — Vast.ai host agent
+                # is broken/stale, the container starts but monitoring never works.
+                # Ports also stay null because port-proxy setup requires a working agent.
+                if cur_state == "running" and actual_status is None:
+                    _zombie_polls += 1
+                    if _zombie_polls >= _ZOMBIE_THRESHOLD:
+                        _bad_host = host_id or inst.get("host_id")
+                        if _bad_host is not None:
+                            self._failed_host_ids.add(_bad_host)
+                            self._save_bad_hosts()
+                        _log.warning(
+                            "vastai poll: zombie host detected — instance_id=%s "
+                            "cur_state=running but actual_status=None for %d polls "
+                            "— host agent is broken (host_id=%s). Destroying.",
+                            instance_id, _zombie_polls, _bad_host,
+                        )
+                        try:
+                            _vastai_request("DELETE", f"/instances/{instance_id}/", api_key)
+                        except Exception as _del_exc:
+                            _log.warning("vastai poll: DELETE failed for %s: %s", instance_id, _del_exc)
+                        if self._instance and self._instance.instance_id == instance_id:
+                            self._instance.status = "destroyed"
+                        return
+                else:
+                    _zombie_polls = 0  # reset counter on any status change
 
                 if actual_status == "running":
                     ssh_host = inst.get("ssh_host", "")
