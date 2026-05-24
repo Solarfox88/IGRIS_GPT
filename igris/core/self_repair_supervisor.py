@@ -3250,6 +3250,16 @@ class SelfRepairSupervisor:
                         "failure",
                         f"Single-stage reasoning ended with {reasoning_status}/{stop_reason}.",
                     )
+                    # Short-circuit the full_pytest validation when the reasoning
+                    # loop itself signals "no_diff_repair" AND produced no files.
+                    # In that case running 3000+ tests on an unchanged tree is pure
+                    # waste — the staged path already does this inside
+                    # _execute_staged_reasoning; we mirror the behaviour here.
+                    # For other stop reasons (reasoning_timeout, max_steps, blocked…)
+                    # we leave stage_failure empty so the normal repair → decomposition
+                    # escalation path is preserved.
+                    if stop_reason == "no_diff_repair" and not modified_files:
+                        stage_failure = "reasoning_loop_blocked"
 
             ui_visibility_required = self._goal_requires_ui_visibility(config.goal)
             ui_card_contract_goal = self._goal_targets_rank_ui_card(config.goal)
