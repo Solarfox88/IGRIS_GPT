@@ -166,7 +166,7 @@ _EPIC_KEYWORDS = frozenset([
     "epic", "system-wide", "overhaul",
     "parallelism", "parallel agents", "multi-agent", "concurrent tasks",
     "voice layer", "tts", "speech synthesis",
-    "interlocutor", "authorization model", "hierarchy",
+    "interlocutor", "authorization model",
 ])
 _REPAIR_KEYWORDS = frozenset([
     "fix", "repair", "debug", "diagnose", "broken", "failing", "error",
