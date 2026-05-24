@@ -1,9 +1,18 @@
-"""ToolTracker — per-tool effectiveness stats post-turn."""
+"""ToolTracker: per-tool effectiveness stats post-turn.
+
+Tracks total calls, successes, failures, average duration,
+and common error patterns for each tool. Persists to .igris/tool_stats.json.
+"""
+
+from __future__ import annotations
+
 import json
 import os
+import tempfile
 import time
 from dataclasses import dataclass, field
-from typing import Optional
+from pathlib import Path
+from typing import Dict, List, Optional
 
 
 @dataclass
@@ -15,61 +24,72 @@ class ToolStats:
     successes: int = 0
     failures: int = 0
     avg_duration_ms: float = 0.0
-    common_error_patterns: list[str] = field(default_factory=list)
+    common_error_patterns: List[str] = field(default_factory=list)
     last_updated: float = field(default_factory=time.time)
 
 
 class ToolTracker:
-    """Persistent per-tool effectiveness tracker.
+    """Records and retrieves tool execution statistics.
 
-    Stores stats in `.igris/tool_stats.json` and provides methods
-    to record tool executions, retrieve stats, and identify
-    unreliable tools.
+    Persistence is handled via atomic write to .igris/tool_stats.json.
     """
 
+    MAX_ERROR_PATTERNS = 5
+
     def __init__(self, project_root: str) -> None:
-        self._stats_file = os.path.join(project_root, ".igris", "tool_stats.json")
-        self._stats: dict[str, ToolStats] = {}
+        self.project_root = Path(project_root)
+        self.stats_dir = self.project_root / ".igris"
+        self.stats_file = self.stats_dir / "tool_stats.json"
+        self._stats: Dict[str, ToolStats] = {}
         self._load()
 
     def _load(self) -> None:
-        """Load stats from disk."""
-        try:
-            with open(self._stats_file, "r") as f:
-                data = json.load(f)
-            for name, entry in data.items():
-                stats = ToolStats(
-                    tool_name=name,
-                    total_calls=entry.get("total_calls", 0),
-                    successes=entry.get("successes", 0),
-                    failures=entry.get("failures", 0),
-                    avg_duration_ms=entry.get("avg_duration_ms", 0.0),
-                    common_error_patterns=entry.get("common_error_patterns", []),
-                    last_updated=entry.get("last_updated", time.time()),
-                )
-                self._stats[name] = stats
-        except FileNotFoundError:
-            pass
+        """Load existing stats from the JSON file, if any."""
+        if self.stats_file.exists():
+            try:
+                raw = json.loads(self.stats_file.read_text(encoding="utf-8"))
+                for name, data in raw.items():
+                    self._stats[name] = ToolStats(
+                        tool_name=name,
+                        total_calls=data.get("total_calls", 0),
+                        successes=data.get("successes", 0),
+                        failures=data.get("failures", 0),
+                        avg_duration_ms=data.get("avg_duration_ms", 0.0),
+                        common_error_patterns=data.get(
+                            "common_error_patterns", []
+                        ),
+                        last_updated=data.get("last_updated", time.time()),
+                    )
+            except (json.JSONDecodeError, OSError):
+                # If corrupted, start fresh.
+                self._stats = {}
 
     def _save(self) -> None:
-        """Atomically save stats to disk."""
-        os.makedirs(os.path.dirname(self._stats_file), exist_ok=True)
-        tmp = self._stats_file + ".tmp"
+        """Atomically persist the current stats."""
+        self.stats_dir.mkdir(parents=True, exist_ok=True)
         data = {
             name: {
-                "tool_name": stats.tool_name,
-                "total_calls": stats.total_calls,
-                "successes": stats.successes,
-                "failures": stats.failures,
-                "avg_duration_ms": stats.avg_duration_ms,
-                "common_error_patterns": stats.common_error_patterns,
-                "last_updated": stats.last_updated,
+                "tool_name": s.tool_name,
+                "total_calls": s.total_calls,
+                "successes": s.successes,
+                "failures": s.failures,
+                "avg_duration_ms": s.avg_duration_ms,
+                "common_error_patterns": s.common_error_patterns,
+                "last_updated": s.last_updated,
             }
-            for name, stats in self._stats.items()
+            for name, s in self._stats.items()
         }
-        with open(tmp, "w") as f:
-            json.dump(data, f, indent=2)
-        os.replace(tmp, self._stats_file)
+        with tempfile.NamedTemporaryFile(
+            mode="w",
+            dir=self.stats_dir,
+            prefix="tool_stats_",
+            suffix=".tmp",
+            delete=False,
+            encoding="utf-8",
+        ) as tmpf:
+            json.dump(data, tmpf, indent=2, ensure_ascii=False)
+            tmpf.flush()
+            os.replace(tmpf.name, self.stats_file)
 
     def record(
         self,
@@ -78,52 +98,61 @@ class ToolTracker:
         duration_ms: float,
         error_snippet: Optional[str] = None,
     ) -> None:
-        """Record a tool execution.
+        """Record an execution of *tool_name*.
 
-        Updates running average of duration and maintains up to 5
-        unique error snippets.
+        Args:
+            tool_name: Name of the tool.
+            success: Whether the execution succeeded.
+            duration_ms: Duration in milliseconds.
+            error_snippet: A short, unique error snippet for tracking patterns.
         """
-        if tool_name not in self._stats:
-            self._stats[tool_name] = ToolStats(tool_name=tool_name)
-        stats = self._stats[tool_name]
+        stats = self._stats.get(tool_name)
+        if stats is None:
+            stats = ToolStats(tool_name=tool_name)
+            self._stats[tool_name] = stats
 
-        # Update counts
-        stats.total_calls += 1
+        # Update running average: new_avg = old_avg + (value - old_avg) / n
+        n = stats.total_calls + 1
+        stats.avg_duration_ms = (
+            stats.avg_duration_ms * (n - 1) + duration_ms
+        ) / n
+
+        stats.total_calls = n
         if success:
             stats.successes += 1
         else:
             stats.failures += 1
-            if error_snippet and error_snippet not in stats.common_error_patterns:
-                if len(stats.common_error_patterns) >= 5:
-                    stats.common_error_patterns.pop(0)
-                stats.common_error_patterns.append(error_snippet)
 
-        # Running average
-        stats.avg_duration_ms = (
-            (stats.avg_duration_ms * (stats.total_calls - 1) + duration_ms)
-            / stats.total_calls
-        )
+        if error_snippet:
+            snippet = error_snippet.strip()[:500]  # reasonable cap
+            if snippet not in stats.common_error_patterns:
+                stats.common_error_patterns.append(snippet)
+                if len(stats.common_error_patterns) > self.MAX_ERROR_PATTERNS:
+                    stats.common_error_patterns.pop(0)
+
         stats.last_updated = time.time()
         self._save()
 
     def get_stats(self, tool_name: str) -> Optional[ToolStats]:
-        """Return stats for a given tool, or None if not tracked."""
+        """Return stats for a tool, or None."""
         return self._stats.get(tool_name)
 
-    def get_all_stats(self) -> dict[str, ToolStats]:
-        """Return a copy of all tool stats."""
+    def get_all_stats(self) -> Dict[str, ToolStats]:
+        """Return all tool stats."""
         return dict(self._stats)
 
     def get_unreliable_tools(
-        self, min_calls: int = 5, max_success_rate: float = 0.6
-    ) -> list[str]:
-        """Return list of tool names with success rate <= max_success_rate
-        and at least min_calls recorded.
+        self,
+        min_calls: int = 5,
+        max_success_rate: float = 0.6,
+    ) -> List[str]:
+        """Return tool names with success rate below *max_success_rate*
+        among tools with at least *min_calls*.
         """
         unreliable = []
-        for name, stats in self._stats.items():
-            if stats.total_calls >= min_calls:
-                success_rate = stats.successes / stats.total_calls
-                if success_rate <= max_success_rate:
+        for name, s in self._stats.items():
+            if s.total_calls >= min_calls:
+                rate = s.successes / s.total_calls if s.total_calls else 0.0
+                if rate < max_success_rate:
                     unreliable.append(name)
         return sorted(unreliable)
