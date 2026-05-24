@@ -291,12 +291,8 @@ class VastAIManager:
                 host_id = o.get("host_id")
                 if host_id in self._failed_host_ids:
                     continue
-                # ollama/ollama:latest requires CUDA ≥12. Hosts with older drivers
-                # fail with "failed to create containerd task" — filter at source.
-                cuda_ver = float(o.get("cuda_max_good") or 0)
-                if cuda_ver < 12.0:
-                    continue
                 # Minimum disk space for model files + OS overhead.
+                # ubuntu:22.04 + Ollama install takes ~2GB; model files vary per model.
                 disk_gb = float(o.get("disk_space") or 0)
                 min_disk_gb = float(info.get("disk_gb") or info["vram_gb"] * 1.2)
                 if disk_gb < min_disk_gb:
@@ -307,6 +303,11 @@ class VastAIManager:
                 )
                 if reliability < 0.8:
                     continue
+                # CUDA version recorded for observability only — NOT used to filter.
+                # All current Vast.ai hosts have CUDA ≥12; the "failed to create
+                # containerd task" error on ollama/ollama:latest has nothing to do
+                # with CUDA version (RTX 3090 with CUDA 13.0 still fails).
+                cuda_ver = float(o.get("cuda_max_good") or 0)
                 if gpu_ram_mb >= vram_mb and dph <= max_cost and is_rentable:
                     offers.append({
                         "id": o.get("id"),
@@ -540,33 +541,30 @@ class VastAIManager:
                 cfg.api_key,
                 payload={
                     "client_id": "me",
-                    # Ollama official image; starts server on port 11434
-                    "image": "ollama/ollama:latest",
-                    # "ssh_direct" is the correct runtype for SSH (not "ssh").
-                    # "ssh" is not a valid value per Vast.ai API docs; valid values are:
-                    # ssh_direct, ssh_proxy, jupyter_direct, jupyter_proxy, args.
+                    # ubuntu:22.04 is a minimal image that starts on virtually every
+                    # Vast.ai host regardless of CUDA toolkit / containerd configuration.
+                    # ollama/ollama:latest failed with "failed to create containerd task"
+                    # on RTX 3090 / RTX 5090 hosts that have CUDA 13.0 and rel=0.99 —
+                    # the issue is CUDA image compatibility with the host's containerd,
+                    # NOT the CUDA driver version. Using ubuntu:22.04 + installing Ollama
+                    # via onstart avoids all container-start failures.
+                    "image": "ubuntu:22.04",
                     "runtype": "ssh_direct",
-                    # disk=10 is the Vast.ai default.  Passing it explicitly avoids any
-                    # ambiguity; Vast.ai always applies --storage-opt size=Xg regardless,
-                    # so ext4 hosts will always fail.  We handle this in _poll_until_ready
-                    # (delete on storage-opt error) and blacklist the host in _failed_host_ids.
                     "disk": 10,
                     "label": f"igris-orchestrator-{model.replace(':', '-')}",
-                    # Port mapping MUST be in the "env" field using Docker -p syntax.
-                    # The "ports" top-level key is NOT a valid API field.
                     "env": {
-                        # Bind Ollama to all interfaces so it's reachable externally.
-                        "OLLAMA_HOST": "0.0.0.0:11434",
-                        # Expose port 11434 to the outside (required for TCP probe).
                         "-p 11434:11434": "1",
                     },
-                    # Pull model on startup so it's ready for first inference.
-                    # ollama/ollama:latest entrypoint is replaced by ssh_direct, so we
-                    # must start ollama manually here.
+                    # Install Ollama inside the running container, start the server,
+                    # then pull the model. This runs after SSH is ready.
                     "onstart": (
-                        "ollama serve &>/var/log/ollama.log & "
-                        "sleep 15 && "
-                        f"ollama pull {model} &>/var/log/ollama_pull.log"
+                        "curl -fsSL https://ollama.com/install.sh | sh "
+                        "&>/var/log/ollama_install.log && "
+                        "OLLAMA_HOST=0.0.0.0 ollama serve "
+                        "&>/var/log/ollama.log & "
+                        "sleep 20 && "
+                        f"ollama pull {model} "
+                        f"&>/var/log/ollama_pull.log"
                     ),
                 },
             )
