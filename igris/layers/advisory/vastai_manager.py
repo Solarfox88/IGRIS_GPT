@@ -555,16 +555,19 @@ class VastAIManager:
                     "env": {
                         "-p 11434:11434": "1",
                     },
-                    # Install Ollama inside the running container, start the server,
-                    # then pull the model. This runs after SSH is ready.
+                    # Install Ollama then start the server.
+                    # IMPORTANT: use ';' not '&&' between install and serve.
+                    # The Ollama install.sh calls systemctl which exits non-zero
+                    # inside Docker containers (no systemd), so '&&' would
+                    # silently skip the serve command entirely.
+                    # 'disown' detaches ollama from the shell so it survives
+                    # when the onstart session exits.
                     "onstart": (
                         "curl -fsSL https://ollama.com/install.sh | sh "
-                        "&>/var/log/ollama_install.log && "
+                        ">/var/log/ollama_install.log 2>&1 ; "
                         "OLLAMA_HOST=0.0.0.0 ollama serve "
-                        "&>/var/log/ollama.log & "
-                        "sleep 20 && "
-                        f"ollama pull {model} "
-                        f"&>/var/log/ollama_pull.log"
+                        ">/var/log/ollama.log 2>&1 & "
+                        "disown"
                     ),
                 },
             )
