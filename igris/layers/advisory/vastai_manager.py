@@ -586,18 +586,20 @@ class VastAIManager:
                         "-p 11434:11434": "1",
                     },
                     # Install Ollama then start the server.
-                    # IMPORTANT: use ';' not '&&' between install and serve.
-                    # The Ollama install.sh calls systemctl which exits non-zero
-                    # inside Docker containers (no systemd), so '&&' would
-                    # silently skip the serve command entirely.
-                    # 'disown' detaches ollama from the shell so it survives
-                    # when the onstart session exits.
+                    # IMPORTANT:
+                    # 1. Use ';' not '&&': install.sh calls systemctl which
+                    #    exits non-zero in Docker (no systemd), so '&&' would
+                    #    silently skip the serve command entirely.
+                    # 2. Use 'nohup': sets SIG_IGN for SIGHUP before exec so
+                    #    ollama survives when the onstart shell exits. Plain
+                    #    '& disown' is unreliable if onstart runs under /bin/sh
+                    #    (disown is a bash built-in) or if the kernel sends
+                    #    SIGHUP to background jobs on shell exit.
                     "onstart": (
                         "curl -fsSL https://ollama.com/install.sh | sh "
                         ">/var/log/ollama_install.log 2>&1 ; "
-                        "OLLAMA_HOST=0.0.0.0 ollama serve "
-                        ">/var/log/ollama.log 2>&1 & "
-                        "disown"
+                        "nohup env OLLAMA_HOST=0.0.0.0 ollama serve "
+                        ">/var/log/ollama.log 2>&1 &"
                     ),
                 },
             )
