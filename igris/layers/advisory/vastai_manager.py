@@ -17,11 +17,13 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import threading
 import time
 import urllib.error
 import urllib.request
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 _log = logging.getLogger(__name__)
@@ -173,16 +175,44 @@ class VastAIManager:
     No real API calls — mock/dry-run only.
     """
 
+    # Path where bad-host IDs are persisted across restarts so we don't
+    # re-discover the same broken hosts every time the service starts.
+    _BAD_HOSTS_FILE = Path(os.getenv("IGRIS_DATA_DIR", "/tmp")) / "vastai_bad_hosts.json"
+
     def __init__(self) -> None:
         self._instance: Optional[VastInstance] = None
         self._provision_history: List[Dict[str, Any]] = []
-        # Hosts (by host_id) that caused fatal Docker errors (e.g. storage-opt on ext4).
-        # Skipped in search_offers so we don't keep provisioning the same bad host.
-        self._failed_host_ids: set = set()
+        # Hosts (by host_id) that caused fatal Docker errors (e.g. storage-opt on ext4,
+        # failed containerd task). Skipped in search_offers and persisted to disk so
+        # we don't re-discover broken hosts on every service restart.
+        self._failed_host_ids: set = self._load_bad_hosts()
         # Cleanup orphaned instances from previous service runs in the background.
         # This handles the case where the service restarted while an instance was
         # provisioning or errored — without this, the instance keeps billing.
         self._startup_cleanup()
+
+    def _load_bad_hosts(self) -> set:
+        """Load persisted bad-host blacklist from disk."""
+        try:
+            if self._BAD_HOSTS_FILE.exists():
+                data = json.loads(self._BAD_HOSTS_FILE.read_text())
+                ids = set(data.get("host_ids", []))
+                if ids:
+                    _log.info("vastai: loaded %d bad host(s) from %s", len(ids), self._BAD_HOSTS_FILE)
+                return ids
+        except Exception as exc:
+            _log.warning("vastai: could not load bad hosts file: %s", exc)
+        return set()
+
+    def _save_bad_hosts(self) -> None:
+        """Persist bad-host blacklist to disk."""
+        try:
+            self._BAD_HOSTS_FILE.parent.mkdir(parents=True, exist_ok=True)
+            self._BAD_HOSTS_FILE.write_text(
+                json.dumps({"host_ids": sorted(self._failed_host_ids)}, indent=2)
+            )
+        except Exception as exc:
+            _log.warning("vastai: could not save bad hosts file: %s", exc)
 
     # -- Config --
 
@@ -681,6 +711,7 @@ class VastAIManager:
                     _bad_host = host_id or inst.get("host_id")
                     if _bad_host is not None:
                         self._failed_host_ids.add(_bad_host)
+                        self._save_bad_hosts()
                     # Actually terminate the instance on Vast.ai so it stops billing.
                     try:
                         _vastai_request("DELETE", f"/instances/{instance_id}/", api_key)
@@ -704,10 +735,12 @@ class VastAIManager:
                         "permission denied",
                     )
                     if any(p in status_msg for p in _FATAL_MSG_PATTERNS):
-                        # Blacklist this host so we don't provision on it again.
+                        # Blacklist this host so we don't provision on it again,
+                        # and persist to disk so restarts don't re-discover it.
                         _bad_host = host_id or inst.get("host_id")
                         if _bad_host is not None:
                             self._failed_host_ids.add(_bad_host)
+                            self._save_bad_hosts()
                             _log.info(
                                 "vastai poll: blacklisted host_id=%s due to fatal Docker error",
                                 _bad_host,
