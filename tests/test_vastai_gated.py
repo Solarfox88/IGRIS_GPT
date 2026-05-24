@@ -38,11 +38,13 @@ _MOCK_BUNDLES_RESPONSE = {
     "offers": [
         {
             "id": 99001,
-            "gpu_name": "RTX 3090",
+            "gpu_name": "RTX PRO 6000 WS",
             "gpu_ram": 24576,  # 24 GB in MB
             "num_gpus": 1,
             "dph_total": 0.29,
-            "cuda_max_good": 12.1,
+            # cuda >= 13.1 required — hosts below this threshold have broken CDI
+            # device specs ("unresolvable CDI devices" error at container start).
+            "cuda_max_good": 13.1,
             "disk_space": 50,
             "reliability2": 0.95,
             "rentable": True,
@@ -194,7 +196,7 @@ class TestOfferSearch:
             result = manager.search_offers()
             d = result.to_dict()
             assert d["offer_count"] >= 1
-            assert d["offers"][0]["gpu"] == "RTX 3090"
+            assert d["offers"][0]["gpu"] == "RTX PRO 6000 WS"
 
 
 # ---------------------------------------------------------------------------

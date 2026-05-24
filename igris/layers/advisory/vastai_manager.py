@@ -9,11 +9,25 @@ Config defaults:
   VASTAI_FALLBACK_MODEL=qwen2.5-coder:7b
   VASTAI_AUTO_PROVISION=false
   VASTAI_REQUIRE_APPROVAL=true
-  VASTAI_MAX_HOURLY_COST=3.00   # RTX PRO 6000 WS ~$2.54/h is cheapest working host
+  VASTAI_MAX_HOURLY_COST=3.00   # RTX PRO 6000 WS ~$1.27-$2.55/h is cheapest working host
   VASTAI_MODE=on_demand
 
 Image strategy: ollama/ollama (Ollama pre-installed, no curl dependency).
 ubuntu:22.04+curl failed because containers have no outbound internet access.
+
+Host compatibility (empirically verified 2026-05):
+  WORKS:   RTX PRO 6000 WS (host_id=81587, driver=590.44.01, cuda=13.1)
+  BROKEN:  RTX 5090 / H100 SXM / RTX PRO 6000 S (driver 575-580, cuda≤13.0)
+           → "failed to inject CDI devices: unresolvable CDI devices" — the
+             NVIDIA CDI spec on those hosts has stale GPU device IDs.
+             Fix required on host side: nvidia-ctk cdi generate --output=...
+  BROKEN:  Quadro GV100 (driver=570, cuda=12.8)
+           → "--storage-opt is supported only for overlay over xfs with 'pquota'"
+             Host filesystem is ext4 or XFS without pquota mount option.
+  BROKEN:  Tesla V100 — container starts (cur_state=running) but actual_status
+             stays None and ports are never assigned (dead Vast.ai monitoring).
+
+Filter: require cuda_max_good >= 13.1 to skip CDI-broken and storage-opt hosts.
 """
 
 from __future__ import annotations
@@ -45,11 +59,13 @@ SUPPORTED_MODELS = {
     "deepseek-r1:32b": {
         "vram_gb": 24,
         "disk_gb": 25,           # model ~19.9GB + ollama/ollama image overhead
-        "min_gpu": "RTX 3090",
-        # Empirical: cheapest working Vast.ai host as of 2026-05 is RTX PRO 6000 WS
-        # at ~$2.54/h. All RTX 3090 / RTX 5090 / H100 hosts fail with "failed to
-        # create containerd task". Set VASTAI_MAX_HOURLY_COST ≥ 2.55 to provision.
-        "estimated_cost_hr": 2.55,
+        "min_gpu": "RTX PRO 6000 WS",
+        # Empirical: cheapest reliably working Vast.ai host as of 2026-05 is
+        # RTX PRO 6000 WS (driver 590.44.01, cuda 13.1) at ~$1.27-$2.55/h.
+        # All other tested hosts (RTX 5090, H100, RTX PRO 6000 S, RTX 3090) fail
+        # with CDI device errors (broken NVIDIA Container Device Interface spec).
+        # Set VASTAI_MAX_HOURLY_COST ≥ 1.50 to provision.
+        "estimated_cost_hr": 1.50,
     },
     "deepseek-r1:70b": {
         "vram_gb": 48,
@@ -339,11 +355,15 @@ class VastAIManager:
                 )
                 if reliability < 0.8:
                     continue
-                # CUDA version recorded for observability only — NOT used to filter.
-                # All current Vast.ai hosts have CUDA ≥12; the "failed to create
-                # containerd task" error on ollama/ollama:latest has nothing to do
-                # with CUDA version (RTX 3090 with CUDA 13.0 still fails).
+                # Require cuda_max_good >= 13.1 to filter out CDI-broken hosts.
+                # Empirically verified (2026-05): all hosts with cuda <= 13.0 fail
+                # with "failed to inject CDI devices: unresolvable CDI devices" because
+                # their NVIDIA Container Device Interface spec has stale GPU device IDs.
+                # Hosts with driver >= 590 (cuda=13.1) have correct CDI or legacy runtime.
+                # Also filters storage-opt failures (GV100, cuda=12.8).
                 cuda_ver = float(o.get("cuda_max_good") or 0)
+                if cuda_ver < 13.1:
+                    continue
                 if gpu_ram_mb >= vram_mb and dph <= max_cost and is_rentable:
                     offers.append({
                         "id": o.get("id"),
@@ -729,10 +749,12 @@ class VastAIManager:
                         self._instance.status = "destroyed"
                     return
 
-                elif actual_status in ("loading", None, ""):
-                    # Check if Docker reported an error in status_msg (e.g. storage-opt
-                    # error on ext4 hosts).  These never transition to "error" — they
-                    # stay in "loading" until we explicitly kill them.
+                elif actual_status in ("loading", "created", None, ""):
+                    # Check if Docker reported an error in status_msg.
+                    # Hosts with broken CDI spec get status "created" (not "loading")
+                    # with the CDI error in status_msg — they never self-recover.
+                    # Hosts with storage-opt issues stay "loading".
+                    # Neither transitions to "error" — must be explicitly killed.
                     status_msg = inst.get("status_msg") or ""
                     _FATAL_MSG_PATTERNS = (
                         "storage-opt",
@@ -740,6 +762,11 @@ class VastAIManager:
                         "OCI runtime",
                         "no space left",
                         "permission denied",
+                        # CDI (Container Device Interface) errors — stale GPU device spec
+                        # on nvidia-container-toolkit.  Host must run: nvidia-ctk cdi generate
+                        "unresolvable CDI devices",
+                        "failed to inject CDI",
+                        "failed to create task",
                     )
                     if any(p in status_msg for p in _FATAL_MSG_PATTERNS):
                         # Blacklist this host so we don't provision on it again,
@@ -803,8 +830,10 @@ class VastAIManager:
                     _FATAL_PATTERNS = (
                         "storage-opt", "Error response from daemon",
                         "OCI runtime", "no space left", "permission denied",
+                        "unresolvable CDI devices", "failed to inject CDI",
+                        "failed to create task",
                     )
-                    loading_with_error = actual_status in ("loading", None) and any(
+                    loading_with_error = actual_status in ("loading", "created", None) and any(
                         p in status_msg for p in _FATAL_PATTERNS
                     )
                     # actual_status=None (JSON null) means Vast.ai hasn't assigned a status
