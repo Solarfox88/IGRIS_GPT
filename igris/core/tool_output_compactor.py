@@ -1,118 +1,172 @@
+"""
+ToolOutputCompactor — rule-driven stdout compaction before LLM injection.
+
+Implements configurable compaction rules to reduce token usage and noise
+from tool outputs (bash stdout, test runner logs, etc.).
+"""
+
 import re
-from typing import List, Optional
+from typing import List, Optional, Set
 
 
 class ToolOutputCompactor:
-    """Rule-driven compactor for tool stdout before LLM injection.
+    """Apply compaction rules to tool output text."""
 
-    Applies configurable rules to reduce token count while preserving
-    semantic content. Inspired by the TokenJuice concept.
-    """
+    # ANSI escape sequence pattern (most common types)
+    ANSI_ESCAPE = re.compile(
+        r'\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])'
+    )
 
-    def __init__(
-        self,
-        dedup_consecutive: bool = True,
-        truncate_stack_traces: bool = True,
-        stack_first_lines: int = 10,
-        stack_last_lines: int = 5,
-        collapse_repeated_patterns: bool = True,
-        strip_ansi: bool = True,
-        tail_first_test_runners: bool = True,
-    ):
-        self.dedup_consecutive = dedup_consecutive
-        self.truncate_stack_traces = truncate_stack_traces
-        self.stack_first_lines = stack_first_lines
-        self.stack_last_lines = stack_last_lines
-        self.collapse_repeated_patterns = collapse_repeated_patterns
-        self.strip_ansi = strip_ansi
-        self.tail_first_test_runners = tail_first_test_runners
+    # Recognisable test runner markers (case-insensitive)
+    TEST_RUNNER_MARKERS = re.compile(
+        r'(FAILED|ERROR|PASSED|FAILURES|test session starts|'
+        r'Ran \d+ tests? in|\d+ passed|\d+ failed|'
+        r'OK \(\d+ tests?\))',
+        re.IGNORECASE
+    )
 
-    def compact(self, text: str) -> str:
-        if not text:
-            return text
+    # Characters to collapse when they repeat verbatim
+    COLLAPSE_CHARS = re.compile(r'([.-=*#])\1{2,}')
+
+    # Stack trace line pattern (typical indent or "at " prefix)
+    STACK_TRACE_LINE = re.compile(
+        r'^\s+at\s+|^\s+File\s+".*",\s+line\s+|^Traceback|^\s+\^\s*$'
+    )
+
+    DEFAULT_RULES: List[str] = [
+        'strip_ansi',
+        'dedup_adjacent',
+        'collapse_patterns',
+        'truncate_stacktraces',
+        'tail_test_runners'
+    ]
+
+    def __init__(self, rules: Optional[List[str]] = None):
+        self.rules = rules or self.DEFAULT_RULES
+
+    def compact(self, text: str, rules: Optional[List[str]] = None) -> str:
+        """Apply all requested rules and return the compacted string."""
+        active = rules or self.rules
         result = text
-        if self.strip_ansi:
-            result = self._strip_ansi(result)
-        if self.dedup_consecutive:
-            result = self._dedup_consecutive_lines(result)
-        if self.collapse_repeated_patterns:
-            result = self._collapse_repeated_patterns(result)
-        if self.truncate_stack_traces:
-            result = self._truncate_stack_traces(result)
-        if self.tail_first_test_runners:
-            result = self._tail_first_for_test_runners(result)
+
+        for rule in active:
+            method = getattr(self, f'_rule_{rule}', None)
+            if method is None:
+                # Unknown rule – skip silently
+                continue
+            result = method(result)
+
         return result
 
-    @staticmethod
-    def _strip_ansi(text: str) -> str:
-        """Remove ANSI escape sequences."""
-        ansi_escape = re.compile(r'\033(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])')
-        return ansi_escape.sub('', text)
+    # ---- private rule methods ----
 
-    @staticmethod
-    def _dedup_consecutive_lines(text: str) -> str:
-        """Remove consecutive duplicate lines."""
-        lines = text.split('\n')
+    def _rule_strip_ansi(self, text: str) -> str:
+        """Remove ANSI color/style escape codes."""
+        return self.ANSI_ESCAPE.sub('', text)
+
+    def _rule_dedup_adjacent(self, text: str) -> str:
+        """Deduplicate consecutive identical lines.
+
+        Lines that repeat more than once are collapsed to a single instance,
+        optionally with a count annotation.
+        """
+        lines = text.splitlines()
         if not lines:
             return text
-        result = [lines[0]]
-        for line in lines[1:]:
-            if line != result[-1]:
-                result.append(line)
-        return '\n'.join(result)
 
-    def _collapse_repeated_patterns(self, text: str) -> str:
-        """Collapse patterns like '..........' -> '[10× "."]'."""
-        pattern = re.compile(r'((.)\2{3,})', re.MULTILINE)
-        def replacer(m):
-            full = m.group(1)
-            char = m.group(2)
-            return f'[{len(full)}× {repr(char)}]'
-        return pattern.sub(replacer, text)
+        out: List[str] = []
+        prev = None
+        count = 0
 
-    def _truncate_stack_traces(self, text: str) -> str:
-        """Keep first N and last M lines of tracebacks, truncating middle."""
-        lines = text.split('\n')
-        # Detect traceback: lines containing 'Traceback' or 'File "..."'
-        traceback_indices = []
-        in_traceback = False
-        for i, line in enumerate(lines):
-            if 'Traceback' in line or re.match(r'^\s*File "', line):
-                if not in_traceback:
-                    traceback_indices.append(i)
-                in_traceback = True
-            else:
-                in_traceback = False
-        if not traceback_indices:
-            return text
-        # For simplicity, truncate all tracebacks found
-        result = []
-        tb_start = traceback_indices[0]
-        # Find end of traceback (last line of stack before non-indented line)
-        tb_end = tb_start
-        for i in range(tb_start, len(lines)):
-            if lines[i].startswith(' ') or 'File "' in lines[i] or 'Traceback' in lines[i]:
-                tb_end = i
-            else:
-                break
-        tb_lines = lines[tb_start:tb_end+1]
-        first = tb_lines[:self.stack_first_lines]
-        last = tb_lines[-self.stack_last_lines:]
-        truncated = first + [f'    ... truncated {len(tb_lines) - self.stack_first_lines - self.stack_last_lines} lines'] + last
-        result = lines[:tb_start] + truncated + lines[tb_end+1:]
-        return '\n'.join(result)
-
-    def _tail_first_for_test_runners(self, text: str) -> str:
-        """Reorder lines so that test results/passes/fails appear first.
-
-        For pytest/jest output, 'PASS', 'FAIL', 'failed', 'passed' lines are moved up.
-        """
-        lines = text.split('\n')
-        important = []
-        rest = []
         for line in lines:
-            if re.search(r'\b(PASS|FAIL|passed|failed|ok|ERROR|error)\b', line):
-                important.append(line)
+            if line == prev:
+                count += 1
             else:
-                rest.append(line)
-        return '\n'.join(important + rest)
+                if prev is not None:
+                    if count == 1:
+                        out.append(prev)
+                    else:
+                        out.append(f'{prev}  [repeated {count} times]')
+                prev = line
+                count = 1
+
+        # handle trailing group
+        if prev is not None:
+            if count == 1:
+                out.append(prev)
+            else:
+                out.append(f'{prev}  [repeated {count} times]')
+
+        return '\n'.join(out)
+
+    def _rule_collapse_patterns(self, text: str) -> str:
+        """Collapse long runs of the same character (e.g. dots, dashes)."""
+        def _replace(match):
+            char = match.group(0)[0]
+            length = len(match.group(0))
+            return f'[{length}× "{char}"]'
+
+        return self.COLLAPSE_CHARS.sub(_replace, text)
+
+    def _rule_truncate_stacktraces(self, text: str) -> str:
+        """Keep first 10 + last 5 lines of a stack trace, elide middle.
+
+        We identify a contiguous block of lines that look like a stack trace
+        and shorten it.
+        """
+        lines = text.splitlines()
+        trace_blocks = self._find_trace_blocks(lines)
+        if not trace_blocks:
+            return text
+
+        # Work from end to start to keep indices stable
+        for start, end in reversed(trace_blocks):
+            if end - start + 1 <= 15:
+                continue  # short trace, keep as-is
+            keep_head = lines[start:start + 10]
+            keep_tail = lines[end - 4:end + 1]  # last 5 lines
+            elision = [
+                f'  [... {end - start + 1 - 15} lines elided ...]',
+            ]
+            replacement = keep_head + elision + keep_tail
+            lines[start:end + 1] = replacement
+
+        return '\n'.join(lines)
+
+    def _rule_tail_test_runners(self, text: str) -> str:
+        """For test runner output, keep the opening and the final summary.
+
+        Keeps first 5 lines (command header) and last 80 lines.
+        If the output does not look like a test run, it is returned unchanged.
+        """
+        if not self._is_test_output(text):
+            return text
+
+        lines = text.splitlines()
+        if len(lines) <= 85:
+            return text
+
+        head = lines[:5]
+        tail = lines[-80:]
+        return '\n'.join(head + [f'  [... {len(lines) - 85} lines omitted ...]'] + tail)
+
+    # ---- helpers ----
+
+    def _is_test_output(self, text: str) -> bool:
+        """Return True if text looks like a test runner summary."""
+        return bool(self.TEST_RUNNER_MARKERS.search(text))
+
+    def _find_trace_blocks(self, lines: List[str]) -> List[List[int]]:
+        """Return list of [start, end] indices (inclusive) of stack trace blocks."""
+        blocks = []
+        i = 0
+        while i < len(lines):
+            if not self.STACK_TRACE_LINE.match(lines[i]):
+                i += 1
+                continue
+            start = i
+            while i < len(lines) and self.STACK_TRACE_LINE.match(lines[i]):
+                i += 1
+            end = i - 1
+            blocks.append([start, end])
+        return blocks
