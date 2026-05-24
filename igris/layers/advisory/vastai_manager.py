@@ -172,6 +172,9 @@ class VastAIManager:
     def __init__(self) -> None:
         self._instance: Optional[VastInstance] = None
         self._provision_history: List[Dict[str, Any]] = []
+        # Hosts (by host_id) that caused fatal Docker errors (e.g. storage-opt on ext4).
+        # Skipped in search_offers so we don't keep provisioning the same bad host.
+        self._failed_host_ids: set = set()
         # Cleanup orphaned instances from previous service runs in the background.
         # This handles the case where the service restarted while an instance was
         # provisioning or errored — without this, the instance keeps billing.
@@ -279,9 +282,15 @@ class VastAIManager:
                 # Only include rentable offers — non-rentable ones silently fail
                 # the PUT /asks/{id}/ provisioning call, wasting the attempt.
                 is_rentable = o.get("rentable", True)
+                # Skip hosts that previously caused fatal Docker errors (e.g. ext4
+                # hosts that don't support --storage-opt).
+                host_id = o.get("host_id")
+                if host_id in self._failed_host_ids:
+                    continue
                 if gpu_ram_mb >= vram_mb and dph <= max_cost and is_rentable:
                     offers.append({
                         "id": o.get("id"),
+                        "host_id": host_id,
                         "gpu": o.get("gpu_name", "?"),
                         "vram_gb": round(gpu_ram_mb / 1024, 1),
                         "cost_per_hour": round(dph, 4),
@@ -385,9 +394,9 @@ class VastAIManager:
                 payload={
                     "client_id": "me",
                     "image": "pytorch/pytorch:latest",
-                    "runtype": "ssh",
-                    # NOTE: do NOT pass "disk" — triggers --storage-opt size=Ng
-                    # which requires XFS+pquota on the host (most hosts use ext4).
+                    # "ssh_direct" = direct SSH (faster), correct Vast.ai API value.
+                    "runtype": "ssh_direct",
+                    "disk": 10,
                     "label": f"igris-{model.replace(':','-')}",
                 },
             )
@@ -499,7 +508,9 @@ class VastAIManager:
             if result.error or not result.offers:
                 _log.warning("vastai auto_provision: no offers found — %s", result.error)
                 return False
-            offer_id = result.offers[0]["id"]
+            selected_offer = result.offers[0]
+            offer_id = selected_offer["id"]
+            host_id = selected_offer.get("host_id")
 
             resp = _vastai_request(
                 "PUT",
@@ -509,20 +520,32 @@ class VastAIManager:
                     "client_id": "me",
                     # Ollama official image; starts server on port 11434
                     "image": "ollama/ollama:latest",
-                    "runtype": "ssh",
-                    # NOTE: do NOT pass "disk" — it triggers --storage-opt size=Ng
-                    # which requires XFS with pquota on the host.  Most Vast.ai hosts
-                    # use ext4 and fail with "storage-opt is supported only for overlay
-                    # over xfs with 'pquota' mount option".  Vast.ai allocates disk
-                    # automatically from the offer's available space.
+                    # "ssh_direct" is the correct runtype for SSH (not "ssh").
+                    # "ssh" is not a valid value per Vast.ai API docs; valid values are:
+                    # ssh_direct, ssh_proxy, jupyter_direct, jupyter_proxy, args.
+                    "runtype": "ssh_direct",
+                    # disk=10 is the Vast.ai default.  Passing it explicitly avoids any
+                    # ambiguity; Vast.ai always applies --storage-opt size=Xg regardless,
+                    # so ext4 hosts will always fail.  We handle this in _poll_until_ready
+                    # (delete on storage-opt error) and blacklist the host in _failed_host_ids.
+                    "disk": 10,
                     "label": f"igris-orchestrator-{model.replace(':', '-')}",
-                    # Pull model on startup so it's ready for first inference
+                    # Port mapping MUST be in the "env" field using Docker -p syntax.
+                    # The "ports" top-level key is NOT a valid API field.
+                    "env": {
+                        # Bind Ollama to all interfaces so it's reachable externally.
+                        "OLLAMA_HOST": "0.0.0.0:11434",
+                        # Expose port 11434 to the outside (required for TCP probe).
+                        "-p 11434:11434": "1",
+                    },
+                    # Pull model on startup so it's ready for first inference.
+                    # ollama/ollama:latest entrypoint is replaced by ssh_direct, so we
+                    # must start ollama manually here.
                     "onstart": (
                         "ollama serve &>/var/log/ollama.log & "
                         "sleep 15 && "
                         f"ollama pull {model} &>/var/log/ollama_pull.log"
                     ),
-                    "ports": "11434",  # expose Ollama port
                 },
             )
             instance_id = str(resp.get("id") or resp.get("new_contract", ""))
@@ -534,27 +557,28 @@ class VastAIManager:
                 instance_id=instance_id,
                 status="provisioning",
                 model=model,
-                gpu=result.offers[0].get("gpu", "unknown"),
-                cost_per_hour=result.offers[0].get("cost_per_hour", 0.0),
+                gpu=selected_offer.get("gpu", "unknown"),
+                cost_per_hour=selected_offer.get("cost_per_hour", 0.0),
                 created_at=time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-                region=result.offers[0].get("region", "vast.ai"),
+                region=selected_offer.get("region", "vast.ai"),
             )
             self._provision_history.append({
                 "action": "auto_provision",
                 "instance_id": instance_id,
                 "offer_id": offer_id,
+                "host_id": host_id,
                 "model": model,
                 "timestamp": self._instance.created_at,
             })
             _log.info(
-                "vastai auto_provision started: instance_id=%s offer=%s model=%s",
-                instance_id, offer_id, model,
+                "vastai auto_provision started: instance_id=%s offer=%s host=%s model=%s",
+                instance_id, offer_id, host_id, model,
             )
 
             # Background thread: polls until Ollama is reachable, then marks ready
             t = threading.Thread(
                 target=self._poll_until_ready,
-                args=(instance_id, cfg.api_key),
+                args=(instance_id, cfg.api_key, host_id),
                 daemon=True,
                 name=f"vastai-poll-{instance_id}",
             )
@@ -569,6 +593,7 @@ class VastAIManager:
         self,
         instance_id: str,
         api_key: str,
+        host_id: Optional[int] = None,
         max_wait: int = 600,
         poll_interval: int = 20,
     ) -> None:
@@ -628,6 +653,11 @@ class VastAIManager:
                         "vastai poll: instance_id=%s entered terminal state=%s — destroying",
                         instance_id, actual_status,
                     )
+                    # Blacklist this host — if it entered a terminal error state it may
+                    # be unreliable (hardware issue, misconfiguration, etc.)
+                    _bad_host = host_id or inst.get("host_id")
+                    if _bad_host is not None:
+                        self._failed_host_ids.add(_bad_host)
                     # Actually terminate the instance on Vast.ai so it stops billing.
                     try:
                         _vastai_request("DELETE", f"/instances/{instance_id}/", api_key)
@@ -651,6 +681,14 @@ class VastAIManager:
                         "permission denied",
                     )
                     if any(p in status_msg for p in _FATAL_MSG_PATTERNS):
+                        # Blacklist this host so we don't provision on it again.
+                        _bad_host = host_id or inst.get("host_id")
+                        if _bad_host is not None:
+                            self._failed_host_ids.add(_bad_host)
+                            _log.info(
+                                "vastai poll: blacklisted host_id=%s due to fatal Docker error",
+                                _bad_host,
+                            )
                         _log.warning(
                             "vastai poll: instance_id=%s stuck loading with fatal Docker error"
                             " — destroying.  status_msg=%r",
