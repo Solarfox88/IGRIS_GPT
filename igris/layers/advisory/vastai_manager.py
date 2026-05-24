@@ -172,6 +172,10 @@ class VastAIManager:
     def __init__(self) -> None:
         self._instance: Optional[VastInstance] = None
         self._provision_history: List[Dict[str, Any]] = []
+        # Cleanup orphaned instances from previous service runs in the background.
+        # This handles the case where the service restarted while an instance was
+        # provisioning or errored — without this, the instance keeps billing.
+        self._startup_cleanup()
 
     # -- Config --
 
@@ -620,9 +624,15 @@ class VastAIManager:
 
                 elif actual_status in ("offline", "exited", "error"):
                     _log.warning(
-                        "vastai poll: instance_id=%s entered terminal state=%s",
+                        "vastai poll: instance_id=%s entered terminal state=%s — destroying",
                         instance_id, actual_status,
                     )
+                    # Actually terminate the instance on Vast.ai so it stops billing.
+                    try:
+                        _vastai_request("DELETE", f"/instances/{instance_id}/", api_key)
+                        _log.info("vastai poll: deleted failed instance %s", instance_id)
+                    except Exception as _del_exc:
+                        _log.warning("vastai poll: DELETE failed for %s: %s", instance_id, _del_exc)
                     if self._instance and self._instance.instance_id == instance_id:
                         self._instance.status = "destroyed"
                     return
@@ -631,6 +641,62 @@ class VastAIManager:
                 _log.debug("vastai poll error: %s", exc)
 
         _log.warning("vastai poll timed out after %ds: instance_id=%s", max_wait, instance_id)
+
+    def _startup_cleanup(self) -> None:
+        """Delete any orphaned igris-orchestrator-* instances left by previous runs.
+
+        Runs in a background thread so it doesn't block startup.  Instances
+        in error/exited/offline state are deleted immediately.  Running instances
+        are adopted (so the next get_ready_endpoint() call can use them).
+        """
+        cfg = CONFIG.vastai
+        if not cfg.api_key or cfg.mode == "disabled":
+            return
+
+        def _cleanup() -> None:
+            try:
+                data = _vastai_request("GET", "/instances/", cfg.api_key)
+                instances = data.get("instances", [])
+                for inst in instances:
+                    label = inst.get("label", "") or ""
+                    if not label.startswith("igris-orchestrator-"):
+                        continue
+                    inst_id = str(inst.get("id", ""))
+                    actual_status = inst.get("actual_status", "")
+                    _log.info(
+                        "vastai startup: found orphaned instance %s label=%s status=%s",
+                        inst_id, label, actual_status,
+                    )
+                    if actual_status in ("error", "exited", "offline", ""):
+                        try:
+                            _vastai_request("DELETE", f"/instances/{inst_id}/", cfg.api_key)
+                            _log.info("vastai startup: deleted orphaned instance %s", inst_id)
+                        except Exception as exc:
+                            _log.warning("vastai startup: DELETE %s failed: %s", inst_id, exc)
+                    elif actual_status == "running" and self._instance is None:
+                        # Adopt a running instance so we don't re-provision needlessly
+                        ssh_host = inst.get("ssh_host", "")
+                        model = label.replace("igris-orchestrator-", "").replace("-", ":", 1)
+                        self._instance = VastInstance(
+                            instance_id=inst_id,
+                            status="running",
+                            model=model,
+                            gpu=inst.get("gpu_name", "unknown"),
+                            cost_per_hour=inst.get("dph_total", 0.0),
+                            created_at=str(inst.get("start_date", "")),
+                            region=inst.get("geolocation", "vast.ai"),
+                            instance_host=ssh_host,
+                            ready=False,  # will be confirmed by probe
+                        )
+                        _log.info(
+                            "vastai startup: adopted running instance %s at %s",
+                            inst_id, ssh_host,
+                        )
+            except Exception as exc:
+                _log.debug("vastai startup cleanup error: %s", exc)
+
+        t = threading.Thread(target=_cleanup, daemon=True, name="vastai-startup-cleanup")
+        t.start()
 
     @staticmethod
     def _probe_ollama(host: str, port: int, timeout: int = 5) -> bool:
