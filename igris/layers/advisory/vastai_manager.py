@@ -505,7 +505,11 @@ class VastAIManager:
                     # Ollama official image; starts server on port 11434
                     "image": "ollama/ollama:latest",
                     "runtype": "ssh",
-                    "disk": 30,
+                    # NOTE: do NOT pass "disk" — it triggers --storage-opt size=Ng
+                    # which requires XFS with pquota on the host.  Most Vast.ai hosts
+                    # use ext4 and fail with "storage-opt is supported only for overlay
+                    # over xfs with 'pquota' mount option".  Vast.ai allocates disk
+                    # automatically from the offer's available space.
                     "label": f"igris-orchestrator-{model.replace(':', '-')}",
                     # Pull model on startup so it's ready for first inference
                     "onstart": (
