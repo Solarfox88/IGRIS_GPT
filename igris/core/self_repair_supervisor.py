@@ -5660,6 +5660,30 @@ class SelfRepairSupervisor:
         why_too_large = _safe_redact(str(decomposition.get("why_too_large", "")))
         first_sub = decomposition.get("first_sub_mission", "")
 
+        # Collect parent issue labels to propagate to sub-issues (roadmap, P*, phase-*).
+        # This ensures the watchdog can discover sub-issues the same way it finds parent
+        # roadmap issues.  Best-effort: if we can't read the parent labels, we proceed
+        # without them rather than blocking sub-issue creation.
+        _parent_inherit_labels: List[str] = []
+        try:
+            import re as _re, subprocess as _subp2
+            _parent_num_m = _re.search(r"#(\d+)", config.goal or "")
+            if _parent_num_m:
+                _parent_num = int(_parent_num_m.group(1))
+                _pl = _subp2.run(
+                    ["gh", "issue", "view", str(_parent_num), "--json", "labels"],
+                    capture_output=True, text=True, cwd=self.project_root, timeout=15,
+                )
+                if _pl.returncode == 0:
+                    import json as _json2
+                    _raw_labels = _json2.loads(_pl.stdout or "{}").get("labels", [])
+                    for _lbl in _raw_labels:
+                        _n = (_lbl.get("name") or "").lower()
+                        if _n in ("roadmap", "created-by:igris") or _n.startswith("p") and len(_n) == 2 and _n[1].isdigit() or _n.startswith("phase-"):
+                            _parent_inherit_labels.append(_lbl.get("name", _n))
+        except Exception:
+            pass  # Label propagation is best-effort
+
         created_urls: List[str] = []
         run.add(
             "subissue_creation",
@@ -5758,6 +5782,28 @@ class SelfRepairSupervisor:
                     url=url,
                     risk=risk,
                 )
+                # Propagate parent roadmap/priority/phase labels so the watchdog
+                # can discover and schedule sub-issues automatically.
+                if _parent_inherit_labels:
+                    # Also add depends-on-NNN labels for dependencies between sub-issues
+                    _sub_labels = list(_parent_inherit_labels)
+                    # Add depends-on labels for each listed dependency (other sub-issues)
+                    for _dep in deps:
+                        # deps may be issue URLs or "Sub-task N" style references
+                        import re as _re2
+                        _dep_num = _re2.search(r"#?(\d+)", str(_dep))
+                        if _dep_num:
+                            _sub_labels.append(f"depends-on-{_dep_num.group(1)}")
+                    try:
+                        import subprocess as _subp3
+                        _subp3.run(
+                            ["gh", "issue", "edit", url, "--add-label",
+                             ",".join(_sub_labels)],
+                            capture_output=True, text=True,
+                            cwd=self.project_root, timeout=20,
+                        )
+                    except Exception:
+                        pass  # Label application is best-effort
             else:
                 run.add(
                     "subissue_created",
