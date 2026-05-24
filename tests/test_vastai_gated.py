@@ -100,7 +100,8 @@ class TestVastAIConfig:
         assert CONFIG.vastai.require_approval is True
 
     def test_max_hourly_cost(self):
-        assert CONFIG.vastai.max_hourly_cost == 0.50
+        # Default raised to 3.00 — RTX PRO 6000 WS (~$2.54/h) is cheapest working host
+        assert CONFIG.vastai.max_hourly_cost == 3.00
 
     def test_mode_on_demand(self):
         assert CONFIG.vastai.mode == "on_demand"

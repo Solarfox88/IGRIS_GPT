@@ -9,8 +9,11 @@ Config defaults:
   VASTAI_FALLBACK_MODEL=qwen2.5-coder:7b
   VASTAI_AUTO_PROVISION=false
   VASTAI_REQUIRE_APPROVAL=true
-  VASTAI_MAX_HOURLY_COST=0.50
+  VASTAI_MAX_HOURLY_COST=3.00   # RTX PRO 6000 WS ~$2.54/h is cheapest working host
   VASTAI_MODE=on_demand
+
+Image strategy: ollama/ollama (Ollama pre-installed, no curl dependency).
+ubuntu:22.04+curl failed because containers have no outbound internet access.
 """
 
 from __future__ import annotations
@@ -41,27 +44,30 @@ APPROVAL_TOKEN = "I_APPROVE_VASTAI_COSTS"
 SUPPORTED_MODELS = {
     "deepseek-r1:32b": {
         "vram_gb": 24,
-        "disk_gb": 25,           # model ~19.9GB + OS/layer overhead
+        "disk_gb": 25,           # model ~19.9GB + ollama/ollama image overhead
         "min_gpu": "RTX 3090",
-        "estimated_cost_hr": 0.30,
+        # Empirical: cheapest working Vast.ai host as of 2026-05 is RTX PRO 6000 WS
+        # at ~$2.54/h. All RTX 3090 / RTX 5090 / H100 hosts fail with "failed to
+        # create containerd task". Set VASTAI_MAX_HOURLY_COST ≥ 2.55 to provision.
+        "estimated_cost_hr": 2.55,
     },
     "deepseek-r1:70b": {
         "vram_gb": 48,
         "disk_gb": 45,           # model ~40GB + overhead
         "min_gpu": "A6000",
-        "estimated_cost_hr": 0.60,
+        "estimated_cost_hr": 4.50,
     },
     "qwen2.5-coder:7b": {
         "vram_gb": 8,
         "disk_gb": 10,
         "min_gpu": "RTX 3060",
-        "estimated_cost_hr": 0.10,
+        "estimated_cost_hr": 0.50,
     },
     "qwen2.5-coder:32b": {
         "vram_gb": 24,
         "disk_gb": 25,
         "min_gpu": "RTX 3090",
-        "estimated_cost_hr": 0.30,
+        "estimated_cost_hr": 2.55,
     },
 }
 
@@ -322,7 +328,7 @@ class VastAIManager:
                 if host_id in self._failed_host_ids:
                     continue
                 # Minimum disk space for model files + OS overhead.
-                # ubuntu:22.04 + Ollama install takes ~2GB; model files vary per model.
+                # ollama/ollama image is ~1GB; model files vary per model (e.g. 19.9GB for 32b).
                 disk_gb = float(o.get("disk_space") or 0)
                 min_disk_gb = float(info.get("disk_gb") or info["vram_gb"] * 1.2)
                 if disk_gb < min_disk_gb:
@@ -446,10 +452,13 @@ class VastAIManager:
                 cfg.api_key,
                 payload={
                     "client_id": "me",
-                    "image": "pytorch/pytorch:latest",
+                    # ollama/ollama has Ollama pre-installed — no curl download needed.
+                    # Avoids the outbound-internet dependency that caused ubuntu:22.04+curl
+                    # to silently fail (Ollama never started → connection refused forever).
+                    "image": "ollama/ollama",
                     # "ssh_direct" = direct SSH (faster), correct Vast.ai API value.
                     "runtype": "ssh_direct",
-                    "disk": 10,
+                    "disk": 25,   # deepseek-r1:32b model is ~19.9 GB
                     "label": f"igris-{model.replace(':','-')}",
                 },
             )
@@ -571,33 +580,29 @@ class VastAIManager:
                 cfg.api_key,
                 payload={
                     "client_id": "me",
-                    # ubuntu:22.04 is a minimal image that starts on virtually every
-                    # Vast.ai host regardless of CUDA toolkit / containerd configuration.
-                    # ollama/ollama:latest failed with "failed to create containerd task"
-                    # on RTX 3090 / RTX 5090 hosts that have CUDA 13.0 and rel=0.99 —
-                    # the issue is CUDA image compatibility with the host's containerd,
-                    # NOT the CUDA driver version. Using ubuntu:22.04 + installing Ollama
-                    # via onstart avoids all container-start failures.
-                    "image": "ubuntu:22.04",
+                    # ollama/ollama has Ollama pre-installed — no curl install needed.
+                    # Root cause of previous failures: ubuntu:22.04 + curl install failed
+                    # silently because the container has no outbound internet access, so
+                    # ollama was never installed → connection refused for the full 20 min
+                    # timeout. Switching to ollama/ollama eliminates the curl dependency.
+                    # RTX 3090 / RTX 5090 / H100 still fail with "failed to create
+                    # containerd task" (host-level containerd bug, unrelated to image).
+                    # Only RTX PRO 6000 WS hosts reliably start containers.
+                    "image": "ollama/ollama",
                     "runtype": "ssh_direct",
-                    "disk": 10,
+                    "disk": 25,   # deepseek-r1:32b model is ~19.9 GB
                     "label": f"igris-orchestrator-{model.replace(':', '-')}",
                     "env": {
                         "-p 11434:11434": "1",
+                        # Bind Ollama to all interfaces so the host-mapped port is reachable.
+                        "OLLAMA_HOST": "0.0.0.0",
                     },
-                    # Install Ollama then start the server.
-                    # IMPORTANT:
-                    # 1. Use ';' not '&&': install.sh calls systemctl which
-                    #    exits non-zero in Docker (no systemd), so '&&' would
-                    #    silently skip the serve command entirely.
-                    # 2. Use 'nohup': sets SIG_IGN for SIGHUP before exec so
-                    #    ollama survives when the onstart shell exits. Plain
-                    #    '& disown' is unreliable if onstart runs under /bin/sh
-                    #    (disown is a bash built-in) or if the kernel sends
-                    #    SIGHUP to background jobs on shell exit.
+                    # In ssh_direct mode Vast.ai replaces the image ENTRYPOINT with sshd.
+                    # The onstart script runs post-boot inside the container shell.
+                    # ollama binary is already in PATH (baked into the image), so we only
+                    # need to start the serve process. nohup ensures it survives when the
+                    # onstart shell exits (sets SIG_IGN for SIGHUP before exec).
                     "onstart": (
-                        "curl -fsSL https://ollama.com/install.sh | sh "
-                        ">/var/log/ollama_install.log 2>&1 ; "
                         "nohup env OLLAMA_HOST=0.0.0.0 ollama serve "
                         ">/var/log/ollama.log 2>&1 &"
                     ),

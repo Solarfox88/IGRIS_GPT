@@ -330,7 +330,7 @@ class TestAutoProvisionSafetyGates:
         with patch.object(CONFIG.vastai, "auto_provision", True), \
              patch.object(CONFIG.vastai, "api_key", "test-key"), \
              patch.object(CONFIG.vastai, "mode", "on_demand"), \
-             patch.object(CONFIG.vastai, "max_hourly_cost", 0.50), \
+             patch.object(CONFIG.vastai, "max_hourly_cost", 3.00), \
              patch.object(_vast_mod, "_vastai_request", _fake_req), \
              patch.object(threading.Thread, "__init__", _track_thread):
             result = mgr.auto_provision_for_orchestrator(model="deepseek-r1:32b")
