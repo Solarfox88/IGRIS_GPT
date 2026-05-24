@@ -213,6 +213,16 @@ class RankSupervisorConfig:
     # Guards against infinite cascade: parent→child→grandchild→... stops at depth 2.
     autochain_depth: int = 0
     no_diff_steps_max: int = 20
+    # Cross-run history: populated by the watchdog from _issue_failures so the
+    # assignment router knows how many prior attempts have been made for this
+    # issue.  Enables hard_debugging escalation (→ gpu_reasoning → VastAI) on
+    # repeated failures instead of always starting from code_reasoning.
+    prior_attempts: int = 0
+    # Aggregated capability_signals from the last failed run for this issue.
+    # Merged with the current run's signals before the initial AssignmentRequest
+    # so that accumulated no_diff_repair / reasoning_timeout counts survive
+    # across watchdog cycles.
+    prior_capability_signals: Dict[str, int] = field(default_factory=dict)
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "RankSupervisorConfig":
@@ -250,6 +260,8 @@ class RankSupervisorConfig:
             api_helper_mode=str(data.get("api_helper_mode", "")),
             autochain_depth=max(0, int(data.get("autochain_depth", 0) or data.get("_autochain_depth", 0))),
             no_diff_steps_max=max(1, int(data.get("no_diff_steps_max", 20))),
+            prior_attempts=max(0, int(data.get("prior_attempts", 0))),
+            prior_capability_signals=dict(data.get("prior_capability_signals") or {}),
         )
 
 
@@ -3097,12 +3109,20 @@ class SelfRepairSupervisor:
             try:
                 _outcomes_path = str(Path(self.project_root) / ".igris" / "assignment_outcomes.json")
                 _router = AssignmentRouter(outcomes_path=_outcomes_path)
+                # Merge prior capability_signals (from last failed run, passed by
+                # the watchdog) with any signals already accumulated in this run.
+                # This preserves no_diff_repair / reasoning_timeout counts across
+                # watchdog cycles so the router can escalate to hard_debugging
+                # (→ gpu_reasoning → VastAI) after repeated cross-run failures.
+                _merged_signals: Dict[str, int] = dict(config.prior_capability_signals)
+                for _sig, _cnt in run.capability_signals.items():
+                    _merged_signals[_sig] = _merged_signals.get(_sig, 0) + _cnt
                 _req = AssignmentRequest(
                     goal_text=config.goal,
                     risk_level="medium",
                     failure_class="",
-                    capability_signals=dict(run.capability_signals),
-                    prior_attempts=0,
+                    capability_signals=_merged_signals,
+                    prior_attempts=config.prior_attempts,
                     local_model_available=True,
                     budget_remaining_usd=float(config.max_api_budget_usd) or 10.0,
                     required_tests=list(config.targeted_tests),

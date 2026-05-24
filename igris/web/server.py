@@ -205,6 +205,11 @@ async def _watchdog_loop(project_root: str) -> None:
     # so it survives server restarts — IGRIS won't retry a capability-ceiling
     # issue every time the service restarts after another successful run.
     _issue_failures: Dict[int, int] = {}
+    # Last capability_signals dict from the most-recent failed run per issue.
+    # Passed as prior_capability_signals to the next run so the assignment
+    # router can escalate to hard_debugging (→ gpu_reasoning → VastAI) after
+    # repeated failures with accumulated no_diff_repair / reasoning_timeout.
+    _issue_last_signals: Dict[int, Dict] = {}
     _skipped_issues: set = _load_skipped_issues(project_root)
     if _skipped_issues:
         _watchdog_logger.info(
@@ -303,10 +308,23 @@ async def _watchdog_loop(project_root: str) -> None:
                             )
                             count = _issue_failures.get(_last_issue_num, 0) + 1
                             _issue_failures[_last_issue_num] = count
+                            # Save capability_signals from the failed run so the
+                            # next attempt can merge them — enables cross-run
+                            # escalation to hard_debugging → gpu_reasoning → VastAI.
+                            _last_sigs = dict(
+                                getattr(last_run, "capability_signals", None) or {}
+                            )
+                            if _last_sigs:
+                                prev = _issue_last_signals.get(_last_issue_num, {})
+                                merged: Dict = dict(prev)
+                                for _s, _c in _last_sigs.items():
+                                    merged[_s] = merged.get(_s, 0) + _c
+                                _issue_last_signals[_last_issue_num] = merged
                             _watchdog_logger.info(
-                                "Watchdog: issue #%d failed (consecutive=%d, failure_class=%s)",
+                                "Watchdog: issue #%d failed (consecutive=%d, failure_class=%s, signals=%s)",
                                 _last_issue_num, count,
                                 getattr(last_run, "failure_class", ""),
+                                _issue_last_signals.get(_last_issue_num, {}),
                             )
                             if count >= threshold:
                                 _watchdog_logger.warning(
@@ -319,6 +337,7 @@ async def _watchdog_loop(project_root: str) -> None:
                                 _create_skip_issue(project_root, _last_issue_num, count)
                         elif last_run.status == "done":
                             _issue_failures.pop(_last_issue_num, None)
+                            _issue_last_signals.pop(_last_issue_num, None)
                     _last_run_id = None
                     _last_issue_num = None
 
@@ -439,6 +458,12 @@ async def _watchdog_loop(project_root: str) -> None:
                                 1,
                                 int(os.getenv("IGRIS_NO_DIFF_STEPS_MAX", "40") or "40"),
                             ),
+                            # Cross-run escalation: tell the assignment router how many
+                            # prior attempts have been made and what signals accumulated
+                            # so it can escalate to hard_debugging → gpu_reasoning → VastAI
+                            # after repeated failures without resetting from scratch.
+                            "prior_attempts": _issue_failures.get(number, 0),
+                            "prior_capability_signals": _issue_last_signals.get(number, {}),
                         },
                         project_root=project_root,
                     )
