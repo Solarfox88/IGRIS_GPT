@@ -394,8 +394,12 @@ def _build_candidates(agent_role: str, task_type: str, request: AssignmentReques
         or (no_diff_repair_count >= 2 and prior >= 2)
         or task_type in ("hard_debugging", "architecture_review")
     )
-    # After gpu_reasoning has been tried once, fall back to decomposition
-    gpu_already_tried = needs_gpu_reasoning and prior >= 1
+    # After gpu_reasoning has been tried at least twice, fall back to decomposition.
+    # Threshold is 2 (not 1) because the first run may be blocked in baseline tests
+    # before reasoning ever starts — VastAI would never have been attempted despite
+    # prior_attempts=1.  Two runs gives gpu_reasoning a real chance to fire at least
+    # once through _decide_action before escalating to decomposition.
+    gpu_already_tried = needs_gpu_reasoning and prior >= 2
 
     force_decompose = (
         task_type in ("planning", "memory_system")
