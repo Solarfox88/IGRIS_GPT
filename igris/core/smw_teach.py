@@ -71,5 +71,14 @@ async def teach_back(incident: Incident, project_root: str) -> None:
         pass
     if should_open_igris_issue(incident.pattern_name, project_root):
         title = f"feat(igris): handle {incident.pattern_name} autonomously"
-        body = f"Pattern ripetuto: {incident.pattern_name}\n\nRoot cause: {incident.root_cause}\n\nEvidence:\n{incident.evidence}\n"
-        subprocess.run(["gh", "issue", "create", "--title", title, "--body", body, "--label", "smw-teach"], cwd=project_root, capture_output=True, text=True)
+        body = (
+            f"## Perché questa issue esiste\n\n"
+            f"Il SMW teaching loop ha rilevato il pattern **`{incident.pattern_name}`** "
+            f"per la seconda volta (o più). Questo indica che IGRIS non gestisce ancora "
+            f"questo scenario in autonomia e richiede un improvement del codice.\n\n"
+            f"## Pattern ripetuto\n\n`{incident.pattern_name}`\n\n"
+            f"## Root cause identificata\n\n{incident.root_cause}\n\n"
+            f"## Evidence\n\n{incident.evidence}\n\n"
+            f"---\n*Opened by: IGRIS (autonomous agent)*"
+        )
+        subprocess.run(["gh", "issue", "create", "--title", title, "--body", body, "--label", "smw-teach,created-by:igris"], cwd=project_root, capture_output=True, text=True)

@@ -51,8 +51,16 @@ async def kill_stale_process(port: int = 7778) -> ActionResult:
 async def open_diagnostic_issue(project_root: str, pattern_name: str, evidence: str, actions_tried: List[str]) -> ActionResult:
     t = time.time()
     title = f"diag(smw): incident {pattern_name}"
-    body = f"Pattern: {pattern_name}\n\nEvidence:\n{evidence}\n\nActions tried: {', '.join(actions_tried)}"
-    p = subprocess.run(["gh", "issue", "create", "--title", title, "--body", body, "--label", "smw,diagnostic"], cwd=project_root, capture_output=True, text=True)
+    body = (
+        f"## Perché questa issue esiste\n\n"
+        f"Il SMW (Supervisor Meta-Watchdog) ha rilevato il pattern **`{pattern_name}`** "
+        f"con evidenza sufficiente da richiedere intervento manuale o tracking.\n\n"
+        f"## Pattern rilevato\n\n`{pattern_name}`\n\n"
+        f"## Evidence\n\n{evidence}\n\n"
+        f"## Azioni già tentate\n\n{', '.join(actions_tried) if actions_tried else 'nessuna'}\n\n"
+        f"---\n*Opened by: IGRIS (autonomous agent)*"
+    )
+    p = subprocess.run(["gh", "issue", "create", "--title", title, "--body", body, "--label", "smw,diagnostic,created-by:igris"], cwd=project_root, capture_output=True, text=True)
     return ActionResult("open_diagnostic_issue", p.returncode == 0, p.stdout + p.stderr + pattern_name, time.time() - t)
 
 
