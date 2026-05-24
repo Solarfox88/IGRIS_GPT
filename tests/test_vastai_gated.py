@@ -43,6 +43,9 @@ _MOCK_BUNDLES_RESPONSE = {
             "num_gpus": 1,
             "dph_total": 0.29,
             "cuda_max_good": 12.1,
+            "disk_space": 50,
+            "reliability2": 0.95,
+            "rentable": True,
             "geolocation": "US",
         }
     ]

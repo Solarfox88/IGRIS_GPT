@@ -39,21 +39,25 @@ APPROVAL_TOKEN = "I_APPROVE_VASTAI_COSTS"
 SUPPORTED_MODELS = {
     "deepseek-r1:32b": {
         "vram_gb": 24,
+        "disk_gb": 25,           # model ~19.9GB + OS/layer overhead
         "min_gpu": "RTX 3090",
         "estimated_cost_hr": 0.30,
     },
     "deepseek-r1:70b": {
         "vram_gb": 48,
+        "disk_gb": 45,           # model ~40GB + overhead
         "min_gpu": "A6000",
         "estimated_cost_hr": 0.60,
     },
     "qwen2.5-coder:7b": {
         "vram_gb": 8,
+        "disk_gb": 10,
         "min_gpu": "RTX 3060",
         "estimated_cost_hr": 0.10,
     },
     "qwen2.5-coder:32b": {
         "vram_gb": 24,
+        "disk_gb": 25,
         "min_gpu": "RTX 3090",
         "estimated_cost_hr": 0.30,
     },
@@ -287,6 +291,22 @@ class VastAIManager:
                 host_id = o.get("host_id")
                 if host_id in self._failed_host_ids:
                     continue
+                # ollama/ollama:latest requires CUDA ≥12. Hosts with older drivers
+                # fail with "failed to create containerd task" — filter at source.
+                cuda_ver = float(o.get("cuda_max_good") or 0)
+                if cuda_ver < 12.0:
+                    continue
+                # Minimum disk space for model files + OS overhead.
+                disk_gb = float(o.get("disk_space") or 0)
+                min_disk_gb = float(info.get("disk_gb") or info["vram_gb"] * 1.2)
+                if disk_gb < min_disk_gb:
+                    continue
+                # Skip unreliable hosts (score <0.8 out of 1.0).
+                reliability = float(
+                    o.get("reliability2") or o.get("reliability") or 1.0
+                )
+                if reliability < 0.8:
+                    continue
                 if gpu_ram_mb >= vram_mb and dph <= max_cost and is_rentable:
                     offers.append({
                         "id": o.get("id"),
@@ -295,7 +315,9 @@ class VastAIManager:
                         "vram_gb": round(gpu_ram_mb / 1024, 1),
                         "cost_per_hour": round(dph, 4),
                         "num_gpus": o.get("num_gpus", 1),
-                        "cuda": o.get("cuda_max_good", "?"),
+                        "cuda": round(cuda_ver, 1),
+                        "reliability": round(reliability, 2),
+                        "disk_gb": round(disk_gb, 0),
                         "region": o.get("geolocation", "?"),
                         "available": True,
                     })

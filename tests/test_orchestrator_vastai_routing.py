@@ -306,7 +306,9 @@ class TestAutoProvisionSafetyGates:
 
         _fake_offers = {"offers": [
             {"id": 5001, "gpu_name": "RTX 3090", "gpu_ram": 24576,
-             "num_gpus": 1, "dph_total": 0.05, "cuda_max_good": 12.0, "geolocation": "US"}
+             "num_gpus": 1, "dph_total": 0.05, "cuda_max_good": 12.0,
+             "disk_space": 50, "reliability2": 0.95, "rentable": True,
+             "geolocation": "US"}
         ]}
         _fake_provision = {"id": 9999}
 
