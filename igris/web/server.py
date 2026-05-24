@@ -412,7 +412,12 @@ async def _watchdog_loop(project_root: str) -> None:
                     number = issue["number"]
                     title = issue.get("title", f"issue #{number}")
                     body = issue.get("body", "")
-                    goal = f"Implement GitHub issue #{number}: {title}\n\n{body[:1000]}"
+                    # Pass the full issue body so acceptance criteria and
+                    # integration points are never cut off.  Previously capped
+                    # at 1000 chars, which silently dropped Rule 6, all
+                    # integration targets, and the entire ## Acceptance criteria
+                    # section for issues longer than ~1 KB.
+                    goal = f"Implement GitHub issue #{number}: {title}\n\n{body}"
                     _watchdog_logger.info("Watchdog: starting run for issue #%s — %s", number, title)
                     _run_budget = max(0.0, float(os.getenv("IGRIS_MAX_COST_PER_RUN", "3.0") or "3.0"))
                     _max_escalations = max(0, int(os.getenv("IGRIS_MAX_ESCALATIONS_PER_RUN", "3") or "3"))
