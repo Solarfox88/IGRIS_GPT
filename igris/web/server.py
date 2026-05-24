@@ -130,13 +130,31 @@ def _pick_next_roadmap_issue(
     except Exception:
         return None
 
+    _EPIC_SKIP_KEYWORDS = ("epic", "phase", "milestone", "overview", "arch", "design")
+
+    def _issue_priority(issue: Dict) -> tuple:
+        labels = [l.get("name", "").lower() for l in (issue.get("labels") or [])]
+        p = 99
+        if any(x in labels for x in ("p1", "priority: high", "priority:high")):
+            p = 1
+        elif any(x in labels for x in ("p2", "priority: medium", "priority:medium")):
+            p = 2
+        return (p, issue.get("number", 9999))
+
+    def _is_epic_issue(issue: Dict) -> bool:
+        title = (issue.get("title") or "").lower()
+        labels = [l.get("name", "").lower() for l in (issue.get("labels") or [])]
+        return "epic" in labels or any(k in title for k in _EPIC_SKIP_KEYWORDS)
+
     skip = skip_issues or set()
-    for issue in sorted(issues, key=lambda i: i.get("number", 9999)):
+    for issue in sorted(issues, key=_issue_priority):
         number = issue.get("number")
-        title = issue.get("title", "").lower()
+        title = (issue.get("title") or "").lower()
         if any(pat in title for pat in _REPAIR_ISSUE_PATTERNS):
             continue
         if number in skip:
+            continue
+        if _is_epic_issue(issue):
             continue
         return issue
     return None
