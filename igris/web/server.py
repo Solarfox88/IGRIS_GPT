@@ -144,7 +144,12 @@ def _pick_next_roadmap_issue(
     def _is_epic_issue(issue: Dict) -> bool:
         title = (issue.get("title") or "").lower()
         labels = [l.get("name", "").lower() for l in (issue.get("labels") or [])]
-        return "epic" in labels or any(k in title for k in _EPIC_SKIP_KEYWORDS)
+        # Use word-boundary matching to avoid false positives like
+        # "hierarchy" matching "arch"
+        return "epic" in labels or any(
+            re.search(r"\b" + re.escape(k) + r"\b", title)
+            for k in _EPIC_SKIP_KEYWORDS
+        )
 
     skip = skip_issues or set()
     for issue in sorted(issues, key=_issue_priority):
