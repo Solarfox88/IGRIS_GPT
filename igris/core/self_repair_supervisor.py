@@ -1266,6 +1266,43 @@ def _allow_unrelated_vastai_baseline_failures(
     return not goal_is_vastai
 
 
+def _baseline_cache_path(project_root: str) -> Path:
+    return Path(project_root) / ".igris" / "baseline_cache.json"
+
+
+def _load_valid_baseline_cache(project_root: str, head_sha: str) -> Optional[Dict[str, Any]]:
+    ttl = max(60, int(os.getenv("IGRIS_BASELINE_CACHE_SECONDS", "1800")))
+    path = _baseline_cache_path(project_root)
+    if not path.exists():
+        return None
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError, TypeError, ValueError):
+        return None
+    if str(payload.get("head_sha", "")).strip() != str(head_sha).strip():
+        return None
+    checked_at = float(payload.get("checked_at", 0.0) or 0.0)
+    if checked_at <= 0:
+        return None
+    if (time.time() - checked_at) > ttl:
+        return None
+    if not bool(payload.get("baseline_ok", False)):
+        return None
+    return payload
+
+
+def _save_baseline_cache(project_root: str, head_sha: str, policy: str = "strict") -> None:
+    path = _baseline_cache_path(project_root)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    payload = {
+        "head_sha": str(head_sha),
+        "checked_at": float(time.time()),
+        "baseline_ok": True,
+        "policy": str(policy),
+    }
+    path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+
+
 def _has_immediately_dangerous_diff(diff: str) -> bool:
     """Fast pre-test check for diffs that would definitely break the app.
 
@@ -3106,45 +3143,67 @@ class SelfRepairSupervisor:
 
         head = self.backend.git_log_head()
         run.add("git_head", "success" if head.success else "failure", _command_detail(head))
+        head_sha = str((head.output or "").strip().split()[0] if head.success and (head.output or "").strip() else "")
 
-        run.add(
-            "baseline_tests",
-            "running",
-            "Running baseline pytest (-m 'not slow')",
-            timeout_seconds=config.test_timeout_seconds,
-            exclude_slow=True,
-        )
-        baseline = self.backend.run_tests(timeout=config.test_timeout_seconds, hard_cap=config.test_hard_cap_seconds, exclude_slow=True)
-        run.add("baseline_tests", "success" if baseline.success else "failure", _command_detail(baseline))
-        cancelled = self._cancel_if_requested(run)
-        if cancelled is not None:
-            return cancelled
-        if not baseline.success:
+        cache_hit = _load_valid_baseline_cache(str(self.project_root), head_sha) if head_sha else None
+        if cache_hit:
             run.add(
-                "baseline_diagnostics",
+                "baseline_tests",
+                "skipped",
+                "Reusing cached baseline result for current HEAD.",
+                head_sha=head_sha,
+                checked_at=float(cache_hit.get("checked_at", 0.0) or 0.0),
+                policy=str(cache_hit.get("policy", "strict")),
+            )
+        else:
+            run.add(
+                "baseline_tests",
                 "running",
-                "Running first-failure pytest diagnostics",
-                timeout_seconds=min(config.test_timeout_seconds, 180),
+                "Running baseline pytest (-m 'not slow')",
+                timeout_seconds=config.test_timeout_seconds,
+                exclude_slow=True,
             )
-            diagnostics = self.backend.run_test_diagnostics(
-                timeout=min(config.test_timeout_seconds, 180),
-            )
-            run.add(
-                "baseline_diagnostics",
-                "success" if diagnostics.success else "failure",
-                _command_detail(diagnostics),
-            )
-            if _allow_unrelated_vastai_baseline_failures(config.goal, baseline, diagnostics):
+            baseline = self.backend.run_tests(timeout=config.test_timeout_seconds, hard_cap=config.test_hard_cap_seconds, exclude_slow=True)
+            run.add("baseline_tests", "success" if baseline.success else "failure", _command_detail(baseline))
+            cancelled = self._cancel_if_requested(run)
+            if cancelled is not None:
+                return cancelled
+            if not baseline.success:
                 run.add(
-                    "baseline_gate",
-                    "warning",
-                    "Proceeding despite unrelated baseline failures in VastAI test suite",
-                    policy="allow_unrelated_vastai_baseline_failures",
+                    "baseline_diagnostics",
+                    "running",
+                    "Running first-failure pytest diagnostics",
+                    timeout_seconds=min(config.test_timeout_seconds, 180),
                 )
-            elif _baseline_failure_is_transient(baseline, diagnostics):
-                return self._blocked(run, "infra_timeout", "Baseline tests timed out or transient infra error")
-            else:
-                return self._blocked(run, "pytest_failure", "Baseline tests failed")
+                diagnostics = self.backend.run_test_diagnostics(
+                    timeout=min(config.test_timeout_seconds, 180),
+                )
+                run.add(
+                    "baseline_diagnostics",
+                    "success" if diagnostics.success else "failure",
+                    _command_detail(diagnostics),
+                )
+                if _allow_unrelated_vastai_baseline_failures(config.goal, baseline, diagnostics):
+                    run.add(
+                        "baseline_gate",
+                        "warning",
+                        "Proceeding despite unrelated baseline failures in VastAI test suite",
+                        policy="allow_unrelated_vastai_baseline_failures",
+                    )
+                    if head_sha:
+                        try:
+                            _save_baseline_cache(str(self.project_root), head_sha, policy="allow_unrelated_vastai")
+                        except OSError:
+                            pass
+                elif _baseline_failure_is_transient(baseline, diagnostics):
+                    return self._blocked(run, "infra_timeout", "Baseline tests timed out or transient infra error")
+                else:
+                    return self._blocked(run, "pytest_failure", "Baseline tests failed")
+            elif head_sha:
+                try:
+                    _save_baseline_cache(str(self.project_root), head_sha, policy="strict")
+                except OSError:
+                    pass
 
         run.add("baseline_smoke", "running", "Running baseline smoke")
         smoke = self.backend.smoke(config.required_smoke_endpoints, restart_command)
@@ -3225,7 +3284,7 @@ class SelfRepairSupervisor:
         # Pre-flight planning: read-only scope analysis before first attempt.
         # If the planning pass recommends decomposition, block proactively rather
         # than discovering the same thing after 3 failed repair cycles.
-        if config.enable_mission_planning:
+        if config.enable_mission_planning or self._goal_needs_preflight_decomposition(config.goal):
             scope = self._plan_mission(run, config)
             if scope and scope.get("decomposition_recommended"):
                 run.add(
@@ -3383,13 +3442,29 @@ class SelfRepairSupervisor:
                 ui_visibility_changed=ui_visibility_changed,
                 mission_orchestration_mode=mission_plan.mode,
             )
+            if (
+                stage_failure == "reasoning_loop_blocked"
+                and stop_reason == "no_diff_repair"
+                and not modified_files
+            ):
+                triggering_signal = self._detect_capability_limit(run)
+                if triggering_signal:
+                    return self._handle_capability_limit(
+                        run, triggering_signal, config, mission_plan, stage_statuses,
+                        cleanup_workspace=True,
+                    )
             cancelled = self._cancel_if_requested(run, mission_plan=mission_plan, stage_statuses=stage_statuses)
             if cancelled is not None:
                 return cancelled
 
-            diff_stat = self.backend.git_diff_stat()
-            diff = self.backend.git_diff()
-            run.add("diff_stat", "success" if diff_stat.success else "failure", _command_detail(diff_stat))
+            if stage_failure == "reasoning_loop_blocked" and stop_reason == "no_diff_repair" and not modified_files:
+                diff_stat = CommandResult(True, "")
+                diff = CommandResult(True, "")
+                run.add("diff_stat", "skipped", "Skipped diff collection after no_diff_repair with no modified files.")
+            else:
+                diff_stat = self.backend.git_diff_stat()
+                diff = self.backend.git_diff()
+                run.add("diff_stat", "success" if diff_stat.success else "failure", _command_detail(diff_stat))
             # Persist the full diff to disk immediately so _complete_rank can
             # recover if the working tree is unexpectedly reverted before the
             # commit (e.g. watchdog cleanup racing during branch transitions).
@@ -5741,6 +5816,23 @@ class SelfRepairSupervisor:
     # At this depth the policy must NOT create GitHub issues — doing so would
     # produce orphaned issues that can never be auto-run.
     _MAX_AUTOCHAIN_DEPTH: int = 2
+
+    @staticmethod
+    def _goal_needs_preflight_decomposition(goal: str) -> bool:
+        text = (goal or "").lower()
+        strong_markers = (
+            "memory tree",
+            "hierarchy",
+            "pipeline",
+            "roadmap",
+            "phase-2bis",
+            "chunk",
+            "topic",
+            "global",
+            "decompose",
+        )
+        score = sum(1 for marker in strong_markers if marker in text)
+        return score >= 3 or len(text) >= 220
 
     @staticmethod
     def _decomposition_policy(
