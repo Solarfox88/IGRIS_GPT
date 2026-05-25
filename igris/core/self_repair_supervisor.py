@@ -1210,6 +1210,59 @@ def classify_failure(
     return "infrastructure_bug"
 
 
+def _extract_failed_pytest_nodes(text: str) -> List[str]:
+    nodes = re.findall(r"FAILED\s+([^\s]+::[^\s]+)", text or "")
+    if not nodes:
+        nodes = re.findall(r"(tests/[A-Za-z0-9_./-]+\.py)", text or "")
+    seen: set[str] = set()
+    out: List[str] = []
+    for node in nodes:
+        key = str(node).strip()
+        if key and key not in seen:
+            seen.add(key)
+            out.append(key)
+    return out
+
+
+def _baseline_failure_is_transient(baseline: CommandResult, diagnostics: Optional[CommandResult]) -> bool:
+    if baseline.returncode == 124:
+        return True
+    if diagnostics and diagnostics.returncode == 124:
+        return True
+    text = "\n".join([
+        baseline.output or "",
+        baseline.error or "",
+        diagnostics.output if diagnostics else "",
+        diagnostics.error if diagnostics else "",
+    ]).lower()
+    transient_markers = (
+        "keyboardinterrupt",
+        "timed out",
+        "timeout",
+        "connection reset",
+        "connection refused",
+        "temporarily unavailable",
+        "resource temporarily unavailable",
+        "no space left on device",
+    )
+    return any(marker in text for marker in transient_markers)
+
+
+def _allow_unrelated_vastai_baseline_failures(goal: str, diagnostics: Optional[CommandResult]) -> bool:
+    if not diagnostics:
+        return False
+    failed_nodes = _extract_failed_pytest_nodes(
+        "\n".join([diagnostics.output or "", diagnostics.error or ""])
+    )
+    if not failed_nodes:
+        return False
+    if any("/test_vastai_" not in node for node in failed_nodes):
+        return False
+    goal_l = (goal or "").lower()
+    goal_is_vastai = any(token in goal_l for token in ("vast", "gpu", "v100", "3090", "4090", "ollama"))
+    return not goal_is_vastai
+
+
 def _has_immediately_dangerous_diff(diff: str) -> bool:
     """Fast pre-test check for diffs that would definitely break the app.
 
@@ -3078,7 +3131,17 @@ class SelfRepairSupervisor:
                 "success" if diagnostics.success else "failure",
                 _command_detail(diagnostics),
             )
-            return self._blocked(run, "pytest_failure", "Baseline tests failed")
+            if _baseline_failure_is_transient(baseline, diagnostics):
+                return self._blocked(run, "infra_timeout", "Baseline tests timed out or transient infra error")
+            if _allow_unrelated_vastai_baseline_failures(config.goal, diagnostics):
+                run.add(
+                    "baseline_gate",
+                    "warning",
+                    "Proceeding despite unrelated baseline failures in VastAI test suite",
+                    policy="allow_unrelated_vastai_baseline_failures",
+                )
+            else:
+                return self._blocked(run, "pytest_failure", "Baseline tests failed")
 
         run.add("baseline_smoke", "running", "Running baseline smoke")
         smoke = self.backend.smoke(config.required_smoke_endpoints, restart_command)
