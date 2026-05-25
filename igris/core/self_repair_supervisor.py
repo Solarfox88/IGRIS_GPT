@@ -3379,11 +3379,15 @@ class SelfRepairSupervisor:
                     if assignment_decision is not None
                     else "code_reasoning"
                 )
+                max_reasoning_steps = max(40, int(os.getenv("IGRIS_RANK_MAX_STEPS", "120")))
+                reasoning_timeout = config.reasoning_timeout_seconds
+                if self._goal_needs_preflight_decomposition(config.goal):
+                    reasoning_timeout = min(reasoning_timeout, int(os.getenv("IGRIS_LARGE_MISSION_REASONING_TIMEOUT", "240")))
                 reasoning = self.backend.run_reasoning(
                     config.goal,
-                    max_steps=220,
+                    max_steps=max_reasoning_steps,
                     initial_context=self._rank_initial_context(config),
-                    timeout=config.reasoning_timeout_seconds,
+                    timeout=reasoning_timeout,
                     task_type=_routed_task_type,
                     preferred_profile=_routed_profile,
                 )
