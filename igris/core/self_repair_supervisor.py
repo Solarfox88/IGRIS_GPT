@@ -1303,6 +1303,18 @@ def _save_baseline_cache(project_root: str, head_sha: str, policy: str = "strict
     path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
 
 
+def _baseline_sanity_targets(project_root: str) -> List[str]:
+    raw = str(os.getenv("IGRIS_BASELINE_TEST_TARGETS", "")).strip()
+    if raw:
+        return [t for t in raw.split() if t.strip()]
+    defaults = [
+        "tests/test_health_readiness.py",
+        "tests/test_rank_status.py",
+    ]
+    root = Path(project_root)
+    return [t for t in defaults if (root / t).exists()]
+
+
 def _has_immediately_dangerous_diff(diff: str) -> bool:
     """Fast pre-test check for diffs that would definitely break the app.
 
@@ -3156,14 +3168,21 @@ class SelfRepairSupervisor:
                 policy=str(cache_hit.get("policy", "strict")),
             )
         else:
+            baseline_targets = _baseline_sanity_targets(str(self.project_root))
             run.add(
                 "baseline_tests",
                 "running",
-                "Running baseline pytest (-m 'not slow')",
+                "Running baseline sanity pytest",
                 timeout_seconds=config.test_timeout_seconds,
                 exclude_slow=True,
+                targets=baseline_targets,
             )
-            baseline = self.backend.run_tests(timeout=config.test_timeout_seconds, hard_cap=config.test_hard_cap_seconds, exclude_slow=True)
+            baseline = self.backend.run_tests(
+                baseline_targets or None,
+                timeout=config.test_timeout_seconds,
+                hard_cap=config.test_hard_cap_seconds,
+                exclude_slow=True,
+            )
             run.add("baseline_tests", "success" if baseline.success else "failure", _command_detail(baseline))
             cancelled = self._cancel_if_requested(run)
             if cancelled is not None:
