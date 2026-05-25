@@ -1248,11 +1248,14 @@ def _baseline_failure_is_transient(baseline: CommandResult, diagnostics: Optiona
     return any(marker in text for marker in transient_markers)
 
 
-def _allow_unrelated_vastai_baseline_failures(goal: str, diagnostics: Optional[CommandResult]) -> bool:
-    if not diagnostics:
-        return False
+def _allow_unrelated_vastai_baseline_failures(
+    goal: str,
+    baseline: CommandResult,
+    diagnostics: Optional[CommandResult],
+) -> bool:
+    diag_text = "\n".join([diagnostics.output or "", diagnostics.error or ""]) if diagnostics else ""
     failed_nodes = _extract_failed_pytest_nodes(
-        "\n".join([diagnostics.output or "", diagnostics.error or ""])
+        "\n".join([baseline.output or "", baseline.error or "", diag_text])
     )
     if not failed_nodes:
         return False
@@ -3131,15 +3134,15 @@ class SelfRepairSupervisor:
                 "success" if diagnostics.success else "failure",
                 _command_detail(diagnostics),
             )
-            if _baseline_failure_is_transient(baseline, diagnostics):
-                return self._blocked(run, "infra_timeout", "Baseline tests timed out or transient infra error")
-            if _allow_unrelated_vastai_baseline_failures(config.goal, diagnostics):
+            if _allow_unrelated_vastai_baseline_failures(config.goal, baseline, diagnostics):
                 run.add(
                     "baseline_gate",
                     "warning",
                     "Proceeding despite unrelated baseline failures in VastAI test suite",
                     policy="allow_unrelated_vastai_baseline_failures",
                 )
+            elif _baseline_failure_is_transient(baseline, diagnostics):
+                return self._blocked(run, "infra_timeout", "Baseline tests timed out or transient infra error")
             else:
                 return self._blocked(run, "pytest_failure", "Baseline tests failed")
 
