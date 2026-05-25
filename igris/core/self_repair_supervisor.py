@@ -3626,14 +3626,29 @@ class SelfRepairSupervisor:
                     "running",
                     "Running full pytest validation.",
                 )
+                full_targets: Optional[List[str]] = None
+                full_validation_mode = "full"
+                # Structural policy: during local supervised execution (no PR/merge),
+                # avoid paying full-suite cost on every attempt. Use a stable
+                # validation suite focused on service health + rank contract.
+                if not config.allow_github_pr and not config.allow_merge_if_green:
+                    full_targets = _baseline_sanity_targets(str(self.project_root))
+                    full_validation_mode = "sanity"
                 run.add(
                     "full_pytest",
                     "running",
-                    "Running full pytest (-m 'not slow')",
+                    "Running full pytest (-m 'not slow')" if full_validation_mode == "full" else "Running validation sanity suite",
                     timeout_seconds=config.test_timeout_seconds,
                     exclude_slow=True,
+                    targets=full_targets or [],
+                    validation_mode=full_validation_mode,
                 )
-                full = self.backend.run_tests(timeout=config.test_timeout_seconds, hard_cap=config.test_hard_cap_seconds, exclude_slow=True)
+                full = self.backend.run_tests(
+                    full_targets or None,
+                    timeout=config.test_timeout_seconds,
+                    hard_cap=config.test_hard_cap_seconds,
+                    exclude_slow=True,
+                )
                 run.add("smoke", "running", "Running final smoke")
                 final_smoke = self.backend.smoke(config.required_smoke_endpoints, restart_command)
                 run.add("targeted_tests", "success" if targeted.success else "failure", _command_detail(targeted))
