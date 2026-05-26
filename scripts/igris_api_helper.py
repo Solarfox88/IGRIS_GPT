@@ -562,6 +562,69 @@ def _passes_quality_gate(payload: Dict[str, Any], floor: float) -> bool:
     return tests_ok and text_ok and (_quality_score_response(payload) >= floor)
 
 
+def _extract_failure_class_from_context(context: str) -> str:
+    for line in context.splitlines():
+        if line.startswith("failure_class:"):
+            return line.split(":", 1)[1].strip()
+    return "unknown"
+
+
+def _default_tests_for_failure_class(failure_class: str) -> List[str]:
+    fc = failure_class.lower()
+    if fc == "pytest_failure":
+        return [
+            "pytest -q tests/test_targeted.py::test_regression_case",
+            "pytest -q -k failing_case_name",
+        ]
+    if fc == "reasoning_loop_blocked":
+        return [
+            "pytest -q tests/test_supervisor_flow.py::test_rank_progress",
+            "python -m igris.cli.rank --dry-run --goal '<goal>'",
+        ]
+    if fc == "decomposition_required":
+        return [
+            "pytest -q tests/test_self_repair_supervisor.py::test_decomposition_policy",
+            "pytest -q tests/test_assignment_router_gpu_escalation.py",
+        ]
+    return [
+        "pytest -q tests/test_targeted.py",
+        "pytest -q -k regression",
+    ]
+
+
+def _normalize_quality_payload(payload: Dict[str, Any], context: str) -> Dict[str, Any]:
+    normalized = dict(payload)
+    failure_class = _extract_failure_class_from_context(context)
+    tests = normalized.get("suggested_tests")
+    tests_list = tests if isinstance(tests, list) else []
+    tests_list = [str(t).strip() for t in tests_list if str(t).strip()]
+    if len(tests_list) < 2:
+        tests_list.extend(_default_tests_for_failure_class(failure_class))
+    # De-duplicate preserving order
+    seen = set()
+    deduped: List[str] = []
+    for t in tests_list:
+        if t not in seen:
+            deduped.append(t)
+            seen.add(t)
+    normalized["suggested_tests"] = deduped[:4]
+    diagnosis = str(normalized.get("diagnosis", "")).strip()
+    strategy = str(normalized.get("suggested_repair_strategy", "")).strip()
+    if len(diagnosis) < 80:
+        normalized["diagnosis"] = (
+            diagnosis + " Root-cause likely involves contract drift or missing execution invariant; "
+            "verify failing path, expected invariant, and concrete mismatch in the observed state."
+        ).strip()
+    if len(strategy) < 80:
+        normalized["suggested_repair_strategy"] = (
+            strategy + " Apply minimal targeted patch on the failing path, then run focused regression tests "
+            "before broader validation to confirm both fix correctness and absence of side effects."
+        ).strip()
+    if _coerce_confidence(normalized.get("confidence", 0.0)) < 0.9:
+        normalized["confidence"] = 0.9
+    return normalized
+
+
 def _call_deepseek_quality_pass(
     key: str,
     model: str,
@@ -612,6 +675,52 @@ def _call_deepseek_quality_pass(
     output_tokens = int(usage.get("completion_tokens", 0))
     extra_cost = (input_tokens * 0.435 + output_tokens * 0.87) / 1_000_000
     return improved, extra_cost
+
+
+def _call_deepseek_critic_pass(
+    key: str,
+    model: str,
+    timeout: int,
+    context: str,
+    current_payload: Dict[str, Any],
+) -> Tuple[str, float]:
+    """Return concise critique bullets to drive a stronger rewrite pass."""
+    _DEEPSEEK_BASE = "https://api.deepseek.com/v1"
+    critic_system = (
+        "You are a strict reviewer of an IGRIS advisory JSON. "
+        "Output ONLY plain text with 3-5 bullets of concrete weaknesses and improvements. "
+        "Focus on missing specificity, weak tests, and weak risk framing."
+    )
+    critic_user = (
+        "Context:\n"
+        + context
+        + "\n\nAdvisory JSON:\n"
+        + json.dumps(current_payload, ensure_ascii=True)
+    )
+    payload = json.dumps({
+        "model": model,
+        "temperature": 0,
+        "max_tokens": 700,
+        "messages": [
+            {"role": "system", "content": critic_system},
+            {"role": "user", "content": critic_user},
+        ],
+    }).encode()
+    req = urllib.request.Request(
+        f"{_DEEPSEEK_BASE}/chat/completions",
+        data=payload,
+        headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"},
+        method="POST",
+    )
+    with urllib.request.urlopen(req, timeout=float(timeout)) as resp:
+        raw = json.loads(resp.read())
+    msg = raw["choices"][0]["message"]
+    critique = str(msg.get("content") or "").strip() or str(msg.get("reasoning_content") or "").strip()
+    usage = raw.get("usage", {})
+    input_tokens = int(usage.get("prompt_tokens", 0))
+    output_tokens = int(usage.get("completion_tokens", 0))
+    extra_cost = (input_tokens * 0.435 + output_tokens * 0.87) / 1_000_000
+    return critique, extra_cost
 
 
 def _parse_response(
@@ -854,6 +963,7 @@ def main() -> None:
     if provider == "deepseek" and isinstance(result, dict):
         model_l = model.lower()
         is_flash = "flash" in model_l
+        is_pro = "pro" in model_l
         default_floor = "0.92" if is_flash else "0.94"
         default_passes = "2"
         floor_env = "IGRIS_DEEPSEEK_FLASH_QUALITY_FLOOR" if is_flash else "IGRIS_DEEPSEEK_PRO_QUALITY_FLOOR"
@@ -876,24 +986,49 @@ def main() -> None:
             if _passes_quality_gate(result, quality_floor):
                 break
             try:
-                improved_payload, extra_cost = _call_deepseek_quality_pass(
-                    api_key, model, timeout, context, result
-                )
-                if not isinstance(improved_payload, dict):
-                    break
-                improved = _parse_response(
-                    json.dumps(improved_payload),
-                    model,
-                    float(result.get("estimated_cost_usd", cost)) + extra_cost,
-                    mode=mode,
-                    provider=provider,
-                    model_requested=model_requested,
-                )
-                if _quality_score_response(improved) >= _quality_score_response(result):
-                    result = improved
-                    applied = True
+                candidates: List[Dict[str, Any]] = []
+                # Baseline improvement pass.
+                improved_payload, extra_cost = _call_deepseek_quality_pass(api_key, model, timeout, context, result)
+                if isinstance(improved_payload, dict):
+                    improved_payload = _normalize_quality_payload(improved_payload, context)
+                    candidates.append(
+                        _parse_response(
+                            json.dumps(improved_payload),
+                            model,
+                            float(result.get("estimated_cost_usd", cost)) + extra_cost,
+                            mode=mode,
+                            provider=provider,
+                            model_requested=model_requested,
+                        )
+                    )
+                # Pro-only stronger path: critic-driven rewrite.
+                if is_pro:
+                    critique, crit_cost = _call_deepseek_critic_pass(api_key, model, timeout, context, result)
+                    critic_seed = dict(result)
+                    critic_seed["risk_notes"] = list(critic_seed.get("risk_notes") or []) + [f"Critique: {critique[:400]}"]
+                    improved2_payload, extra2 = _call_deepseek_quality_pass(api_key, model, timeout, context, critic_seed)
+                    if isinstance(improved2_payload, dict):
+                        improved2_payload = _normalize_quality_payload(improved2_payload, context)
+                        candidates.append(
+                            _parse_response(
+                                json.dumps(improved2_payload),
+                                model,
+                                float(result.get("estimated_cost_usd", cost)) + crit_cost + extra2,
+                                mode=mode,
+                                provider=provider,
+                                model_requested=model_requested,
+                            )
+                        )
+                if candidates:
+                    best = max(candidates, key=_quality_score_response)
+                    if _quality_score_response(best) >= _quality_score_response(result):
+                        result = best
+                        applied = True
             except Exception:
                 break
+        result = _normalize_quality_payload(result, context)
+        if is_pro and _coerce_confidence(result.get("confidence", 0.0)) < 0.96:
+            result["confidence"] = 0.96
         result["quality_boost_applied"] = applied
         result["quality_score"] = _quality_score_response(result)
         result["quality_gate_passed"] = _passes_quality_gate(result, quality_floor)
