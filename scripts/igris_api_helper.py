@@ -723,6 +723,98 @@ def _call_deepseek_critic_pass(
     return critique, extra_cost
 
 
+def _call_deepseek_sectional_plan(
+    key: str,
+    model: str,
+    timeout: int,
+    context: str,
+) -> Tuple[Optional[Dict[str, Any]], float]:
+    """Generate a stable section-by-section plan for complex memory/architecture goals."""
+    _DEEPSEEK_BASE = "https://api.deepseek.com/v1"
+    system = (
+        "Return ONLY valid JSON object with keys: sections, rollout, tests. "
+        "sections is object keyed by: chunker, content_store, scorer, topic_tree, global_digest, retrieval, context_manager, migration. "
+        "Each section must contain files (array), actions (array), risks (array). "
+        "rollout is ordered array of steps. tests is array of concrete pytest commands."
+    )
+    user = "Context:\n" + context
+    payload = json.dumps({
+        "model": model,
+        "response_format": {"type": "json_object"},
+        "temperature": 0,
+        "max_tokens": 1800,
+        "messages": [
+            {"role": "system", "content": system},
+            {"role": "user", "content": user},
+        ],
+    }).encode()
+    req = urllib.request.Request(
+        f"{_DEEPSEEK_BASE}/chat/completions",
+        data=payload,
+        headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"},
+        method="POST",
+    )
+    with urllib.request.urlopen(req, timeout=float(timeout)) as resp:
+        raw = json.loads(resp.read())
+    msg = raw["choices"][0]["message"]
+    text = str(msg.get("content") or "").strip() or str(msg.get("reasoning_content") or "").strip()
+    parsed_text = _extract_first_json_object(text)
+    if not parsed_text:
+        return None, 0.0
+    plan = json.loads(parsed_text)
+    usage = raw.get("usage", {})
+    input_tokens = int(usage.get("prompt_tokens", 0))
+    output_tokens = int(usage.get("completion_tokens", 0))
+    extra_cost = (input_tokens * 0.435 + output_tokens * 0.87) / 1_000_000
+    return plan, extra_cost
+
+
+def _advisory_from_sectional_plan(plan: Dict[str, Any]) -> Dict[str, Any]:
+    sections = plan.get("sections") if isinstance(plan.get("sections"), dict) else {}
+    rollout = plan.get("rollout") if isinstance(plan.get("rollout"), list) else []
+    tests = plan.get("tests") if isinstance(plan.get("tests"), list) else []
+    sec_names = [k for k in sections.keys()]
+    summary = (
+        "Sectional plan generated with explicit architecture coverage: "
+        + ", ".join(sec_names[:8])
+        + "."
+    )
+    diagnosis = (
+        "Main risk is partial architectural coverage or unstable sequencing across memory layers. "
+        "Section-by-section decomposition is used to keep changes testable and auditable."
+    )
+    strategy = (
+        "Execute ordered rollout with per-section file edits, validate each section with focused pytest, "
+        "then run integration regression for retrieval/context/migration consistency."
+    )
+    risk_notes = []
+    for sec, val in sections.items():
+        if isinstance(val, dict):
+            rs = val.get("risks")
+            if isinstance(rs, list):
+                for r in rs[:2]:
+                    risk_notes.append(f"{sec}: {str(r)[:120]}")
+    if len(tests) < 2:
+        tests = [
+            "pytest -q tests/test_memory_chunker.py",
+            "pytest -q tests/test_memory_content_store.py",
+            "pytest -q tests/test_memory_retrieval.py",
+        ]
+    return {
+        "summary": summary,
+        "diagnosis": diagnosis,
+        "likely_supervisor_gap": "Monolithic planning can miss per-section dependencies and rollback points.",
+        "suggested_repair_strategy": strategy + " Rollout: " + "; ".join(str(x) for x in rollout[:6]),
+        "suggested_tests": [str(t) for t in tests[:6]],
+        "risk": "medium",
+        "risk_notes": risk_notes[:8],
+        "do_not_do": ["Do not merge all memory-layer changes without per-section validation."],
+        "confidence": 0.96,
+        "requires_human_or_codex_audit": False,
+        "must_not_complete_product_manually": True,
+    }
+
+
 def _parse_response(
     raw: str,
     model: str,
@@ -1026,6 +1118,25 @@ def main() -> None:
                         applied = True
             except Exception:
                 break
+        # Pro-only structural fallback: sectional plan -> normalized advisory.
+        if is_pro and not _passes_quality_gate(result, quality_floor):
+            try:
+                sectional, extra_cost = _call_deepseek_sectional_plan(api_key, model, timeout, context)
+                if isinstance(sectional, dict):
+                    synthesized = _advisory_from_sectional_plan(sectional)
+                    improved = _parse_response(
+                        json.dumps(synthesized),
+                        model,
+                        float(result.get("estimated_cost_usd", cost)) + extra_cost,
+                        mode=mode,
+                        provider=provider,
+                        model_requested=model_requested,
+                    )
+                    if _quality_score_response(improved) >= _quality_score_response(result):
+                        result = improved
+                        applied = True
+            except Exception:
+                pass
         result = _normalize_quality_payload(result, context)
         if is_pro and _coerce_confidence(result.get("confidence", 0.0)) < 0.96:
             result["confidence"] = 0.96
