@@ -3764,6 +3764,30 @@ class SelfRepairSupervisor:
             # cannot self-repair.
             if not full.success and "Command killed:" in (full.error or ""):
                 self._record_capability_signal(run, "pytest_hang")
+            triggering_signal_early = self._should_fast_track_capability_limit(
+                run,
+                failure,
+            )
+            if triggering_signal_early:
+                run.add(
+                    "capability_ceiling",
+                    "detected",
+                    (
+                        "Capability limit reached during active attempt; "
+                        "fast-tracking decomposition before exhausting repair budget."
+                    ),
+                    triggering_signal=triggering_signal_early,
+                    capability_signals=dict(run.capability_signals),
+                    failure_class=failure,
+                )
+                return self._handle_capability_limit(
+                    run,
+                    triggering_signal_early,
+                    config,
+                    mission_plan,
+                    stage_statuses,
+                    cleanup_workspace=True,
+                )
             if not failure and mission_plan.mode == "staged" and not required_stages_complete:
                 failure = "reasoning_loop_blocked"
                 run.add(
@@ -5375,6 +5399,21 @@ class SelfRepairSupervisor:
         still help — these go through the normal decompose path.
         """
         return run.capability_signals.get("max_steps_ceiling", 0) >= 1
+
+    @staticmethod
+    def _should_fast_track_capability_limit(
+        run: SupervisorRun,
+        failure: str,
+    ) -> Optional[str]:
+        """Return capability signal when we should decompose immediately."""
+        if failure not in {
+            "reasoning_loop_blocked",
+            "pytest_failure",
+            "test_runner_timeout",
+            "infrastructure_bug",
+        }:
+            return None
+        return SelfRepairSupervisor._detect_capability_limit(run)
 
     def _handle_capability_limit(
         self,
