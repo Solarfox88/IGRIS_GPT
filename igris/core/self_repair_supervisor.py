@@ -6337,6 +6337,7 @@ class SelfRepairSupervisor:
         child_data: Dict[str, Any] = {
             "goal": child_goal,
             "rank_id": child_rank_id,
+            "dry_run": False,
             "max_rank_attempts": config.max_rank_attempts,
             "max_repair_cycles": config.max_repair_cycles,
             "allow_github_pr": config.allow_github_pr,
