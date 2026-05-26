@@ -3300,6 +3300,32 @@ class SelfRepairSupervisor:
             stage_ids=[stage.stage_id for stage in mission_plan.stages],
         )
 
+        force_preemptive_decomposition = (
+            str(os.getenv("IGRIS_FORCE_PREEMPTIVE_DECOMPOSITION", "true")).strip().lower() != "false"
+        )
+        if (
+            force_preemptive_decomposition
+            and self._goal_needs_preflight_decomposition(config.goal)
+            and config.allow_auto_subissues
+            and not config.dry_run
+            and config.autochain_depth == 0
+        ):
+            run.add(
+                "mission_planning",
+                "decomposition_required",
+                "Pre-emptive decomposition for large mission (policy shortcut) before long reasoning loops.",
+            )
+            decomposition = self._ask_igris_decompose(run, config)
+            return self._blocked_decomposition_required(
+                run,
+                "preemptive_large_mission",
+                "Large mission routed to decomposition-first execution policy.",
+                decomposition,
+                config=config,
+                mission_plan=mission_plan,
+                stage_statuses=stage_statuses,
+            )
+
         # Pre-flight planning: read-only scope analysis before first attempt.
         # If the planning pass recommends decomposition, block proactively rather
         # than discovering the same thing after 3 failed repair cycles.
@@ -5830,7 +5856,53 @@ class SelfRepairSupervisor:
                 "generated_by": "deterministic_fallback",
             }
 
-        # --- Strategy 4: single sub-mission (whole goal, scoped) ---
+        # --- Strategy 4: semantic split for memory-tree hierarchy missions ---
+        is_memory_tree_mission = (
+            "memory tree" in gl
+            and any(k in gl for k in ("chunk", "score", "topic", "global", "pipeline", "hierarchy"))
+        )
+        if is_memory_tree_mission:
+            sub_missions = [
+                _make_sub(
+                    "MemoryTree: chunk layer contracts",
+                    (
+                        "Implement chunk-layer contracts for Memory Tree hierarchy in issue #536. "
+                        "Define chunk node schema, stable IDs, and serialization boundary in core memory modules."
+                    ),
+                ),
+                _make_sub(
+                    "MemoryTree: score aggregation layer",
+                    (
+                        "Implement score aggregation layer for Memory Tree hierarchy in issue #536. "
+                        "Promote chunk nodes to scored nodes with deterministic ordering and compatibility shims."
+                    ),
+                ),
+                _make_sub(
+                    "MemoryTree: topic grouping layer",
+                    (
+                        "Implement topic grouping layer for Memory Tree hierarchy in issue #536. "
+                        "Group scored nodes into topics with deterministic keys and explicit adapters."
+                    ),
+                ),
+                _make_sub(
+                    "MemoryTree: global synthesis and tests",
+                    (
+                        "Implement global synthesis layer for Memory Tree hierarchy in issue #536 and add focused tests. "
+                        "Validate chunk→score→topic→global end-to-end deterministic behavior."
+                    ),
+                ),
+            ]
+            return {
+                "why_too_large": _safe_redact(
+                    f"Memory Tree hierarchy mission requires staged implementation across 4 semantic layers. Signals: {signals}"
+                ),
+                "sub_missions": sub_missions,
+                "first_sub_mission": sub_missions[0]["title"],
+                "human_approval_required": False,
+                "generated_by": "deterministic_fallback",
+            }
+
+        # --- Strategy 5: single sub-mission (whole goal, scoped) ---
         sub_missions = [_make_sub("Complete mission", safe_goal)]
         return {
             "why_too_large": _safe_redact(
