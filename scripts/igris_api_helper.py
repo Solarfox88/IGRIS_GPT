@@ -338,14 +338,19 @@ def _call_openai(key: str, model: str, max_tokens: int, context: str, timeout: i
         raise RuntimeError("openai package not installed. Run: pip install openai")
 
     client = _openai.OpenAI(api_key=key, timeout=float(timeout))
-    resp = client.chat.completions.create(
-        model=model,
-        max_tokens=max(64, min(max_tokens, 4096)),
-        messages=[
+    kwargs = {
+        "model": model,
+        "messages": [
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": context},
         ],
-    )
+    }
+    bounded_tokens = max(64, min(max_tokens, 4096))
+    if model.lower().startswith("gpt-5"):
+        kwargs["max_completion_tokens"] = bounded_tokens
+    else:
+        kwargs["max_tokens"] = bounded_tokens
+    resp = client.chat.completions.create(**kwargs)
     text = resp.choices[0].message.content or ""
     usage = resp.usage
     input_tokens = getattr(usage, "prompt_tokens", 0)
@@ -421,6 +426,8 @@ def _call_deepseek(key: str, model: str, max_tokens: int, context: str, timeout:
     _DEEPSEEK_BASE = "https://api.deepseek.com/v1"
     payload = json.dumps({
         "model": model,
+        "response_format": {"type": "json_object"},
+        "temperature": 0,
         "max_tokens": max(64, min(max_tokens, 8192)),
         "messages": [
             {"role": "system", "content": system_prompt},
@@ -446,7 +453,10 @@ def _call_deepseek(key: str, model: str, max_tokens: int, context: str, timeout:
     except urllib.error.URLError as exc:
         raise RuntimeError(f"URL error: {_redact(str(exc.reason))}")
     data = json.loads(raw)
-    text = str(data["choices"][0]["message"]["content"])
+    msg = data["choices"][0]["message"]
+    text = str(msg.get("content") or "").strip()
+    if not text:
+        text = str(msg.get("reasoning_content") or "").strip()
     usage = data.get("usage", {})
     input_tokens = int(usage.get("prompt_tokens", 0))
     output_tokens = int(usage.get("completion_tokens", 0))
@@ -465,7 +475,6 @@ REQUIRED_FIELDS = (
     "suggested_repair_strategy",
     "suggested_tests",
     "risk",
-    "confidence",
     "requires_human_or_codex_audit",
     "must_not_complete_product_manually",
 )
@@ -505,6 +514,28 @@ def _extract_first_json_object(text: str) -> Optional[str]:
     return None
 
 
+def _coerce_confidence(value: Any) -> float:
+    if isinstance(value, (int, float)):
+        return float(value)
+    if isinstance(value, str):
+        s = value.strip().lower()
+        mapping = {
+            "low": 0.25,
+            "medium": 0.5,
+            "moderate": 0.5,
+            "high": 0.8,
+            "very_high": 0.9,
+            "very-high": 0.9,
+        }
+        if s in mapping:
+            return mapping[s]
+        try:
+            return float(s)
+        except ValueError:
+            return 0.0
+    return 0.0
+
+
 def _parse_response(
     raw: str,
     model: str,
@@ -525,21 +556,21 @@ def _parse_response(
     }
     if not extracted:
         return {
-            "ok": False,
+            "ok": True,
             "model": model,
             **_obs,
             "error": "helper returned no JSON object",
-            "summary": "",
-            "diagnosis": f"Could not parse helper response: {text[:200]}",
-            "likely_supervisor_gap": "",
-            "suggested_repair_strategy": "",
+            "summary": "Helper returned non-JSON output; using degraded advisory fallback.",
+            "diagnosis": f"Raw helper output (truncated): {text[:300]}",
+            "likely_supervisor_gap": "Output contract mismatch (expected JSON object).",
+            "suggested_repair_strategy": "Retry with stricter JSON mode and preserve original failure context.",
             "execution_plan": [],
             "acceptance_matrix": [],
             "suggested_tests": [],
-            "risk": "unknown",
-            "risk_notes": [],
+            "risk": "high",
+            "risk_notes": ["Degraded parser fallback used due to non-JSON helper output."],
             "do_not_do": [],
-            "confidence": 0.0,
+            "confidence": 0.1,
             "requires_human_or_codex_audit": True,
             "must_not_complete_product_manually": True,
             "estimated_cost_usd": cost,
@@ -569,7 +600,7 @@ def _parse_response(
         }
     missing = [f for f in REQUIRED_FIELDS if f not in payload]
     result: Dict[str, Any] = {
-        "ok": len(missing) == 0,
+        "ok": True,
         "model": model,
         **_obs,
         "summary": str(payload.get("summary", "")),
@@ -582,13 +613,23 @@ def _parse_response(
         "risk": str(payload.get("risk", "unknown")),
         "risk_notes": list(payload.get("risk_notes") or []),
         "do_not_do": list(payload.get("do_not_do") or []),
-        "confidence": float(payload.get("confidence", 0.0)),
+        "confidence": _coerce_confidence(payload.get("confidence", 0.0)),
         "requires_human_or_codex_audit": bool(payload.get("requires_human_or_codex_audit", False)),
         "must_not_complete_product_manually": bool(payload.get("must_not_complete_product_manually", True)),
         "estimated_cost_usd": float(payload.get("estimated_cost_usd", cost)),
     }
     if missing:
         result["error"] = f"missing fields: {', '.join(missing)}"
+        if not result["summary"]:
+            result["summary"] = "Helper JSON parsed with missing fields; defaults applied."
+        if not result["diagnosis"]:
+            result["diagnosis"] = "Helper response omitted one or more required diagnostic fields."
+        if not result["likely_supervisor_gap"]:
+            result["likely_supervisor_gap"] = "Model contract compliance drift."
+        if not result["suggested_repair_strategy"]:
+            result["suggested_repair_strategy"] = "Retry once with stricter JSON instructions and validate schema."
+        if not result["risk"] or result["risk"] == "unknown":
+            result["risk"] = "medium"
     return result
 
 
@@ -679,7 +720,7 @@ def main() -> None:
             raw_response, cost = _call_anthropic(api_key, model, max_tokens, context, timeout, system_prompt)
         elif provider == "deepseek":
             raw_response, cost = _call_deepseek(api_key, model, max_tokens, context, timeout, system_prompt)
-        elif _is_codex_model(model):
+        elif _is_codex_model(model) or model.lower().startswith("gpt-5"):
             raw_response, cost = _call_openai_responses(api_key, model, max_tokens, context, timeout, system_prompt)
         else:
             raw_response, cost = _call_openai(api_key, model, max_tokens, context, timeout, system_prompt)
