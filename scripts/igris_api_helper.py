@@ -536,6 +536,84 @@ def _coerce_confidence(value: Any) -> float:
     return 0.0
 
 
+def _quality_score_response(payload: Dict[str, Any]) -> float:
+    """Heuristic quality score for advisory payload, 0.0-1.0."""
+    strategy = str(payload.get("suggested_repair_strategy", "")).strip()
+    diagnosis = str(payload.get("diagnosis", "")).strip()
+    tests = payload.get("suggested_tests", [])
+    conf = _coerce_confidence(payload.get("confidence", 0.0))
+    has_tests = isinstance(tests, list) and len([t for t in tests if str(t).strip()]) >= 2
+    has_detail = len(strategy) >= 80 and len(diagnosis) >= 80
+    score = 0.35
+    if has_detail:
+        score += 0.35
+    if has_tests:
+        score += 0.20
+    score += min(0.10, conf * 0.10)
+    return min(1.0, score)
+
+
+def _passes_quality_gate(payload: Dict[str, Any], floor: float) -> bool:
+    tests = payload.get("suggested_tests", [])
+    strategy = str(payload.get("suggested_repair_strategy", "")).strip()
+    diagnosis = str(payload.get("diagnosis", "")).strip()
+    tests_ok = isinstance(tests, list) and len([t for t in tests if str(t).strip()]) >= 2
+    text_ok = len(strategy) >= 80 and len(diagnosis) >= 80
+    return tests_ok and text_ok and (_quality_score_response(payload) >= floor)
+
+
+def _call_deepseek_quality_pass(
+    key: str,
+    model: str,
+    timeout: int,
+    context: str,
+    current_payload: Dict[str, Any],
+) -> Tuple[Optional[Dict[str, Any]], float]:
+    """Ask DeepSeek to improve an already parsed advisory JSON deterministically."""
+    _DEEPSEEK_BASE = "https://api.deepseek.com/v1"
+    improve_system = (
+        "You are improving an advisory JSON for IGRIS. "
+        "Return ONLY valid JSON object with the exact same schema keys as input. "
+        "Make diagnosis and suggested_repair_strategy concrete and actionable. "
+        "Provide at least 2 suggested_tests. Keep safety constraints."
+    )
+    improve_user = (
+        "Context:\n"
+        + context
+        + "\n\nCurrent JSON to improve:\n"
+        + json.dumps(current_payload, ensure_ascii=True)
+    )
+    payload = json.dumps({
+        "model": model,
+        "response_format": {"type": "json_object"},
+        "temperature": 0,
+        "max_tokens": 1400,
+        "messages": [
+            {"role": "system", "content": improve_system},
+            {"role": "user", "content": improve_user},
+        ],
+    }).encode()
+    req = urllib.request.Request(
+        f"{_DEEPSEEK_BASE}/chat/completions",
+        data=payload,
+        headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"},
+        method="POST",
+    )
+    with urllib.request.urlopen(req, timeout=float(timeout)) as resp:
+        raw = json.loads(resp.read())
+    msg = raw["choices"][0]["message"]
+    text = str(msg.get("content") or "").strip() or str(msg.get("reasoning_content") or "").strip()
+    parsed_text = _extract_first_json_object(text)
+    if not parsed_text:
+        return None, 0.0
+    improved = json.loads(parsed_text)
+    usage = raw.get("usage", {})
+    input_tokens = int(usage.get("prompt_tokens", 0))
+    output_tokens = int(usage.get("completion_tokens", 0))
+    extra_cost = (input_tokens * 0.435 + output_tokens * 0.87) / 1_000_000
+    return improved, extra_cost
+
+
 def _parse_response(
     raw: str,
     model: str,
@@ -772,6 +850,42 @@ def main() -> None:
         provider=provider,
         model_requested=model_requested,
     )
+    # DeepSeek quality boost: one deterministic refinement pass for weak outputs.
+    if provider == "deepseek" and isinstance(result, dict):
+        quality_floor = float(os.environ.get("IGRIS_DEEPSEEK_QUALITY_FLOOR", "0.90"))
+        max_passes = int(os.environ.get("IGRIS_DEEPSEEK_QUALITY_PASSES", "2"))
+        applied = False
+        for _ in range(max(0, max_passes)):
+            if _passes_quality_gate(result, quality_floor):
+                break
+            try:
+                improved_payload, extra_cost = _call_deepseek_quality_pass(
+                    api_key, model, timeout, context, result
+                )
+                if not isinstance(improved_payload, dict):
+                    break
+                improved = _parse_response(
+                    json.dumps(improved_payload),
+                    model,
+                    float(result.get("estimated_cost_usd", cost)) + extra_cost,
+                    mode=mode,
+                    provider=provider,
+                    model_requested=model_requested,
+                )
+                if _quality_score_response(improved) >= _quality_score_response(result):
+                    result = improved
+                    applied = True
+            except Exception:
+                break
+        result["quality_boost_applied"] = applied
+        result["quality_score"] = _quality_score_response(result)
+        result["quality_gate_passed"] = _passes_quality_gate(result, quality_floor)
+        if not result["quality_gate_passed"]:
+            result["requires_human_or_codex_audit"] = True
+            result["risk"] = "high"
+            notes = list(result.get("risk_notes") or [])
+            notes.append("DeepSeek quality gate not fully met after refinement passes.")
+            result["risk_notes"] = notes
     print(json.dumps(result))
     sys.exit(0 if result.get("ok") else 1)
 
