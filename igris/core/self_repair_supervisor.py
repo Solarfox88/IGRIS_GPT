@@ -5603,15 +5603,22 @@ class SelfRepairSupervisor:
             # Local reasoning succeeded
             decomposition["generated_by"] = "local_reasoning"
         else:
-            # --- 2. API helper attempt ---
-            api_result = self._api_helper_decompose(run, config, signals)
-            if api_result is not None:
-                decomposition = api_result
-                fields_missing = [f for f in DECOMPOSITION_REQUIRED_FIELDS if f not in decomposition]
-            else:
-                # --- 3. Deterministic fallback ---
+            prefer_deterministic = (
+                str(os.getenv("IGRIS_PREFER_DETERMINISTIC_DECOMPOSITION", "true")).strip().lower() != "false"
+            )
+            if prefer_deterministic and self._goal_needs_preflight_decomposition(config.goal):
                 decomposition = self._deterministic_decompose_fallback(config.goal, signals)
                 fields_missing = []
+            else:
+                # --- 2. API helper attempt ---
+                api_result = self._api_helper_decompose(run, config, signals)
+                if api_result is not None:
+                    decomposition = api_result
+                    fields_missing = [f for f in DECOMPOSITION_REQUIRED_FIELDS if f not in decomposition]
+                else:
+                    # --- 3. Deterministic fallback ---
+                    decomposition = self._deterministic_decompose_fallback(config.goal, signals)
+                    fields_missing = []
 
         fields_present = [f for f in DECOMPOSITION_REQUIRED_FIELDS if f in decomposition]
         fields_missing_final = [f for f in DECOMPOSITION_REQUIRED_FIELDS if f not in decomposition]
