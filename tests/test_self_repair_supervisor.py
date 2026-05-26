@@ -8212,3 +8212,23 @@ def test_wrong_file_edit_repair_prompt_cycle2_adds_hard_constraint():
         "s", "goal", ["bad/file.py"], ["good/"], 2
     )
     assert "under any circumstance" in prompt or "output ONLY" in prompt
+
+
+def test_fast_track_capability_limit_returns_signal_for_repairable_failure():
+    run = SupervisorRun(run_id="fast-track-1", rank_id="test")
+    run.capability_signals = {"reasoning_timeout": 1, "no_diff_repair": 1}
+    signal = SelfRepairSupervisor._should_fast_track_capability_limit(
+        run,
+        "reasoning_loop_blocked",
+    )
+    assert signal is not None
+
+
+def test_fast_track_capability_limit_ignores_non_repair_failure():
+    run = SupervisorRun(run_id="fast-track-2", rank_id="test")
+    run.capability_signals = {"reasoning_timeout": 2}
+    signal = SelfRepairSupervisor._should_fast_track_capability_limit(
+        run,
+        "semantic_incomplete",
+    )
+    assert signal is None
