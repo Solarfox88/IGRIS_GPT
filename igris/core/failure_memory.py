@@ -43,7 +43,8 @@ _STOP_WORDS = frozenset({
     "we", "do", "no", "if", "not", "but",
 })
 
-_MAX_PATTERNS = 200  # rolling cap to keep the file small
+_MAX_PATTERNS = 200   # hard cap — oldest entries evicted above this limit
+_TTL_DAYS = 30        # entries older than this many days are pruned on every write
 
 
 def _keywords(text: str) -> frozenset:
@@ -90,33 +91,72 @@ class FailureMemory:
         files_touched: Optional[List[str]] = None,
     ) -> None:
         """Persist a failure pattern from a blocked/failed run."""
-        entry: Dict[str, Any] = {
-            "id": uuid.uuid4().hex[:12],
-            "timestamp": time.time(),
-            "goal": goal[:500],
-            "keywords": sorted(_keywords(goal)),
-            "failure_class": failure_class,
-            "capability_signals": dict(capability_signals or {}),
-            "repair_cycles": repair_cycles,
-        }
-        self._patterns.append(entry)
-        now = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+        now_ts = time.time()
+        now_str = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(now_ts))
+
+        # Issue #721 — deduplication: if same failure_class + normalized goal already
+        # exists, update the existing entry (increment hit count + last_seen) instead
+        # of appending a new one.  Uses first 150 chars of lowercased goal so that
+        # "implement X" retried multiple times collapses, while genuinely different
+        # goals stay separate.
+        _norm_goal = goal.strip().lower()[:150]
+        dedup_key = f"{failure_class}::{_norm_goal}"
+        for existing in self._patterns:
+            existing_norm = existing.get("_norm_goal", existing.get("goal", "").strip().lower()[:150])
+            existing_key = f"{existing.get('failure_class', '')}::{existing_norm}"
+            if existing_key == dedup_key:
+                existing["hit_count"] = int(existing.get("hit_count", 1)) + 1
+                existing["last_seen"] = now_str
+                break
+        else:
+            entry: Dict[str, Any] = {
+                "id": uuid.uuid4().hex[:12],
+                "timestamp": now_ts,
+                "last_seen": now_str,
+                "hit_count": 1,
+                "_norm_goal": _norm_goal,  # internal dedup key, not displayed
+                "goal": goal[:500],
+                "keywords": sorted(_keywords(goal)),
+                "failure_class": failure_class,
+                "capability_signals": dict(capability_signals or {}),
+                "repair_cycles": repair_cycles,
+            }
+            self._patterns.append(entry)
+
         for fp in list(files_touched or []):
             if not fp:
                 continue
-            agg = self._file_patterns.setdefault(fp, {"failure_classes": {}, "total_failures": 0, "last_failure": now})
+            agg = self._file_patterns.setdefault(fp, {"failure_classes": {}, "total_failures": 0, "last_failure": now_str})
             agg["failure_classes"][failure_class] = int(agg["failure_classes"].get(failure_class, 0)) + 1
             agg["total_failures"] = int(agg.get("total_failures", 0)) + 1
-            agg["last_failure"] = now
+            agg["last_failure"] = now_str
         gk = " ".join(sorted(_keywords(goal)))[:120] or goal[:120]
-        gp = self._goal_patterns.setdefault(gk, {"attempts": 0, "outcomes": [], "last_seen": now})
+        gp = self._goal_patterns.setdefault(gk, {"attempts": 0, "outcomes": [], "last_seen": now_str})
         gp["attempts"] = int(gp.get("attempts", 0)) + 1
         gp["outcomes"] = list(gp.get("outcomes", []))[-9:] + [failure_class]
-        gp["last_seen"] = now
-        # Keep rolling window
-        if len(self._patterns) > _MAX_PATTERNS:
-            self._patterns = self._patterns[-_MAX_PATTERNS:]
+        gp["last_seen"] = now_str
+        # Prune on every write: TTL eviction then hard cap
+        self._prune()
         self._save()
+
+    def _prune(self) -> None:
+        """Issue #721 — TTL eviction + max-entries cap.
+
+        1. Remove entries older than _TTL_DAYS days (using timestamp).
+        2. If still over _MAX_PATTERNS, keep the most recent entries by timestamp.
+        """
+        cutoff = time.time() - _TTL_DAYS * 86400
+        self._patterns = [
+            p for p in self._patterns
+            if float(p.get("timestamp", 0)) >= cutoff
+        ]
+        if len(self._patterns) > _MAX_PATTERNS:
+            # Sort by timestamp descending, keep newest
+            self._patterns = sorted(
+                self._patterns,
+                key=lambda p: float(p.get("timestamp", 0)),
+                reverse=True,
+            )[:_MAX_PATTERNS]
 
     def check(self, goal: str) -> FailureRisk:
         """Return a risk assessment based on past failures similar to goal."""
@@ -130,13 +170,17 @@ class FailureMemory:
         if not matches:
             return FailureRisk(risk_level="low")
 
-        # Count failure classes among matches
+        # Count failure classes among matches, weighted by hit_count (issue #721
+        # dedup merges identical entries but preserves hit_count so risk scoring
+        # still reflects how many times each pattern was actually seen).
         class_counts: Dict[str, int] = {}
         for m in matches:
             fc = m.get("failure_class", "unknown")
-            class_counts[fc] = class_counts.get(fc, 0) + 1
+            weight = int(m.get("hit_count", 1))
+            class_counts[fc] = class_counts.get(fc, 0) + weight
         dominant = max(class_counts, key=class_counts.__getitem__)
-        count = len(matches)
+        # Effective count = sum of hit_counts (how many real failures were seen)
+        count = sum(int(m.get("hit_count", 1)) for m in matches)
 
         if count >= 3:
             risk_level = "high"
