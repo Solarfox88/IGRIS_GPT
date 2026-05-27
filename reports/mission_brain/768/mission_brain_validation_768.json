@@ -1,0 +1,413 @@
+{
+  "summary": {
+    "epic": 768,
+    "total_scenarios": 10,
+    "passed": 3,
+    "partial": 1,
+    "failed": 6,
+    "avg_checklist_concreteness": 100.0,
+    "quality_gate_pass_rate": 0.4,
+    "satisfaction_gate_pass_rate": 0.3,
+    "mvp_maturity_decision": "partial",
+    "semantic_key_reference": "a77400baf608",
+    "prioritized_remediation_backlog": [
+      "Improve intent decomposition depth (what/where/why extraction).",
+      "Strengthen satisfaction gate semantics beyond token heuristics.",
+      "Add richer semantic-key normalization and embedding-based duplicate detection.",
+      "Integrate execution adapter with real command safety policy and retry differentiators."
+    ]
+  },
+  "scenarios": [
+    {
+      "scenario_id": 1,
+      "title": "simple_request",
+      "mode": "normal",
+      "input": "Verifica rapidamente la pipeline missione.",
+      "mission_id": "efdb55ec-e842-4cb8-8e90-bee1c0253787",
+      "intent_summary": "[verification] Verifica rapidamente la pipeline missione.",
+      "requirements_count": 3,
+      "checklist_count": 1,
+      "actions_count": 1,
+      "checklist_concreteness_score": 100,
+      "actions_executable": true,
+      "quality_gate": {
+        "passed": false,
+        "score": 85,
+        "gaps": [
+          "Missing checklist links for requirements: REQ-002, REQ-003"
+        ]
+      },
+      "satisfaction_gate": {
+        "passed": false,
+        "gaps": []
+      },
+      "action_verifier": {
+        "passed": true,
+        "technical_failures": [],
+        "strategic_failures": []
+      },
+      "loop_state": {
+        "family": "verification",
+        "semantic_key": "a5fafadd94cd",
+        "count": 0,
+        "saturated": false,
+        "escalation_required": false
+      },
+      "final_status": "failed",
+      "validation_status": "failed",
+      "mission_report_path": ".igris/mission_brain/reports/efdb55ec-e842-4cb8-8e90-bee1c0253787.json"
+    },
+    {
+      "scenario_id": 2,
+      "title": "multi_step_request",
+      "mode": "normal",
+      "input": "Modifica il planner, aggiungi test e aggiorna il report finale con evidenze.",
+      "mission_id": "b211f06a-33e8-4a88-a69d-4822e251f9d3",
+      "intent_summary": "[planning] Modifica il planner, aggiungi test e aggiorna il report finale con evidenze.",
+      "requirements_count": 3,
+      "checklist_count": 1,
+      "actions_count": 1,
+      "checklist_concreteness_score": 100,
+      "actions_executable": true,
+      "quality_gate": {
+        "passed": false,
+        "score": 85,
+        "gaps": [
+          "Missing checklist links for requirements: REQ-002, REQ-003"
+        ]
+      },
+      "satisfaction_gate": {
+        "passed": false,
+        "gaps": []
+      },
+      "action_verifier": {
+        "passed": true,
+        "technical_failures": [],
+        "strategic_failures": []
+      },
+      "loop_state": {
+        "family": "planning",
+        "semantic_key": "77afd43f3ac0",
+        "count": 0,
+        "saturated": false,
+        "escalation_required": false
+      },
+      "final_status": "failed",
+      "validation_status": "failed",
+      "mission_report_path": ".igris/mission_brain/reports/b211f06a-33e8-4a88-a69d-4822e251f9d3.json"
+    },
+    {
+      "scenario_id": 3,
+      "title": "multi_file_change",
+      "mode": "normal",
+      "input": "Aggiorna schema missione, orchestrator e test correlati in modo coerente.",
+      "mission_id": "7b2f9e71-6313-4af2-9740-77c22e759afa",
+      "intent_summary": "[verification] Aggiorna schema missione, orchestrator e test correlati in modo coerente.",
+      "requirements_count": 3,
+      "checklist_count": 1,
+      "actions_count": 1,
+      "checklist_concreteness_score": 100,
+      "actions_executable": true,
+      "quality_gate": {
+        "passed": false,
+        "score": 85,
+        "gaps": [
+          "Missing checklist links for requirements: REQ-002, REQ-003"
+        ]
+      },
+      "satisfaction_gate": {
+        "passed": false,
+        "gaps": []
+      },
+      "action_verifier": {
+        "passed": true,
+        "technical_failures": [],
+        "strategic_failures": []
+      },
+      "loop_state": {
+        "family": "verification",
+        "semantic_key": "09be935b1cf7",
+        "count": 0,
+        "saturated": false,
+        "escalation_required": false
+      },
+      "final_status": "failed",
+      "validation_status": "failed",
+      "mission_report_path": ".igris/mission_brain/reports/7b2f9e71-6313-4af2-9740-77c22e759afa.json"
+    },
+    {
+      "scenario_id": 4,
+      "title": "bug_diagnosis",
+      "mode": "normal",
+      "input": "Diagnostica un bug di validazione mission report e proponi fix verificabile.",
+      "mission_id": "70d98d62-5998-4008-9459-92bdd5a22cd9",
+      "intent_summary": "[diagnosis] Diagnostica un bug di validazione mission report e proponi fix verificabile.",
+      "requirements_count": 3,
+      "checklist_count": 3,
+      "actions_count": 3,
+      "checklist_concreteness_score": 100,
+      "actions_executable": true,
+      "quality_gate": {
+        "passed": true,
+        "score": 100,
+        "gaps": []
+      },
+      "satisfaction_gate": {
+        "passed": true,
+        "gaps": []
+      },
+      "action_verifier": {
+        "passed": true,
+        "technical_failures": [],
+        "strategic_failures": []
+      },
+      "loop_state": {
+        "family": "diagnosis",
+        "semantic_key": "86b169ca2608",
+        "count": 0,
+        "saturated": false,
+        "escalation_required": false
+      },
+      "final_status": "completed",
+      "validation_status": "passed",
+      "mission_report_path": ".igris/mission_brain/reports/70d98d62-5998-4008-9459-92bdd5a22cd9.json"
+    },
+    {
+      "scenario_id": 5,
+      "title": "architecture_request",
+      "mode": "normal",
+      "input": "Definisci architecture per evitare completamenti prematuri e falsi positivi.",
+      "mission_id": "2092b2f7-e09b-4936-8495-7c909dcb3c8b",
+      "intent_summary": "[architecture] Definisci architecture per evitare completamenti prematuri e falsi positivi.",
+      "requirements_count": 3,
+      "checklist_count": 3,
+      "actions_count": 3,
+      "checklist_concreteness_score": 100,
+      "actions_executable": true,
+      "quality_gate": {
+        "passed": true,
+        "score": 100,
+        "gaps": []
+      },
+      "satisfaction_gate": {
+        "passed": true,
+        "gaps": []
+      },
+      "action_verifier": {
+        "passed": true,
+        "technical_failures": [],
+        "strategic_failures": []
+      },
+      "loop_state": {
+        "family": "architecture",
+        "semantic_key": "464aead39968",
+        "count": 0,
+        "saturated": false,
+        "escalation_required": false
+      },
+      "final_status": "completed",
+      "validation_status": "passed",
+      "mission_report_path": ".igris/mission_brain/reports/2092b2f7-e09b-4936-8495-7c909dcb3c8b.json"
+    },
+    {
+      "scenario_id": 6,
+      "title": "ambiguous_request",
+      "mode": "normal",
+      "input": "Sistema tutto quello che non va nella pipeline.",
+      "mission_id": "62586806-1e07-4820-88c0-f5ff1a6a3553",
+      "intent_summary": "[mixed] Sistema tutto quello che non va nella pipeline.",
+      "requirements_count": 3,
+      "checklist_count": 1,
+      "actions_count": 1,
+      "checklist_concreteness_score": 100,
+      "actions_executable": true,
+      "quality_gate": {
+        "passed": false,
+        "score": 85,
+        "gaps": [
+          "Missing checklist links for requirements: REQ-002, REQ-003"
+        ]
+      },
+      "satisfaction_gate": {
+        "passed": false,
+        "gaps": []
+      },
+      "action_verifier": {
+        "passed": true,
+        "technical_failures": [],
+        "strategic_failures": []
+      },
+      "loop_state": {
+        "family": "mixed",
+        "semantic_key": "307ee3e218ff",
+        "count": 0,
+        "saturated": false,
+        "escalation_required": false
+      },
+      "final_status": "failed",
+      "validation_status": "failed",
+      "mission_report_path": ".igris/mission_brain/reports/62586806-1e07-4820-88c0-f5ff1a6a3553.json"
+    },
+    {
+      "scenario_id": 7,
+      "title": "technical_failure_path",
+      "mode": "technical_failure",
+      "input": "Esegui una modifica e validala con test obbligatori.",
+      "mission_id": "dd77c437-2bf8-43c0-b50f-f9ed4a1f6952",
+      "intent_summary": "[verification] Esegui una modifica e validala con test obbligatori.",
+      "requirements_count": 3,
+      "checklist_count": 1,
+      "actions_count": 1,
+      "checklist_concreteness_score": 100,
+      "actions_executable": true,
+      "quality_gate": {
+        "passed": false,
+        "score": 70,
+        "gaps": [
+          "Missing checklist links for requirements: REQ-002, REQ-003",
+          "Action not successfully executed: ACT-001"
+        ]
+      },
+      "satisfaction_gate": {
+        "passed": false,
+        "gaps": []
+      },
+      "action_verifier": {
+        "passed": false,
+        "technical_failures": [
+          {
+            "action_id": "ACT-001",
+            "failure_type": "technical_failure",
+            "reason": "unknown error"
+          }
+        ],
+        "strategic_failures": []
+      },
+      "loop_state": {
+        "family": "verification",
+        "semantic_key": "1c085340ccf4",
+        "count": 0,
+        "saturated": false,
+        "escalation_required": false
+      },
+      "final_status": "failed",
+      "validation_status": "failed",
+      "mission_report_path": ".igris/mission_brain/reports/dd77c437-2bf8-43c0-b50f-f9ed4a1f6952.json"
+    },
+    {
+      "scenario_id": 8,
+      "title": "technical_pass_intent_fail",
+      "mode": "strategic_failure",
+      "input": "Progetta architecture robusta con vincoli espliciti.",
+      "mission_id": "cac3b305-5e9e-4170-9857-055a2daa9488",
+      "intent_summary": "[architecture] Progetta architecture robusta con vincoli espliciti.",
+      "requirements_count": 3,
+      "checklist_count": 3,
+      "actions_count": 3,
+      "checklist_concreteness_score": 100,
+      "actions_executable": true,
+      "quality_gate": {
+        "passed": true,
+        "score": 100,
+        "gaps": []
+      },
+      "satisfaction_gate": {
+        "passed": false,
+        "gaps": [
+          "Final response does not reflect intent type 'architecture'"
+        ]
+      },
+      "action_verifier": {
+        "passed": true,
+        "technical_failures": [],
+        "strategic_failures": []
+      },
+      "loop_state": {
+        "family": "architecture",
+        "semantic_key": "bab0999fab75",
+        "count": 0,
+        "saturated": false,
+        "escalation_required": false
+      },
+      "final_status": "partial",
+      "validation_status": "partial",
+      "mission_report_path": ".igris/mission_brain/reports/cac3b305-5e9e-4170-9857-055a2daa9488.json"
+    },
+    {
+      "scenario_id": 9,
+      "title": "semantic_loop_case",
+      "mode": "semantic_loop",
+      "input": "Fix bug planner missione",
+      "mission_id": "e3dfbe89-0f28-41a4-8508-ae14ce4579f6",
+      "intent_summary": "[diagnosis] Fix bug planner missione",
+      "requirements_count": 3,
+      "checklist_count": 3,
+      "actions_count": 3,
+      "checklist_concreteness_score": 100,
+      "actions_executable": true,
+      "quality_gate": {
+        "passed": true,
+        "score": 100,
+        "gaps": []
+      },
+      "satisfaction_gate": {
+        "passed": true,
+        "gaps": []
+      },
+      "action_verifier": {
+        "passed": true,
+        "technical_failures": [],
+        "strategic_failures": []
+      },
+      "loop_state": {
+        "family": "diagnosis",
+        "semantic_key": "a77400baf608",
+        "count": 0,
+        "saturated": false,
+        "escalation_required": false
+      },
+      "final_status": "completed",
+      "validation_status": "passed",
+      "mission_report_path": ".igris/mission_brain/reports/e3dfbe89-0f28-41a4-8508-ae14ce4579f6.json"
+    },
+    {
+      "scenario_id": 10,
+      "title": "escalation_teacher_case",
+      "mode": "escalation",
+      "input": "Risolvi failure ripetuti con escalation controllata.",
+      "mission_id": "a4a10fa8-01b6-4cc9-8eff-4ddcd01150c9",
+      "intent_summary": "[mixed] Risolvi failure ripetuti con escalation controllata.",
+      "requirements_count": 3,
+      "checklist_count": 1,
+      "actions_count": 1,
+      "checklist_concreteness_score": 100,
+      "actions_executable": true,
+      "quality_gate": {
+        "passed": false,
+        "score": 85,
+        "gaps": [
+          "Missing checklist links for requirements: REQ-002, REQ-003"
+        ]
+      },
+      "satisfaction_gate": {
+        "passed": false,
+        "gaps": []
+      },
+      "action_verifier": {
+        "passed": true,
+        "technical_failures": [],
+        "strategic_failures": []
+      },
+      "loop_state": {
+        "family": "mixed",
+        "semantic_key": "d4bca62fed6e",
+        "count": 0,
+        "saturated": false,
+        "escalation_required": true
+      },
+      "final_status": "failed",
+      "validation_status": "failed",
+      "mission_report_path": ".igris/mission_brain/reports/a4a10fa8-01b6-4cc9-8eff-4ddcd01150c9.json"
+    }
+  ]
+}
