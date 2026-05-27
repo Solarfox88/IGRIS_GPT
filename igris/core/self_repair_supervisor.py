@@ -52,6 +52,26 @@ REPAIRABLE_FAILURES = {
     "test_runner_timeout",
 }
 
+FAILURE_ERROR_CODES = {
+    "pytest_failure": "E001",
+    "missing_tests": "E002",
+    "syntax_error": "E003",
+    "wrong_file_edit": "E004",
+    "reasoning_loop_blocked": "E005",
+    "max_steps": "E006",
+    "ask_user": "E007",
+    "infrastructure_bug": "E008",
+    "invalid_bootstrap": "E009",
+    "semantic_incomplete": "E010",
+    "test_runner_timeout": "E011",
+    "decomposition_required": "E012",
+    "capability_ceiling_reached": "E013",
+    "execution_budget_exceeded": "E014",
+    "workspace_dirty": "E015",
+    "destructive_diff": "E016",
+    "missing_ui_visibility": "E017",
+}
+
 # Signals that accumulate across repair cycles to indicate model capability limits.
 # Decomposition is triggered when any single signal reaches CAPABILITY_LIMIT_THRESHOLD,
 # OR when the combined total of all signals reaches it (mixed-failure capability wall).
@@ -117,6 +137,10 @@ def _safe_text(value: Any) -> str:
 
 def _safe_redact(value: Any) -> str:
     return redact_secrets(_safe_text(value))
+
+
+def _failure_error_code(failure_class: str) -> str:
+    return FAILURE_ERROR_CODES.get(str(failure_class or "").strip(), "E999")
 
 
 def _command_detail(result: "CommandResult") -> str:
@@ -3604,6 +3628,31 @@ class SelfRepairSupervisor:
             full = CommandResult(True, "Full pytest skipped")
             final_smoke = CommandResult(True, "Final smoke skipped")
             failure = stage_failure or ""
+            if not failure:
+                should_gate = (
+                    (reasoning_status == "finished" or stop_reason == "finish")
+                    and (bool(modified_files) or bool((diff.output or "").strip()))
+                )
+                if should_gate:
+                    run.add("quality_gate_preapply", "running", "Running pre-apply quality gate")
+                    gate_ok, gate_reasons = self._preapply_quality_gate(config.goal, diff.output, modified_files)
+                    if gate_ok:
+                        run.add("quality_gate_preapply", "success", "Pre-apply quality gate passed")
+                    else:
+                        failure = "semantic_incomplete"
+                        run.add(
+                            "quality_gate_preapply",
+                            "failure",
+                            "Pre-apply quality gate failed",
+                            reasons=gate_reasons,
+                            error_code=_failure_error_code("semantic_incomplete"),
+                        )
+                else:
+                    run.add(
+                        "quality_gate_preapply",
+                        "skipped",
+                        "Skipped pre-apply quality gate (no candidate patch from finished reasoning).",
+                    )
 
             if failure:
                 run.add(
@@ -3918,7 +3967,7 @@ class SelfRepairSupervisor:
                     return _done
 
             run.failure_class = failure
-            run.add("failure", "classified", failure)
+            run.add("failure", "classified", failure, error_code=_failure_error_code(failure))
             if failure not in REPAIRABLE_FAILURES or repair_cycles >= config.max_repair_cycles:
                 triggering_signal = self._detect_capability_limit(run)
                 if triggering_signal:
@@ -4119,6 +4168,13 @@ class SelfRepairSupervisor:
                 "acceptance gate if stub patterns are detected."
             ),
         }
+        if self._goal_prefers_tool_first(config.goal):
+            context["tool_first_policy"] = (
+                "For broad analysis/mapping tasks, prefer deterministic tool-first work. "
+                "Collect compact facts with ripgrep/python scripts, then reason on the summary "
+                "instead of loading many files into LLM context."
+            )
+            context["tool_first_snapshot"] = self._build_tool_first_snapshot()
         if self._goal_requires_ui_visibility(config.goal):
             ui_card_contract_goal = self._goal_targets_rank_ui_card(config.goal)
             ui_contract_satisfied = ui_card_contract_goal and self._rank_ui_card_contract_satisfied()
@@ -4166,6 +4222,49 @@ class SelfRepairSupervisor:
                     )
                 break
         return context
+
+    @staticmethod
+    def _goal_prefers_tool_first(goal: str) -> bool:
+        text = (goal or "").lower()
+        markers = ("analyze", "analysis", "compare", "mapping", "blueprint", "gap", "inventory", "logs", "roadmap")
+        return any(m in text for m in markers)
+
+    def _build_tool_first_snapshot(self) -> Dict[str, Any]:
+        snapshot: Dict[str, Any] = {"project_root": str(self.project_root), "file_count": 0, "top_dirs": []}
+        try:
+            proc = subprocess.run(
+                ["rg", "--files"],
+                cwd=self.project_root,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                timeout=8,
+                check=False,
+            )
+            files = [line.strip() for line in (proc.stdout or "").splitlines() if line.strip()]
+            snapshot["file_count"] = len(files)
+            counts: Dict[str, int] = {}
+            for rel in files:
+                top = rel.split("/", 1)[0]
+                counts[top] = counts.get(top, 0) + 1
+            snapshot["top_dirs"] = [
+                {"name": name, "files": count}
+                for name, count in sorted(counts.items(), key=lambda x: (-x[1], x[0]))[:8]
+            ]
+        except Exception:
+            return snapshot
+        return snapshot
+
+    @staticmethod
+    def _preapply_quality_gate(goal: str, diff_text: str, files_modified: List[str]) -> Tuple[bool, List[str]]:
+        reasons: List[str] = []
+        lowered_goal = (goal or "").lower()
+        lowered_diff = (diff_text or "").lower()
+        if any(tok in lowered_goal for tok in ("test", "pytest")) and not any("test" in str(path).lower() for path in files_modified):
+            reasons.append("goal_mentions_tests_but_no_test_file_touched")
+        if any(marker in lowered_diff for marker in ("# placeholder", "# todo", "# fixme", "\n+pass\n", "+    pass", "+        pass")):
+            reasons.append("stub_pattern_detected_in_diff")
+        return (len(reasons) == 0), reasons
 
     def _rank_ui_card_contract_satisfied(self) -> bool:
         server_path = Path(self.project_root) / "igris/web/server.py"
@@ -4671,6 +4770,7 @@ class SelfRepairSupervisor:
             task_type=repair_task_type,
             preferred_profile=repair_profile,
             failure_class=failure,
+            error_code=_failure_error_code(failure),
             strategy_used=strategy or "",
             helper_model=config.api_helper_model if helper_advice else "",
             has_execution_plan=has_execution_plan,
