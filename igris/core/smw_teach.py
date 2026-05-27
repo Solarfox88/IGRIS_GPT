@@ -25,6 +25,12 @@ class Incident:
 def record_incident(incident: Incident, project_root: str) -> None:
     p = Path(project_root) / ".igris" / "smw_knowledge_base.json"
     p.parent.mkdir(parents=True, exist_ok=True)
+    # Issue #729 — rotate KB file if it exceeds the size cap before writing
+    try:
+        from igris.core.file_rotation import rotate_if_needed
+        rotate_if_needed(p)
+    except Exception:
+        pass
     arr = []
     if p.exists():
         try:

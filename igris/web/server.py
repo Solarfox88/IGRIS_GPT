@@ -3453,6 +3453,14 @@ def create_app() -> FastAPI:
         from igris.core.benchmark_ping import BENCHMARK_PHASES, BENCHMARK_GOAL
         return {"phases": BENCHMARK_PHASES, "goal": BENCHMARK_GOAL}
 
+    # Issue #729 — storage stats endpoint
+    @app.get("/api/storage/stats")
+    async def api_storage_stats() -> Dict[str, object]:
+        """Return size and rotation stats for .igris/ JSON files."""
+        from igris.core.file_rotation import get_file_stats
+        igris_dir = Path(CONFIG.project_root) / ".igris"
+        return {"files": get_file_stats(igris_dir)}
+
     return app
 
 

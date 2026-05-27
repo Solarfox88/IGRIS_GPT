@@ -1875,6 +1875,12 @@ class SelfRepairSupervisor:
     def _persist_runs_index(self) -> None:
         try:
             self._runs_path.parent.mkdir(parents=True, exist_ok=True)
+            # Issue #729 — rotate supervisor_runs.json if it exceeds size cap
+            try:
+                from igris.core.file_rotation import rotate_if_needed
+                rotate_if_needed(self._runs_path)
+            except Exception:
+                pass
             payload = {"runs": self._runs_index}
             self._runs_path.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
         except OSError:
