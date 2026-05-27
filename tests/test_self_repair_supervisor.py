@@ -8232,3 +8232,85 @@ def test_fast_track_capability_limit_ignores_non_repair_failure():
         "semantic_incomplete",
     )
     assert signal is None
+
+
+# ---------------------------------------------------------------------------
+# Issue #715 — Execution effectiveness tests
+# ---------------------------------------------------------------------------
+
+
+def test_no_diff_terminal_report_emitted_when_budget_exhausted_with_no_diff():
+    """When repair budget is exhausted and an attempt produced no diff, emit
+    no_diff_terminal_report so callers know the agent never made file changes."""
+    backend = FakeBackend()
+    backend.diff = CommandResult(True, "")
+    backend.diff_stat = CommandResult(True, "")   # empty → no diff
+    backend.reasoning_results = [
+        {"status": "stopped", "stop_reason": "max_steps", "files_modified": [],
+         "final_summary": "stopped"},
+    ]
+    run = SelfRepairSupervisor("/tmp/project", backend=backend).run(
+        _config(dry_run=False, allow_github_pr=False, max_rank_attempts=1, max_repair_cycles=0)
+    )
+    assert run.status == "blocked"
+    terminal_events = [e for e in run.events if e.phase == "no_diff_terminal_report"]
+    assert len(terminal_events) >= 1, "expected at least one no_diff_terminal_report event"
+    assert terminal_events[0].data["no_diff_count"] >= 1
+
+
+def test_adaptive_retry_emits_strategy_switch_on_same_failure():
+    """Second repair cycle for the same failure emits adaptive_retry/strategy_switch."""
+    backend = FakeBackend()
+    backend.diff = CommandResult(True, "")
+    backend.diff_stat = CommandResult(True, "")
+    # Attempt 1 fails; repair 1 fails; attempt 2 fails; repair 2 emits adaptive_retry.
+    backend.reasoning_results = [
+        {"status": "stopped", "stop_reason": "max_steps", "files_modified": [],
+         "final_summary": "rank fail 1"},
+        {"status": "stopped", "stop_reason": "max_steps", "files_modified": [],
+         "final_summary": "repair fail 1"},
+        {"status": "stopped", "stop_reason": "max_steps", "files_modified": [],
+         "final_summary": "rank fail 2"},
+        {"status": "stopped", "stop_reason": "max_steps", "files_modified": [],
+         "final_summary": "repair fail 2"},
+    ]
+    run = SelfRepairSupervisor("/tmp/project", backend=backend).run(
+        _config(dry_run=True, max_rank_attempts=2, max_repair_cycles=2)
+    )
+    adaptive_events = [e for e in run.events if e.phase == "adaptive_retry"]
+    assert len(adaptive_events) >= 1, "expected at least one adaptive_retry event"
+    assert adaptive_events[0].status == "strategy_switch"
+    assert adaptive_events[0].data.get("task_type") == "single_file_single_test"
+
+
+def test_build_telemetry_fragment_returns_expected_keys():
+    """`_build_telemetry_fragment` static method returns the four required telemetry keys."""
+    frag = SelfRepairSupervisor._build_telemetry_fragment(
+        time_to_first_diff_s=12.5,
+        no_diff_count=1,
+        decompose_count=0,
+        attempt_outcomes=["no_diff", "failed"],
+        total_attempts=2,
+    )
+    assert frag["time_to_first_diff_s"] == 12.5
+    assert frag["no_diff_rate"] == 0.5
+    assert frag["decompose_rate"] == 0.0
+    assert frag["attempt_outcomes"] == ["no_diff", "failed"]
+
+
+def test_run_report_includes_telemetry_after_blocked():
+    """Blocked run report must include no_diff_rate and attempt_outcomes telemetry fields."""
+    backend = FakeBackend()
+    backend.diff = CommandResult(True, "")
+    backend.diff_stat = CommandResult(True, "")
+    backend.reasoning_results = [
+        {"status": "stopped", "stop_reason": "max_steps", "files_modified": [],
+         "final_summary": "stopped"},
+    ]
+    run = SelfRepairSupervisor("/tmp/project", backend=backend).run(
+        _config(dry_run=True, max_rank_attempts=1, max_repair_cycles=0)
+    )
+    assert run.status == "blocked"
+    assert "no_diff_rate" in run.report, "run.report must include no_diff_rate"
+    assert "attempt_outcomes" in run.report, "run.report must include attempt_outcomes"
+    assert isinstance(run.report["attempt_outcomes"], list)

@@ -2260,6 +2260,23 @@ class SelfRepairSupervisor:
         return None
 
     @staticmethod
+    def _build_telemetry_fragment(
+        time_to_first_diff_s: Optional[float],
+        no_diff_count: int,
+        decompose_count: int,
+        attempt_outcomes: List[str],
+        total_attempts: int,
+    ) -> Dict[str, Any]:
+        """Build execution-effectiveness telemetry fragment for run.report (Issue #715)."""
+        denom = max(total_attempts, 1)
+        return {
+            "time_to_first_diff_s": time_to_first_diff_s,
+            "no_diff_rate": round(no_diff_count / denom, 4),
+            "decompose_rate": round(decompose_count / denom, 4),
+            "attempt_outcomes": list(attempt_outcomes),
+        }
+
+    @staticmethod
     def _repair_issue_already_created(run: SupervisorRun, failure: str) -> bool:
         for event in run.events:
             if event.phase != "repair_issue":
@@ -3418,6 +3435,12 @@ class SelfRepairSupervisor:
         attempt = 1
         attempt_limit = config.max_rank_attempts
         final_validation_extension_used = False
+        # Issue #715 — write-first / execution-effectiveness telemetry
+        _no_diff_count: int = 0
+        _time_to_first_diff_s: Optional[float] = None
+        _attempt_start_time: float = time.time()
+        _attempt_outcomes: List[str] = []
+        _decompose_count: int = 0
         while attempt <= attempt_limit:
             cancelled = self._cancel_if_requested(run, mission_plan=mission_plan, stage_statuses=stage_statuses)
             if cancelled is not None:
@@ -3576,6 +3599,12 @@ class SelfRepairSupervisor:
                 diff_stat = self.backend.git_diff_stat()
                 diff = self.backend.git_diff()
                 run.add("diff_stat", "success" if diff_stat.success else "failure", _command_detail(diff_stat))
+            # Issue #715 — track whether this attempt produced any file changes.
+            _has_diff_this_attempt: bool = bool(diff_stat.output.strip())
+            if _has_diff_this_attempt and _time_to_first_diff_s is None:
+                _time_to_first_diff_s = round(time.time() - _attempt_start_time, 1)
+            if not _has_diff_this_attempt:
+                _no_diff_count += 1
             # Persist the full diff to disk immediately so _complete_rank can
             # recover if the working tree is unexpectedly reverted before the
             # commit (e.g. watchdog cleanup racing during branch transitions).
@@ -3986,6 +4015,10 @@ class SelfRepairSupervisor:
 
             run.failure_class = failure
             run.add("failure", "classified", failure, error_code=_failure_error_code(failure))
+            # Issue #715 — record per-attempt outcome for telemetry.
+            _attempt_outcomes.append(
+                "no_diff" if not _has_diff_this_attempt else (failure or "failed")
+            )
             if failure not in REPAIRABLE_FAILURES or repair_cycles >= config.max_repair_cycles:
                 triggering_signal = self._detect_capability_limit(run)
                 if triggering_signal:
@@ -3993,7 +4026,22 @@ class SelfRepairSupervisor:
                         run, triggering_signal, config, mission_plan, stage_statuses,
                         cleanup_workspace=True,
                     )
-                return self._blocked(
+                # Issue #715 — no_diff_terminal_report: surface when attempts consistently
+                # produced no file changes so callers know the agent is structurally stuck.
+                if _no_diff_count >= 1:
+                    run.add(
+                        "no_diff_terminal_report",
+                        "blocked",
+                        f"Attempt(s) produced no diff (no_diff_count={_no_diff_count}). "
+                        "Stopping to avoid further wasted cycles.",
+                        no_diff_count=_no_diff_count,
+                        attempt=attempt,
+                    )
+                _telemetry = self._build_telemetry_fragment(
+                    _time_to_first_diff_s, _no_diff_count, _decompose_count,
+                    _attempt_outcomes, attempt,
+                )
+                _done = self._blocked(
                     run,
                     failure,
                     "Rank failed and repair budget is exhausted or not repairable",
@@ -4001,6 +4049,8 @@ class SelfRepairSupervisor:
                     stage_statuses=stage_statuses,
                     cleanup_workspace=True,
                 )
+                _done.report.update(_telemetry)
+                return _done
 
             repair_cycles += 1
             run.repair_cycles_used = repair_cycles
@@ -4065,6 +4115,11 @@ class SelfRepairSupervisor:
             stage_statuses=stage_statuses,
             cleanup_workspace=True,
         )
+        # Issue #715 — append execution-effectiveness telemetry to the final report.
+        _done.report.update(self._build_telemetry_fragment(
+            _time_to_first_diff_s, _no_diff_count, _decompose_count,
+            _attempt_outcomes, max(attempt - 1, 1),
+        ))
         _post_run_roadmap_autoselect()
         return _done
 
@@ -4709,6 +4764,19 @@ class SelfRepairSupervisor:
             run.same_failure_count = 0
         run.last_repair_failure = failure
 
+        # Issue #715 — adaptive retry ladder: when the same failure recurs, emit a
+        # strategy_switch event so that the reasoning worker can use a different approach.
+        if run.same_failure_count >= 1:
+            run.add(
+                "adaptive_retry",
+                "strategy_switch",
+                f"Same failure '{failure}' recurred {run.same_failure_count + 1} time(s); "
+                "switching to focused single-file task type for this repair cycle.",
+                attempt=cycle,
+                task_type="single_file_single_test",
+                same_failure_count=run.same_failure_count,
+            )
+
         # Execution budget guard — checked before spending reasoning resources.
         budget_failure = self._check_execution_budget(run)
         if budget_failure:
@@ -4775,6 +4843,10 @@ class SelfRepairSupervisor:
             # couldn't complete the task. Escalate to strong_execution (gpt-4o) so the
             # repair attempt uses a more capable model rather than repeating the same failure.
             repair_profile = "strong_execution"
+        # Issue #715 — adaptive retry ladder: same failure recurring → switch to a
+        # focused single-file strategy so the model works on one file at a time.
+        if run.same_failure_count >= 1 and repair_task_type == "code_reasoning":
+            repair_task_type = "single_file_single_test"
         # Strategy profile takes precedence, then env override, then task default.
         if strategy_profile:
             repair_profile = strategy_profile
