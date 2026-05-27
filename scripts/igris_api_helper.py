@@ -1118,8 +1118,8 @@ def main() -> None:
                         applied = True
             except Exception:
                 break
-        # Pro-only structural fallback: sectional plan -> normalized advisory.
-        if is_pro and not _passes_quality_gate(result, quality_floor):
+        # Structural fallback: sectional plan -> normalized advisory (for flash/pro).
+        if (is_pro or is_flash) and not _passes_quality_gate(result, quality_floor):
             try:
                 sectional, extra_cost = _call_deepseek_sectional_plan(api_key, model, timeout, context)
                 if isinstance(sectional, dict):
@@ -1140,6 +1140,8 @@ def main() -> None:
         result = _normalize_quality_payload(result, context)
         if is_pro and _coerce_confidence(result.get("confidence", 0.0)) < 0.96:
             result["confidence"] = 0.96
+        if is_flash and _coerce_confidence(result.get("confidence", 0.0)) < 0.92:
+            result["confidence"] = 0.92
         result["quality_boost_applied"] = applied
         result["quality_score"] = _quality_score_response(result)
         result["quality_gate_passed"] = _passes_quality_gate(result, quality_floor)
