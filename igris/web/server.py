@@ -3302,7 +3302,14 @@ def create_app() -> FastAPI:
     async def api_rank_run_cancel(run_id: str, request: Request) -> Dict[str, object]:
         """Cancel one supervised rank run safely."""
         from igris.core.self_repair_supervisor import cancel_supervised_run
-        content = await request.json() if await request.body() else {}
+        # Issue #723 — guard against empty body or malformed JSON (confirmed 500 in prod logs)
+        try:
+            raw = await request.body()
+            content = json.loads(raw) if raw else {}
+            if not isinstance(content, dict):
+                content = {}
+        except (json.JSONDecodeError, ValueError):
+            content = {}
         reason = str(content.get("reason", "Cancelled by user"))
         run = cancel_supervised_run(run_id, project_root=str(CONFIG.project_root), reason=reason)
         if run is None:
@@ -3476,11 +3483,14 @@ def run_app(application: FastAPI, host: str = "0.0.0.0", port: int = 7778) -> No
             startup_logger.warning("Startup: stale IGRIS process %d on port %d — killing", stale_pid, port)
             try:
                 os.kill(stale_pid, _sig.SIGTERM)
+                # NOTE: _time.sleep is intentional here — run_app() is a synchronous
+                # function called BEFORE uvicorn starts the event loop, so blocking
+                # sleep is safe. Do NOT replace with asyncio.sleep (#728).
                 _time.sleep(2)
                 os.kill(stale_pid, _sig.SIGKILL)
             except ProcessLookupError:
                 pass
-        _time.sleep(1)
+        _time.sleep(1)  # Wait for port release — sync context, safe
     else:
         startup_logger.critical("IGRIS startup blocked: port %d occupied after 3 attempts", port)
         try:
