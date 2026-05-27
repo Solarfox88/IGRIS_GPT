@@ -445,7 +445,10 @@ async def _watchdog_loop(project_root: str) -> None:
                             "goal": goal,
                             "github_issue": number,
                             "allow_merge_if_green": True,
-                            "allow_auto_subissues": True,
+                            "allow_auto_subissues": (
+                                str(os.getenv("IGRIS_ALLOW_AUTO_SUBISSUES_DEFAULT", "true")).strip().lower()
+                                not in {"0", "false", "no", "off"}
+                            ),
                             "autochain_depth": 1,
                             "allow_api_escalation": True,
                             "max_api_escalations_per_run": _max_escalations,

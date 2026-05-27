@@ -171,6 +171,21 @@ def _infer_dry_run(data: Dict[str, Any]) -> bool:
     )
 
 
+def _as_bool(value: Any, default: bool = False) -> bool:
+    if value is None:
+        return default
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return bool(value)
+    text = str(value).strip().lower()
+    if text in {"1", "true", "yes", "on"}:
+        return True
+    if text in {"0", "false", "no", "off", ""}:
+        return False
+    return default
+
+
 @dataclass
 class CommandResult:
     success: bool = False
@@ -229,7 +244,7 @@ class RankSupervisorConfig:
     max_tokens_per_escalation: int = 600
     api_helper_model: str = "gpt-5.4-mini"
     enable_mission_planning: bool = False
-    allow_auto_subissues: bool = False
+    allow_auto_subissues: bool = _as_bool(os.getenv("IGRIS_ALLOW_AUTO_SUBISSUES_DEFAULT"), True)
     enable_semantic_gate: bool = True
     allow_roadmap_autoselect: bool = False
     api_helper_mode: str = ""
@@ -278,7 +293,10 @@ class RankSupervisorConfig:
             max_tokens_per_escalation=max(64, int(data.get("max_tokens_per_escalation", 600))),
             api_helper_model=str(data.get("api_helper_model", "gpt-5.4-mini")),
             enable_mission_planning=bool(data.get("enable_mission_planning", False)),
-            allow_auto_subissues=bool(data.get("allow_auto_subissues", False)),
+            allow_auto_subissues=_as_bool(
+                data.get("allow_auto_subissues"),
+                _as_bool(os.getenv("IGRIS_ALLOW_AUTO_SUBISSUES_DEFAULT"), True),
+            ),
             enable_semantic_gate=bool(data.get("enable_semantic_gate", True)),
             allow_roadmap_autoselect=bool(data.get("allow_roadmap_autoselect", False)),
             api_helper_mode=str(data.get("api_helper_mode", "")),
