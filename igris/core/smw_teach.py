@@ -18,6 +18,8 @@ class Incident:
     actions_applied: List[str]
     outcome: str
     evidence: str
+    # Issue #724 — outcome_label distinguishes positive (resolved) from negative (failed) learning
+    outcome_label: str = "positive"  # "positive" | "negative"
 
 
 def record_incident(incident: Incident, project_root: str) -> None:
@@ -52,11 +54,32 @@ def should_open_igris_issue(pattern_name: str, project_root: str) -> bool:
     return not bool((p.stdout or "").strip())
 
 
-async def teach_back(incident: Incident, project_root: str) -> None:
+async def teach_back(incident: Incident, project_root: str, outcome_label: str = "positive") -> None:
+    """Persist an incident as a learning example.
+
+    Issue #724: both resolved (positive) and failed (negative) incidents are
+    now recorded so the SMW knowledge base learns from failures too.
+    ``outcome_label`` is stored on the incident for downstream weighting.
+    """
+    # Attach outcome_label to the incident before persisting
+    if outcome_label in ("positive", "negative"):
+        incident = Incident(
+            incident_id=incident.incident_id,
+            pattern_name=incident.pattern_name,
+            detected_at=incident.detected_at,
+            resolved_at=incident.resolved_at,
+            root_cause=incident.root_cause,
+            actions_applied=incident.actions_applied,
+            outcome=incident.outcome,
+            evidence=incident.evidence,
+            outcome_label=outcome_label,
+        )
     record_incident(incident, project_root)
     try:
         from igris.core.memory_graph import MemoryGraph
         graph = MemoryGraph(project_root)
+        # Positive examples weighted at 0.8, negative at 0.3 (still informative)
+        confidence = 0.8 if outcome_label == "positive" else 0.3
         graph.add_node(
             "lesson",
             content={
@@ -64,8 +87,9 @@ async def teach_back(incident: Incident, project_root: str) -> None:
                 "action_taken": ",".join(incident.actions_applied or []),
                 "failure_class": incident.pattern_name,
                 "resolution": getattr(incident, "resolution_summary", "") or "",
+                "outcome_label": outcome_label,
             },
-            confidence=0.8,
+            confidence=confidence,
         )
     except Exception:
         pass

@@ -16,6 +16,10 @@ from igris.core.smw_weak_signals import run_all_detectors
 _SMW_POLL_SECONDS = 120
 _SMW_COOLDOWN_PATTERNS: Dict[str, float] = {}
 
+# Issue #732 — configurable auto-merge confidence threshold (default 0.8, NOT 0.5)
+import os as _os
+_SMW_MERGE_CONFIDENCE: float = float(_os.getenv("IGRIS_SMW_MERGE_CONFIDENCE", "0.8"))
+
 
 async def _smw_loop(project_root: str) -> None:
     logger = logging.getLogger("igris.smw")
@@ -47,8 +51,10 @@ async def _smw_loop(project_root: str) -> None:
                 incident = Incident(uuid.uuid4().hex, name, detected.detected_at, None if still_active else asyncio.get_running_loop().time(), d.root_cause, actions_applied, outcome, detected.evidence)
                 record_incident(incident, project_root)
                 if outcome == "resolved":
-                    await teach_back(incident, project_root)
+                    await teach_back(incident, project_root, outcome_label="positive")
                 else:
+                    # Issue #724 — teach_back on failed outcomes too (negative label)
+                    await teach_back(incident, project_root, outcome_label="negative")
                     await execute_action("open_diagnostic_issue", tier=2, dry_run=False, project_root=project_root, pattern_name=name, evidence=detected.evidence, actions_tried=actions_applied)
             cycle_count += 1
             if cycle_count % 10 == 0:
@@ -88,11 +94,14 @@ async def _smw_loop(project_root: str) -> None:
                         )
                         rr = await review_pr(req, project_root)
                         save_review_result(rr, project_root)
-                        if rr.approved and rr.confidence > 0.8:
+                        if rr.approved and rr.confidence >= _SMW_MERGE_CONFIDENCE:
+                            # Issue #732 — only auto-merge above configurable threshold
+                            logger.info("SMW auto-merging PR #%s (confidence=%.2f >= threshold=%.2f)", number, rr.confidence, _SMW_MERGE_CONFIDENCE)
                             await asyncio.to_thread(__import__("subprocess").run, ["gh", "pr", "merge", str(number), "--squash", "--delete-branch"], capture_output=True, text=True, cwd=project_root)
                         elif rr.approved and rr.confidence >= 0.5:
-                            logger.warning("SMW merging PR #%s with moderate confidence %.2f", number, rr.confidence)
-                            await asyncio.to_thread(__import__("subprocess").run, ["gh", "pr", "merge", str(number), "--squash"], capture_output=True, text=True, cwd=project_root)
+                            # Needs human review — open PR but do NOT auto-merge
+                            logger.warning("SMW skipping auto-merge PR #%s: confidence %.2f below threshold %.2f — human review required", number, rr.confidence, _SMW_MERGE_CONFIDENCE)
+                            await asyncio.to_thread(__import__("subprocess").run, ["gh", "pr", "comment", str(number), "--body", f"⚠️ SMW: auto-merge skipped (confidence={rr.confidence:.2f} < threshold={_SMW_MERGE_CONFIDENCE:.2f}). Human review required.\n\nSuggestion: {rr.suggestion}"], capture_output=True, text=True, cwd=project_root)
                         elif (not rr.approved) and rr.confidence > 0.7:
                             await asyncio.to_thread(__import__("subprocess").run, ["gh", "pr", "comment", str(number), "--body", f"SMW blocked merge: {rr.suggestion}\nConcerns: {rr.concerns}"], capture_output=True, text=True, cwd=project_root)
                             await execute_action("open_diagnostic_issue", tier=2, dry_run=False, project_root=project_root, pattern_name="pr_review_blocked", evidence=f"pr#{number}", actions_tried=[])
