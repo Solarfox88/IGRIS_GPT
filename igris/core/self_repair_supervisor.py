@@ -219,7 +219,7 @@ class CommandResult:
 class RankSupervisorConfig:
     goal: str
     rank_id: str = "rank"
-    max_rank_attempts: int = 1
+    max_rank_attempts: int = 2  # Issue #710: default ≥ 2; env-overridable via IGRIS_MAX_RANK_ATTEMPTS
     max_repair_cycles: int = 2
     allow_github_pr: bool = False
     allow_merge_if_green: bool = False
@@ -268,10 +268,13 @@ class RankSupervisorConfig:
         return cls(
             goal=str(data.get("goal", "")),
             rank_id=str(data.get("rank_id", "rank")),
-            max_rank_attempts=max(1, int(data.get("max_rank_attempts", 1))),
+            max_rank_attempts=max(1, int(data.get(
+                "max_rank_attempts",
+                int(os.getenv("IGRIS_MAX_RANK_ATTEMPTS", str(cls.max_rank_attempts))),
+            ))),
             max_repair_cycles=max(0, int(data.get("max_repair_cycles", cls.max_repair_cycles))),
-            allow_github_pr=bool(data.get("allow_github_pr", False)),
-            allow_merge_if_green=bool(data.get("allow_merge_if_green", False)),
+            allow_github_pr=_as_bool(data.get("allow_github_pr"), False),
+            allow_merge_if_green=_as_bool(data.get("allow_merge_if_green"), False),
             service_restart_command=str(data.get("service_restart_command", "")),
             required_smoke_endpoints=list(data.get("required_smoke_endpoints", [])),
             targeted_tests=_infer_targeted_tests(
@@ -279,7 +282,7 @@ class RankSupervisorConfig:
                 list(data.get("targeted_tests", [])),
             ),
             dry_run=_infer_dry_run(data),
-            defer_service_restart=bool(data.get("defer_service_restart", False)),
+            defer_service_restart=_as_bool(data.get("defer_service_restart"), False),
             test_timeout_seconds=max(30, int(data.get("test_timeout_seconds", 300))),
             test_hard_cap_seconds=max(60, int(data.get("test_hard_cap_seconds", 3600))),
             reasoning_timeout_seconds=max(30, int(
@@ -287,18 +290,18 @@ class RankSupervisorConfig:
                 or os.environ.get("IGRIS_REASONING_TIMEOUT_SECONDS")
                 or 300
             )),
-            allow_api_escalation=bool(data.get("allow_api_escalation", False)),
+            allow_api_escalation=_as_bool(data.get("allow_api_escalation"), False),
             max_api_escalations_per_run=max(0, int(data.get("max_api_escalations_per_run", 0))),
             max_api_budget_usd=max(0.0, float(data.get("max_api_budget_usd", 0.0))),
             max_tokens_per_escalation=max(64, int(data.get("max_tokens_per_escalation", 600))),
             api_helper_model=str(data.get("api_helper_model", "gpt-5.4-mini")),
-            enable_mission_planning=bool(data.get("enable_mission_planning", False)),
+            enable_mission_planning=_as_bool(data.get("enable_mission_planning"), False),
             allow_auto_subissues=_as_bool(
                 data.get("allow_auto_subissues"),
                 _as_bool(os.getenv("IGRIS_ALLOW_AUTO_SUBISSUES_DEFAULT"), True),
             ),
-            enable_semantic_gate=bool(data.get("enable_semantic_gate", True)),
-            allow_roadmap_autoselect=bool(data.get("allow_roadmap_autoselect", False)),
+            enable_semantic_gate=_as_bool(data.get("enable_semantic_gate"), True),
+            allow_roadmap_autoselect=_as_bool(data.get("allow_roadmap_autoselect"), False),
             api_helper_mode=str(data.get("api_helper_mode", "")),
             autochain_depth=max(0, int(data.get("autochain_depth", 0) or data.get("_autochain_depth", 0))),
             no_diff_steps_max=max(1, int(data.get("no_diff_steps_max", 20))),

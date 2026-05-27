@@ -8235,6 +8235,106 @@ def test_fast_track_capability_limit_ignores_non_repair_failure():
 
 
 # ---------------------------------------------------------------------------
+# Issue #710 — Autonomy hardening tests
+# ---------------------------------------------------------------------------
+
+
+def test_as_bool_string_false_returns_false():
+    """The classic bool("false") == True trap must be fixed by _as_bool."""
+    from igris.core.self_repair_supervisor import _as_bool
+    assert _as_bool("false") is False
+    assert _as_bool("False") is False
+    assert _as_bool("FALSE") is False
+
+
+def test_as_bool_string_zero_returns_false():
+    from igris.core.self_repair_supervisor import _as_bool
+    assert _as_bool("0") is False
+
+
+def test_as_bool_string_no_returns_false():
+    from igris.core.self_repair_supervisor import _as_bool
+    assert _as_bool("no") is False
+    assert _as_bool("NO") is False
+
+
+def test_as_bool_true_variants():
+    from igris.core.self_repair_supervisor import _as_bool
+    assert _as_bool(True) is True
+    assert _as_bool("true") is True
+    assert _as_bool("True") is True
+    assert _as_bool("1") is True
+    assert _as_bool("yes") is True
+    assert _as_bool("YES") is True
+
+
+def test_as_bool_false_literal():
+    from igris.core.self_repair_supervisor import _as_bool
+    assert _as_bool(False) is False
+
+
+def test_as_bool_none_returns_default():
+    from igris.core.self_repair_supervisor import _as_bool
+    assert _as_bool(None) is False
+    assert _as_bool(None, default=True) is True
+
+
+def test_max_rank_attempts_default_is_at_least_2():
+    """Autonomous config must have max_rank_attempts >= 2 (regression guard for #710)."""
+    import os
+    os.environ.pop("IGRIS_MAX_RANK_ATTEMPTS", None)
+    config = RankSupervisorConfig.from_dict({"goal": "implement feature"})
+    assert config.max_rank_attempts >= 2, (
+        f"max_rank_attempts default must be >= 2, got {config.max_rank_attempts}"
+    )
+
+
+def test_max_rank_attempts_env_override():
+    """IGRIS_MAX_RANK_ATTEMPTS env var must override the default."""
+    import os
+    os.environ["IGRIS_MAX_RANK_ATTEMPTS"] = "3"
+    try:
+        config = RankSupervisorConfig.from_dict({"goal": "implement feature"})
+        assert config.max_rank_attempts == 3
+    finally:
+        os.environ.pop("IGRIS_MAX_RANK_ATTEMPTS", None)
+
+
+def test_sub_mission_does_not_decompose_when_already_focused(tmp_path):
+    """A sub-mission with targeted_tests (focused) must not trigger decomposition."""
+    backend = FakeBackend()
+    config = _config(
+        autochain_depth=1,
+        targeted_tests=["tests/test_some_module.py"],
+        enable_mission_planning=True,
+        allow_auto_subissues=True,
+        dry_run=False,
+        max_rank_attempts=1,
+        max_repair_cycles=0,
+    )
+    backend.reasoning_results = [{
+        "status": "finished",
+        "stop_reason": "finish",
+        "files_modified": ["igris/core/fix.py"],
+        "final_summary": "done",
+    }]
+    backend.diff_stat = CommandResult(True, " igris/core/fix.py | 2 ++")
+    backend.diff = CommandResult(True, "+fix content")
+    backend.targeted = CommandResult(True, "targeted ok")
+    backend.full_tests = [CommandResult(True, "full ok")]
+    backend.smoke_result = CommandResult(True, "smoke ok")
+
+    sup = SelfRepairSupervisor(backend=backend, project_root=str(tmp_path))
+    run = sup.run(config)
+
+    event_phases = [e.phase for e in run.events]
+    assert "decomposition_request" not in event_phases, (
+        "Focused sub-mission should not trigger decomposition"
+    )
+    assert run.failure_class != "decomposition_required"
+
+
+# ---------------------------------------------------------------------------
 # Issue #715 — Execution effectiveness tests
 # ---------------------------------------------------------------------------
 
