@@ -3328,7 +3328,7 @@ class SelfRepairSupervisor:
             and self._goal_needs_preflight_decomposition(config.goal)
             and config.allow_auto_subissues
             and not config.dry_run
-            and config.autochain_depth == 0
+            and config.autochain_depth <= SelfRepairSupervisor._MAX_AUTOCHAIN_DEPTH
         ):
             run.add(
                 "mission_planning",
