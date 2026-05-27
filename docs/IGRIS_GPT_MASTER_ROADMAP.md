@@ -8,6 +8,11 @@ La roadmap integra le migliori idee osservate da tre fonti di ispirazione:
 - **Ruflo / Claude Flow**: orchestrazione, agenti specializzati, router, memoria, hook, plugin, provider routing, doctor/verify, dashboard, security hardening.
 - **OpenHands**: workspace operativo, terminale, file editing, browser, loop observe-act, ambiente di esecuzione controllato; da non ereditare invece crash, fragilità e accoppiamento eccessivo.
 
+Documenti operativi correlati (phase-2bis):
+- [Issue #638 — Integration Interfaces and Gap Map](./ISSUE_638_INTEGRATION_INTERFACES_GAP_MAP.md)
+- [Issue #639 — Integration Gap Matrix](./ISSUE_639_INTEGRATION_GAP_MATRIX.md)
+- [Master Plan V2 — Role Routing](./MASTER_PLAN_V2_ROLE_ROUTING.md)
+
 ---
 
 ## 0. Visione finale
