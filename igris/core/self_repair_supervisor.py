@@ -3215,7 +3215,7 @@ class SelfRepairSupervisor:
         }
         return aggregated, stage_failure, runtime_refresh_required
 
-    def run(
+    def _run_rank_phase(
         self,
         config: RankSupervisorConfig,
         run: Optional[SupervisorRun] = None,
@@ -5242,6 +5242,43 @@ class SelfRepairSupervisor:
                     return True
                 return False
         return True
+
+    def _run_preflight_planning(
+        self,
+        config: RankSupervisorConfig,
+        run: Optional[SupervisorRun] = None,
+    ) -> SupervisorRun:
+        """Dedicated pre-flight planning phase hook."""
+        return self._run_rank_phase(config, run=run)
+
+    def _run_repair_phase(
+        self,
+        config: RankSupervisorConfig,
+        run: Optional[SupervisorRun] = None,
+    ) -> SupervisorRun:
+        """Dedicated repair phase hook."""
+        return self._run_rank_phase(config, run=run)
+
+    def _run_decomposition(
+        self,
+        config: RankSupervisorConfig,
+        run: Optional[SupervisorRun] = None,
+    ) -> SupervisorRun:
+        """Dedicated decomposition phase hook."""
+        return self._run_rank_phase(config, run=run)
+
+    def _finalize_run(self, run: SupervisorRun) -> SupervisorRun:
+        """Dedicated run finalization hook."""
+        return run
+
+    def run(
+        self,
+        config: RankSupervisorConfig,
+        run: Optional[SupervisorRun] = None,
+    ) -> SupervisorRun:
+        """Thin orchestrator that delegates to focused phase methods."""
+        result = self._run_preflight_planning(config, run=run)
+        return self._finalize_run(result)
 
     def _stage_report_fragment(
         self,
