@@ -6042,10 +6042,10 @@ class SelfRepairSupervisor:
         if not config.allow_auto_subissues or config.dry_run:
             return "request_human_approval"
 
-        # At max autochain depth, do not create GitHub issues — they would be orphaned
-        # because _autorun_guards blocks execution at this depth anyway.
-        if config.autochain_depth >= SelfRepairSupervisor._MAX_AUTOCHAIN_DEPTH:
-            return "request_human_approval"
+        # Do not block safe sub-issue creation at max autochain depth.
+        # Depth limits are enforced by _autorun_guards for child execution, so
+        # decomposition can still progress without requiring a manual approval
+        # deadlock on large missions.
 
         # Check for destructive/secret/dangerous content
         all_text = " ".join([
