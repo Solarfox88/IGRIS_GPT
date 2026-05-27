@@ -28,6 +28,7 @@ def test_action_translation_and_execution_dry_run():
     mission = execute_mission_actions(mission, command_map, dry_run=True)
     assert mission.execution_results
     assert all(result.success for result in mission.execution_results)
+    assert all(result.evidence.startswith("dry-run") for result in mission.execution_results)
 
 
 def test_execution_blocks_blind_retry_without_differentiator():
@@ -42,6 +43,46 @@ def test_execution_blocks_blind_retry_without_differentiator():
     )
     assert any(not res.success for res in mission.execution_results)
     assert any("blind retry" in res.stderr for res in mission.execution_results)
+    assert all(res.evidence == "blocked-blind-retry" for res in mission.execution_results)
+
+
+def test_execution_allows_retry_with_differentiator():
+    mission = translate_checklist_to_actions(_build_mission())
+    command_map = {action.id: "echo same" for action in mission.actions}
+    mission = execute_mission_actions(
+        mission,
+        command_map,
+        dry_run=True,
+        previous_commands={"echo same"},
+        differentiator="new-context",
+    )
+    assert all(res.success for res in mission.execution_results)
+    assert all(res.evidence == "dry-run-differentiated" for res in mission.execution_results)
+
+
+def test_execution_missing_command_is_explicit_failure():
+    mission = translate_checklist_to_actions(_build_mission())
+    mission = execute_mission_actions(mission, {}, dry_run=True)
+    assert all(not res.success for res in mission.execution_results)
+    assert all(res.evidence == "missing-command" for res in mission.execution_results)
+    assert all("missing command mapping" in res.stderr for res in mission.execution_results)
+
+
+def test_execution_blocks_unsafe_command_by_policy():
+    mission = translate_checklist_to_actions(_build_mission())
+    command_map = {action.id: "rm -rf /tmp/not-safe" for action in mission.actions}
+    mission = execute_mission_actions(mission, command_map, dry_run=False)
+    assert all(not res.success for res in mission.execution_results)
+    assert all(res.evidence == "blocked-unsafe-command" for res in mission.execution_results)
+    assert all("blocked unsafe command" in res.stderr for res in mission.execution_results)
+
+
+def test_execution_non_dry_run_tracks_returncode():
+    mission = translate_checklist_to_actions(_build_mission())
+    command_map = {action.id: f"printf ok-{action.id}" for action in mission.actions}
+    mission = execute_mission_actions(mission, command_map, dry_run=False)
+    assert all(res.returncode == 0 for res in mission.execution_results)
+    assert all(res.evidence == "process-executed" for res in mission.execution_results)
 
 
 def test_quality_and_satisfaction_gate_pass_path():
@@ -103,3 +144,16 @@ def test_action_verifier_reports_failures():
     mission.execution_results = []
     report = verify_actions(mission)
     assert report["passed"] is True
+
+
+def test_quality_and_verifier_consume_blocked_execution_results():
+    mission = translate_checklist_to_actions(_build_mission())
+    mission = execute_mission_actions(
+        mission,
+        {action.id: "rm -rf /tmp/not-safe" for action in mission.actions},
+        dry_run=False,
+    )
+    verify = verify_actions(mission)
+    quality = evaluate_quality_gate(mission)
+    assert verify["passed"] is False
+    assert quality["passed"] is False
