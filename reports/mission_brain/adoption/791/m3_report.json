@@ -1,0 +1,66 @@
+{
+  "mission_id": "M3",
+  "mission_type": "diagnosis_intent_mismatch_risk",
+  "issue_number": 540,
+  "issue_title": "WorkSession tracking + no_diff_repair stop condition",
+  "input": "Diagnostica perch\u00e9 su issue #540 si rischia no_diff_repair senza apprendimento da commands_run e proponi verifica oggettiva del fix.",
+  "available_context": {
+    "issue_url": "https://github.com/Solarfox88/IGRIS_GPT/issues/540",
+    "paths": [
+      "igris/core/self_repair_supervisor.py",
+      "igris/core/agent_reasoning_loop.py"
+    ],
+    "category": "diagnosis",
+    "risk": "intent_mismatch"
+  },
+  "mission_brain_report_path": ".igris/mission_brain/reports/047f51de-6d51-4e24-bfc2-693c12ee3cff.json",
+  "declared_status": "partial",
+  "observable_outcome": {
+    "quality_gate_passed": false,
+    "satisfaction_gate_passed": true,
+    "execution_results": [
+      {
+        "action_id": "ACT-001",
+        "command": "rg -n \"no_diff_repair|commands_run|WorkSession\" igris/core -S",
+        "returncode": 0,
+        "stdout": "igris/core/assignment_router.py:204:    # Escalation override: accumulated no_diff_repair / combined signals \u2192 hard_debugging.\nigris/core/assignment_router.py:206:    _ndr = signals.get(\"no_diff_repair\", 0)\nigris/core/assignment_router.py:210:            f\"escalation: no_diff_repair={_ndr} reasoning_timeout={_rto} prior={request.prior_attempts}\"\nigris/core/assignment_router.py:223:    if failure_class in (\"no_diff\", \"no_diff_repair\") or signals.get(\"no_diff\", 0) >= 2:\nigris/core/assignment_router.py:225:        return \"backend_coder\", \"no_diff_repair\", reasons\nigris/core/assignment_router.py:319:    no_diff = sum(1 for o in matching if o.get(\"failure_class\") in (\"no_diff\", \"no_diff_repair\"))\nigris/core/assignment_router.py:386:    has_repeated_no_diff = signals.get(\"no_diff\", 0) >= 2 or failure_class in (\"no_diff\", \"no_diff_repair\")\nigris/core/assignment_router.py:389:    no_diff_repair_count = signals.get(\"no_diff_repair\", 0)\nigris/core/assignment_router.py:392:        no_diff_repair_count >= 3\nigris/core/assignment_router.py:393:        or (no_diff_repair_count + reasoning_timeout_count) >= 4\nigris/core/assignment_router.py:394:        or (no_diff_repair_count >= 2 and prior >= 2)\nigris/core/assignment_router.py:416:        task_type in (\"backend_endpoint\", \"semantic_repair\", \"complex_implementation\", \"no_diff_repair\")\nigris/core/agent_registry.py:69:    \"devops\": [\"commands_run\", \"summary\"], \"security_reviewer\": [\"risk_level\", \"concerns\", \"summary\"],\nigris/core/work_session.py:50:class WorkSession:\nigris/core/work_session.py:61:    def create(cls, goal: str, mission_id: Optional[str] = None) -> \"WorkSession\":\nigris/core/work_session.py:65:    def advance_phase(self, phase: WorkPhase, outcome: str = \"success\", notes: str = \"\") -> \"WorkSession\":\nigris/core/work_session.py:77:    def complete_deliver(self, report: DeliveryReport) -> \"WorkSession\":\nigris/core/agent_reasoning_loop.py:61:    \"no_diff_repair\",\nigris/core/agent_reasoning_loop.py:240:        self._steps_without_write: int = 0  # no_diff_repair guard\nigris/core/agent_reasoning_loop.py:1898:            return \"no_diff_repair\"\nigris/core/self_repair_supervisor.py:79:CAPABILITY_LIMIT_SIGNALS = frozenset({\"reasoning_timeout\", \"pytest_hang\", \"no_diff_repair\"})\nigris/core/self_repair_supervisor.py:263:    # so that accumulated no_diff_repair / reasoning_timeout counts survive\nigris/core/self_repair_supervisor.py:1242:        if stop in {\"reasoning_timeout\", \"budget_exceeded\", \"no_diff_repair\"}:\nigris/core/self_repair_supervisor.py:3410:                # This preserves no_diff_repair / reasoning_timeout counts across\nigris/core/self_repair_supervisor.py:3638:                    # loop itself signals \"no_diff_repair\" AND produced no files.\nigris/core/self_repair_supervisor.py:3645:                    if stop_reason == \"no_diff_repair\" and not modified_files:\nigris/core/self_repair_supervisor.py:3650:                        self._record_capability_signal(run, \"no_diff_repair\")\nigris/core/self_repair_supervisor.py:3674:                and stop_reason == \"no_diff_repair\"\nigris/core/self_repair_supervisor.py:3687:            if stage_failure == \"reasoning_loop_blocked\" and stop_reason == \"no_diff_repair\" and not modified_files:\nigris/core/self_repair_supervisor.py:3690:                run.add(\"diff_stat\", \"skipped\", \"Skipped diff collection after no_diff_repair with no modified files.\")\nigris/core/self_repair_supervisor.py:3972:                    if failure == \"reasoning_loop_blocked\" and stop_reason == \"no_diff_repair\":\nigris/core/self_repair_supervisor.py:3973:                        self._record_capability_signal(run, \"no_diff_repair\")\nigris/core/self_repair_supervisor.py:5156:            self._record_capability_signal(run, \"no_diff_repair\")\nigris/core/self_repair_supervisor.py:5727:        capability wall \u2014 e.g. one reasoning_timeout + one no_diff_repair).\nigris/core/self_repair_supervisor.py:5742:        `no_diff_repair` signals indicate transient failures where decomposition may\nigris/core/supervisor_reasoning_worker.py:13:from igris.core.work_session import DeliveryReport, WorkPhase, WorkSession\nigris/core/supervisor_reasoning_worker.py:55:    ws = WorkSession.create(goal=str(payload[\"goal\"]), mission_id=payload.get(\"mission_id\") or None)\n",
+        "stderr": "",
+        "success": true,
+        "evidence": "process-executed"
+      },
+      {
+        "action_id": "ACT-002",
+        "command": "nonexistent_command_for_mission_791",
+        "returncode": 127,
+        "stdout": "",
+        "stderr": "/bin/sh: 1: nonexistent_command_for_mission_791: not found\n",
+        "success": false,
+        "evidence": "process-executed"
+      },
+      {
+        "action_id": "ACT-003",
+        "command": "git status --short",
+        "returncode": 0,
+        "stdout": "?? reports/mission_brain/adoption/791/\n?? scripts/run_mission_brain_adoption_791.py\n",
+        "stderr": "",
+        "success": true,
+        "evidence": "process-executed"
+      }
+    ],
+    "final_judgment": {
+      "technical_status": "failed",
+      "strategic_status": "passed",
+      "reason": "Mission 047f51de-6d51-4e24-bfc2-693c12ee3cff status=partial; quality_passed=False; satisfaction_passed=True."
+    }
+  },
+  "manual_reviewer_judgment": {
+    "status": "partial",
+    "alignment": "aligned",
+    "notes": "Diagnosi utile ma outcome non fully completed: presenza di failure tecnico controllato mantiene stato partial.",
+    "usefulness_score": 0.75
+  },
+  "discrepancy_present": false,
+  "discrepancy_cause": "",
+  "recommended_follow_up": "Continue operational sampling without remediation in #791.",
+  "runtime_overhead_note": "No deep loop integration; Mission Brain wrapper only."
+}
