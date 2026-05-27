@@ -1042,6 +1042,12 @@ def main() -> None:
         system_prompt = _SYSTEM_PROMPT
 
     context = "\n".join(context_parts)
+    phase_for_policy = _phase_profile_from_context(context)
+    if provider == "deepseek":
+        _ml = model.lower()
+        if "flash" in _ml and phase_for_policy in ("repair", "escalation"):
+            # Policy: flash is allowed for rank; repair/escalation must use pro.
+            model = os.environ.get("IGRIS_DEEPSEEK_PRO_MODEL", "deepseek-v4-pro")
 
     # Call API — Codex models must use /v1/responses, not /v1/chat/completions
     try:
