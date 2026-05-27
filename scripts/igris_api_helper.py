@@ -247,6 +247,43 @@ def _is_codex_model(model: str) -> bool:
     return "codex" in model.lower()
 
 
+def _get_key_for_provider(provider: str) -> str:
+    p = (provider or "").strip().lower()
+    if p == "openai":
+        for var in ("IGRIS_OPENAI_API_KEY", "OPENAI_API_KEY"):
+            key = os.environ.get(var, "").strip()
+            if key:
+                return key
+        return ""
+    if p == "deepseek":
+        return os.environ.get("DEEPSEEK_API_KEY", "").strip()
+    if p == "anthropic":
+        for var in ("IGRIS_ANTHROPIC_API_KEY", "ANTHROPIC_API_KEY"):
+            key = os.environ.get(var, "").strip()
+            if key:
+                return key
+        return ""
+    return ""
+
+
+def _phase_role_override(phase: str) -> Tuple[str, str]:
+    """Return optional (provider, model) override based on phase role mapping."""
+    phase = (phase or "").strip().lower()
+    if phase == "rank":
+        p = os.environ.get("IGRIS_ROLE_PLANNER_PROVIDER", "").strip().lower()
+        m = os.environ.get("IGRIS_ROLE_PLANNER_MODEL", "").strip()
+        return p, m
+    if phase == "repair":
+        p = os.environ.get("IGRIS_ROLE_IMPLEMENTER_PROVIDER", "").strip().lower()
+        m = os.environ.get("IGRIS_ROLE_IMPLEMENTER_MODEL", "").strip()
+        return p, m
+    if phase == "escalation":
+        p = os.environ.get("IGRIS_ROLE_ESCALATION_PROVIDER", "").strip().lower()
+        m = os.environ.get("IGRIS_ROLE_ESCALATION_MODEL", "").strip()
+        return p, m
+    return "", ""
+
+
 # ---------------------------------------------------------------------------
 # System prompts
 # ---------------------------------------------------------------------------
@@ -1043,6 +1080,13 @@ def main() -> None:
 
     context = "\n".join(context_parts)
     phase_for_policy = _phase_profile_from_context(context)
+    role_provider, role_model = _phase_role_override(phase_for_policy)
+    if role_provider and role_model:
+        role_key = _get_key_for_provider(role_provider)
+        if role_key:
+            provider = role_provider
+            api_key = role_key
+            model = role_model
     if provider == "deepseek":
         _ml = model.lower()
         if "flash" in _ml and phase_for_policy in ("repair", "escalation"):
@@ -1072,6 +1116,8 @@ def main() -> None:
         "api_helper_provider": provider,
         "api_helper_model_requested": model_requested,
         "api_helper_model_resolved": model,
+        "api_helper_phase": phase_for_policy,
+        "api_helper_role_override": bool(role_provider and role_model),
         "codex_only": is_codex_only,
     }
 
