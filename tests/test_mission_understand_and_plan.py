@@ -10,6 +10,10 @@ def test_understand_and_plan_simple_request():
     assert mission.requirements
     assert mission.checklist
     assert len(mission.checklist) == 1
+    decomp = mission.context_snapshot["intent_decomposition"]
+    assert decomp["request_shape"] == "simple"
+    assert decomp["what"] != "unknown"
+    assert "why" in decomp
 
 
 def test_understand_and_plan_multi_step_request():
@@ -25,6 +29,9 @@ def test_understand_and_plan_multi_step_request():
     assert len(mission.requirements) >= 3
     assert len(mission.plan) >= 3
     assert all(item.linked_requirement for item in mission.checklist)
+    decomp = mission.context_snapshot["intent_decomposition"]
+    assert decomp["request_shape"] == "multi_step"
+    assert decomp["where"] != ["unknown"]
 
 
 def test_understand_and_plan_architecture_request_updates_existing_mission():
@@ -35,7 +42,33 @@ def test_understand_and_plan_architecture_request_updates_existing_mission():
         mission=base,
     )
     assert mission is base
-    assert "[architecture]" in mission.intent_summary
+    assert "[architecture|architectural]" in mission.intent_summary
     assert all(req.verification_method for req in mission.requirements)
     assert not any("pulito" in item.description.lower() for item in mission.checklist)
+    assert mission.context_snapshot["intent_decomposition"]["why"] in {
+        "improve_system_design",
+        "unknown",
+        "per evitare loop di recovery",
+    }
 
+
+def test_understand_and_plan_ambiguous_request_marks_unknowns():
+    mission = understand_and_plan(
+        user_input="Sistema tutto quello che non va",
+        project="igrisgpt",
+    )
+    decomp = mission.context_snapshot["intent_decomposition"]
+    assert decomp["request_shape"] == "ambiguous"
+    assert "where" in decomp["unknowns"]
+    assert any(req.verification_method == "unknowns_explicitly_marked_check" for req in mission.requirements)
+
+
+def test_understand_and_plan_diagnosis_and_constraints():
+    mission = understand_and_plan(
+        user_input="Diagnostica il bug in igris/core/mission_planner.py senza cambiare API pubbliche",
+        project="igrisgpt",
+    )
+    decomp = mission.context_snapshot["intent_decomposition"]
+    assert decomp["intent_type"] == "diagnosis"
+    assert "igris/core/mission_planner.py" in decomp["where"]
+    assert "contains_without_constraint" in decomp["constraints"]

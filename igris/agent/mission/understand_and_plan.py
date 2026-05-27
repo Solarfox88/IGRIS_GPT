@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from typing import Dict, Iterable, List, Optional
 
 from igris.agent.mission.mission_schema import (
@@ -24,11 +25,98 @@ def _classify_intent(user_input: str) -> str:
     return "mixed"
 
 
+def _classify_request_shape(user_input: str, intent_type: str) -> str:
+    text = user_input.lower()
+    if any(tok in text for tok in ("?", "oppure", "forse", "non so", "sistema tutto")):
+        return "ambiguous"
+    if intent_type == "architecture":
+        return "architectural"
+    if intent_type == "diagnosis":
+        return "diagnostic"
+    if any(tok in text for tok in (" e ", ",", "poi", "quindi", "dopo")):
+        return "multi_step"
+    if len(user_input.split()) <= 12:
+        return "simple"
+    if intent_type == "verification":
+        return "verification"
+    return "mixed"
+
+
 def _extract_unknown_safe_summary(user_input: str) -> str:
     text = " ".join(user_input.strip().split())
     if not text:
         return "unknown"
     return text[:240]
+
+
+def _extract_where_candidates(user_input: str, repo_view: Optional[Dict[str, object]]) -> List[str]:
+    candidates: List[str] = []
+    for match in re.findall(r"[A-Za-z0-9_./-]+\.(?:py|md|json|yaml|yml|toml)", user_input):
+        candidates.append(match)
+    if repo_view:
+        for key in ("paths", "changed_files", "files"):
+            value = repo_view.get(key)
+            if isinstance(value, list):
+                for item in value:
+                    if isinstance(item, str) and item.strip():
+                        candidates.append(item.strip())
+    dedup: List[str] = []
+    for item in candidates:
+        if item not in dedup:
+            dedup.append(item)
+    return dedup[:8]
+
+
+def _extract_constraints(user_input: str) -> List[str]:
+    constraints: List[str] = []
+    text = user_input.lower()
+    if "senza" in text:
+        constraints.append("contains_without_constraint")
+    if "non " in text:
+        constraints.append("contains_negative_constraint")
+    if any(tok in text for tok in ("deve", "must", "obbligatorio", "required")):
+        constraints.append("contains_mandatory_constraint")
+    return constraints
+
+
+def _extract_why_summary(user_input: str) -> str:
+    text = user_input.strip()
+    why_markers = ("per ", "perché ", "because ", "in modo da ", "così da ")
+    lowered = text.lower()
+    for marker in why_markers:
+        idx = lowered.find(marker)
+        if idx >= 0:
+            return text[idx:][:160].strip()
+    if "bug" in lowered or "errore" in lowered:
+        return "resolve_defect"
+    if "architett" in lowered or "architecture" in lowered:
+        return "improve_system_design"
+    return "unknown"
+
+
+def _decompose_intent(
+    user_input: str,
+    repo_view: Optional[Dict[str, object]],
+    intent_type: str,
+) -> Dict[str, object]:
+    what = _extract_unknown_safe_summary(user_input) or "unknown"
+    where = _extract_where_candidates(user_input, repo_view)
+    why = _extract_why_summary(user_input)
+    constraints = _extract_constraints(user_input)
+    unknowns: List[str] = []
+    if not where:
+        unknowns.append("where")
+    if why == "unknown":
+        unknowns.append("why")
+    return {
+        "intent_type": intent_type,
+        "request_shape": _classify_request_shape(user_input, intent_type),
+        "what": what,
+        "where": where or ["unknown"],
+        "why": why,
+        "constraints": constraints,
+        "unknowns": unknowns,
+    }
 
 
 def _verification_method_for_intent(intent_type: str) -> str:
@@ -43,13 +131,23 @@ def _verification_method_for_intent(intent_type: str) -> str:
     return mapping.get(intent_type, "combined_artifact_review")
 
 
-def _build_requirements(intent_type: str, summary: str, repo_view: Optional[Dict[str, object]]) -> List[MissionRequirement]:
+def _build_requirements(
+    intent_type: str,
+    summary: str,
+    repo_view: Optional[Dict[str, object]],
+    decomposition: Dict[str, object],
+) -> List[MissionRequirement]:
     requirements: List[MissionRequirement] = []
     base_desc = summary if summary != "unknown" else "User intent is partially unknown"
     requirements.append(
         MissionRequirement(
             id="REQ-001",
-            description=f"Interpret the request and preserve constraints: {base_desc}",
+            description=(
+                "Interpret request with explicit intent decomposition "
+                f"(what={decomposition.get('what')}, "
+                f"where={','.join(decomposition.get('where', []))}, "
+                f"why={decomposition.get('why')}) and preserve constraints: {base_desc}"
+            ),
             verification_method="intent_consistency_check",
             explicit=True,
         )
@@ -57,7 +155,10 @@ def _build_requirements(intent_type: str, summary: str, repo_view: Optional[Dict
     requirements.append(
         MissionRequirement(
             id="REQ-002",
-            description=f"Produce an executable plan for intent type '{intent_type}'",
+            description=(
+                f"Produce an executable plan for intent type '{intent_type}' "
+                f"and request shape '{decomposition.get('request_shape')}'"
+            ),
             verification_method=_verification_method_for_intent(intent_type),
             explicit=False,
         )
@@ -66,8 +167,23 @@ def _build_requirements(intent_type: str, summary: str, repo_view: Optional[Dict
         requirements.append(
             MissionRequirement(
                 id="REQ-003",
-                description="Use available repository view without inventing missing details",
+                description=(
+                    "Use available repository view without inventing missing details; "
+                    f"repo_view_keys={sorted(repo_view.keys()) if repo_view else []}"
+                ),
                 verification_method="evidence_traceability_check",
+                explicit=False,
+            )
+        )
+    if decomposition.get("unknowns"):
+        requirements.append(
+            MissionRequirement(
+                id=f"REQ-{len(requirements)+1:03d}",
+                description=(
+                    "Track unresolved intent fields explicitly: "
+                    f"{','.join(decomposition.get('unknowns', []))}"
+                ),
+                verification_method="unknowns_explicitly_marked_check",
                 explicit=False,
             )
         )
@@ -142,17 +258,24 @@ def understand_and_plan(
 
     intent_type = _classify_intent(user_input)
     summary = _extract_unknown_safe_summary(user_input)
-    target.intent_summary = f"[{intent_type}] {summary}"
+    decomposition = _decompose_intent(user_input, repo_view, intent_type)
+    target.intent_summary = (
+        f"[{intent_type}|{decomposition['request_shape']}] "
+        f"what={decomposition['what']} "
+        f"where={','.join(decomposition['where'])} "
+        f"why={decomposition['why']}"
+    )
 
-    simple_request = len(user_input.split()) <= 12 and intent_type in {
+    simple_request = decomposition["request_shape"] == "simple" and intent_type in {
         "verification",
         "planning",
         "mixed",
     }
-    target.requirements = _build_requirements(intent_type, summary, repo_view)
+    target.requirements = _build_requirements(intent_type, summary, repo_view, decomposition)
     target.plan = _build_plan(intent_type, target.requirements, simple_request)
     target.checklist = _build_checklist(target.requirements, simple_request)
     target.status = "understand_planned"
+    target.context_snapshot["intent_decomposition"] = decomposition
     if repo_view:
         target.context_snapshot["repo_view_keys"] = sorted(repo_view.keys())
     return target
