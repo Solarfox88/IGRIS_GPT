@@ -501,7 +501,7 @@ async def _lifespan(app: FastAPI):
             pass
 
 
-def create_app() -> FastAPI:
+def _create_app_impl() -> FastAPI:
     """Create and configure the FastAPI application."""
     app = FastAPI(title="IGRIS_GPT", version="0.1.0", lifespan=_lifespan)
     # Issue #727 — security: CORS restriction, API-key auth, rate limiting
@@ -3462,6 +3462,11 @@ def create_app() -> FastAPI:
         return {"files": get_file_stats(igris_dir)}
 
     return app
+
+
+def create_app() -> FastAPI:
+    """Thin factory wrapper for app initialization."""
+    return _create_app_impl()
 
 
 def app() -> FastAPI:
