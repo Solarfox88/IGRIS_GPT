@@ -10,9 +10,9 @@ def build_final_response(
     quality: Dict[str, object],
     satisfaction: Dict[str, object],
 ) -> Mission:
-    if bool(satisfaction.get("passed")):
+    if bool(quality.get("passed")) and bool(satisfaction.get("passed")):
         status = "completed"
-    elif bool(quality.get("passed")):
+    elif bool(quality.get("passed")) or bool(satisfaction.get("passed")):
         status = "partial"
     else:
         status = "failed"
@@ -26,4 +26,3 @@ def build_final_response(
     mission.final_judgment.strategic_status = "passed" if satisfaction.get("passed") else "failed"
     mission.final_judgment.reason = mission.final_response
     return mission
-

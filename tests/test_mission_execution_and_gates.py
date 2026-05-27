@@ -52,11 +52,12 @@ def test_quality_and_satisfaction_gate_pass_path():
         dry_run=True,
     )
     quality = evaluate_quality_gate(mission)
-    mission.final_response = "architecture verification completed with evidence"
+    mission.final_response = "architecture verification completed with evidence in x.py"
     satisfaction = evaluate_satisfaction_gate(mission)
     mission = build_final_response(mission, quality, satisfaction)
     assert quality["passed"] is True
     assert satisfaction["passed"] is True
+    assert satisfaction["ready_for_completion"] is True
     assert mission.status == "completed"
 
 
@@ -79,6 +80,22 @@ def test_strategic_fail_even_when_technical_passes():
     assert quality["passed"] is True
     assert satisfaction["passed"] is False
     assert mission.status in {"partial", "failed"}
+
+
+def test_satisfaction_strategic_pass_can_be_partial_if_quality_fails():
+    mission = understand_and_plan(
+        user_input="Verifica rapidamente la pipeline missione",
+        project="igrisgpt",
+        repo_view={"paths": ["igris/agent/mission"]},
+    )
+    mission.quality_gate_passed = False
+    mission.final_response = "verification completed with evidence; why unknown"
+    satisfaction = evaluate_satisfaction_gate(mission)
+    out = build_final_response(mission, {"passed": False}, satisfaction)
+    assert satisfaction["passed"] is True
+    assert satisfaction["quality_prerequisite_met"] is False
+    assert satisfaction["ready_for_completion"] is False
+    assert out.status == "partial"
 
 
 def test_action_verifier_reports_failures():
