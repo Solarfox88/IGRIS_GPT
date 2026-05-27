@@ -1,0 +1,47 @@
+{
+  "mission_id": "M1",
+  "mission_type": "simple_request",
+  "issue_number": 775,
+  "issue_title": "Contextmanager esteso con weight loading/saving",
+  "input": "Verifica rapidamente se esiste la base per context weights loading/saving in ContextManager.",
+  "available_context": {
+    "issue_url": "https://github.com/Solarfox88/IGRIS_GPT/issues/775",
+    "paths": [
+      "igris/core/context_manager.py",
+      ".igris/context_weights.json"
+    ],
+    "category": "simple"
+  },
+  "mission_brain_report_path": ".igris/mission_brain/reports/d2bef10e-f9db-4f69-a1c8-c01be6045155.json",
+  "declared_status": "partial",
+  "observable_outcome": {
+    "quality_gate_passed": false,
+    "satisfaction_gate_passed": true,
+    "execution_results": [
+      {
+        "action_id": "ACT-001",
+        "command": "rg -n \"context_weights|weight\" igris/core/context_manager.py",
+        "returncode": 0,
+        "stdout": "501:        \"\"\"Build a lightweight context for code navigation tasks.\"\"\"\n",
+        "stderr": "",
+        "success": true,
+        "evidence": "process-executed"
+      }
+    ],
+    "final_judgment": {
+      "technical_status": "failed",
+      "strategic_status": "passed",
+      "reason": "Mission d2bef10e-f9db-4f69-a1c8-c01be6045155 status=partial; quality_passed=False; satisfaction_passed=True."
+    }
+  },
+  "manual_reviewer_judgment": {
+    "status": "completed",
+    "alignment": "aligned",
+    "notes": "Outcome verificabile e coerente con richiesta semplice.",
+    "usefulness_score": 0.8
+  },
+  "discrepancy_present": true,
+  "discrepancy_cause": "",
+  "recommended_follow_up": "Continue operational sampling without remediation in #791.",
+  "runtime_overhead_note": "No deep loop integration; Mission Brain wrapper only."
+}

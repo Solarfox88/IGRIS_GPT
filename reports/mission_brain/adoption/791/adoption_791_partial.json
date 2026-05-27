@@ -1,0 +1,200 @@
+{
+  "suite": "mission_brain_operational_adoption_791",
+  "protocol_reference": "docs/MISSION_BRAIN_OPERATIONAL_ADOPTION_PROTOCOL.md",
+  "missions": [
+    {
+      "mission_id": "M1",
+      "mission_type": "simple_request",
+      "issue_number": 775,
+      "issue_title": "Contextmanager esteso con weight loading/saving",
+      "input": "Verifica rapidamente se esiste la base per context weights loading/saving in ContextManager.",
+      "available_context": {
+        "issue_url": "https://github.com/Solarfox88/IGRIS_GPT/issues/775",
+        "paths": [
+          "igris/core/context_manager.py",
+          ".igris/context_weights.json"
+        ],
+        "category": "simple"
+      },
+      "mission_brain_report_path": ".igris/mission_brain/reports/d2bef10e-f9db-4f69-a1c8-c01be6045155.json",
+      "declared_status": "partial",
+      "observable_outcome": {
+        "quality_gate_passed": false,
+        "satisfaction_gate_passed": true,
+        "execution_results": [
+          {
+            "action_id": "ACT-001",
+            "command": "rg -n \"context_weights|weight\" igris/core/context_manager.py",
+            "returncode": 0,
+            "stdout": "501:        \"\"\"Build a lightweight context for code navigation tasks.\"\"\"\n",
+            "stderr": "",
+            "success": true,
+            "evidence": "process-executed"
+          }
+        ],
+        "final_judgment": {
+          "technical_status": "failed",
+          "strategic_status": "passed",
+          "reason": "Mission d2bef10e-f9db-4f69-a1c8-c01be6045155 status=partial; quality_passed=False; satisfaction_passed=True."
+        }
+      },
+      "manual_reviewer_judgment": {
+        "status": "completed",
+        "alignment": "aligned",
+        "notes": "Outcome verificabile e coerente con richiesta semplice.",
+        "usefulness_score": 0.8
+      },
+      "discrepancy_present": true,
+      "discrepancy_cause": "",
+      "recommended_follow_up": "Continue operational sampling without remediation in #791.",
+      "runtime_overhead_note": "No deep loop integration; Mission Brain wrapper only."
+    },
+    {
+      "mission_id": "M2",
+      "mission_type": "multi_step_request",
+      "issue_number": 777,
+      "issue_title": "Weightupdater: job schedulato ogni 50 run, calcola",
+      "input": "Pianifica e verifica i 3 blocchi: step outcome logger, correlazione sezioni-outcome, weight updater ogni 50 run per issue #777.",
+      "available_context": {
+        "issue_url": "https://github.com/Solarfox88/IGRIS_GPT/issues/777",
+        "paths": [
+          "igris/core/context_manager.py",
+          ".igris/context_weights.json",
+          "igris/web/server.py"
+        ],
+        "category": "multi_step"
+      },
+      "mission_brain_report_path": ".igris/mission_brain/reports/70dbae28-114e-4025-bbe9-7033a763f03c.json",
+      "declared_status": "completed",
+      "observable_outcome": {
+        "quality_gate_passed": true,
+        "satisfaction_gate_passed": true,
+        "execution_results": [
+          {
+            "action_id": "ACT-001",
+            "command": "rg -n \"step outcome|context_weights|weight\" igris -S",
+            "returncode": 0,
+            "stdout": "igris/agents/registry.py:77:    subsystem implemented in the MVP.  It registers lightweight\nigris/agents/__init__.py:11:lightweight wrappers around existing functionality (task engine, teacher,\nigris/layers/advisory/vastai_fleet.py:305:    \"\"\"Routes lightweight tasks to GPU idle windows during TEST_EXECUTION phase.\nigris/a2a/__init__.py:4:This package defines lightweight data structures and helpers to expose\nigris/core/project_context.py:4:This module provides functions to assemble a lightweight snapshot of\nigris/core/memory_graph.py:61:    weight      REAL NOT NULL DEFAULT 1.0,\nigris/core/memory_graph.py:101:    def add_edge(self, src_node, dst_node, edge_type, weight=1.0) -> str:\nigris/core/memory_graph.py:107:                \"INSERT INTO memory_edges (edge_id,src_node,dst_node,edge_type,weight,created_at) VALUES (?,?,?,?,?,?)\",\nigris/core/memory_graph.py:108:                (edge_id, src_node, dst_node, edge_type, float(weight), time.time()),\nigris/core/memory_graph.py:276:                    \"INSERT OR IGNORE INTO memory_edges (edge_id,src_node,dst_node,edge_type,weight,created_at) VALUES (?,?,?,?,?,?)\",\nigris/core/integration_layer.py:305:        \"\"\"Record step outcome to Decision Memory.\"\"\"\nigris/core/failure_memory.py:173:        # Count failure classes among matches, weighted by hit_count (issue #721\nigris/core/failure_memory.py:179:            weight = int(m.get(\"hit_count\", 1))\nigris/core/failure_memory.py:180:            class_counts[fc] = class_counts.get(fc, 0) + weight\nigris/core/smw_teach.py:68:    ``outcome_label`` is stored on the incident for downstream weighting.\nigris/core/smw_teach.py:87:        # Positive examples weighted at 0.8, negative at 0.3 (still informative)\nigris/core/context_manager.py:501:        \"\"\"Build a lightweight context for code navigation tasks.\"\"\"\nigris/core/self_repair_supervisor.py:82:# Pre-flight mission planning: a lightweight read-only reasoning pass that\nigris/core/helper_ab_eval.py:14:# Dimensional score weights \u2014 must sum to 1.0\nigris/core/helper_ab_eval.py:15:SCORE_WEIGHTS = {\nigris/core/helper_ab_eval.py:233:    breakdown keys match SCORE_WEIGHTS plus anti_generic_penalty.\nigris/core/helper_ab_eval.py:239:            \"breakdown\": {k: 0.0 for k in list(SCORE_WEIGHTS) + [\"anti_generic_penalty\"]},\nigris/core/helper_ab_eval.py:257:    weighted = sum(SCORE_WEIGHTS[k] * breakdown[k] for k in SCORE_WEIGHTS)\nigris/core/helper_ab_eval.py:258:    total = max(0.0, round(weighted + anti_penalty, 6))\nigris/core/code_navigation.py:13:    repo_map         \u2014 build a lightweight map of the repository\nigris/core/code_navigation.py:489:        \"\"\"Build a lightweight map of the repository.\nigris/core/mission_controller.py:427:    # -- Report step outcome --\nigris/core/decision_report.py:220:    \"\"\"Build a lightweight project snapshot for the report.\"\"\"\nigris/web/static/js/app.js:174:    // Auto-refresh active tab every 15s (lightweight)\nigris/web/static/css/style.css:8:header h1{margin:0;font-size:1.2rem;font-weight:700;letter-spacing:.5px}\nigris/web/static/css/style.css:28:.chat-messages .msg-assistant strong{color:#e6edf3;font-weight:600}\nigris/web/static/css/style.css:39:.chat-form button{background:#238636;color:#fff;border:none;padding:.7rem 1.2rem;cursor:pointer;font-weight:600;font-size:.88rem}\nigris/web/static/css/style.css:47:.tab{background:none;border:none;color:#8b949e;padding:.5rem .7rem;cursor:pointer;font-size:.78rem;font-weight:500;border-bottom:2px solid transparent;transition:color .15s,border-color .15s}\nigris/web/static/css/style.css:60:.info-block th{color:#8b949e;font-weight:500}\nigris/web/static/css/style.css:67:.action-btn{background:#238636;color:#fff;border:none;padding:.4rem .9rem;border-radius:6px;cursor:pointer;font-size:.82rem;font-weight:600}\nigris/web/static/css/style.css:84:.task-item .task-status{font-size:.72rem;padding:2px 6px;border-radius:4px;font-weight:600}\nigris/web/static/css/style.css:96:.timeline-event .te-type{color:#58a6ff;font-size:.72rem;font-weight:600}\nigris/web/static/css/style.css:118:.inline-form button{background:#238636;color:#fff;border:none;padding:.35rem .7rem;border-radius:4px;cursor:pointer;font-size:.82rem;font-weight:600}\nigris/web/static/css/style.css:130:.diff-hdr{color:#58a6ff;font-weight:600}\nigris/web/static/css/style.css:136:.patch-item .pi-title{font-weight:600;color:#e6edf3}\nigris/web/static/css/style.css:138:.patch-status{font-size:.72rem;padding:2px 6px;border-radius:4px;font-weight:600}\nigris/web/static/css/style.css:166:.dash-card-title{font-size:.75rem;color:#8b949e;text-transform:uppercase;letter-spacing:.5px;margin-bottom:.3rem;font-weight:600}\nigris/web/static/css/style.css:185:.action-card .action-label{font-size:.8rem;font-weight:600;color:#58a6ff}\nigris/web/static/css/style.css:187:.action-card .action-lock{font-size:.62rem;color:#d29922;margin-top:3px;font-weight:600}\nigris/web/server.py:2385:        \"\"\"Report step outcome.\"\"\"\nigris/web/server.py:3128:        \"\"\"Build a lightweight repository map.\"\"\"\n",
+            "stderr": "",
+            "success": true,
+            "evidence": "process-executed"
+          },
+          {
+            "action_id": "ACT-002",
+            "command": "rg -n \"summary|context_weights\" igris/web/server.py -S || true",
+            "returncode": 0,
+            "stdout": "542:    @app.get('/api/rank/summary-card')\n543:    async def get_rank_summary_card():\n546:    @app.get('/api/system/version-summary')\n547:    async def get_version_summary():\n708:    @app.get(\"/api/chat/context/summary\")\n709:    async def api_chat_context_summary() -> Dict[str, object]:\n710:        return chat_context.get_context_summary(\n744:    # ---- Dashboard Summary ----\n746:    @app.get(\"/api/dashboard/summary\")\n747:    async def api_dashboard_summary() -> Dict[str, object]:\n755:            diag = diagnostics_dash.get_diagnostic_summary(\n788:        from igris.core.chat_personality import get_capability_summary\n789:        return get_capability_summary()\n881:    @app.get(\"/api/git/pr-summary\")\n882:    async def api_git_pr_summary(base: str = \"main\") -> Dict[str, object]:\n883:        return git_ops.generate_pr_summary(base_branch=base)\n1058:    @app.get(\"/api/cost/summary\")\n1059:    async def api_cost_summary() -> Dict[str, object]:\n1060:        return provider_router.cost_summary()\n1221:        from igris.core.smw_weak_signals import get_weak_signal_summary\n1225:        weak = get_weak_signal_summary(str(CONFIG.project_root))\n1304:    async def api_memory_analysis_summary() -> Dict[str, object]:\n1306:        return memory_analysis.get_analysis_summary(project_root=str(CONFIG.project_root))\n1313:    @app.get(\"/api/memory/summary\")\n1314:    async def api_memory_summary() -> Dict[str, object]:\n1507:        for key in (\"title\", \"description\", \"plan_summary\"):\n1800:    async def api_recovery_summary() -> Dict[str, object]:\n1801:        return project_state_mod.get_recovery_summary(project_root=str(CONFIG.project_root))\n1866:    @app.get(\"/api/diagnostics/summary\")\n1867:    async def api_diagnostics_summary() -> Dict[str, object]:\n1870:        return diagnostics_mod.get_diagnostic_summary(\n2616:    @app.get(\"/api/safety/summary\")\n2617:    async def api_safety_summary(mission_id: str = \"\") -> Dict[str, object]:\n2618:        \"\"\"Get safety event summary.\"\"\"\n2621:        return log.get_summary(mission_id)\n2907:    @app.get(\"/api/governor/summary\")\n2908:    async def api_governor_summary() -> Dict[str, object]:\n2909:        \"\"\"Get governor state summary.\"\"\"\n2913:        return gov.get_summary()\n3051:        \"\"\"Get cost tracking summary.\"\"\"\n3054:        return orch.get_cost_summary()\n3280:    @app.get(\"/api/rank/runs/{run_id}/summary\")\n3281:    async def api_rank_run_summary(run_id: str) -> Dict[str, object]:\n3282:        \"\"\"Return compact supervised rank run summary.\"\"\"\n3322:    @app.get(\"/api/rank/audit/summary\")\n3323:    async def api_rank_audit_summary() -> Dict[str, object]:\n3324:        \"\"\"Return compact supervisor audit summary.\"\"\"\n3325:        from igris.core.self_repair_supervisor import get_supervisor_audit_summary\n3326:        return get_supervisor_audit_summary(project_root=str(CONFIG.project_root))\n",
+            "stderr": "",
+            "success": true,
+            "evidence": "process-executed"
+          },
+          {
+            "action_id": "ACT-003",
+            "command": "git rev-parse --short HEAD",
+            "returncode": 0,
+            "stdout": "fcb2e60\n",
+            "stderr": "",
+            "success": true,
+            "evidence": "process-executed"
+          }
+        ],
+        "final_judgment": {
+          "technical_status": "passed",
+          "strategic_status": "passed",
+          "reason": "Mission 70dbae28-114e-4025-bbe9-7033a763f03c status=completed; quality_passed=True; satisfaction_passed=True."
+        }
+      },
+      "manual_reviewer_judgment": {
+        "status": "partial",
+        "alignment": "misaligned",
+        "notes": "Report utile, ma la copertura multi-step resta troppo superficiale per dichiarare completed reale.",
+        "usefulness_score": 0.7
+      },
+      "discrepancy_present": true,
+      "discrepancy_cause": "multi_step_depth_insufficient",
+      "recommended_follow_up": "Increase decomposition depth and explicit verification evidence for multi-step missions.",
+      "runtime_overhead_note": "No deep loop integration; Mission Brain wrapper only."
+    },
+    {
+      "mission_id": "M3",
+      "mission_type": "diagnosis_intent_mismatch_risk",
+      "issue_number": 540,
+      "issue_title": "WorkSession tracking + no_diff_repair stop condition",
+      "input": "Diagnostica perch\u00e9 su issue #540 si rischia no_diff_repair senza apprendimento da commands_run e proponi verifica oggettiva del fix.",
+      "available_context": {
+        "issue_url": "https://github.com/Solarfox88/IGRIS_GPT/issues/540",
+        "paths": [
+          "igris/core/self_repair_supervisor.py",
+          "igris/core/agent_reasoning_loop.py"
+        ],
+        "category": "diagnosis",
+        "risk": "intent_mismatch"
+      },
+      "mission_brain_report_path": ".igris/mission_brain/reports/047f51de-6d51-4e24-bfc2-693c12ee3cff.json",
+      "declared_status": "partial",
+      "observable_outcome": {
+        "quality_gate_passed": false,
+        "satisfaction_gate_passed": true,
+        "execution_results": [
+          {
+            "action_id": "ACT-001",
+            "command": "rg -n \"no_diff_repair|commands_run|WorkSession\" igris/core -S",
+            "returncode": 0,
+            "stdout": "igris/core/assignment_router.py:204:    # Escalation override: accumulated no_diff_repair / combined signals \u2192 hard_debugging.\nigris/core/assignment_router.py:206:    _ndr = signals.get(\"no_diff_repair\", 0)\nigris/core/assignment_router.py:210:            f\"escalation: no_diff_repair={_ndr} reasoning_timeout={_rto} prior={request.prior_attempts}\"\nigris/core/assignment_router.py:223:    if failure_class in (\"no_diff\", \"no_diff_repair\") or signals.get(\"no_diff\", 0) >= 2:\nigris/core/assignment_router.py:225:        return \"backend_coder\", \"no_diff_repair\", reasons\nigris/core/assignment_router.py:319:    no_diff = sum(1 for o in matching if o.get(\"failure_class\") in (\"no_diff\", \"no_diff_repair\"))\nigris/core/assignment_router.py:386:    has_repeated_no_diff = signals.get(\"no_diff\", 0) >= 2 or failure_class in (\"no_diff\", \"no_diff_repair\")\nigris/core/assignment_router.py:389:    no_diff_repair_count = signals.get(\"no_diff_repair\", 0)\nigris/core/assignment_router.py:392:        no_diff_repair_count >= 3\nigris/core/assignment_router.py:393:        or (no_diff_repair_count + reasoning_timeout_count) >= 4\nigris/core/assignment_router.py:394:        or (no_diff_repair_count >= 2 and prior >= 2)\nigris/core/assignment_router.py:416:        task_type in (\"backend_endpoint\", \"semantic_repair\", \"complex_implementation\", \"no_diff_repair\")\nigris/core/agent_registry.py:69:    \"devops\": [\"commands_run\", \"summary\"], \"security_reviewer\": [\"risk_level\", \"concerns\", \"summary\"],\nigris/core/work_session.py:50:class WorkSession:\nigris/core/work_session.py:61:    def create(cls, goal: str, mission_id: Optional[str] = None) -> \"WorkSession\":\nigris/core/work_session.py:65:    def advance_phase(self, phase: WorkPhase, outcome: str = \"success\", notes: str = \"\") -> \"WorkSession\":\nigris/core/work_session.py:77:    def complete_deliver(self, report: DeliveryReport) -> \"WorkSession\":\nigris/core/agent_reasoning_loop.py:61:    \"no_diff_repair\",\nigris/core/agent_reasoning_loop.py:240:        self._steps_without_write: int = 0  # no_diff_repair guard\nigris/core/agent_reasoning_loop.py:1898:            return \"no_diff_repair\"\nigris/core/self_repair_supervisor.py:79:CAPABILITY_LIMIT_SIGNALS = frozenset({\"reasoning_timeout\", \"pytest_hang\", \"no_diff_repair\"})\nigris/core/self_repair_supervisor.py:263:    # so that accumulated no_diff_repair / reasoning_timeout counts survive\nigris/core/self_repair_supervisor.py:1242:        if stop in {\"reasoning_timeout\", \"budget_exceeded\", \"no_diff_repair\"}:\nigris/core/self_repair_supervisor.py:3410:                # This preserves no_diff_repair / reasoning_timeout counts across\nigris/core/self_repair_supervisor.py:3638:                    # loop itself signals \"no_diff_repair\" AND produced no files.\nigris/core/self_repair_supervisor.py:3645:                    if stop_reason == \"no_diff_repair\" and not modified_files:\nigris/core/self_repair_supervisor.py:3650:                        self._record_capability_signal(run, \"no_diff_repair\")\nigris/core/self_repair_supervisor.py:3674:                and stop_reason == \"no_diff_repair\"\nigris/core/self_repair_supervisor.py:3687:            if stage_failure == \"reasoning_loop_blocked\" and stop_reason == \"no_diff_repair\" and not modified_files:\nigris/core/self_repair_supervisor.py:3690:                run.add(\"diff_stat\", \"skipped\", \"Skipped diff collection after no_diff_repair with no modified files.\")\nigris/core/self_repair_supervisor.py:3972:                    if failure == \"reasoning_loop_blocked\" and stop_reason == \"no_diff_repair\":\nigris/core/self_repair_supervisor.py:3973:                        self._record_capability_signal(run, \"no_diff_repair\")\nigris/core/self_repair_supervisor.py:5156:            self._record_capability_signal(run, \"no_diff_repair\")\nigris/core/self_repair_supervisor.py:5727:        capability wall \u2014 e.g. one reasoning_timeout + one no_diff_repair).\nigris/core/self_repair_supervisor.py:5742:        `no_diff_repair` signals indicate transient failures where decomposition may\nigris/core/supervisor_reasoning_worker.py:13:from igris.core.work_session import DeliveryReport, WorkPhase, WorkSession\nigris/core/supervisor_reasoning_worker.py:55:    ws = WorkSession.create(goal=str(payload[\"goal\"]), mission_id=payload.get(\"mission_id\") or None)\n",
+            "stderr": "",
+            "success": true,
+            "evidence": "process-executed"
+          },
+          {
+            "action_id": "ACT-002",
+            "command": "nonexistent_command_for_mission_791",
+            "returncode": 127,
+            "stdout": "",
+            "stderr": "/bin/sh: 1: nonexistent_command_for_mission_791: not found\n",
+            "success": false,
+            "evidence": "process-executed"
+          },
+          {
+            "action_id": "ACT-003",
+            "command": "git status --short",
+            "returncode": 0,
+            "stdout": "?? reports/mission_brain/adoption/791/\n?? scripts/run_mission_brain_adoption_791.py\n",
+            "stderr": "",
+            "success": true,
+            "evidence": "process-executed"
+          }
+        ],
+        "final_judgment": {
+          "technical_status": "failed",
+          "strategic_status": "passed",
+          "reason": "Mission 047f51de-6d51-4e24-bfc2-693c12ee3cff status=partial; quality_passed=False; satisfaction_passed=True."
+        }
+      },
+      "manual_reviewer_judgment": {
+        "status": "partial",
+        "alignment": "aligned",
+        "notes": "Diagnosi utile ma outcome non fully completed: presenza di failure tecnico controllato mantiene stato partial.",
+        "usefulness_score": 0.75
+      },
+      "discrepancy_present": false,
+      "discrepancy_cause": "",
+      "recommended_follow_up": "Continue operational sampling without remediation in #791.",
+      "runtime_overhead_note": "No deep loop integration; Mission Brain wrapper only."
+    }
+  ],
+  "aggregate_metrics": {
+    "total_missions": 3,
+    "completed_count": 1,
+    "partial_count": 2,
+    "failed_count": 0,
+    "false_completed_count": 1,
+    "critical_false_completed_count": 0,
+    "false_partial_count": 1,
+    "false_failed_count": 0,
+    "quality_gate_accuracy": 0.333,
+    "satisfaction_gate_accuracy": 0.333,
+    "manual_review_alignment_rate": 0.667,
+    "average_report_usefulness_score": 0.75,
+    "adoption_decision": "keep wrapper"
+  }
+}
