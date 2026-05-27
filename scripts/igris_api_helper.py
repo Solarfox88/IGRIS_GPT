@@ -553,6 +553,40 @@ def _quality_score_response(payload: Dict[str, Any]) -> float:
     return min(1.0, score)
 
 
+def _phase_profile_from_context(context: str) -> str:
+    fc = _extract_failure_class_from_context(context).lower()
+    if fc == "pytest_failure":
+        return "repair"
+    if fc in ("decomposition_required", "capability_limit"):
+        return "escalation"
+    return "rank"
+
+
+def _phase_quality_gaps(payload: Dict[str, Any], phase: str) -> List[str]:
+    gaps: List[str] = []
+    diagnosis = str(payload.get("diagnosis", "")).strip().lower()
+    strategy = str(payload.get("suggested_repair_strategy", "")).strip().lower()
+    tests = payload.get("suggested_tests", [])
+    tests_list = tests if isinstance(tests, list) else []
+    tests_blob = " ".join(str(t).lower() for t in tests_list)
+    if len(tests_list) < 2 or "pytest" not in tests_blob:
+        gaps.append("testability")
+    if phase == "repair" and not any(k in diagnosis + " " + strategy for k in ("root cause", "invariant", "regression")):
+        gaps.append("root_cause")
+    if phase == "escalation" and not any(k in diagnosis + " " + strategy for k in ("migration", "rollback", "safety")):
+        gaps.append("migration_safety")
+    if phase == "rank" and not any(k in strategy for k in ("sequence", "rollout", "step")):
+        gaps.append("sequencing")
+    return gaps
+
+
+def _quality_score_response_phase(payload: Dict[str, Any], phase: str) -> float:
+    base = _quality_score_response(payload)
+    gaps = _phase_quality_gaps(payload, phase)
+    penalty = 0.06 * len(gaps)
+    return max(0.0, min(1.0, base - penalty))
+
+
 def _passes_quality_gate(payload: Dict[str, Any], floor: float) -> bool:
     tests = payload.get("suggested_tests", [])
     strategy = str(payload.get("suggested_repair_strategy", "")).strip()
@@ -631,6 +665,7 @@ def _call_deepseek_quality_pass(
     timeout: int,
     context: str,
     current_payload: Dict[str, Any],
+    extra_instruction: str = "",
 ) -> Tuple[Optional[Dict[str, Any]], float]:
     """Ask DeepSeek to improve an already parsed advisory JSON deterministically."""
     _DEEPSEEK_BASE = "https://api.deepseek.com/v1"
@@ -640,6 +675,8 @@ def _call_deepseek_quality_pass(
         "Make diagnosis and suggested_repair_strategy concrete and actionable. "
         "Provide at least 2 suggested_tests. Keep safety constraints."
     )
+    if extra_instruction:
+        improve_system += " " + extra_instruction
     improve_user = (
         "Context:\n"
         + context
@@ -721,6 +758,19 @@ def _call_deepseek_critic_pass(
     output_tokens = int(usage.get("completion_tokens", 0))
     extra_cost = (input_tokens * 0.435 + output_tokens * 0.87) / 1_000_000
     return critique, extra_cost
+
+
+def _targeted_instruction_from_gaps(gaps: List[str]) -> str:
+    parts = []
+    if "testability" in gaps:
+        parts.append("Ensure suggested_tests contains concrete pytest commands with module::test selectors.")
+    if "root_cause" in gaps:
+        parts.append("Explicitly state root cause and failing invariant, then regression-focused minimal fix.")
+    if "migration_safety" in gaps:
+        parts.append("Include migration safety, rollback steps, and verification checks.")
+    if "sequencing" in gaps:
+        parts.append("Provide explicit ordered rollout sequence (step 1/2/3).")
+    return " ".join(parts)
 
 
 def _call_deepseek_sectional_plan(
@@ -1056,7 +1106,12 @@ def main() -> None:
         model_l = model.lower()
         is_flash = "flash" in model_l
         is_pro = "pro" in model_l
+        phase = _phase_profile_from_context(context)
         default_floor = "0.92" if is_flash else "0.94"
+        if phase == "repair":
+            default_floor = "0.94" if is_flash else "0.96"
+        elif phase == "escalation":
+            default_floor = "0.95" if is_flash else "0.97"
         default_passes = "2"
         floor_env = "IGRIS_DEEPSEEK_FLASH_QUALITY_FLOOR" if is_flash else "IGRIS_DEEPSEEK_PRO_QUALITY_FLOOR"
         passes_env = "IGRIS_DEEPSEEK_FLASH_QUALITY_PASSES" if is_flash else "IGRIS_DEEPSEEK_PRO_QUALITY_PASSES"
@@ -1079,8 +1134,12 @@ def main() -> None:
                 break
             try:
                 candidates: List[Dict[str, Any]] = []
+                gaps = _phase_quality_gaps(result, phase)
+                targeted = _targeted_instruction_from_gaps(gaps)
                 # Baseline improvement pass.
-                improved_payload, extra_cost = _call_deepseek_quality_pass(api_key, model, timeout, context, result)
+                improved_payload, extra_cost = _call_deepseek_quality_pass(
+                    api_key, model, timeout, context, result, extra_instruction=targeted
+                )
                 if isinstance(improved_payload, dict):
                     improved_payload = _normalize_quality_payload(improved_payload, context)
                     candidates.append(
@@ -1098,7 +1157,9 @@ def main() -> None:
                     critique, crit_cost = _call_deepseek_critic_pass(api_key, model, timeout, context, result)
                     critic_seed = dict(result)
                     critic_seed["risk_notes"] = list(critic_seed.get("risk_notes") or []) + [f"Critique: {critique[:400]}"]
-                    improved2_payload, extra2 = _call_deepseek_quality_pass(api_key, model, timeout, context, critic_seed)
+                    improved2_payload, extra2 = _call_deepseek_quality_pass(
+                        api_key, model, timeout, context, critic_seed, extra_instruction=targeted
+                    )
                     if isinstance(improved2_payload, dict):
                         improved2_payload = _normalize_quality_payload(improved2_payload, context)
                         candidates.append(
@@ -1111,9 +1172,26 @@ def main() -> None:
                                 model_requested=model_requested,
                             )
                         )
+                # Multi-candidate fallback for weak phases.
+                if phase in ("repair", "escalation"):
+                    improved3_payload, extra3 = _call_deepseek_quality_pass(
+                        api_key, model, timeout, context, result, extra_instruction=targeted + " Avoid generic statements."
+                    )
+                    if isinstance(improved3_payload, dict):
+                        improved3_payload = _normalize_quality_payload(improved3_payload, context)
+                        candidates.append(
+                            _parse_response(
+                                json.dumps(improved3_payload),
+                                model,
+                                float(result.get("estimated_cost_usd", cost)) + extra3,
+                                mode=mode,
+                                provider=provider,
+                                model_requested=model_requested,
+                            )
+                        )
                 if candidates:
-                    best = max(candidates, key=_quality_score_response)
-                    if _quality_score_response(best) >= _quality_score_response(result):
+                    best = max(candidates, key=lambda p: _quality_score_response_phase(p, phase))
+                    if _quality_score_response_phase(best, phase) >= _quality_score_response_phase(result, phase):
                         result = best
                         applied = True
             except Exception:
@@ -1143,7 +1221,9 @@ def main() -> None:
         if is_flash and _coerce_confidence(result.get("confidence", 0.0)) < 0.92:
             result["confidence"] = 0.92
         result["quality_boost_applied"] = applied
-        result["quality_score"] = _quality_score_response(result)
+        result["quality_score"] = _quality_score_response_phase(result, phase)
+        result["quality_phase"] = phase
+        result["quality_gaps"] = _phase_quality_gaps(result, phase)
         result["quality_gate_passed"] = _passes_quality_gate(result, quality_floor)
         if not result["quality_gate_passed"]:
             result["requires_human_or_codex_audit"] = True
