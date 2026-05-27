@@ -129,3 +129,62 @@ def test_startup_kills_stale_process(mock_ss, mock_kill, _):
     mock_ss.side_effect = [stuck, clear]
     run_app(create_app(), port=7778)
     assert mock_kill.called
+
+
+# ---------------------------------------------------------------------------
+# Issue #723 — cancel endpoint: JSONDecodeError on empty/malformed body
+# Issue #728 — no time.sleep() in async context in server.py
+# ---------------------------------------------------------------------------
+
+class TestCancelEndpointBodyParsing:
+    """Issue #723 — POST /api/rank/runs/{id}/cancel must not 500 on bad body."""
+
+    def _make_client(self, tmp_path):
+        from igris.web.server import create_app, CONFIG
+        CONFIG.project_root = tmp_path
+        app = create_app()
+        from starlette.testclient import TestClient
+        return TestClient(app, raise_server_exceptions=False)
+
+    def test_cancel_empty_body_returns_not_500(self, tmp_path):
+        """Empty body → 200 (not found gives 404) or 404, never 500."""
+        client = self._make_client(tmp_path)
+        response = client.post("/api/rank/runs/nonexistent-run/cancel", content=b"", headers={"Content-Type": "application/json"})
+        assert response.status_code != 500, f"Got 500: {response.text}"
+        assert response.status_code in (200, 404)
+
+    def test_cancel_malformed_json_returns_not_500(self, tmp_path):
+        """Malformed JSON body → 200/404, never 500."""
+        client = self._make_client(tmp_path)
+        response = client.post("/api/rank/runs/nonexistent-run/cancel", content=b"{bad json}", headers={"Content-Type": "application/json"})
+        assert response.status_code != 500, f"Got 500: {response.text}"
+
+    def test_cancel_valid_json_body_works(self, tmp_path):
+        """Valid JSON body with reason → 200/404, never 500."""
+        client = self._make_client(tmp_path)
+        response = client.post("/api/rank/runs/nonexistent-run/cancel", json={"reason": "test cancel"})
+        assert response.status_code != 500
+
+
+class TestNoAsyncTimeSleep:
+    """Issue #728 — verify no time.sleep() calls inside async functions in server.py."""
+
+    def test_no_blocking_sleep_in_async_server_functions(self):
+        """Static check: time.sleep must not appear inside async def in server.py."""
+        import ast
+        from pathlib import Path
+        source = (Path(__file__).parent.parent / "igris" / "web" / "server.py").read_text()
+        lines = source.splitlines()
+        tree = ast.parse(source)
+        async_ranges = [
+            (node.lineno, node.end_lineno)
+            for node in ast.walk(tree)
+            if isinstance(node, ast.AsyncFunctionDef)
+        ]
+        violations = []
+        for i, line in enumerate(lines, start=1):
+            if ("time.sleep(" in line or "_time.sleep(" in line) and "# NOTE:" not in line:
+                for start, end in async_ranges:
+                    if start <= i <= end:
+                        violations.append(f"Line {i}: {line.strip()}")
+        assert not violations, f"Blocking time.sleep inside async def:\n" + "\n".join(violations)
