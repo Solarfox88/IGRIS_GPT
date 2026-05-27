@@ -7812,9 +7812,9 @@ class TestAutoRunSubissue:
         assert result_id == "grandchild-test"
         assert captured.get("data", {}).get("autochain_depth") == 2
 
-    def test_decomposition_policy_blocks_issue_creation_at_max_depth(self):
-        """_decomposition_policy must return 'request_human_approval' at max autochain depth
-        so that GitHub issues are never created for runs that cannot be auto-launched."""
+    def test_decomposition_policy_allows_issue_creation_at_max_depth(self):
+        """Safe decomposition can still create sub-issues at max autochain depth.
+        Child autorun depth limits are enforced separately by _autorun_guards."""
         supervisor, _ = self._make_supervisor()
         config = _config(
             allow_auto_subissues=True,
@@ -7828,9 +7828,9 @@ class TestAutoRunSubissue:
             "first_sub_mission": "do something",
         }
         policy = supervisor._decomposition_policy(decomp, config)
-        assert policy == "request_human_approval", (
+        assert policy == "auto_create_subissues", (
             f"At max autochain depth={SelfRepairSupervisor._MAX_AUTOCHAIN_DEPTH}, "
-            "policy must be 'request_human_approval' to prevent orphaned issue creation"
+            "safe decomposition should still auto-create sub-issues"
         )
 
 
