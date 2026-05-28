@@ -1,0 +1,38 @@
+{
+  "total_shadow_cycles": 10,
+  "mission_brain_decision": "mixed",
+  "current_loop_decision": "mixed",
+  "agreement_rate": 0.0,
+  "disagreement_rate": 1.0,
+  "disagreement_by_class": {
+    "safe_more_optimistic_mission_brain": 10
+  },
+  "prevented_error_candidates": 10,
+  "risk_introduced_candidates": 0,
+  "potential_false_completed": 0,
+  "potential_critical_false_completed": 0,
+  "potential_false_partial": 0,
+  "potential_false_failed": 0,
+  "report_usefulness_score": 0.8,
+  "latency_overhead": {
+    "mean_ms": 1.9,
+    "p95_ms": 5.0
+  },
+  "cost_overhead": {
+    "total_usd": 0.0,
+    "mean_usd": 0.0
+  },
+  "rollback_path_status": "ok",
+  "final_readiness_trend": "stable",
+  "decision_distribution_mission_brain": {
+    "partial": 10
+  },
+  "decision_distribution_current_loop": {
+    "failed": 10
+  },
+  "dominant_mismatch_classes": [
+    "safe_more_optimistic_mission_brain"
+  ],
+  "sample_representativeness_score": 1.0,
+  "sample_representativeness_notes": "Batch 1 covers 10 distinct goal_class categories per protocol #858."
+}
