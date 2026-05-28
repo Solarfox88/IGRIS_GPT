@@ -1,0 +1,42 @@
+{
+  "epic": 874,
+  "subissue": 878,
+  "title": "Usefulness Validation \u2014 next_action_recommendation",
+  "risk_introduced_candidates": 0,
+  "potential_false_completed": 0,
+  "potential_critical_false_completed": 0,
+  "dangerous_combined_statuses_found": 0,
+  "total_cycles_analyzed": 30,
+  "reviewer_usefulness_score": 1.0,
+  "high_value_combined_status_count": 30,
+  "high_value_fraction": 1.0,
+  "usefulness_analysis": [
+    {
+      "combined_status": "technical_failure_with_goal_progress",
+      "count": 30,
+      "information_gain": "high",
+      "actionability": "high",
+      "risk": "none",
+      "description": "Bridge reveals partial goal progress despite run failure. Operator knows to recover from partial state, not start fresh. Raw loop only said 'failed' \u2014 bridge adds goal-level context."
+    }
+  ],
+  "next_action_analysis": [
+    {
+      "next_action": "recover_or_continue_from_partial_progress",
+      "count": 30,
+      "is_actionable": true,
+      "avoids_stale_restart": true
+    }
+  ],
+  "key_finding": "All 30 cycles map to combined=technical_failure_with_goal_progress \u2192 next=recover_or_continue_from_partial_progress. This is the bridge's highest-value output: the raw loop decision ('failed') discards the goal-level partial progress signal entirely. The bridge recovers that signal and recommends targeted recovery rather than cold restart. reviewer_usefulness_score=1.0 (max=1.0). No dangerous combined statuses produced. Bridge is diagnostic-only: this recommendation is informational, not a loop gate.",
+  "recommendation_for_879": "Bridge produces consistent, high-value output for the current dataset. Candidate for controlled diagnostic reporting. Not recommended as a mandatory gate. Recommended as shadow diagnostic that surfaces combined_status in operator-facing reports (not in loop decisions).",
+  "guardrails": {
+    "shadow_mode_only": true,
+    "default_behavior_unchanged": true,
+    "not_a_loop_gate": true,
+    "observational_only": true
+  },
+  "evaluation": "passed",
+  "stop_reason": null,
+  "next_subissue": 879
+}

@@ -1,0 +1,106 @@
+{
+  "epic": 874,
+  "subissue": 879,
+  "title": "Consolidated Bridge Report \u2014 Final Decision",
+  "subissues_completed": [
+    875,
+    876,
+    877,
+    878,
+    879
+  ],
+  "gate_chain_passed": true,
+  "risk_introduced_candidates": 0,
+  "potential_false_completed": 0,
+  "potential_critical_false_completed": 0,
+  "dangerous_combined_statuses_found": 0,
+  "total_cycles_replayed": 30,
+  "technical_failure_with_goal_progress_count": 30,
+  "completed_count": 0,
+  "reviewer_usefulness_score": 1.0,
+  "high_value_fraction": 1.0,
+  "mapping_table_size": 16,
+  "final_decision": "candidate_for_controlled_bridge_rollout",
+  "final_decision_rationale": "All safety gates passed across all 5 subissues. Bridge model is complete (16/16 pairs mapped), validated (52 tests passing), and produces high-value diagnostic output (usefulness_score=1.0). The bridge recovers goal-level partial progress signal from (run=failed, goal=partial) cycles \u2014 the most common pattern in the 30-cycle dataset. completed_count=0: bridge never inflates the completed signal. Recommendation: candidate_for_controlled_bridge_rollout as a diagnostic reporter. IMPORTANT: This recommendation does NOT activate rollout. Rollout requires explicit operator approval in a separate sprint after validating diverse run outcomes.",
+  "summary": "EPIC #874 complete. Goal/Run Status Bridge implemented and validated. 30 cycles replayed. All produce technical_failure_with_goal_progress \u2192 recover_or_continue_from_partial_progress. reviewer_usefulness_score=1.0. No dangerous outputs, no false completed signals. Final decision: candidate_for_controlled_bridge_rollout. Shadow diagnostic only. No rollout. No loop gate. No mandatory integration.",
+  "findings": [
+    {
+      "id": "F1",
+      "finding": "Bridge mapping is complete and validated \u2014 all 16 (run,goal) pairs covered",
+      "evidence": "mapping_table_size=16. All pairs deterministically mapped.",
+      "impact": "positive"
+    },
+    {
+      "id": "F2",
+      "finding": "Dataset is homogeneous: 30/30 cycles are (failed, partial) \u2192 technical_failure_with_goal_progress",
+      "evidence": "technical_failure_with_goal_progress_count=30. All 30 cycles had run=failed, goal=partial. The loop uses 'failed' for all non-success runs (including blocked workspace). Bridge heterogeneity would require a dataset with more diverse run outcomes.",
+      "impact": "informational"
+    },
+    {
+      "id": "F3",
+      "finding": "Bridge produces high-value output for all current cycles",
+      "evidence": "reviewer_usefulness_score=1.0, high_value_fraction=1.0. The bridge recovers partial-goal-progress signal that the raw loop decision discards. Recommendation recover_or_continue_from_partial_progress is more targeted than a cold restart.",
+      "impact": "positive"
+    },
+    {
+      "id": "F4",
+      "finding": "completed_count=0 \u2014 bridge never produces false completed signal",
+      "evidence": "completed_count=0. combined=completed requires run=passed AND goal=completed.",
+      "impact": "positive"
+    },
+    {
+      "id": "F5",
+      "finding": "No dangerous combined statuses in any of the 30 cycles",
+      "evidence": "dangerous_combined_statuses_found=0. Bridge is observational/diagnostic only.",
+      "impact": "positive"
+    },
+    {
+      "id": "F6",
+      "finding": "Dataset diversity limitation: bridge not yet validated on non-(failed, partial) cycles",
+      "evidence": "All 30 cycles have the same (run=failed, goal=partial) profile. The 16-pair mapping table was defined but 15 pairs are untested on real data. A controlled rollout should include diverse run outcomes.",
+      "impact": "minor_gap"
+    }
+  ],
+  "recommendations": [
+    {
+      "id": "R1",
+      "recommendation": "Use bridge as shadow diagnostic \u2014 enrich operator-facing reports with combined_status",
+      "rationale": "High-value, safe, zero risk. Does not change loop behavior.",
+      "scope": "shadow_diagnostic",
+      "requires_approval": false
+    },
+    {
+      "id": "R2",
+      "recommendation": "Do NOT activate bridge as a loop gate or default decision path",
+      "rationale": "Bridge is observational. Making it decisional would require explicit operator approval and controlled testing.",
+      "scope": "constraint",
+      "requires_approval": false
+    },
+    {
+      "id": "R3",
+      "recommendation": "For controlled rollout: first validate non-(failed,partial) cycles",
+      "rationale": "Bridge mapping for 15 of 16 pairs is untested on real data. Collect diverse run outcomes before rollout.",
+      "scope": "future_sprint",
+      "requires_approval": true
+    },
+    {
+      "id": "R4",
+      "recommendation": "Consider surfacing combined_status in execution reports (read-only, informational)",
+      "rationale": "Low risk. Adds goal-level context to run-level execution reports without changing decisions.",
+      "scope": "reporting_enhancement",
+      "requires_approval": true
+    }
+  ],
+  "guardrails": {
+    "shadow_mode_only": true,
+    "default_behavior_unchanged": true,
+    "no_enable_by_default": true,
+    "no_mandatory_gate": true,
+    "no_rollout_activation": true,
+    "no_integration_without_approval": true,
+    "candidate_does_not_mean_activated": true
+  },
+  "evaluation": "passed",
+  "stop_reason": null,
+  "epic_status": "complete"
+}

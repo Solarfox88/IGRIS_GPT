@@ -1,0 +1,170 @@
+{
+  "epic": 874,
+  "subissue": 875,
+  "title": "Goal/Run Status Model and Mapping Table",
+  "run_statuses": [
+    "blocked",
+    "failed",
+    "passed",
+    "unknown"
+  ],
+  "goal_statuses": [
+    "completed",
+    "failed",
+    "partial",
+    "unknown"
+  ],
+  "combined_statuses": [
+    "blocked_goal_failed",
+    "blocked_with_goal_progress",
+    "completed",
+    "goal_complete_run_blocked",
+    "goal_complete_run_failed",
+    "hard_failure",
+    "insufficient_context",
+    "technical_failure_with_goal_progress",
+    "technical_success_but_goal_incomplete"
+  ],
+  "next_action_recommendations": [
+    "continue_mission_or_request_clarification",
+    "diagnose_failure",
+    "mark_mission_complete",
+    "recover_or_continue_from_partial_progress",
+    "request_context_or_planning",
+    "review_anomaly",
+    "unblock_then_continue_from_partial",
+    "unblock_then_diagnose"
+  ],
+  "mapping_table": [
+    {
+      "run_status": "blocked",
+      "goal_status": "completed",
+      "combined_status": "goal_complete_run_blocked",
+      "next_action_recommendation": "review_anomaly",
+      "rationale": "Run blocked but MB says goal completed. Possible stale MB eval. Review before treating as completed."
+    },
+    {
+      "run_status": "blocked",
+      "goal_status": "failed",
+      "combined_status": "blocked_goal_failed",
+      "next_action_recommendation": "unblock_then_diagnose",
+      "rationale": "Run blocked and goal failed. Unblock then diagnose root cause."
+    },
+    {
+      "run_status": "blocked",
+      "goal_status": "partial",
+      "combined_status": "blocked_with_goal_progress",
+      "next_action_recommendation": "unblock_then_continue_from_partial",
+      "rationale": "Run blocked but partial goal progress made. Unblock (e.g. clean workspace) then continue from partial state. This is the most common case in #868 dataset."
+    },
+    {
+      "run_status": "blocked",
+      "goal_status": "unknown",
+      "combined_status": "insufficient_context",
+      "next_action_recommendation": "request_context_or_planning",
+      "rationale": "Run blocked and goal state unknown. Need context to proceed."
+    },
+    {
+      "run_status": "failed",
+      "goal_status": "completed",
+      "combined_status": "goal_complete_run_failed",
+      "next_action_recommendation": "review_anomaly",
+      "rationale": "Anomalous: run failed but MB says goal completed. Likely MB evaluated a prior successful attempt. Requires review \u2014 do not treat as completed without operator confirmation."
+    },
+    {
+      "run_status": "failed",
+      "goal_status": "failed",
+      "combined_status": "hard_failure",
+      "next_action_recommendation": "diagnose_failure",
+      "rationale": "Both run and goal failed. Hard failure \u2014 diagnose root cause."
+    },
+    {
+      "run_status": "failed",
+      "goal_status": "partial",
+      "combined_status": "technical_failure_with_goal_progress",
+      "next_action_recommendation": "recover_or_continue_from_partial_progress",
+      "rationale": "Run failed but partial goal progress was made. Some sub-tasks completed before block. Recover from partial state and continue."
+    },
+    {
+      "run_status": "failed",
+      "goal_status": "unknown",
+      "combined_status": "insufficient_context",
+      "next_action_recommendation": "request_context_or_planning",
+      "rationale": "Run failed and goal evaluation unavailable. Context needed before recovery."
+    },
+    {
+      "run_status": "passed",
+      "goal_status": "completed",
+      "combined_status": "completed",
+      "next_action_recommendation": "mark_mission_complete",
+      "rationale": "Run succeeded and goal fully achieved. Mission complete."
+    },
+    {
+      "run_status": "passed",
+      "goal_status": "failed",
+      "combined_status": "technical_success_but_goal_incomplete",
+      "next_action_recommendation": "review_anomaly",
+      "rationale": "Anomalous: run passed but MB says goal failed. Possible goal-scope mismatch or MB evaluation error. Requires human review."
+    },
+    {
+      "run_status": "passed",
+      "goal_status": "partial",
+      "combined_status": "technical_success_but_goal_incomplete",
+      "next_action_recommendation": "continue_mission_or_request_clarification",
+      "rationale": "Run succeeded but goal is only partially met. Either the goal needs more iterations or its scope is ambiguous. Request clarification or plan next step."
+    },
+    {
+      "run_status": "passed",
+      "goal_status": "unknown",
+      "combined_status": "insufficient_context",
+      "next_action_recommendation": "request_context_or_planning",
+      "rationale": "Run passed but goal evaluation unavailable. Request context before continuing."
+    },
+    {
+      "run_status": "unknown",
+      "goal_status": "completed",
+      "combined_status": "insufficient_context",
+      "next_action_recommendation": "request_context_or_planning",
+      "rationale": "Run status unknown. Cannot confirm completed \u2014 request run status."
+    },
+    {
+      "run_status": "unknown",
+      "goal_status": "failed",
+      "combined_status": "insufficient_context",
+      "next_action_recommendation": "request_context_or_planning",
+      "rationale": "Run status unknown. Cannot diagnose \u2014 request run status."
+    },
+    {
+      "run_status": "unknown",
+      "goal_status": "partial",
+      "combined_status": "insufficient_context",
+      "next_action_recommendation": "request_context_or_planning",
+      "rationale": "Run status unknown. Cannot act on partial \u2014 request run status."
+    },
+    {
+      "run_status": "unknown",
+      "goal_status": "unknown",
+      "combined_status": "insufficient_context",
+      "next_action_recommendation": "request_context_or_planning",
+      "rationale": "Both statuses unknown. Request full context."
+    }
+  ],
+  "mapping_table_size": 16,
+  "design_constraints": [
+    "Bridge is observational/diagnostic only \u2014 not decisional by default",
+    "Shadow mode only \u2014 does not modify loop behavior",
+    "combined=completed only when run=passed AND goal=completed",
+    "goal=completed with run=failed/blocked \u2192 anomaly review, not completed",
+    "Mapping is deterministic and fully enumerated"
+  ],
+  "guardrails": {
+    "shadow_mode_only": true,
+    "default_behavior_unchanged": true,
+    "no_enable_by_default": true,
+    "no_mandatory_gate": true,
+    "completed_not_more_permissive": true
+  },
+  "evaluation": "passed",
+  "stop_reason": null,
+  "next_subissue": 876
+}
