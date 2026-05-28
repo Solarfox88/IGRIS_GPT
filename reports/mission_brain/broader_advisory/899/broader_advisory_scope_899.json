@@ -1,0 +1,218 @@
+{
+  "epic": 898,
+  "subissue": 899,
+  "title": "Broader Advisory Rollout Scope and Activation Config",
+  "scope": {
+    "selected_report_types": [
+      "diagnostic",
+      "mission_execution"
+    ],
+    "default_run_statuses": [
+      "failed"
+    ],
+    "blocked_status": "pending validation in #900",
+    "include_passed_goal_incomplete": false,
+    "monitoring_mode_available": true
+  },
+  "rollout_stages": [
+    {
+      "stage": 1,
+      "name": "monitoring_only_failed",
+      "config": {
+        "enabled": true,
+        "include_failed": true,
+        "include_blocked": false,
+        "monitoring_only": true,
+        "log_enabled": false,
+        "is_gate": false,
+        "should_compute": true,
+        "should_emit": false,
+        "effective_run_statuses": [
+          "failed"
+        ],
+        "broader_report_types": [
+          "diagnostic",
+          "mission_execution"
+        ]
+      },
+      "description": "Compute advisory for failed runs. Do NOT surface. Collect metrics.",
+      "blocked_included": false,
+      "surfaces_advisory": false
+    },
+    {
+      "stage": 2,
+      "name": "validate_blocked",
+      "config": {
+        "enabled": true,
+        "include_failed": true,
+        "include_blocked": true,
+        "monitoring_only": false,
+        "log_enabled": false,
+        "is_gate": false,
+        "should_compute": true,
+        "should_emit": true,
+        "effective_run_statuses": [
+          "blocked",
+          "failed"
+        ],
+        "broader_report_types": [
+          "diagnostic",
+          "mission_execution"
+        ]
+      },
+      "description": "Validate blocked-status advisory on synthetic data (#900).",
+      "blocked_included": true,
+      "surfaces_advisory": true
+    },
+    {
+      "stage": 3,
+      "name": "activate_selected_reports",
+      "config": {
+        "enabled": true,
+        "include_failed": true,
+        "include_blocked": true,
+        "monitoring_only": false,
+        "log_enabled": false,
+        "is_gate": false,
+        "should_compute": true,
+        "should_emit": true,
+        "effective_run_statuses": [
+          "blocked",
+          "failed"
+        ],
+        "broader_report_types": [
+          "diagnostic",
+          "mission_execution"
+        ]
+      },
+      "description": "Surface advisory in mission_execution + diagnostic reports (#901).",
+      "blocked_included": true,
+      "surfaces_advisory": true
+    },
+    {
+      "stage": 4,
+      "name": "controlled_monitoring",
+      "config": {
+        "enabled": true,
+        "include_failed": true,
+        "include_blocked": true,
+        "monitoring_only": true,
+        "log_enabled": false,
+        "is_gate": false,
+        "should_compute": true,
+        "should_emit": false,
+        "effective_run_statuses": [
+          "blocked",
+          "failed"
+        ],
+        "broader_report_types": [
+          "diagnostic",
+          "mission_execution"
+        ]
+      },
+      "description": "Run monitoring on all available cycles (#902). Verify metrics.",
+      "blocked_included": true,
+      "surfaces_advisory": false
+    }
+  ],
+  "config_variants": {
+    "default": {
+      "enabled": false,
+      "include_failed": true,
+      "include_blocked": false,
+      "monitoring_only": true,
+      "log_enabled": false,
+      "is_gate": false,
+      "should_compute": false,
+      "should_emit": false,
+      "effective_run_statuses": [
+        "failed"
+      ],
+      "broader_report_types": [
+        "diagnostic",
+        "mission_execution"
+      ]
+    },
+    "monitoring_failed_only": {
+      "enabled": true,
+      "include_failed": true,
+      "include_blocked": false,
+      "monitoring_only": true,
+      "log_enabled": false,
+      "is_gate": false,
+      "should_compute": true,
+      "should_emit": false,
+      "effective_run_statuses": [
+        "failed"
+      ],
+      "broader_report_types": [
+        "diagnostic",
+        "mission_execution"
+      ]
+    },
+    "activation_failed_only": {
+      "enabled": true,
+      "include_failed": true,
+      "include_blocked": false,
+      "monitoring_only": false,
+      "log_enabled": false,
+      "is_gate": false,
+      "should_compute": true,
+      "should_emit": true,
+      "effective_run_statuses": [
+        "failed"
+      ],
+      "broader_report_types": [
+        "diagnostic",
+        "mission_execution"
+      ]
+    },
+    "activation_with_blocked": {
+      "enabled": true,
+      "include_failed": true,
+      "include_blocked": true,
+      "monitoring_only": false,
+      "log_enabled": false,
+      "is_gate": false,
+      "should_compute": true,
+      "should_emit": true,
+      "effective_run_statuses": [
+        "blocked",
+        "failed"
+      ],
+      "broader_report_types": [
+        "diagnostic",
+        "mission_execution"
+      ]
+    }
+  },
+  "shadow_preview": {
+    "total_cycles": 30,
+    "cycles_in_scope": 30,
+    "coverage_rate": 1.0,
+    "action_distribution": {
+      "continue_from_partial_progress": 30
+    },
+    "auto_executable_violations": 0
+  },
+  "scope_invariants": [
+    "enabled=False by default \u2014 never auto-enabled",
+    "is_gate=False always \u2014 never a gate",
+    "advisory_only=True always \u2014 never executed automatically",
+    "monitoring_only=True by default \u2014 compute without surfacing",
+    "blocked included only after explicit validation (#900)",
+    "loop_decision unchanged \u2014 never modifies loop output"
+  ],
+  "guardrails": {
+    "default_off": true,
+    "no_mandatory_gate": true,
+    "no_auto_execution": true,
+    "advisory_only": true,
+    "monitoring_only_default": true,
+    "blocked_requires_validation": true,
+    "loop_decision_unchanged": true
+  },
+  "evaluation": "passed",
+  "stop_reason": null,
+  "next_subissue": 900
+}

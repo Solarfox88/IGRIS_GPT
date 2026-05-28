@@ -1,0 +1,105 @@
+{
+  "epic": 898,
+  "subissue": 903,
+  "title": "Consolidated Broader Advisory Rollout Report \u2014 Final Decision",
+  "subissues_completed": [
+    899,
+    900,
+    901,
+    902,
+    903
+  ],
+  "gate_chain_passed": true,
+  "auto_executable_violations": 0,
+  "loop_decision_violations": 0,
+  "is_gate_violations": 0,
+  "blocked_advisory_validated": true,
+  "total_cycles_validated": 40,
+  "cycles_with_advisory": 40,
+  "monitoring_mode_silent": true,
+  "in_scope_coverage_rate": 1.0,
+  "action_distribution": {
+    "continue_from_partial_progress": 30,
+    "escalate_blocked": 10
+  },
+  "final_decision": "enable_selected_advisory_reports",
+  "final_decision_rationale": "All safety gates passed. Blocked-status advisory validated (escalate_blocked, 0 violations). 40/40 cycles enriched with advisory in activation mode (30 failed + 10 blocked). Monitoring mode confirmed silent. In-scope coverage = 100%. Decision: enable_selected_advisory_reports. Flag remains required (NOT globally enabled). No auto-execution. No mandatory gate. Rollback immediate.",
+  "summary": "EPIC #898 complete. blocked validated. 40 cycles enriched. 0 violations. monitoring_mode_silent=True. Final decision: enable_selected_advisory_reports. No auto-execution. Flag required.",
+  "findings": [
+    {
+      "id": "F1",
+      "finding": "Blocked-status advisory validated: 10/10 cycles get escalate_blocked (high confidence)",
+      "evidence": "blocked_advisory_validated=True, auto_exec_viol=0",
+      "impact": "positive"
+    },
+    {
+      "id": "F2",
+      "finding": "40/40 cycles enriched with advisory in activation mode (30 failed + 10 blocked), 0 violations",
+      "evidence": "cycles_with_advisory=40, auto_exec_viol=0, loop_viol=0",
+      "impact": "positive"
+    },
+    {
+      "id": "F3",
+      "finding": "Monitoring mode confirmed silent: 0 advisory surfaced when monitoring_only=True",
+      "evidence": "monitoring_mode_surfaced_advisory=0",
+      "impact": "positive"
+    },
+    {
+      "id": "F4",
+      "finding": "In-scope coverage rate = 100% \u2014 all failed+blocked cycles receive advisory",
+      "evidence": "in_scope_coverage_rate=1.0",
+      "impact": "positive"
+    },
+    {
+      "id": "F5",
+      "finding": "Only 2 actions exercised on real+synthetic data (continue_from_partial_progress, escalate_blocked)",
+      "evidence": "action_distribution={'continue_from_partial_progress': 30, 'escalate_blocked': 10}",
+      "impact": "minor_gap"
+    }
+  ],
+  "recommendations": [
+    {
+      "id": "R1",
+      "recommendation": "Enable advisory for mission_execution and diagnostic reports via ADVISORY_ROLLOUT_ENABLED=true",
+      "rationale": "Safe, advisory-only, reversible. Validated on failed+blocked status.",
+      "requires_approval": true,
+      "scope": "reporting"
+    },
+    {
+      "id": "R2",
+      "recommendation": "Do NOT enable globally by default \u2014 flag remains required",
+      "rationale": "Only 2 of 9 recovery templates exercised. Broader coverage needed before global default.",
+      "requires_approval": false,
+      "scope": "constraint"
+    },
+    {
+      "id": "R3",
+      "recommendation": "Do NOT auto-execute any advisory recommendation",
+      "rationale": "Recommendations are advisory. Human action always required.",
+      "requires_approval": false,
+      "scope": "constraint"
+    },
+    {
+      "id": "R4",
+      "recommendation": "Validate remaining 7 recovery templates on real diverse run outcomes",
+      "rationale": "Only failed+partial (continue_from_partial_progress) and blocked+partial (escalate_blocked) exercised.",
+      "requires_approval": false,
+      "scope": "validation"
+    }
+  ],
+  "guardrails": {
+    "advisory_only": true,
+    "no_auto_execution": true,
+    "default_off": true,
+    "flag_required": true,
+    "no_mandatory_gate": true,
+    "no_global_default": true,
+    "no_loop_modification": true,
+    "candidate_does_not_mean_activated_globally": true,
+    "rollback_immediate": true,
+    "monitoring_mode_available": true
+  },
+  "evaluation": "passed",
+  "stop_reason": null,
+  "epic_status": "complete"
+}

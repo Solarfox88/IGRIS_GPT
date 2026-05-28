@@ -1,0 +1,62 @@
+{
+  "epic": 898,
+  "subissue": 902,
+  "title": "Controlled Advisory Rollout Monitoring",
+  "total_cycles": 40,
+  "shadow_cycles": 30,
+  "synthetic_blocked_cycles": 10,
+  "monitoring_mode_surfaced_advisory": 0,
+  "metrics_failed_only": {
+    "total_cycles": 30,
+    "cycles_in_scope": 30,
+    "cycles_with_advisory": 30,
+    "coverage_rate": 1.0,
+    "in_scope_coverage_rate": 1.0,
+    "auto_executable_violations": 0,
+    "action_distribution": {
+      "continue_from_partial_progress": 30
+    },
+    "confidence_distribution": {
+      "high": 30
+    },
+    "evidence_complete_count": 20
+  },
+  "metrics_all_cycles": {
+    "total_cycles": 40,
+    "cycles_in_scope": 40,
+    "cycles_with_advisory": 40,
+    "coverage_rate": 1.0,
+    "in_scope_coverage_rate": 1.0,
+    "auto_executable_violations": 0,
+    "action_distribution": {
+      "continue_from_partial_progress": 30,
+      "escalate_blocked": 10
+    },
+    "confidence_distribution": {
+      "high": 40
+    },
+    "evidence_complete_count": 30
+  },
+  "auto_executable_violations": 0,
+  "coverage_summary": {
+    "failed_only_coverage": 1.0,
+    "all_cycles_coverage": 1.0,
+    "in_scope_coverage": 1.0
+  },
+  "risk_assessment": {
+    "auto_exec_risk": "none \u2014 0 violations across all 40 cycles",
+    "loop_modification_risk": "none \u2014 bridge_diagnostics.affects_loop_decision=False enforced",
+    "gate_risk": "none \u2014 is_gate=False enforced at module level",
+    "false_completion_risk": "none \u2014 passed+completed excluded from scope"
+  },
+  "guardrails": {
+    "monitoring_mode_silent": true,
+    "no_auto_execution": true,
+    "advisory_only": true,
+    "loop_decision_unchanged": true,
+    "default_off": true
+  },
+  "evaluation": "passed",
+  "stop_reason": null,
+  "next_subissue": 903
+}

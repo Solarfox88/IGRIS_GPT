@@ -1,0 +1,115 @@
+{
+  "epic": 898,
+  "subissue": 900,
+  "title": "Blocked-Status Advisory Validation",
+  "total_synthetic_blocked": 10,
+  "cycles_with_advisory": 10,
+  "action_verified": "escalate_blocked",
+  "all_action_correct": true,
+  "auto_executable_violations": 0,
+  "loop_decision_violations": 0,
+  "invariant_violations": 0,
+  "blocked_advisory_validated": true,
+  "per_cycle": [
+    {
+      "cycle_id": "synthetic-blocked-0",
+      "run_status": "blocked",
+      "goal_status": "partial",
+      "combined_status": "blocked_with_goal_progress",
+      "action": "escalate_blocked",
+      "confidence": "high",
+      "auto_executable": false
+    },
+    {
+      "cycle_id": "synthetic-blocked-1",
+      "run_status": "blocked",
+      "goal_status": "partial",
+      "combined_status": "blocked_with_goal_progress",
+      "action": "escalate_blocked",
+      "confidence": "high",
+      "auto_executable": false
+    },
+    {
+      "cycle_id": "synthetic-blocked-2",
+      "run_status": "blocked",
+      "goal_status": "partial",
+      "combined_status": "blocked_with_goal_progress",
+      "action": "escalate_blocked",
+      "confidence": "high",
+      "auto_executable": false
+    },
+    {
+      "cycle_id": "synthetic-blocked-3",
+      "run_status": "blocked",
+      "goal_status": "partial",
+      "combined_status": "blocked_with_goal_progress",
+      "action": "escalate_blocked",
+      "confidence": "high",
+      "auto_executable": false
+    },
+    {
+      "cycle_id": "synthetic-blocked-4",
+      "run_status": "blocked",
+      "goal_status": "partial",
+      "combined_status": "blocked_with_goal_progress",
+      "action": "escalate_blocked",
+      "confidence": "high",
+      "auto_executable": false
+    },
+    {
+      "cycle_id": "synthetic-blocked-5",
+      "run_status": "blocked",
+      "goal_status": "partial",
+      "combined_status": "blocked_with_goal_progress",
+      "action": "escalate_blocked",
+      "confidence": "high",
+      "auto_executable": false
+    },
+    {
+      "cycle_id": "synthetic-blocked-6",
+      "run_status": "blocked",
+      "goal_status": "partial",
+      "combined_status": "blocked_with_goal_progress",
+      "action": "escalate_blocked",
+      "confidence": "high",
+      "auto_executable": false
+    },
+    {
+      "cycle_id": "synthetic-blocked-7",
+      "run_status": "blocked",
+      "goal_status": "partial",
+      "combined_status": "blocked_with_goal_progress",
+      "action": "escalate_blocked",
+      "confidence": "high",
+      "auto_executable": false
+    },
+    {
+      "cycle_id": "synthetic-blocked-8",
+      "run_status": "blocked",
+      "goal_status": "partial",
+      "combined_status": "blocked_with_goal_progress",
+      "action": "escalate_blocked",
+      "confidence": "high",
+      "auto_executable": false
+    },
+    {
+      "cycle_id": "synthetic-blocked-9",
+      "run_status": "blocked",
+      "goal_status": "partial",
+      "combined_status": "blocked_with_goal_progress",
+      "action": "escalate_blocked",
+      "confidence": "high",
+      "auto_executable": false
+    }
+  ],
+  "guardrails": {
+    "default_off": true,
+    "no_auto_execution": true,
+    "advisory_only": true,
+    "loop_decision_unchanged": true,
+    "blocked_validated": true
+  },
+  "evaluation": "passed",
+  "stop_reason": null,
+  "next_subissue": 901
+}

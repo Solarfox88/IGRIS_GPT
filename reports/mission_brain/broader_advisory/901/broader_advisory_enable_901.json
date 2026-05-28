@@ -1,0 +1,272 @@
+{
+  "epic": 898,
+  "subissue": 901,
+  "title": "Enable Advisory Enrichment for Selected Diagnostic Reports",
+  "total_cycles": 40,
+  "shadow_cycles": 30,
+  "synthetic_blocked": 10,
+  "cycles_with_advisory": 40,
+  "auto_executable_violations": 0,
+  "loop_decision_violations": 0,
+  "is_gate_violations": 0,
+  "field_preservation_violations": 0,
+  "monitoring_mode_silent": true,
+  "default_mode_silent": true,
+  "action_distribution": {
+    "continue_from_partial_progress": 30,
+    "escalate_blocked": 10
+  },
+  "per_cycle": [
+    {
+      "cycle_id": "batch1-c1",
+      "run_status": "failed",
+      "action": "continue_from_partial_progress",
+      "auto_executable": false
+    },
+    {
+      "cycle_id": "batch1-c2",
+      "run_status": "failed",
+      "action": "continue_from_partial_progress",
+      "auto_executable": false
+    },
+    {
+      "cycle_id": "batch1-c3",
+      "run_status": "failed",
+      "action": "continue_from_partial_progress",
+      "auto_executable": false
+    },
+    {
+      "cycle_id": "batch1-c4",
+      "run_status": "failed",
+      "action": "continue_from_partial_progress",
+      "auto_executable": false
+    },
+    {
+      "cycle_id": "batch1-c5",
+      "run_status": "failed",
+      "action": "continue_from_partial_progress",
+      "auto_executable": false
+    },
+    {
+      "cycle_id": "batch2-c1",
+      "run_status": "failed",
+      "action": "continue_from_partial_progress",
+      "auto_executable": false
+    },
+    {
+      "cycle_id": "batch2-c2",
+      "run_status": "failed",
+      "action": "continue_from_partial_progress",
+      "auto_executable": false
+    },
+    {
+      "cycle_id": "batch2-c3",
+      "run_status": "failed",
+      "action": "continue_from_partial_progress",
+      "auto_executable": false
+    },
+    {
+      "cycle_id": "batch2-c4",
+      "run_status": "failed",
+      "action": "continue_from_partial_progress",
+      "auto_executable": false
+    },
+    {
+      "cycle_id": "batch2-c5",
+      "run_status": "failed",
+      "action": "continue_from_partial_progress",
+      "auto_executable": false
+    },
+    {
+      "cycle_id": "ext-batch1-c11",
+      "run_status": "failed",
+      "action": "continue_from_partial_progress",
+      "auto_executable": false
+    },
+    {
+      "cycle_id": "ext-batch1-c12",
+      "run_status": "failed",
+      "action": "continue_from_partial_progress",
+      "auto_executable": false
+    },
+    {
+      "cycle_id": "ext-batch1-c13",
+      "run_status": "failed",
+      "action": "continue_from_partial_progress",
+      "auto_executable": false
+    },
+    {
+      "cycle_id": "ext-batch1-c14",
+      "run_status": "failed",
+      "action": "continue_from_partial_progress",
+      "auto_executable": false
+    },
+    {
+      "cycle_id": "ext-batch1-c15",
+      "run_status": "failed",
+      "action": "continue_from_partial_progress",
+      "auto_executable": false
+    },
+    {
+      "cycle_id": "ext-batch1-c16",
+      "run_status": "failed",
+      "action": "continue_from_partial_progress",
+      "auto_executable": false
+    },
+    {
+      "cycle_id": "ext-batch1-c17",
+      "run_status": "failed",
+      "action": "continue_from_partial_progress",
+      "auto_executable": false
+    },
+    {
+      "cycle_id": "ext-batch1-c18",
+      "run_status": "failed",
+      "action": "continue_from_partial_progress",
+      "auto_executable": false
+    },
+    {
+      "cycle_id": "ext-batch1-c19",
+      "run_status": "failed",
+      "action": "continue_from_partial_progress",
+      "auto_executable": false
+    },
+    {
+      "cycle_id": "ext-batch1-c20",
+      "run_status": "failed",
+      "action": "continue_from_partial_progress",
+      "auto_executable": false
+    },
+    {
+      "cycle_id": "ext-batch2-c21",
+      "run_status": "failed",
+      "action": "continue_from_partial_progress",
+      "auto_executable": false
+    },
+    {
+      "cycle_id": "ext-batch2-c22",
+      "run_status": "failed",
+      "action": "continue_from_partial_progress",
+      "auto_executable": false
+    },
+    {
+      "cycle_id": "ext-batch2-c23",
+      "run_status": "failed",
+      "action": "continue_from_partial_progress",
+      "auto_executable": false
+    },
+    {
+      "cycle_id": "ext-batch2-c24",
+      "run_status": "failed",
+      "action": "continue_from_partial_progress",
+      "auto_executable": false
+    },
+    {
+      "cycle_id": "ext-batch2-c25",
+      "run_status": "failed",
+      "action": "continue_from_partial_progress",
+      "auto_executable": false
+    },
+    {
+      "cycle_id": "ext-batch2-c26",
+      "run_status": "failed",
+      "action": "continue_from_partial_progress",
+      "auto_executable": false
+    },
+    {
+      "cycle_id": "ext-batch2-c27",
+      "run_status": "failed",
+      "action": "continue_from_partial_progress",
+      "auto_executable": false
+    },
+    {
+      "cycle_id": "ext-batch2-c28",
+      "run_status": "failed",
+      "action": "continue_from_partial_progress",
+      "auto_executable": false
+    },
+    {
+      "cycle_id": "ext-batch2-c29",
+      "run_status": "failed",
+      "action": "continue_from_partial_progress",
+      "auto_executable": false
+    },
+    {
+      "cycle_id": "ext-batch2-c30",
+      "run_status": "failed",
+      "action": "continue_from_partial_progress",
+      "auto_executable": false
+    },
+    {
+      "cycle_id": "synthetic-blocked-0",
+      "run_status": "blocked",
+      "action": "escalate_blocked",
+      "auto_executable": false
+    },
+    {
+      "cycle_id": "synthetic-blocked-1",
+      "run_status": "blocked",
+      "action": "escalate_blocked",
+      "auto_executable": false
+    },
+    {
+      "cycle_id": "synthetic-blocked-2",
+      "run_status": "blocked",
+      "action": "escalate_blocked",
+      "auto_executable": false
+    },
+    {
+      "cycle_id": "synthetic-blocked-3",
+      "run_status": "blocked",
+      "action": "escalate_blocked",
+      "auto_executable": false
+    },
+    {
+      "cycle_id": "synthetic-blocked-4",
+      "run_status": "blocked",
+      "action": "escalate_blocked",
+      "auto_executable": false
+    },
+    {
+      "cycle_id": "synthetic-blocked-5",
+      "run_status": "blocked",
+      "action": "escalate_blocked",
+      "auto_executable": false
+    },
+    {
+      "cycle_id": "synthetic-blocked-6",
+      "run_status": "blocked",
+      "action": "escalate_blocked",
+      "auto_executable": false
+    },
+    {
+      "cycle_id": "synthetic-blocked-7",
+      "run_status": "blocked",
+      "action": "escalate_blocked",
+      "auto_executable": false
+    },
+    {
+      "cycle_id": "synthetic-blocked-8",
+      "run_status": "blocked",
+      "action": "escalate_blocked",
+      "auto_executable": false
+    },
+    {
+      "cycle_id": "synthetic-blocked-9",
+      "run_status": "blocked",
+      "action": "escalate_blocked",
+      "auto_executable": false
+    }
+  ],
+  "guardrails": {
+    "default_off": true,
+    "no_auto_execution": true,
+    "advisory_only": true,
+    "loop_decision_unchanged": true,
+    "monitoring_mode_does_not_surface": true,
+    "original_fields_preserved": true
+  },
+  "evaluation": "passed",
+  "stop_reason": null,
+  "next_subissue": 902
+}
