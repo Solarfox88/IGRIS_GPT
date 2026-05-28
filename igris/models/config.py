@@ -50,11 +50,23 @@ class VastAIConfig(BaseModel):
     mode: str = "on_demand"  # on_demand | always_on | disabled
 
 
+class MissionBrainIntegrationConfig(BaseModel):
+    enabled: bool = False
+    mode: str = "shadow"  # shadow | wrapper | enforce
+    compare_with_current_loop: bool = True
+    telemetry_enabled: bool = True
+    rollback_to_wrapper_on_guardrail: bool = True
+    # Hard safety guard: deep integration cannot become default without
+    # explicit mandate.
+    allow_enforce_mode: bool = False
+
+
 class Config(BaseModel):
     local_llm: LLMConfig
     fallback_llm: LLMConfig
     openai_chat_fallback: LLMConfig  # secondary OpenAI fallback behind DeepSeek
     vastai: VastAIConfig = VastAIConfig()
+    mission_brain_integration: MissionBrainIntegrationConfig = MissionBrainIntegrationConfig()
     auto_commit: bool = False
     auto_push: bool = False
     workspace_root: Path = Field(default_factory=lambda: Path(os.getenv("WORKSPACE_ROOT", "./workspace")))
@@ -95,6 +107,22 @@ class Config(BaseModel):
             max_hourly_cost=float(os.getenv("VASTAI_MAX_HOURLY_COST", "3.00")),
             mode=os.getenv("VASTAI_MODE", "on_demand"),
         )
+        mission_brain_integration = MissionBrainIntegrationConfig(
+            enabled=os.getenv("IGRIS_MB_INTEGRATION_ENABLED", "false").lower() == "true",
+            mode=os.getenv("IGRIS_MB_INTEGRATION_MODE", "shadow"),
+            compare_with_current_loop=os.getenv(
+                "IGRIS_MB_COMPARE_WITH_CURRENT_LOOP", "true"
+            ).lower()
+            != "false",
+            telemetry_enabled=os.getenv("IGRIS_MB_TELEMETRY_ENABLED", "true").lower()
+            != "false",
+            rollback_to_wrapper_on_guardrail=os.getenv(
+                "IGRIS_MB_ROLLBACK_TO_WRAPPER_ON_GUARDRAIL", "true"
+            ).lower()
+            != "false",
+            allow_enforce_mode=os.getenv("IGRIS_MB_ALLOW_ENFORCE_MODE", "false").lower()
+            == "true",
+        )
         auto_commit = os.getenv("AUTO_COMMIT", "false").lower() == "true"
         auto_push = os.getenv("AUTO_PUSH", "false").lower() == "true"
         return cls(
@@ -102,6 +130,7 @@ class Config(BaseModel):
             fallback_llm=fallback_llm,
             openai_chat_fallback=openai_chat_fallback,
             vastai=vastai,
+            mission_brain_integration=mission_brain_integration,
             auto_commit=auto_commit,
             auto_push=auto_push,
         )
