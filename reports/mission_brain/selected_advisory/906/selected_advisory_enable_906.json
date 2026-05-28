@@ -1,0 +1,578 @@
+{
+  "epic": 904,
+  "subissue": 906,
+  "title": "Enable Advisory Enrichment in Selected Reports Behind Explicit Flag",
+  "total_in_scope": 65,
+  "shadow_cycles": 30,
+  "synthetic_blocked": 10,
+  "synthetic_hard_failure": 10,
+  "synthetic_insufficient_context": 10,
+  "synthetic_fallback": 5,
+  "excluded_cycles": 5,
+  "cycles_with_advisory": 65,
+  "excluded_got_advisory": 0,
+  "auto_executable_violations": 0,
+  "loop_decision_violations": 0,
+  "is_gate_violations": 0,
+  "field_preservation_violations": 0,
+  "rollback_verified": true,
+  "monitoring_mode_silent": true,
+  "default_mode_silent": true,
+  "template_distribution": {
+    "technical_failure_with_goal_progress": 30,
+    "blocked_with_goal_progress": 10,
+    "hard_failure": 10,
+    "insufficient_context": 10,
+    "fallback": 5
+  },
+  "action_distribution": {
+    "continue_from_partial_progress": 30,
+    "escalate_blocked": 10,
+    "diagnose_failure": 10,
+    "request_context": 10,
+    "await_clarification": 5
+  },
+  "exercised_template_count": 4,
+  "exercised_templates": [
+    "blocked_with_goal_progress",
+    "hard_failure",
+    "insufficient_context",
+    "technical_failure_with_goal_progress"
+  ],
+  "per_cycle": [
+    {
+      "cycle_id": "batch1-c1",
+      "run_status": "failed",
+      "goal_status": "partial",
+      "action": "continue_from_partial_progress",
+      "template": "technical_failure_with_goal_progress",
+      "auto_executable": false
+    },
+    {
+      "cycle_id": "batch1-c2",
+      "run_status": "failed",
+      "goal_status": "partial",
+      "action": "continue_from_partial_progress",
+      "template": "technical_failure_with_goal_progress",
+      "auto_executable": false
+    },
+    {
+      "cycle_id": "batch1-c3",
+      "run_status": "failed",
+      "goal_status": "partial",
+      "action": "continue_from_partial_progress",
+      "template": "technical_failure_with_goal_progress",
+      "auto_executable": false
+    },
+    {
+      "cycle_id": "batch1-c4",
+      "run_status": "failed",
+      "goal_status": "partial",
+      "action": "continue_from_partial_progress",
+      "template": "technical_failure_with_goal_progress",
+      "auto_executable": false
+    },
+    {
+      "cycle_id": "batch1-c5",
+      "run_status": "failed",
+      "goal_status": "partial",
+      "action": "continue_from_partial_progress",
+      "template": "technical_failure_with_goal_progress",
+      "auto_executable": false
+    },
+    {
+      "cycle_id": "batch2-c1",
+      "run_status": "failed",
+      "goal_status": "partial",
+      "action": "continue_from_partial_progress",
+      "template": "technical_failure_with_goal_progress",
+      "auto_executable": false
+    },
+    {
+      "cycle_id": "batch2-c2",
+      "run_status": "failed",
+      "goal_status": "partial",
+      "action": "continue_from_partial_progress",
+      "template": "technical_failure_with_goal_progress",
+      "auto_executable": false
+    },
+    {
+      "cycle_id": "batch2-c3",
+      "run_status": "failed",
+      "goal_status": "partial",
+      "action": "continue_from_partial_progress",
+      "template": "technical_failure_with_goal_progress",
+      "auto_executable": false
+    },
+    {
+      "cycle_id": "batch2-c4",
+      "run_status": "failed",
+      "goal_status": "partial",
+      "action": "continue_from_partial_progress",
+      "template": "technical_failure_with_goal_progress",
+      "auto_executable": false
+    },
+    {
+      "cycle_id": "batch2-c5",
+      "run_status": "failed",
+      "goal_status": "partial",
+      "action": "continue_from_partial_progress",
+      "template": "technical_failure_with_goal_progress",
+      "auto_executable": false
+    },
+    {
+      "cycle_id": "ext-batch1-c11",
+      "run_status": "failed",
+      "goal_status": "partial",
+      "action": "continue_from_partial_progress",
+      "template": "technical_failure_with_goal_progress",
+      "auto_executable": false
+    },
+    {
+      "cycle_id": "ext-batch1-c12",
+      "run_status": "failed",
+      "goal_status": "partial",
+      "action": "continue_from_partial_progress",
+      "template": "technical_failure_with_goal_progress",
+      "auto_executable": false
+    },
+    {
+      "cycle_id": "ext-batch1-c13",
+      "run_status": "failed",
+      "goal_status": "partial",
+      "action": "continue_from_partial_progress",
+      "template": "technical_failure_with_goal_progress",
+      "auto_executable": false
+    },
+    {
+      "cycle_id": "ext-batch1-c14",
+      "run_status": "failed",
+      "goal_status": "partial",
+      "action": "continue_from_partial_progress",
+      "template": "technical_failure_with_goal_progress",
+      "auto_executable": false
+    },
+    {
+      "cycle_id": "ext-batch1-c15",
+      "run_status": "failed",
+      "goal_status": "partial",
+      "action": "continue_from_partial_progress",
+      "template": "technical_failure_with_goal_progress",
+      "auto_executable": false
+    },
+    {
+      "cycle_id": "ext-batch1-c16",
+      "run_status": "failed",
+      "goal_status": "partial",
+      "action": "continue_from_partial_progress",
+      "template": "technical_failure_with_goal_progress",
+      "auto_executable": false
+    },
+    {
+      "cycle_id": "ext-batch1-c17",
+      "run_status": "failed",
+      "goal_status": "partial",
+      "action": "continue_from_partial_progress",
+      "template": "technical_failure_with_goal_progress",
+      "auto_executable": false
+    },
+    {
+      "cycle_id": "ext-batch1-c18",
+      "run_status": "failed",
+      "goal_status": "partial",
+      "action": "continue_from_partial_progress",
+      "template": "technical_failure_with_goal_progress",
+      "auto_executable": false
+    },
+    {
+      "cycle_id": "ext-batch1-c19",
+      "run_status": "failed",
+      "goal_status": "partial",
+      "action": "continue_from_partial_progress",
+      "template": "technical_failure_with_goal_progress",
+      "auto_executable": false
+    },
+    {
+      "cycle_id": "ext-batch1-c20",
+      "run_status": "failed",
+      "goal_status": "partial",
+      "action": "continue_from_partial_progress",
+      "template": "technical_failure_with_goal_progress",
+      "auto_executable": false
+    },
+    {
+      "cycle_id": "ext-batch2-c21",
+      "run_status": "failed",
+      "goal_status": "partial",
+      "action": "continue_from_partial_progress",
+      "template": "technical_failure_with_goal_progress",
+      "auto_executable": false
+    },
+    {
+      "cycle_id": "ext-batch2-c22",
+      "run_status": "failed",
+      "goal_status": "partial",
+      "action": "continue_from_partial_progress",
+      "template": "technical_failure_with_goal_progress",
+      "auto_executable": false
+    },
+    {
+      "cycle_id": "ext-batch2-c23",
+      "run_status": "failed",
+      "goal_status": "partial",
+      "action": "continue_from_partial_progress",
+      "template": "technical_failure_with_goal_progress",
+      "auto_executable": false
+    },
+    {
+      "cycle_id": "ext-batch2-c24",
+      "run_status": "failed",
+      "goal_status": "partial",
+      "action": "continue_from_partial_progress",
+      "template": "technical_failure_with_goal_progress",
+      "auto_executable": false
+    },
+    {
+      "cycle_id": "ext-batch2-c25",
+      "run_status": "failed",
+      "goal_status": "partial",
+      "action": "continue_from_partial_progress",
+      "template": "technical_failure_with_goal_progress",
+      "auto_executable": false
+    },
+    {
+      "cycle_id": "ext-batch2-c26",
+      "run_status": "failed",
+      "goal_status": "partial",
+      "action": "continue_from_partial_progress",
+      "template": "technical_failure_with_goal_progress",
+      "auto_executable": false
+    },
+    {
+      "cycle_id": "ext-batch2-c27",
+      "run_status": "failed",
+      "goal_status": "partial",
+      "action": "continue_from_partial_progress",
+      "template": "technical_failure_with_goal_progress",
+      "auto_executable": false
+    },
+    {
+      "cycle_id": "ext-batch2-c28",
+      "run_status": "failed",
+      "goal_status": "partial",
+      "action": "continue_from_partial_progress",
+      "template": "technical_failure_with_goal_progress",
+      "auto_executable": false
+    },
+    {
+      "cycle_id": "ext-batch2-c29",
+      "run_status": "failed",
+      "goal_status": "partial",
+      "action": "continue_from_partial_progress",
+      "template": "technical_failure_with_goal_progress",
+      "auto_executable": false
+    },
+    {
+      "cycle_id": "ext-batch2-c30",
+      "run_status": "failed",
+      "goal_status": "partial",
+      "action": "continue_from_partial_progress",
+      "template": "technical_failure_with_goal_progress",
+      "auto_executable": false
+    },
+    {
+      "cycle_id": "synthetic-blocked-0",
+      "run_status": "blocked",
+      "goal_status": "partial",
+      "action": "escalate_blocked",
+      "template": "blocked_with_goal_progress",
+      "auto_executable": false
+    },
+    {
+      "cycle_id": "synthetic-blocked-1",
+      "run_status": "blocked",
+      "goal_status": "partial",
+      "action": "escalate_blocked",
+      "template": "blocked_with_goal_progress",
+      "auto_executable": false
+    },
+    {
+      "cycle_id": "synthetic-blocked-2",
+      "run_status": "blocked",
+      "goal_status": "partial",
+      "action": "escalate_blocked",
+      "template": "blocked_with_goal_progress",
+      "auto_executable": false
+    },
+    {
+      "cycle_id": "synthetic-blocked-3",
+      "run_status": "blocked",
+      "goal_status": "partial",
+      "action": "escalate_blocked",
+      "template": "blocked_with_goal_progress",
+      "auto_executable": false
+    },
+    {
+      "cycle_id": "synthetic-blocked-4",
+      "run_status": "blocked",
+      "goal_status": "partial",
+      "action": "escalate_blocked",
+      "template": "blocked_with_goal_progress",
+      "auto_executable": false
+    },
+    {
+      "cycle_id": "synthetic-blocked-5",
+      "run_status": "blocked",
+      "goal_status": "partial",
+      "action": "escalate_blocked",
+      "template": "blocked_with_goal_progress",
+      "auto_executable": false
+    },
+    {
+      "cycle_id": "synthetic-blocked-6",
+      "run_status": "blocked",
+      "goal_status": "partial",
+      "action": "escalate_blocked",
+      "template": "blocked_with_goal_progress",
+      "auto_executable": false
+    },
+    {
+      "cycle_id": "synthetic-blocked-7",
+      "run_status": "blocked",
+      "goal_status": "partial",
+      "action": "escalate_blocked",
+      "template": "blocked_with_goal_progress",
+      "auto_executable": false
+    },
+    {
+      "cycle_id": "synthetic-blocked-8",
+      "run_status": "blocked",
+      "goal_status": "partial",
+      "action": "escalate_blocked",
+      "template": "blocked_with_goal_progress",
+      "auto_executable": false
+    },
+    {
+      "cycle_id": "synthetic-blocked-9",
+      "run_status": "blocked",
+      "goal_status": "partial",
+      "action": "escalate_blocked",
+      "template": "blocked_with_goal_progress",
+      "auto_executable": false
+    },
+    {
+      "cycle_id": "synth-hard-failure-001",
+      "run_status": "failed",
+      "goal_status": "failed",
+      "action": "diagnose_failure",
+      "template": "hard_failure",
+      "auto_executable": false
+    },
+    {
+      "cycle_id": "synth-hard-failure-002",
+      "run_status": "failed",
+      "goal_status": "failed",
+      "action": "diagnose_failure",
+      "template": "hard_failure",
+      "auto_executable": false
+    },
+    {
+      "cycle_id": "synth-hard-failure-003",
+      "run_status": "failed",
+      "goal_status": "failed",
+      "action": "diagnose_failure",
+      "template": "hard_failure",
+      "auto_executable": false
+    },
+    {
+      "cycle_id": "synth-hard-failure-004",
+      "run_status": "failed",
+      "goal_status": "failed",
+      "action": "diagnose_failure",
+      "template": "hard_failure",
+      "auto_executable": false
+    },
+    {
+      "cycle_id": "synth-hard-failure-005",
+      "run_status": "failed",
+      "goal_status": "failed",
+      "action": "diagnose_failure",
+      "template": "hard_failure",
+      "auto_executable": false
+    },
+    {
+      "cycle_id": "synth-hard-failure-006",
+      "run_status": "failed",
+      "goal_status": "failed",
+      "action": "diagnose_failure",
+      "template": "hard_failure",
+      "auto_executable": false
+    },
+    {
+      "cycle_id": "synth-hard-failure-007",
+      "run_status": "failed",
+      "goal_status": "failed",
+      "action": "diagnose_failure",
+      "template": "hard_failure",
+      "auto_executable": false
+    },
+    {
+      "cycle_id": "synth-hard-failure-008",
+      "run_status": "failed",
+      "goal_status": "failed",
+      "action": "diagnose_failure",
+      "template": "hard_failure",
+      "auto_executable": false
+    },
+    {
+      "cycle_id": "synth-hard-failure-009",
+      "run_status": "failed",
+      "goal_status": "failed",
+      "action": "diagnose_failure",
+      "template": "hard_failure",
+      "auto_executable": false
+    },
+    {
+      "cycle_id": "synth-hard-failure-010",
+      "run_status": "failed",
+      "goal_status": "failed",
+      "action": "diagnose_failure",
+      "template": "hard_failure",
+      "auto_executable": false
+    },
+    {
+      "cycle_id": "synth-insuf-ctx-001",
+      "run_status": "failed",
+      "goal_status": "unknown",
+      "action": "request_context",
+      "template": "insufficient_context",
+      "auto_executable": false
+    },
+    {
+      "cycle_id": "synth-insuf-ctx-002",
+      "run_status": "failed",
+      "goal_status": "unknown",
+      "action": "request_context",
+      "template": "insufficient_context",
+      "auto_executable": false
+    },
+    {
+      "cycle_id": "synth-insuf-ctx-003",
+      "run_status": "failed",
+      "goal_status": "unknown",
+      "action": "request_context",
+      "template": "insufficient_context",
+      "auto_executable": false
+    },
+    {
+      "cycle_id": "synth-insuf-ctx-004",
+      "run_status": "failed",
+      "goal_status": "unknown",
+      "action": "request_context",
+      "template": "insufficient_context",
+      "auto_executable": false
+    },
+    {
+      "cycle_id": "synth-insuf-ctx-005",
+      "run_status": "failed",
+      "goal_status": "unknown",
+      "action": "request_context",
+      "template": "insufficient_context",
+      "auto_executable": false
+    },
+    {
+      "cycle_id": "synth-insuf-ctx-006",
+      "run_status": "failed",
+      "goal_status": "unknown",
+      "action": "request_context",
+      "template": "insufficient_context",
+      "auto_executable": false
+    },
+    {
+      "cycle_id": "synth-insuf-ctx-007",
+      "run_status": "failed",
+      "goal_status": "unknown",
+      "action": "request_context",
+      "template": "insufficient_context",
+      "auto_executable": false
+    },
+    {
+      "cycle_id": "synth-insuf-ctx-008",
+      "run_status": "failed",
+      "goal_status": "unknown",
+      "action": "request_context",
+      "template": "insufficient_context",
+      "auto_executable": false
+    },
+    {
+      "cycle_id": "synth-insuf-ctx-009",
+      "run_status": "failed",
+      "goal_status": "unknown",
+      "action": "request_context",
+      "template": "insufficient_context",
+      "auto_executable": false
+    },
+    {
+      "cycle_id": "synth-insuf-ctx-010",
+      "run_status": "failed",
+      "goal_status": "unknown",
+      "action": "request_context",
+      "template": "insufficient_context",
+      "auto_executable": false
+    },
+    {
+      "cycle_id": "synth-fallback-001",
+      "run_status": "blocked",
+      "goal_status": "failed",
+      "action": "await_clarification",
+      "template": "fallback",
+      "auto_executable": false
+    },
+    {
+      "cycle_id": "synth-fallback-002",
+      "run_status": "blocked",
+      "goal_status": "failed",
+      "action": "await_clarification",
+      "template": "fallback",
+      "auto_executable": false
+    },
+    {
+      "cycle_id": "synth-fallback-003",
+      "run_status": "blocked",
+      "goal_status": "failed",
+      "action": "await_clarification",
+      "template": "fallback",
+      "auto_executable": false
+    },
+    {
+      "cycle_id": "synth-fallback-004",
+      "run_status": "blocked",
+      "goal_status": "failed",
+      "action": "await_clarification",
+      "template": "fallback",
+      "auto_executable": false
+    },
+    {
+      "cycle_id": "synth-fallback-005",
+      "run_status": "blocked",
+      "goal_status": "failed",
+      "action": "await_clarification",
+      "template": "fallback",
+      "auto_executable": false
+    }
+  ],
+  "guardrails": {
+    "default_off": true,
+    "no_auto_execution": true,
+    "advisory_only": true,
+    "loop_decision_unchanged": true,
+    "monitoring_mode_silent": true,
+    "original_fields_preserved": true,
+    "excluded_statuses_blocked": true,
+    "template_usage_logged": true,
+    "rollback_immediate": true
+  },
+  "evaluation": "passed",
+  "stop_reason": null,
+  "next_subissue": 907
+}

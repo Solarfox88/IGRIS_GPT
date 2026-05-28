@@ -1,0 +1,135 @@
+{
+  "epic": 904,
+  "subissue": 907,
+  "title": "Controlled Monitoring on Real Failed/Partial/Blocked Report Generation",
+  "total_cycles": 70,
+  "in_scope_cycles": 65,
+  "shadow_cycles": 30,
+  "synthetic_blocked_cycles": 10,
+  "synthetic_hard_failure": 10,
+  "synthetic_insufficient_context": 10,
+  "synthetic_fallback": 5,
+  "excluded_cycles": 5,
+  "monitoring_mode_surfaced": 0,
+  "metrics_shadow_only": {
+    "total_reports_enriched": 30,
+    "enriched_failed_count": 30,
+    "enriched_partial_count": 30,
+    "enriched_blocked_count": 0,
+    "skipped_passed_completed_count": 0,
+    "auto_executable_violations": 0,
+    "loop_decision_violations": 0,
+    "is_gate_violations": 0,
+    "recovery_template_distribution": {
+      "technical_failure_with_goal_progress": 30
+    },
+    "exercised_template_count": 1,
+    "unexercised_template_count": 8,
+    "blocked_advisory_count": 0,
+    "report_usefulness_score": 1.0,
+    "rollback_verified": true,
+    "risk_introduced_candidates": 0,
+    "potential_critical_false_completed": 0,
+    "total_cycles": 30,
+    "in_scope_cycles": 30,
+    "coverage_rate": 1.0,
+    "in_scope_coverage_rate": 1.0,
+    "action_distribution": {
+      "continue_from_partial_progress": 30
+    },
+    "confidence_distribution": {
+      "high": 30
+    },
+    "exercised_templates": [
+      "technical_failure_with_goal_progress"
+    ],
+    "unexercised_in_scope_templates": [
+      "blocked_with_goal_progress",
+      "hard_failure",
+      "insufficient_context"
+    ],
+    "unreachable_from_bridge_count": 4,
+    "orphaned_taxonomy_templates": [
+      "anomaly_run_passed_goal_not_completed",
+      "blocked_no_goal_progress",
+      "run_passed_goal_partial",
+      "unknown_status"
+    ]
+  },
+  "metrics_all_cycles": {
+    "total_reports_enriched": 65,
+    "enriched_failed_count": 50,
+    "enriched_partial_count": 40,
+    "enriched_blocked_count": 15,
+    "skipped_passed_completed_count": 5,
+    "auto_executable_violations": 0,
+    "loop_decision_violations": 0,
+    "is_gate_violations": 0,
+    "recovery_template_distribution": {
+      "technical_failure_with_goal_progress": 30,
+      "blocked_with_goal_progress": 10,
+      "hard_failure": 10,
+      "insufficient_context": 10,
+      "fallback": 5
+    },
+    "exercised_template_count": 4,
+    "unexercised_template_count": 5,
+    "blocked_advisory_count": 15,
+    "report_usefulness_score": 1.0,
+    "rollback_verified": true,
+    "risk_introduced_candidates": 0,
+    "potential_critical_false_completed": 0,
+    "total_cycles": 70,
+    "in_scope_cycles": 65,
+    "coverage_rate": 0.9285714285714286,
+    "in_scope_coverage_rate": 1.0,
+    "action_distribution": {
+      "continue_from_partial_progress": 30,
+      "escalate_blocked": 10,
+      "diagnose_failure": 10,
+      "request_context": 10,
+      "await_clarification": 5
+    },
+    "confidence_distribution": {
+      "high": 50,
+      "low": 15
+    },
+    "exercised_templates": [
+      "blocked_with_goal_progress",
+      "hard_failure",
+      "insufficient_context",
+      "technical_failure_with_goal_progress"
+    ],
+    "unexercised_in_scope_templates": [],
+    "unreachable_from_bridge_count": 4,
+    "orphaned_taxonomy_templates": [
+      "anomaly_run_passed_goal_not_completed",
+      "blocked_no_goal_progress",
+      "run_passed_goal_partial",
+      "unknown_status"
+    ]
+  },
+  "coverage_summary": {
+    "shadow_coverage": 1.0,
+    "all_cycles_coverage": 1.0,
+    "excluded_skipped": 5
+  },
+  "risk_assessment": {
+    "auto_exec_risk": "none \u2014 0 violations across all 70 cycles",
+    "loop_modification_risk": "none \u2014 affects_loop_decision=False enforced",
+    "gate_risk": "none \u2014 is_gate=False enforced at module level",
+    "false_completion_risk": "none \u2014 passed+completed excluded from scope; potential_critical_false_completed=0"
+  },
+  "guardrails": {
+    "monitoring_mode_silent": true,
+    "no_auto_execution": true,
+    "advisory_only": true,
+    "loop_decision_unchanged": true,
+    "default_off": true,
+    "excluded_statuses_blocked": true,
+    "rollback_available": true
+  },
+  "evaluation": "passed",
+  "stop_reason": null,
+  "next_subissue": 908
+}

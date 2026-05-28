@@ -1,0 +1,145 @@
+{
+  "epic": 904,
+  "subissue": 909,
+  "title": "Consolidated Selected Advisory Activation Report \u2014 Final Decision",
+  "subissues_completed": [
+    905,
+    906,
+    907,
+    908,
+    909
+  ],
+  "gate_chain_passed": true,
+  "total_reports_enriched": 65,
+  "enriched_failed_count": 50,
+  "enriched_partial_count": 40,
+  "enriched_blocked_count": 10,
+  "skipped_passed_completed_count": 5,
+  "auto_executable_violations": 0,
+  "loop_decision_violations": 0,
+  "is_gate_violations": 0,
+  "recovery_template_distribution": {
+    "technical_failure_with_goal_progress": 30,
+    "blocked_with_goal_progress": 10,
+    "hard_failure": 10,
+    "insufficient_context": 10,
+    "fallback": 5
+  },
+  "exercised_template_count": 4,
+  "unexercised_template_count": 5,
+  "blocked_advisory_count": 10,
+  "report_usefulness_score": 1.0,
+  "rollback_verified": true,
+  "risk_introduced_candidates": 0,
+  "potential_critical_false_completed": 0,
+  "in_scope_coverage_rate": 1.0,
+  "exercised_templates": [
+    "blocked_with_goal_progress",
+    "hard_failure",
+    "insufficient_context",
+    "technical_failure_with_goal_progress"
+  ],
+  "orphaned_templates": [
+    "anomaly_run_passed_goal_not_completed",
+    "blocked_no_goal_progress",
+    "run_passed_goal_partial",
+    "unknown_status"
+  ],
+  "bridge_gap_templates": [
+    "blocked_goal_failed",
+    "goal_complete_run_blocked",
+    "goal_complete_run_failed",
+    "technical_success_but_goal_incomplete"
+  ],
+  "monitoring_mode_silent": true,
+  "action_distribution": {
+    "continue_from_partial_progress": 30,
+    "escalate_blocked": 10,
+    "diagnose_failure": 10,
+    "request_context": 10,
+    "await_clarification": 5
+  },
+  "final_decision": "keep_selected_advisory_enabled",
+  "final_decision_rationale": "All safety gates passed. Selected advisory enabled for 5 report types. 65/65 in-scope cycles enriched with advisory (0 violations). All 4 reachable in-scope taxonomy templates exercised. Monitoring mode confirmed silent. passed+completed explicitly excluded (0 surfaced). 4 orphaned taxonomy templates documented as minor gap \u2014 not blocking. Decision: keep_selected_advisory_enabled. Flag remains required. No auto-execution. No global default. Rollback immediate.",
+  "summary": "EPIC #904 complete. 65 cycles enriched. 4 templates exercised. 0 violations. monitoring_mode_silent=True. excluded_safe=True. Final decision: keep_selected_advisory_enabled. No auto-execution. Flag required.",
+  "findings": [
+    {
+      "id": "F1",
+      "finding": "65/65 in-scope cycles enriched (30 failed+partial, 10 blocked+partial, 10 hard_failure, 10 insufficient_context, 5 fallback); 0 violations",
+      "evidence": "cycles_with_advisory=65, auto_exec_viol=0",
+      "impact": "positive"
+    },
+    {
+      "id": "F2",
+      "finding": "All 4 reachable in-scope taxonomy templates exercised with valid invariants",
+      "evidence": "exercised_templates=['blocked_with_goal_progress', 'hard_failure', 'insufficient_context', 'technical_failure_with_goal_progress']",
+      "impact": "positive"
+    },
+    {
+      "id": "F3",
+      "finding": "Monitoring mode confirmed silent: 0 advisory surfaced when monitoring_only=True",
+      "evidence": "monitoring_mode_surfaced=0",
+      "impact": "positive"
+    },
+    {
+      "id": "F4",
+      "finding": "passed+completed explicitly excluded: 0 advisory on excluded cycles",
+      "evidence": "excluded_got_advisory=0, false_completed=0",
+      "impact": "positive"
+    },
+    {
+      "id": "F5",
+      "finding": "4 taxonomy templates orphaned (no bridge combined_status key match); 4 bridge outputs use fallback (await_clarification, low confidence, valid)",
+      "evidence": "orphaned=['anomaly_run_passed_goal_not_completed', 'blocked_no_goal_progress', 'run_passed_goal_partial', 'unknown_status'], bridge_gap=['blocked_goal_failed', 'goal_complete_run_blocked', 'goal_complete_run_failed', 'technical_success_but_goal_incomplete']",
+      "impact": "minor_gap",
+      "blocking": false
+    }
+  ],
+  "recommendations": [
+    {
+      "id": "R1",
+      "recommendation": "Keep selected advisory enabled for diagnostic, mission_execution, adoption, shadow, hardening reports",
+      "rationale": "All safety gates passed. 4 templates exercised, 0 violations. Monitoring mode silent. Rollback immediate.",
+      "requires_approval": true,
+      "scope": "selected_reports_only"
+    },
+    {
+      "id": "R2",
+      "recommendation": "Do NOT expand globally \u2014 flag remains required",
+      "rationale": "Only 4 of 9 templates exercised on data in scope. Global expansion requires broader coverage evidence.",
+      "requires_approval": false,
+      "scope": "constraint"
+    },
+    {
+      "id": "R3",
+      "recommendation": "Create separate EPIC to align bridge combined_status keys with taxonomy names",
+      "rationale": "4 orphaned templates + 4 unmapped bridge outputs create coverage ambiguity. Taxonomy-bridge alignment would expand effective template coverage to 8/9.",
+      "requires_approval": false,
+      "scope": "future_epic"
+    },
+    {
+      "id": "R4",
+      "recommendation": "Do NOT auto-execute any advisory recommendation",
+      "rationale": "All recommendations are advisory-only. Human action always required.",
+      "requires_approval": false,
+      "scope": "constraint"
+    }
+  ],
+  "guardrails": {
+    "advisory_only": true,
+    "no_auto_execution": true,
+    "default_off": true,
+    "flag_required": true,
+    "no_mandatory_gate": true,
+    "no_global_default": true,
+    "no_loop_modification": true,
+    "passed_completed_excluded": true,
+    "rollback_immediate": true,
+    "monitoring_mode_available": true,
+    "report_type_gated": true,
+    "template_usage_logged": true
+  },
+  "evaluation": "passed",
+  "stop_reason": null,
+  "epic_status": "complete"
+}

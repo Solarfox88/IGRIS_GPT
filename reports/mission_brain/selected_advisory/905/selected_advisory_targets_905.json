@@ -1,0 +1,161 @@
+{
+  "epic": 904,
+  "subissue": 905,
+  "title": "Selected Advisory Report Targets and Activation Config",
+  "selected_report_targets": [
+    "adoption",
+    "diagnostic",
+    "hardening",
+    "mission_execution",
+    "shadow"
+  ],
+  "selected_run_statuses": [
+    "blocked",
+    "failed"
+  ],
+  "excluded_run_statuses": [
+    "completed",
+    "passed"
+  ],
+  "taxonomy_overview": {
+    "total_templates": 9,
+    "all_templates": [
+      "anomaly_run_passed_goal_not_completed",
+      "blocked_no_goal_progress",
+      "blocked_with_goal_progress",
+      "completed",
+      "hard_failure",
+      "insufficient_context",
+      "run_passed_goal_partial",
+      "technical_failure_with_goal_progress",
+      "unknown_status"
+    ],
+    "reachable_in_scope": [
+      "blocked_with_goal_progress",
+      "hard_failure",
+      "insufficient_context",
+      "technical_failure_with_goal_progress"
+    ],
+    "excluded_by_scope": [
+      "completed"
+    ],
+    "unreachable_from_bridge": [
+      "anomaly_run_passed_goal_not_completed",
+      "blocked_no_goal_progress",
+      "run_passed_goal_partial",
+      "unknown_status"
+    ],
+    "bridge_outputs_without_template": [
+      "blocked_goal_failed",
+      "goal_complete_run_blocked",
+      "goal_complete_run_failed",
+      "technical_success_but_goal_incomplete"
+    ]
+  },
+  "config_variants": {
+    "default": {
+      "enabled": false,
+      "is_gate": false,
+      "should_emit": false,
+      "should_compute": false,
+      "monitoring_only": true,
+      "include_blocked": true,
+      "log_template_usage": true,
+      "effective_run_statuses": [
+        "blocked",
+        "failed"
+      ],
+      "allowed_report_types": [
+        "adoption",
+        "diagnostic",
+        "hardening",
+        "mission_execution",
+        "shadow"
+      ]
+    },
+    "monitoring": {
+      "enabled": true,
+      "is_gate": false,
+      "should_emit": false,
+      "should_compute": true,
+      "monitoring_only": true,
+      "include_blocked": true,
+      "log_template_usage": true,
+      "effective_run_statuses": [
+        "blocked",
+        "failed"
+      ],
+      "allowed_report_types": [
+        "adoption",
+        "diagnostic",
+        "hardening",
+        "mission_execution",
+        "shadow"
+      ]
+    },
+    "activation": {
+      "enabled": true,
+      "is_gate": false,
+      "should_emit": true,
+      "should_compute": true,
+      "monitoring_only": false,
+      "include_blocked": true,
+      "log_template_usage": true,
+      "effective_run_statuses": [
+        "blocked",
+        "failed"
+      ],
+      "allowed_report_types": [
+        "adoption",
+        "diagnostic",
+        "hardening",
+        "mission_execution",
+        "shadow"
+      ]
+    }
+  },
+  "rollout_stages": [
+    {
+      "stage": 1,
+      "name": "Monitoring only (monitoring_only=True)",
+      "description": "Compute advisory internally; do NOT surface in reports. Analytics only.",
+      "config": "make_selected_monitoring_config(include_blocked=True)",
+      "status": "ready"
+    },
+    {
+      "stage": 2,
+      "name": "Activation for selected report types (monitoring_only=False)",
+      "description": "Surface advisory in diagnostic, mission_execution, adoption, shadow, hardening reports. Failed+blocked in scope. Passed+completed excluded.",
+      "config": "make_selected_activation_config(include_blocked=True)",
+      "status": "ready"
+    },
+    {
+      "stage": 3,
+      "name": "Template coverage expansion",
+      "description": "Validate all 4 reachable in-scope templates on real+synthetic data. Document 4 orphaned templates. Plan taxonomy alignment fix.",
+      "config": "make_selected_activation_config(include_blocked=True)",
+      "status": "pending \u2014 requires diverse real run outcomes"
+    },
+    {
+      "stage": 4,
+      "name": "Consolidated decision",
+      "description": "Review template coverage, usefulness scores, zero-violation proof. Decide: keep / expand / calibrate / remediate.",
+      "config": "N/A",
+      "status": "pending"
+    }
+  ],
+  "guardrails": {
+    "advisory_only": true,
+    "no_auto_execution": true,
+    "no_mandatory_gate": true,
+    "flag_required": true,
+    "no_global_default": true,
+    "rollback_immediate": true,
+    "passed_completed_excluded": true,
+    "monitoring_mode_available": true
+  },
+  "validation_errors": 0,
+  "evaluation": "passed",
+  "stop_reason": null,
+  "next_subissue": 906
+}
