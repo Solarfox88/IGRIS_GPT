@@ -1,0 +1,45 @@
+{
+  "epic": 910,
+  "subissue": 913,
+  "title": "Selected Advisory Replay with Aligned Taxonomy-Bridge Mapping",
+  "total_in_scope": 65,
+  "total_all_cycles": 70,
+  "cycles_with_advisory": 65,
+  "excluded_got_advisory": 0,
+  "auto_executable_violations": 0,
+  "loop_decision_violations": 0,
+  "is_gate_violations": 0,
+  "field_preservation_violations": 0,
+  "monitoring_mode_silent": true,
+  "rollback_verified": true,
+  "exercised_templates": [
+    "blocked_no_goal_progress",
+    "blocked_with_goal_progress",
+    "hard_failure",
+    "insufficient_context",
+    "technical_failure_with_goal_progress"
+  ],
+  "template_distribution": {
+    "technical_failure_with_goal_progress": 30,
+    "blocked_with_goal_progress": 10,
+    "hard_failure": 10,
+    "insufficient_context": 10,
+    "blocked_no_goal_progress": 5
+  },
+  "action_distribution": {
+    "continue_from_partial_progress": 30,
+    "escalate_blocked": 15,
+    "diagnose_failure": 10,
+    "request_context": 10
+  },
+  "anomaly_template_test": {
+    "cycle": "failed+completed",
+    "template": "anomaly_run_passed_goal_not_completed",
+    "action": "investigate_anomaly",
+    "got_advisory": true
+  },
+  "use_taxonomy_bridge_alignment": true,
+  "evaluation": "passed",
+  "stop_reason": null,
+  "next_subissue": 914
+}

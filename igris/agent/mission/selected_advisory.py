@@ -53,6 +53,14 @@ from igris.agent.mission.recovery_taxonomy import (
 )
 from igris.agent.mission.status_bridge import bridge
 
+# Lazy import for taxonomy_bridge (only loaded when use_taxonomy_bridge_alignment=True)
+def _get_aligned_template_fn():
+    from igris.agent.mission.taxonomy_bridge import (
+        get_aligned_template,
+        get_aligned_template_key,
+    )
+    return get_aligned_template, get_aligned_template_key
+
 
 # ---------------------------------------------------------------------------
 # Report type targets
@@ -114,6 +122,7 @@ class SelectedAdvisoryConfig:
     monitoring_only: bool = True
     log_template_usage: bool = True
     allowed_report_types: FrozenSet[str] = SELECTED_ADVISORY_REPORT_TARGETS
+    use_taxonomy_bridge_alignment: bool = False  # EPIC #910: enable aligned template lookup
 
     @property
     def is_gate(self) -> bool:
@@ -153,6 +162,7 @@ class SelectedAdvisoryConfig:
             "monitoring_only": self.monitoring_only,
             "include_blocked": self.include_blocked,
             "log_template_usage": self.log_template_usage,
+            "use_taxonomy_bridge_alignment": self.use_taxonomy_bridge_alignment,
             "effective_run_statuses": sorted(self.effective_run_statuses),
             "allowed_report_types": sorted(self.allowed_report_types),
         }
@@ -194,6 +204,42 @@ def make_selected_activation_config(
         include_blocked=include_blocked,
         monitoring_only=False,
         log_template_usage=True,
+        allowed_report_types=(
+            allowed_report_types if allowed_report_types is not None
+            else SELECTED_ADVISORY_REPORT_TARGETS
+        ),
+    )
+
+
+def make_selected_aligned_monitoring_config(
+    include_blocked: bool = True,
+    allowed_report_types: Optional[FrozenSet[str]] = None,
+) -> SelectedAdvisoryConfig:
+    """Monitoring config WITH taxonomy-bridge alignment (EPIC #910)."""
+    return SelectedAdvisoryConfig(
+        enabled=True,
+        include_blocked=include_blocked,
+        monitoring_only=True,
+        log_template_usage=True,
+        use_taxonomy_bridge_alignment=True,
+        allowed_report_types=(
+            allowed_report_types if allowed_report_types is not None
+            else SELECTED_ADVISORY_REPORT_TARGETS
+        ),
+    )
+
+
+def make_selected_aligned_activation_config(
+    include_blocked: bool = True,
+    allowed_report_types: Optional[FrozenSet[str]] = None,
+) -> SelectedAdvisoryConfig:
+    """Activation config WITH taxonomy-bridge alignment (EPIC #910)."""
+    return SelectedAdvisoryConfig(
+        enabled=True,
+        include_blocked=include_blocked,
+        monitoring_only=False,
+        log_template_usage=True,
+        use_taxonomy_bridge_alignment=True,
         allowed_report_types=(
             allowed_report_types if allowed_report_types is not None
             else SELECTED_ADVISORY_REPORT_TARGETS
@@ -266,7 +312,45 @@ def _build_bridge_diagnostics(
         "affects_loop_decision": False,
         "monitoring_only": config.monitoring_only,
         "advisory_source": "selected_advisory_904",
+        "taxonomy_bridge_aligned": config.use_taxonomy_bridge_alignment,
     }
+
+
+def _resolve_template_key(combined_status: str, config: SelectedAdvisoryConfig) -> str:
+    """Resolve taxonomy template key for a combined_status, respecting alignment flag."""
+    if config.use_taxonomy_bridge_alignment:
+        get_aligned, get_aligned_key = _get_aligned_template_fn()
+        return get_aligned_key(combined_status)
+    return combined_status if get_template(combined_status) else "fallback"
+
+
+def _build_recovery_rec(combined_status: str, cycle: Any, config: SelectedAdvisoryConfig) -> Dict[str, Any]:
+    """Build recovery recommendation, using aligned template if enabled."""
+    if config.use_taxonomy_bridge_alignment:
+        from igris.agent.mission.taxonomy_bridge import get_aligned_template
+        tmpl = get_aligned_template(combined_status)
+        if tmpl is None:
+            return build_recovery_recommendation("unknown_status", cycle=cycle)
+        # Build recommendation dict from aligned template
+        evidence_required = list(tmpl.get("evidence_required") or [])
+        if cycle:
+            ep = [f for f in evidence_required if f in cycle and cycle[f] is not None]
+            em = [f for f in evidence_required if f not in cycle or cycle[f] is None]
+        else:
+            ep, em = [], list(evidence_required)
+        return {
+            "action": tmpl["action"],
+            "confidence": tmpl["confidence"],
+            "safe_next_action": tmpl["safe_next_action"],
+            "rationale": tmpl["rationale"],
+            "evidence_present": ep,
+            "evidence_missing": em,
+            "missing_evidence_hint": f"Provide: {', '.join(em)}" if em else "",
+            "auto_executable": False,   # INVARIANT
+            "advisory_only": True,      # INVARIANT
+            "based_on_combined_status": combined_status,
+        }
+    return build_recovery_recommendation(combined_status, cycle=cycle)
 
 
 def enrich_report_selected(
@@ -283,8 +367,8 @@ def enrich_report_selected(
     try:
         bd = _build_bridge_diagnostics(run_status, goal_status, config)
         combined_status = bd["combined_status"]
-        rec = build_recovery_recommendation(combined_status, cycle=cycle or report)
-        template_key = combined_status if get_template(combined_status) else "fallback"
+        rec = _build_recovery_rec(combined_status, cycle=cycle or report, config=config)
+        template_key = _resolve_template_key(combined_status, config)
         result = {
             **report,
             "bridge_diagnostics": bd,
@@ -369,7 +453,7 @@ def compute_selected_metrics(
         try:
             bd      = _build_bridge_diagnostics(run_s, goal_s, config)
             combined = bd["combined_status"]
-            rec     = build_recovery_recommendation(combined, cycle=c)
+            rec     = _build_recovery_rec(combined, cycle=c, config=config)
 
             cycles_with_advisory += 1
             if run_s == "failed":
@@ -387,9 +471,9 @@ def compute_selected_metrics(
             if bd.get("is_gate") is not False:
                 is_gate_viol += 1
 
-            tmpl_key = combined if get_template(combined) else "fallback"
+            tmpl_key = _resolve_template_key(combined, config)
             template_dist[tmpl_key] = template_dist.get(tmpl_key, 0) + 1
-            if tmpl_key != "fallback":
+            if tmpl_key not in ("fallback", "unknown"):
                 exercised_templates.add(tmpl_key)
 
             action = rec.get("action", "unknown")

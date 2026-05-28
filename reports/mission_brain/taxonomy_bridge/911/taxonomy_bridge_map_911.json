@@ -1,0 +1,143 @@
+{
+  "epic": 910,
+  "subissue": 911,
+  "title": "Bridge-to-Taxonomy Full Mapping Analysis",
+  "coverage": {
+    "total_taxonomy_templates": 9,
+    "total_bridge_combined_statuses": 9,
+    "pre_alignment_in_scope_count": 4,
+    "post_alignment_in_scope_count": 6,
+    "newly_reachable_count": 2,
+    "excluded_from_scope_count": 2,
+    "internal_fallback_only_count": 1,
+    "all_bridge_outputs_have_template": true,
+    "bridge_outputs_without_template": [],
+    "all_taxonomy_templates_reachable": true,
+    "unaccounted_templates": [],
+    "pre_alignment_reachable": [
+      "blocked_with_goal_progress",
+      "hard_failure",
+      "insufficient_context",
+      "technical_failure_with_goal_progress"
+    ],
+    "post_alignment_reachable": [
+      "anomaly_run_passed_goal_not_completed",
+      "blocked_no_goal_progress",
+      "blocked_with_goal_progress",
+      "hard_failure",
+      "insufficient_context",
+      "technical_failure_with_goal_progress"
+    ],
+    "newly_reachable": [
+      "anomaly_run_passed_goal_not_completed",
+      "blocked_no_goal_progress"
+    ],
+    "excluded_from_scope": [
+      "completed",
+      "run_passed_goal_partial"
+    ],
+    "internal_fallback_only": [
+      "unknown_status"
+    ]
+  },
+  "mapping_report": [
+    {
+      "bridge_combined_status": "blocked_goal_failed",
+      "taxonomy_template_key": "blocked_no_goal_progress",
+      "action": "escalate_blocked",
+      "confidence": "medium",
+      "alignment_type": "aligned",
+      "was_fallback_before": true,
+      "template_found": true
+    },
+    {
+      "bridge_combined_status": "blocked_with_goal_progress",
+      "taxonomy_template_key": "blocked_with_goal_progress",
+      "action": "escalate_blocked",
+      "confidence": "high",
+      "alignment_type": "direct_match",
+      "was_fallback_before": false,
+      "template_found": true
+    },
+    {
+      "bridge_combined_status": "completed",
+      "taxonomy_template_key": "completed",
+      "action": "mark_complete",
+      "confidence": "high",
+      "alignment_type": "direct_match",
+      "was_fallback_before": false,
+      "template_found": true
+    },
+    {
+      "bridge_combined_status": "goal_complete_run_blocked",
+      "taxonomy_template_key": "anomaly_run_passed_goal_not_completed",
+      "action": "investigate_anomaly",
+      "confidence": "medium",
+      "alignment_type": "aligned",
+      "was_fallback_before": true,
+      "template_found": true
+    },
+    {
+      "bridge_combined_status": "goal_complete_run_failed",
+      "taxonomy_template_key": "anomaly_run_passed_goal_not_completed",
+      "action": "investigate_anomaly",
+      "confidence": "medium",
+      "alignment_type": "aligned",
+      "was_fallback_before": true,
+      "template_found": true
+    },
+    {
+      "bridge_combined_status": "hard_failure",
+      "taxonomy_template_key": "hard_failure",
+      "action": "diagnose_failure",
+      "confidence": "high",
+      "alignment_type": "direct_match",
+      "was_fallback_before": false,
+      "template_found": true
+    },
+    {
+      "bridge_combined_status": "insufficient_context",
+      "taxonomy_template_key": "insufficient_context",
+      "action": "request_context",
+      "confidence": "low",
+      "alignment_type": "direct_match",
+      "was_fallback_before": false,
+      "template_found": true
+    },
+    {
+      "bridge_combined_status": "technical_failure_with_goal_progress",
+      "taxonomy_template_key": "technical_failure_with_goal_progress",
+      "action": "continue_from_partial_progress",
+      "confidence": "high",
+      "alignment_type": "direct_match",
+      "was_fallback_before": false,
+      "template_found": true
+    },
+    {
+      "bridge_combined_status": "technical_success_but_goal_incomplete",
+      "taxonomy_template_key": "run_passed_goal_partial",
+      "action": "review_partial_complete",
+      "confidence": "medium",
+      "alignment_type": "aligned",
+      "was_fallback_before": true,
+      "template_found": true
+    }
+  ],
+  "alignment_map": {
+    "completed": "completed",
+    "technical_failure_with_goal_progress": "technical_failure_with_goal_progress",
+    "hard_failure": "hard_failure",
+    "insufficient_context": "insufficient_context",
+    "blocked_with_goal_progress": "blocked_with_goal_progress",
+    "technical_success_but_goal_incomplete": "run_passed_goal_partial",
+    "blocked_goal_failed": "blocked_no_goal_progress",
+    "goal_complete_run_failed": "anomaly_run_passed_goal_not_completed",
+    "goal_complete_run_blocked": "anomaly_run_passed_goal_not_completed"
+  },
+  "invariant_violations": 0,
+  "scope_unchanged": true,
+  "advisory_scope_note": "Advisory scope unchanged: failed/blocked run statuses only. run_passed_goal_partial reachable only from passed runs (excluded). completed excluded by is_excluded_status(). Alignment only improves template specificity for in-scope cycles.",
+  "evaluation": "passed",
+  "stop_reason": null,
+  "next_subissue": 912
+}

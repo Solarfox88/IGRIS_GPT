@@ -1,0 +1,93 @@
+{
+  "epic": 910,
+  "subissue": 914,
+  "title": "Template Coverage Comparison Before vs After Alignment",
+  "dataset": {
+    "shadow_cycles": 30,
+    "synthetic_in_scope": 45,
+    "total_extended": 75
+  },
+  "before_alignment": {
+    "exercised_template_count": 4,
+    "exercised_templates": [
+      "blocked_with_goal_progress",
+      "hard_failure",
+      "insufficient_context",
+      "technical_failure_with_goal_progress"
+    ],
+    "action_distribution": {
+      "continue_from_partial_progress": 30,
+      "escalate_blocked": 10,
+      "diagnose_failure": 10,
+      "request_context": 10,
+      "await_clarification": 15
+    }
+  },
+  "after_alignment": {
+    "exercised_template_count": 6,
+    "exercised_templates": [
+      "anomaly_run_passed_goal_not_completed",
+      "blocked_no_goal_progress",
+      "blocked_with_goal_progress",
+      "hard_failure",
+      "insufficient_context",
+      "technical_failure_with_goal_progress"
+    ],
+    "action_distribution": {
+      "continue_from_partial_progress": 30,
+      "escalate_blocked": 15,
+      "diagnose_failure": 10,
+      "request_context": 10,
+      "investigate_anomaly": 10
+    }
+  },
+  "improvement": {
+    "templates_gained": 2,
+    "newly_exercised": [
+      "anomaly_run_passed_goal_not_completed",
+      "blocked_no_goal_progress"
+    ]
+  },
+  "remaining_limitations": [
+    {
+      "template": "run_passed_goal_partial",
+      "status": "excluded_from_scope",
+      "reason": "Only reachable from passed+partial runs. Advisory scope excludes passed run_status.",
+      "resolution": "N/A \u2014 scope boundary is intentional."
+    },
+    {
+      "template": "unknown_status",
+      "status": "internal_fallback_only",
+      "reason": "No bridge combined_status produces 'unknown_status'. Used only when bridge result is missing combined_status key.",
+      "resolution": "N/A \u2014 internal edge case fallback."
+    },
+    {
+      "template": "completed",
+      "status": "excluded_by_scope",
+      "reason": "Only from passed+completed. Explicitly excluded by is_excluded_status().",
+      "resolution": "N/A \u2014 correct exclusion."
+    }
+  ],
+  "taxonomy_coverage_summary": {
+    "total_templates": 9,
+    "reachable_in_scope_after": 6,
+    "excluded_from_scope": [
+      "completed",
+      "run_passed_goal_partial"
+    ],
+    "internal_fallback_only": [
+      "unknown_status"
+    ],
+    "all_accounted": true
+  },
+  "mandatory_metrics": {
+    "auto_executable_violations": 0,
+    "loop_decision_violations": 0,
+    "is_gate_violations": 0,
+    "risk_introduced_candidates": 0,
+    "potential_critical_false_completed": 0
+  },
+  "evaluation": "passed",
+  "stop_reason": null,
+  "next_subissue": 915
+}
