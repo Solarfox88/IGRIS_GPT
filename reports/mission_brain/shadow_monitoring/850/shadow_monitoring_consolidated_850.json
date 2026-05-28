@@ -1,0 +1,72 @@
+{
+  "batch1_metrics": {
+    "total_shadow_cycles": 5,
+    "mission_brain_decision": "mixed",
+    "current_loop_decision": "mixed",
+    "agreement_rate": 0.0,
+    "disagreement_rate": 1.0,
+    "prevented_error_candidates": 5,
+    "risk_introduced_candidates": 0,
+    "potential_false_completed": 0,
+    "potential_critical_false_completed": 0,
+    "potential_false_partial": 0,
+    "potential_false_failed": 0,
+    "report_usefulness_score": 0.8,
+    "latency_overhead": {
+      "mean_ms": 0.8,
+      "p95_ms": 2.0
+    },
+    "cost_overhead": {
+      "total_usd": 0.0,
+      "mean_usd": 0.0
+    },
+    "rollback_path_status": "ok",
+    "final_readiness_trend": "stable"
+  },
+  "analysis_848": {
+    "total_cycles": 5,
+    "disagreement_count": 5,
+    "disagreement_rate": 1.0,
+    "mismatch_classes": {
+      "safe_more_optimistic_mission_brain": 5
+    },
+    "dominant_mismatch_class": "safe_more_optimistic_mission_brain",
+    "prevented_error_candidates": 5,
+    "risk_introduced_candidates": 0,
+    "potential_false_completed": 0,
+    "potential_false_partial": 0,
+    "potential_false_failed": 0,
+    "recommendation_focus": "stabilize disagreement taxonomy"
+  },
+  "cumulative_metrics": {
+    "total_shadow_cycles": 10,
+    "mission_brain_decision": "mixed",
+    "current_loop_decision": "mixed",
+    "agreement_rate": 0.0,
+    "disagreement_rate": 1.0,
+    "prevented_error_candidates": 10,
+    "risk_introduced_candidates": 0,
+    "potential_false_completed": 0,
+    "potential_critical_false_completed": 0,
+    "potential_false_partial": 0,
+    "potential_false_failed": 0,
+    "report_usefulness_score": 0.8,
+    "latency_overhead": {
+      "mean_ms": 0.6,
+      "p95_ms": 2.0
+    },
+    "cost_overhead": {
+      "total_usd": 0.0,
+      "mean_usd": 0.0
+    },
+    "rollback_path_status": "ok",
+    "final_readiness_trend": "stable"
+  },
+  "final_decision": "keep shadow mode",
+  "guardrails": {
+    "shadow_mode_only": true,
+    "default_behavior_unchanged": true,
+    "no_enable_by_default": true,
+    "rollback_path_status": "ok"
+  }
+}
