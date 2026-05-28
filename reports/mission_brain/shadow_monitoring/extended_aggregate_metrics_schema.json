@@ -1,0 +1,31 @@
+{
+  "total_shadow_cycles": 0,
+  "mission_brain_decision": "completed|partial|failed|mixed",
+  "current_loop_decision": "finished|blocked|stopped|failed|mixed",
+  "agreement_rate": 0.0,
+  "disagreement_rate": 0.0,
+  "disagreement_by_class": {},
+  "prevented_error_candidates": 0,
+  "risk_introduced_candidates": 0,
+  "potential_false_completed": 0,
+  "potential_critical_false_completed": 0,
+  "potential_false_partial": 0,
+  "potential_false_failed": 0,
+  "report_usefulness_score": 0.0,
+  "latency_overhead": {
+    "mean_ms": 0.0,
+    "p95_ms": 0.0
+  },
+  "cost_overhead": {
+    "total_usd": 0.0,
+    "mean_usd": 0.0
+  },
+  "rollback_path_status": "ok|degraded|failed",
+  "final_readiness_trend": "improving|stable|degrading",
+  "decision_distribution_mission_brain": {},
+  "decision_distribution_current_loop": {},
+  "dominant_mismatch_classes": [],
+  "sample_representativeness_score": 0.0,
+  "sample_representativeness_notes": "",
+  "allowed_final_decision": "keep shadow mode|extend monitoring again|start disagreement calibration|remediate again|do not integrate"
+}
