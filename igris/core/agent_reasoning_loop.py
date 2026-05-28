@@ -159,6 +159,9 @@ class LoopResult:
     reasoning_execution_profile: str = ""
     orchestrator_used: bool = False
     local_model_available: bool = False
+    mission_brain_shadow_mode: bool = False
+    mission_brain_shadow_error: str = ""
+    mission_brain_shadow_record: Optional[Dict[str, Any]] = None
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -187,6 +190,9 @@ class LoopResult:
             "reasoning_execution_profile": self.reasoning_execution_profile,
             "orchestrator_used": self.orchestrator_used,
             "local_model_available": self.local_model_available,
+            "mission_brain_shadow_mode": self.mission_brain_shadow_mode,
+            "mission_brain_shadow_error": redact_secrets(self.mission_brain_shadow_error),
+            "mission_brain_shadow_record": self.mission_brain_shadow_record,
         }
 
 
@@ -348,8 +354,32 @@ class AgentReasoningLoop:
         result.reasoning_execution_profile = self._reasoning_profile
         result.orchestrator_used = self._orchestrator_used
         result.local_model_available = self._local_model_available()
+        self._run_mission_brain_shadow(goal=goal, result=result)
 
         return result
+
+    def _run_mission_brain_shadow(self, goal: str, result: LoopResult) -> None:
+        """Run Mission Brain in shadow mode; never affects primary loop behavior."""
+        from igris.models.config import CONFIG
+
+        mb = CONFIG.mission_brain_integration
+        mode = (mb.mode or "").strip().lower()
+        if not (mb.enabled and mode == "shadow"):
+            return
+
+        result.mission_brain_shadow_mode = True
+        try:
+            from igris.agent.mission.shadow_integration import run_shadow_comparison
+
+            result.mission_brain_shadow_record = run_shadow_comparison(
+                user_input=goal,
+                loop_result=result,
+                project_root=self.project_root,
+                compare_with_current_loop=mb.compare_with_current_loop,
+                telemetry_enabled=mb.telemetry_enabled,
+            )
+        except Exception as exc:
+            result.mission_brain_shadow_error = str(exc)
 
     def _local_model_available(self) -> bool:
         """Return True if the local Ollama model is reachable."""
