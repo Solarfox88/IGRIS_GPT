@@ -1,0 +1,19 @@
+{
+  "records_count": 3,
+  "summary": {
+    "total_runs": 3,
+    "agreement_count": 1,
+    "disagreement_count": 2,
+    "agreement_rate": 0.333,
+    "risky_mismatch_count": 1,
+    "safe_mismatch_count": 1,
+    "mismatch_classes": {
+      "risky_false_completed_candidate": 1,
+      "safe_more_optimistic_mission_brain": 1,
+      "agreement": 1
+    },
+    "quality_gate_pass_rate": 0.0,
+    "satisfaction_gate_pass_rate": 1.0
+  },
+  "status": "passed"
+}
