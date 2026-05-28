@@ -47,6 +47,8 @@ def test_agent_loop_runs_shadow_only_when_enabled(monkeypatch, tmp_path):
     assert result.mission_brain_shadow_mode is True
     assert isinstance(result.mission_brain_shadow_record, dict)
     assert "mission_brain_decision" in result.mission_brain_shadow_record
+    assert isinstance(result.mission_brain_wrapper_policy, dict)
+    assert "effective_mode" in result.mission_brain_wrapper_policy
 
 
 def test_agent_loop_does_not_run_shadow_when_disabled(monkeypatch, tmp_path):
@@ -61,4 +63,3 @@ def test_agent_loop_does_not_run_shadow_when_disabled(monkeypatch, tmp_path):
     loop._run_mission_brain_shadow(goal="Aggiungi test endpoint", result=result)
     assert result.mission_brain_shadow_mode is False
     assert result.mission_brain_shadow_record is None
-

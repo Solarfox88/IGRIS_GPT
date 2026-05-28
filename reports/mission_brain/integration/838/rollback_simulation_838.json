@@ -1,0 +1,47 @@
+{
+  "cases": [
+    {
+      "name": "manual_force_wrapper",
+      "policy": {
+        "timestamp": "2026-05-28T07:42:44Z",
+        "requested_mode": "shadow",
+        "effective_mode": "wrapper",
+        "auto_rollback_triggered": false,
+        "manual_force_wrapper": true,
+        "reason": "manual_force_wrapper_mode",
+        "mismatch_class": "agreement"
+      }
+    },
+    {
+      "name": "risky_auto_rollback",
+      "policy": {
+        "timestamp": "2026-05-28T07:42:44Z",
+        "requested_mode": "shadow",
+        "effective_mode": "wrapper",
+        "auto_rollback_triggered": true,
+        "manual_force_wrapper": false,
+        "reason": "risky_mismatch_guardrail",
+        "mismatch_class": "risky_false_completed_candidate"
+      }
+    },
+    {
+      "name": "safe_keep_shadow",
+      "policy": {
+        "timestamp": "2026-05-28T07:42:44Z",
+        "requested_mode": "shadow",
+        "effective_mode": "shadow",
+        "auto_rollback_triggered": false,
+        "manual_force_wrapper": false,
+        "reason": "no_guardrail_trigger",
+        "mismatch_class": "agreement"
+      }
+    }
+  ],
+  "summary": {
+    "total_cases": 3,
+    "wrapper_effective_count": 2,
+    "auto_rollback_count": 1,
+    "manual_force_count": 1
+  },
+  "status": "passed"
+}

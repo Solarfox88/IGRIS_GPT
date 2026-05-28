@@ -162,6 +162,7 @@ class LoopResult:
     mission_brain_shadow_mode: bool = False
     mission_brain_shadow_error: str = ""
     mission_brain_shadow_record: Optional[Dict[str, Any]] = None
+    mission_brain_wrapper_policy: Optional[Dict[str, Any]] = None
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -193,6 +194,7 @@ class LoopResult:
             "mission_brain_shadow_mode": self.mission_brain_shadow_mode,
             "mission_brain_shadow_error": redact_secrets(self.mission_brain_shadow_error),
             "mission_brain_shadow_record": self.mission_brain_shadow_record,
+            "mission_brain_wrapper_policy": self.mission_brain_wrapper_policy,
         }
 
 
@@ -370,6 +372,10 @@ class AgentReasoningLoop:
         result.mission_brain_shadow_mode = True
         try:
             from igris.agent.mission.shadow_integration import run_shadow_comparison
+            from igris.agent.mission.rollback_policy import (
+                evaluate_wrapper_policy,
+                persist_wrapper_policy_decision,
+            )
 
             result.mission_brain_shadow_record = run_shadow_comparison(
                 user_input=goal,
@@ -378,6 +384,17 @@ class AgentReasoningLoop:
                 compare_with_current_loop=mb.compare_with_current_loop,
                 telemetry_enabled=mb.telemetry_enabled,
             )
+            policy = evaluate_wrapper_policy(
+                requested_mode=mode,
+                shadow_record=result.mission_brain_shadow_record or {},
+                rollback_to_wrapper_on_guardrail=mb.rollback_to_wrapper_on_guardrail,
+                auto_rollback_on_risky_mismatch=mb.auto_rollback_on_risky_mismatch,
+                force_wrapper_mode=mb.force_wrapper_mode,
+            )
+            policy["policy_log_path"] = persist_wrapper_policy_decision(
+                self.project_root, policy
+            )
+            result.mission_brain_wrapper_policy = policy
         except Exception as exc:
             result.mission_brain_shadow_error = str(exc)
 
