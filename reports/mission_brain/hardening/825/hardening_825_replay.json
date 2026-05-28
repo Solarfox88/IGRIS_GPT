@@ -1,0 +1,44 @@
+{
+  "suite": "mission_brain_hardening_825_replay",
+  "cases": [
+    {
+      "case_id": "fc_case_791_m2",
+      "source_report": "reports/mission_brain/adoption/791/m2_report.json",
+      "declared_status_after_825": "partial",
+      "quality_passed": false,
+      "satisfaction_passed": false,
+      "quality_reasons": [
+        "incomplete_checklist_evidence",
+        "insufficient_multistep_evidence"
+      ],
+      "insufficient_multistep_evidence_detected": true,
+      "incomplete_checklist_evidence_detected": true,
+      "evidence_depths": [
+        "shallow_evidence",
+        "shallow_evidence",
+        "shallow_evidence"
+      ]
+    },
+    {
+      "case_id": "fc_case_792_m4",
+      "source_report": "reports/mission_brain/adoption/792/m4_report.json",
+      "declared_status_after_825": "partial",
+      "quality_passed": false,
+      "satisfaction_passed": false,
+      "quality_reasons": [
+        "incomplete_checklist_evidence",
+        "insufficient_multistep_evidence"
+      ],
+      "insufficient_multistep_evidence_detected": true,
+      "incomplete_checklist_evidence_detected": true,
+      "evidence_depths": [
+        "shallow_evidence",
+        "shallow_evidence",
+        "shallow_evidence"
+      ]
+    }
+  ],
+  "false_completed_count": 0,
+  "critical_false_completed_count": 0,
+  "all_cases_non_completed": true
+}
