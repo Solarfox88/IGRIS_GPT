@@ -1,0 +1,81 @@
+{
+  "epic": 892,
+  "subissue": 896,
+  "title": "Advisory Rollout Invariant Verification",
+  "invariants_checked": 8,
+  "invariants_passed": 8,
+  "all_invariants_passed": true,
+  "auto_executable_violations": 0,
+  "loop_decision_violations": 0,
+  "is_gate_violations": 0,
+  "invariant_results": [
+    {
+      "id": "INV-1",
+      "name": "Default OFF",
+      "description": "No advisory with DEFAULT_ADVISORY_CONFIG (enabled=False)",
+      "passed": true,
+      "detail": "cycles_with_advisory=0/30"
+    },
+    {
+      "id": "INV-2",
+      "name": "Enabled \u2192 all in-scope cycles get advisory",
+      "description": "With advisory enabled, all 30 failed+partial cycles get advisory",
+      "passed": true,
+      "detail": "cycles_with_advisory=30/30"
+    },
+    {
+      "id": "INV-3",
+      "name": "Rollback removes advisory and bridge_diagnostics",
+      "description": "After rollback(), neither recovery_recommendation nor bridge_diagnostics remain",
+      "passed": true,
+      "detail": "advisory_remaining=0, bridge_remaining=0"
+    },
+    {
+      "id": "INV-4",
+      "name": "No auto-execution",
+      "description": "auto_executable=False for all advisory recommendations",
+      "passed": true,
+      "detail": "auto_exec_violations=0"
+    },
+    {
+      "id": "INV-5",
+      "name": "Loop decision unchanged",
+      "description": "bridge_diagnostics.affects_loop_decision=False for all",
+      "passed": true,
+      "detail": "loop_decision_violations=0"
+    },
+    {
+      "id": "INV-6",
+      "name": "Not a gate",
+      "description": "bridge_diagnostics.is_gate=False for all",
+      "passed": true,
+      "detail": "is_gate_violations=0"
+    },
+    {
+      "id": "INV-7",
+      "name": "Original fields preserved",
+      "description": "Enrichment is additive \u2014 no existing fields modified",
+      "passed": true,
+      "detail": "field_violation_count=0"
+    },
+    {
+      "id": "INV-8",
+      "name": "Scope filter: passed+completed excluded",
+      "description": "passed+completed runs do not receive advisory (no recovery needed)",
+      "passed": true,
+      "detail": "has_advisory=False (expected False)"
+    }
+  ],
+  "guardrails": {
+    "default_off": true,
+    "no_auto_execution": true,
+    "advisory_only": true,
+    "loop_decision_unchanged": true,
+    "rollback_immediate": true,
+    "original_fields_preserved": true,
+    "scope_filter_active": true
+  },
+  "evaluation": "passed",
+  "stop_reason": null,
+  "next_subissue": 897
+}

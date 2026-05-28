@@ -1,0 +1,79 @@
+{
+  "epic": 892,
+  "subissue": 894,
+  "title": "Advisory Integration \u2014 Report Enrichment Behind Feature Flag",
+  "test_cases_run": 5,
+  "test_cases_passed": 5,
+  "all_passed": true,
+  "rollback_tested": true,
+  "strip_advisory_tested": true,
+  "original_fields_preserved": true,
+  "auto_executable_violations": 0,
+  "case_results": [
+    {
+      "run_status": "failed",
+      "goal_status": "partial",
+      "report_type": "mission_execution",
+      "expected_advisory": true,
+      "has_advisory": true,
+      "match": true,
+      "invariants_ok": true,
+      "fields_preserved": true,
+      "config_enabled": true
+    },
+    {
+      "run_status": "blocked",
+      "goal_status": "partial",
+      "report_type": "shadow_cycle",
+      "expected_advisory": true,
+      "has_advisory": true,
+      "match": true,
+      "invariants_ok": true,
+      "fields_preserved": true,
+      "config_enabled": true
+    },
+    {
+      "run_status": "failed",
+      "goal_status": "failed",
+      "report_type": "diagnostic",
+      "expected_advisory": true,
+      "has_advisory": true,
+      "match": true,
+      "invariants_ok": true,
+      "fields_preserved": true,
+      "config_enabled": true
+    },
+    {
+      "run_status": "passed",
+      "goal_status": "completed",
+      "report_type": "mission_execution",
+      "expected_advisory": false,
+      "has_advisory": false,
+      "match": true,
+      "invariants_ok": true,
+      "fields_preserved": true,
+      "config_enabled": true
+    },
+    {
+      "run_status": "failed",
+      "goal_status": "partial",
+      "report_type": "mission_execution",
+      "expected_advisory": false,
+      "has_advisory": false,
+      "match": true,
+      "invariants_ok": true,
+      "fields_preserved": true,
+      "config_enabled": false
+    }
+  ],
+  "guardrails": {
+    "default_off": true,
+    "no_auto_execution": true,
+    "advisory_only": true,
+    "rollback_immediate": true,
+    "loop_decision_unchanged": true
+  },
+  "evaluation": "passed",
+  "stop_reason": null,
+  "next_subissue": 895
+}

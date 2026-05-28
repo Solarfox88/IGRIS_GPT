@@ -1,0 +1,60 @@
+{
+  "epic": 892,
+  "subissue": 893,
+  "title": "Advisory Rollout Scope, Report Targets and Feature Flag",
+  "scope": {
+    "target_run_statuses": [
+      "blocked",
+      "failed"
+    ],
+    "target_report_types": [
+      "diagnostic",
+      "mission_execution",
+      "shadow_cycle"
+    ],
+    "include_passed_goal_incomplete_default": false,
+    "scope_rationale": {
+      "failed": "Run failed \u2014 recovery guidance most relevant",
+      "blocked": "Run blocked \u2014 escalation guidance relevant",
+      "passed+completed": "NOT included \u2014 no recovery needed",
+      "passed+partial": "NOT included by default \u2014 anomaly case, conservative"
+    }
+  },
+  "scope_invariants": [
+    "enabled=False by default \u2014 never auto-enabled",
+    "is_gate=False always \u2014 never a gate",
+    "advisory_only=True always \u2014 never executed automatically",
+    "auto_executable=False always \u2014 never triggers actions",
+    "loop_decision unchanged \u2014 scope never modifies loop output"
+  ],
+  "shadow_data_run_distribution": {
+    "failed": 30
+  },
+  "shadow_data_goal_distribution": {
+    "partial": 30
+  },
+  "shadow_cycles_in_scope": 30,
+  "total_shadow_cycles": 30,
+  "feature_flag": {
+    "name": "ADVISORY_ROLLOUT_ENABLED",
+    "default": false,
+    "env_var": "ADVISORY_ROLLOUT_ENABLED",
+    "valid_values": [
+      "true",
+      "1",
+      "yes"
+    ],
+    "description": "Set to 'true' to enable advisory recommendations in reports. Default: off."
+  },
+  "guardrails": {
+    "default_off": true,
+    "no_mandatory_gate": true,
+    "no_auto_execution": true,
+    "advisory_only": true,
+    "loop_decision_unchanged": true,
+    "rollback_immediate": true
+  },
+  "evaluation": "passed",
+  "stop_reason": null,
+  "next_subissue": 894
+}

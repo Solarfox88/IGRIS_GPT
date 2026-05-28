@@ -1,0 +1,303 @@
+{
+  "epic": 892,
+  "subissue": 895,
+  "title": "Advisory Validation on Real Failed/Partial Runs",
+  "total_cycles": 30,
+  "cycles_with_advisory": 30,
+  "auto_executable_violations": 0,
+  "advisory_only_violations": 0,
+  "loop_decision_violations": 0,
+  "is_gate_violations": 0,
+  "validation_errors": 0,
+  "field_preservation_violations": 0,
+  "action_distribution": {
+    "continue_from_partial_progress": 30
+  },
+  "confidence_distribution": {
+    "high": 30
+  },
+  "risk_introduced_candidates": 0,
+  "potential_critical_false_completed": 0,
+  "per_cycle": [
+    {
+      "cycle_id": "batch1-c1",
+      "run_status": "failed",
+      "goal_status": "partial",
+      "has_advisory": true,
+      "action": "continue_from_partial_progress",
+      "confidence": "high",
+      "auto_executable": false
+    },
+    {
+      "cycle_id": "batch1-c2",
+      "run_status": "failed",
+      "goal_status": "partial",
+      "has_advisory": true,
+      "action": "continue_from_partial_progress",
+      "confidence": "high",
+      "auto_executable": false
+    },
+    {
+      "cycle_id": "batch1-c3",
+      "run_status": "failed",
+      "goal_status": "partial",
+      "has_advisory": true,
+      "action": "continue_from_partial_progress",
+      "confidence": "high",
+      "auto_executable": false
+    },
+    {
+      "cycle_id": "batch1-c4",
+      "run_status": "failed",
+      "goal_status": "partial",
+      "has_advisory": true,
+      "action": "continue_from_partial_progress",
+      "confidence": "high",
+      "auto_executable": false
+    },
+    {
+      "cycle_id": "batch1-c5",
+      "run_status": "failed",
+      "goal_status": "partial",
+      "has_advisory": true,
+      "action": "continue_from_partial_progress",
+      "confidence": "high",
+      "auto_executable": false
+    },
+    {
+      "cycle_id": "batch2-c1",
+      "run_status": "failed",
+      "goal_status": "partial",
+      "has_advisory": true,
+      "action": "continue_from_partial_progress",
+      "confidence": "high",
+      "auto_executable": false
+    },
+    {
+      "cycle_id": "batch2-c2",
+      "run_status": "failed",
+      "goal_status": "partial",
+      "has_advisory": true,
+      "action": "continue_from_partial_progress",
+      "confidence": "high",
+      "auto_executable": false
+    },
+    {
+      "cycle_id": "batch2-c3",
+      "run_status": "failed",
+      "goal_status": "partial",
+      "has_advisory": true,
+      "action": "continue_from_partial_progress",
+      "confidence": "high",
+      "auto_executable": false
+    },
+    {
+      "cycle_id": "batch2-c4",
+      "run_status": "failed",
+      "goal_status": "partial",
+      "has_advisory": true,
+      "action": "continue_from_partial_progress",
+      "confidence": "high",
+      "auto_executable": false
+    },
+    {
+      "cycle_id": "batch2-c5",
+      "run_status": "failed",
+      "goal_status": "partial",
+      "has_advisory": true,
+      "action": "continue_from_partial_progress",
+      "confidence": "high",
+      "auto_executable": false
+    },
+    {
+      "cycle_id": "ext-batch1-c11",
+      "run_status": "failed",
+      "goal_status": "partial",
+      "has_advisory": true,
+      "action": "continue_from_partial_progress",
+      "confidence": "high",
+      "auto_executable": false
+    },
+    {
+      "cycle_id": "ext-batch1-c12",
+      "run_status": "failed",
+      "goal_status": "partial",
+      "has_advisory": true,
+      "action": "continue_from_partial_progress",
+      "confidence": "high",
+      "auto_executable": false
+    },
+    {
+      "cycle_id": "ext-batch1-c13",
+      "run_status": "failed",
+      "goal_status": "partial",
+      "has_advisory": true,
+      "action": "continue_from_partial_progress",
+      "confidence": "high",
+      "auto_executable": false
+    },
+    {
+      "cycle_id": "ext-batch1-c14",
+      "run_status": "failed",
+      "goal_status": "partial",
+      "has_advisory": true,
+      "action": "continue_from_partial_progress",
+      "confidence": "high",
+      "auto_executable": false
+    },
+    {
+      "cycle_id": "ext-batch1-c15",
+      "run_status": "failed",
+      "goal_status": "partial",
+      "has_advisory": true,
+      "action": "continue_from_partial_progress",
+      "confidence": "high",
+      "auto_executable": false
+    },
+    {
+      "cycle_id": "ext-batch1-c16",
+      "run_status": "failed",
+      "goal_status": "partial",
+      "has_advisory": true,
+      "action": "continue_from_partial_progress",
+      "confidence": "high",
+      "auto_executable": false
+    },
+    {
+      "cycle_id": "ext-batch1-c17",
+      "run_status": "failed",
+      "goal_status": "partial",
+      "has_advisory": true,
+      "action": "continue_from_partial_progress",
+      "confidence": "high",
+      "auto_executable": false
+    },
+    {
+      "cycle_id": "ext-batch1-c18",
+      "run_status": "failed",
+      "goal_status": "partial",
+      "has_advisory": true,
+      "action": "continue_from_partial_progress",
+      "confidence": "high",
+      "auto_executable": false
+    },
+    {
+      "cycle_id": "ext-batch1-c19",
+      "run_status": "failed",
+      "goal_status": "partial",
+      "has_advisory": true,
+      "action": "continue_from_partial_progress",
+      "confidence": "high",
+      "auto_executable": false
+    },
+    {
+      "cycle_id": "ext-batch1-c20",
+      "run_status": "failed",
+      "goal_status": "partial",
+      "has_advisory": true,
+      "action": "continue_from_partial_progress",
+      "confidence": "high",
+      "auto_executable": false
+    },
+    {
+      "cycle_id": "ext-batch2-c21",
+      "run_status": "failed",
+      "goal_status": "partial",
+      "has_advisory": true,
+      "action": "continue_from_partial_progress",
+      "confidence": "high",
+      "auto_executable": false
+    },
+    {
+      "cycle_id": "ext-batch2-c22",
+      "run_status": "failed",
+      "goal_status": "partial",
+      "has_advisory": true,
+      "action": "continue_from_partial_progress",
+      "confidence": "high",
+      "auto_executable": false
+    },
+    {
+      "cycle_id": "ext-batch2-c23",
+      "run_status": "failed",
+      "goal_status": "partial",
+      "has_advisory": true,
+      "action": "continue_from_partial_progress",
+      "confidence": "high",
+      "auto_executable": false
+    },
+    {
+      "cycle_id": "ext-batch2-c24",
+      "run_status": "failed",
+      "goal_status": "partial",
+      "has_advisory": true,
+      "action": "continue_from_partial_progress",
+      "confidence": "high",
+      "auto_executable": false
+    },
+    {
+      "cycle_id": "ext-batch2-c25",
+      "run_status": "failed",
+      "goal_status": "partial",
+      "has_advisory": true,
+      "action": "continue_from_partial_progress",
+      "confidence": "high",
+      "auto_executable": false
+    },
+    {
+      "cycle_id": "ext-batch2-c26",
+      "run_status": "failed",
+      "goal_status": "partial",
+      "has_advisory": true,
+      "action": "continue_from_partial_progress",
+      "confidence": "high",
+      "auto_executable": false
+    },
+    {
+      "cycle_id": "ext-batch2-c27",
+      "run_status": "failed",
+      "goal_status": "partial",
+      "has_advisory": true,
+      "action": "continue_from_partial_progress",
+      "confidence": "high",
+      "auto_executable": false
+    },
+    {
+      "cycle_id": "ext-batch2-c28",
+      "run_status": "failed",
+      "goal_status": "partial",
+      "has_advisory": true,
+      "action": "continue_from_partial_progress",
+      "confidence": "high",
+      "auto_executable": false
+    },
+    {
+      "cycle_id": "ext-batch2-c29",
+      "run_status": "failed",
+      "goal_status": "partial",
+      "has_advisory": true,
+      "action": "continue_from_partial_progress",
+      "confidence": "high",
+      "auto_executable": false
+    },
+    {
+      "cycle_id": "ext-batch2-c30",
+      "run_status": "failed",
+      "goal_status": "partial",
+      "has_advisory": true,
+      "action": "continue_from_partial_progress",
+      "confidence": "high",
+      "auto_executable": false
+    }
+  ],
+  "guardrails": {
+    "default_off": true,
+    "no_auto_execution": true,
+    "advisory_only": true,
+    "loop_decision_unchanged": true,
+    "original_fields_preserved": true
+  },
+  "evaluation": "passed",
+  "stop_reason": null,
+  "next_subissue": 896
+}

@@ -1,0 +1,118 @@
+{
+  "epic": 892,
+  "subissue": 897,
+  "title": "Consolidated Advisory Rollout Report \u2014 Final Decision",
+  "subissues_completed": [
+    893,
+    894,
+    895,
+    896,
+    897
+  ],
+  "gate_chain_passed": true,
+  "auto_executable_violations": 0,
+  "loop_decision_violations": 0,
+  "is_gate_violations": 0,
+  "risk_introduced_candidates": 0,
+  "potential_critical_false_completed": 0,
+  "invariants_checked": 8,
+  "invariants_passed": 8,
+  "total_cycles_validated": 30,
+  "cycles_with_advisory": 30,
+  "scope": {
+    "target_run_statuses": [
+      "blocked",
+      "failed"
+    ],
+    "target_report_types": [
+      "diagnostic",
+      "mission_execution",
+      "shadow_cycle"
+    ],
+    "include_passed_goal_incomplete_default": false,
+    "scope_rationale": {
+      "failed": "Run failed \u2014 recovery guidance most relevant",
+      "blocked": "Run blocked \u2014 escalation guidance relevant",
+      "passed+completed": "NOT included \u2014 no recovery needed",
+      "passed+partial": "NOT included by default \u2014 anomaly case, conservative"
+    }
+  },
+  "final_decision": "candidate_for_broader_advisory_rollout",
+  "final_decision_rationale": "All safety gates passed. 8/8 invariants verified. 30/30 cycles validated with 0 violations. Scope is conservative (failed+blocked only, default OFF). Advisory output is additive, non-blocking, and immediately rollback-able. Decision: candidate_for_broader_advisory_rollout. This does NOT activate rollout. Activation requires explicit operator approval, integration into reporting pipeline, and validation on diverse run outcomes (including blocked status).",
+  "summary": "EPIC #892 complete. 8 invariants verified. 30 cycles validated. auto_executable_violations=0. loop_decision_violations=0. Final decision: candidate_for_broader_advisory_rollout. No auto-execution. No mandatory gate. Default off.",
+  "findings": [
+    {
+      "id": "F1",
+      "finding": "Advisory scope is conservative: failed+blocked only, default OFF",
+      "evidence": "target_run_statuses=['blocked', 'failed'], include_passed_goal_incomplete=False",
+      "impact": "positive"
+    },
+    {
+      "id": "F2",
+      "finding": "8/8 invariants verified",
+      "evidence": "INV-1 to INV-8 all passed: default_off, rollback, no_auto_exec, loop_unchanged, is_gate=False, fields_preserved, scope_filter, advisory_only.",
+      "impact": "positive"
+    },
+    {
+      "id": "F3",
+      "finding": "30/30 shadow cycles validated with 0 auto_exec and loop_decision violations",
+      "evidence": "cycles_with_advisory=30, auto_exec_viol=0, loop_viol=0, gate_viol=0",
+      "impact": "positive"
+    },
+    {
+      "id": "F4",
+      "finding": "Only 1 run_status (failed) exercised on real data \u2014 blocked not in shadow set",
+      "evidence": "All 30 shadow cycles are failed+partial. blocked status not represented in real data.",
+      "impact": "minor_gap"
+    },
+    {
+      "id": "F5",
+      "finding": "Rollback verified: disabling flag removes all advisory output immediately",
+      "evidence": "INV-3: rollback removes recovery_recommendation and bridge_diagnostics from all reports",
+      "impact": "positive"
+    }
+  ],
+  "recommendations": [
+    {
+      "id": "R1",
+      "recommendation": "Surface recovery_recommendation in execution reports via ADVISORY_ROLLOUT_ENABLED=true (opt-in)",
+      "rationale": "Safe, advisory-only, reversible. Adds recovery context to failed/blocked run reports.",
+      "requires_approval": true,
+      "scope": "reporting"
+    },
+    {
+      "id": "R2",
+      "recommendation": "Do NOT auto-execute any recovery recommendation",
+      "rationale": "Recommendations are advisory. Execution must always require explicit human/operator action.",
+      "requires_approval": false,
+      "scope": "constraint"
+    },
+    {
+      "id": "R3",
+      "recommendation": "Validate advisory on blocked runs before wider rollout",
+      "rationale": "All 30 shadow cycles are failed+partial. blocked status not exercised on real data.",
+      "requires_approval": false,
+      "scope": "validation"
+    },
+    {
+      "id": "R4",
+      "recommendation": "Do NOT enable advisory by default before diverse run data validation",
+      "rationale": "Only 1/9 recovery templates exercised on real data. Broader validation needed.",
+      "requires_approval": false,
+      "scope": "constraint"
+    }
+  ],
+  "guardrails": {
+    "advisory_only": true,
+    "no_auto_execution": true,
+    "default_off": true,
+    "no_mandatory_gate": true,
+    "no_rollout_activation": true,
+    "no_loop_modification": true,
+    "candidate_does_not_mean_activated": true,
+    "rollback_immediate": true
+  },
+  "evaluation": "passed",
+  "stop_reason": null,
+  "epic_status": "complete"
+}
