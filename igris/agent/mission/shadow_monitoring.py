@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections import Counter
 from typing import Any, Dict, Iterable, List
 
 
@@ -15,7 +16,38 @@ def _p95(values: List[float]) -> float:
     return round(arr[idx], 3)
 
 
+def _distribution(values: List[str]) -> Dict[str, int]:
+    """Return a {value: count} distribution dict, sorted by count descending."""
+    c = Counter(values)
+    return dict(sorted(c.items(), key=lambda x: -x[1]))
+
+
+def _top_n(distribution: Dict[str, int], n: int = 3) -> List[str]:
+    return list(distribution.keys())[:n]
+
+
+def _representativeness_score(rows: List[Dict[str, Any]]) -> float:
+    """Estimate sample representativeness 0–1 based on goal_class diversity.
+
+    Uses goal_class field if present.  Falls back to mismatch_class diversity
+    as a proxy when goal_class is absent.
+    """
+    classes = [str(r.get("goal_class") or r.get("mismatch_class") or "unknown") for r in rows]
+    if not classes:
+        return 0.0
+    unique = len(set(classes))
+    total = len(classes)
+    # Normalise: full diversity = 1.0 (every cycle different class),
+    # single class = 1/total.
+    return round(min(1.0, unique / max(1, min(total, 10))), 3)
+
+
 def aggregate_shadow_cycles(cycles: Iterable[Dict[str, Any]]) -> Dict[str, Any]:
+    """Aggregate per-cycle shadow records into batch metrics.
+
+    Backward-compatible: returns all original fields plus extended fields
+    added in epic #857 (Extended Shadow Monitoring).
+    """
     rows = list(cycles)
     total = len(rows)
     agreements = sum(1 for r in rows if bool(r.get("agreement", False)))
@@ -44,12 +76,23 @@ def aggregate_shadow_cycles(cycles: Iterable[Dict[str, Any]]) -> Dict[str, Any]:
     elif agreements >= max(1, int(0.8 * total)):
         final_readiness_trend = "improving"
 
+    # Extended metrics (Epic #857)
+    mismatch_classes = [str(r.get("mismatch_class") or "unknown") for r in rows if not r.get("agreement", False)]
+    disagreement_by_class = _distribution(mismatch_classes)
+    dominant_mismatch_classes = _top_n(disagreement_by_class, 3)
+
+    mb_decisions = [str(r.get("mission_brain_decision") or "unknown") for r in rows]
+    loop_decisions = [str(r.get("current_loop_decision") or "unknown") for r in rows]
+
+    rep_score = _representativeness_score(rows)
+
     return {
         "total_shadow_cycles": total,
         "mission_brain_decision": "mixed",
         "current_loop_decision": "mixed",
         "agreement_rate": round((agreements / total), 3) if total else 0.0,
         "disagreement_rate": round((disagreements / total), 3) if total else 0.0,
+        "disagreement_by_class": disagreement_by_class,
         "prevented_error_candidates": prevented,
         "risk_introduced_candidates": risk,
         "potential_false_completed": pfc,
@@ -67,5 +110,10 @@ def aggregate_shadow_cycles(cycles: Iterable[Dict[str, Any]]) -> Dict[str, Any]:
         },
         "rollback_path_status": rollback_path_status,
         "final_readiness_trend": final_readiness_trend,
+        "decision_distribution_mission_brain": _distribution(mb_decisions),
+        "decision_distribution_current_loop": _distribution(loop_decisions),
+        "dominant_mismatch_classes": dominant_mismatch_classes,
+        "sample_representativeness_score": rep_score,
+        "sample_representativeness_notes": "",
     }
 

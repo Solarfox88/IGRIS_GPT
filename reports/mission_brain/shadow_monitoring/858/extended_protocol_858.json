@@ -1,0 +1,58 @@
+{
+  "subissue": 858,
+  "epic": 857,
+  "title": "Extended Shadow Monitoring Protocol and Sample Plan",
+  "shadow_flag_default": false,
+  "mode_default": "shadow",
+  "rollback_to_wrapper_on_guardrail": true,
+  "allow_enforce_mode": false,
+  "rollback_path_status": "ok",
+  "planned_cycles": 30,
+  "batch_plan": [
+    {
+      "batch": 1,
+      "subissue": 859,
+      "cycles": "11-20",
+      "goal_classes": [
+        "policy_check",
+        "risk_assessment",
+        "planning",
+        "verification",
+        "loop_coherence",
+        "completion_boundary",
+        "goal_decomposition",
+        "test_coverage",
+        "git_safety",
+        "memory_saturation"
+      ]
+    },
+    {
+      "batch": 2,
+      "subissue": 860,
+      "cycles": "21-30",
+      "goal_classes": [
+        "policy_check",
+        "risk_assessment",
+        "ambiguous_goal",
+        "empty_context",
+        "conflicting_signals",
+        "multi_step_complex",
+        "simple_verification",
+        "regression_detection",
+        "dependency_check",
+        "edge_case"
+      ]
+    }
+  ],
+  "allowed_final_decisions": [
+    "keep shadow mode",
+    "extend monitoring again",
+    "start disagreement calibration",
+    "remediate again",
+    "do not integrate"
+  ],
+  "stop_conditions_verified": true,
+  "infrastructure_verified": true,
+  "evaluation": "passed",
+  "notes": "Protocol defined, schema extended, decision module updated, rollback path confirmed intact."
+}
