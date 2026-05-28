@@ -46,6 +46,8 @@ class MissionExecutionResult:
     stderr: str = ""
     success: bool = False
     evidence: str = ""
+    evidence_depth: str = "missing_evidence"
+    evidence_tags: List[str] = field(default_factory=list)
 
 
 @dataclass

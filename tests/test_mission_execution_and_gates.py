@@ -29,6 +29,8 @@ def test_action_translation_and_execution_dry_run():
     assert mission.execution_results
     assert all(result.success for result in mission.execution_results)
     assert all(result.evidence.startswith("dry-run") for result in mission.execution_results)
+    assert all(result.evidence_depth == "shallow_evidence" for result in mission.execution_results)
+    assert all("dry_run_evidence" in result.evidence_tags for result in mission.execution_results)
 
 
 def test_execution_blocks_blind_retry_without_differentiator():
@@ -66,6 +68,8 @@ def test_execution_missing_command_is_explicit_failure():
     assert all(not res.success for res in mission.execution_results)
     assert all(res.evidence == "missing-command" for res in mission.execution_results)
     assert all("missing command mapping" in res.stderr for res in mission.execution_results)
+    assert all(res.evidence_depth == "missing_evidence" for res in mission.execution_results)
+    assert all("missing_evidence" in res.evidence_tags for res in mission.execution_results)
 
 
 def test_execution_blocks_unsafe_command_by_policy():
@@ -83,15 +87,12 @@ def test_execution_non_dry_run_tracks_returncode():
     mission = execute_mission_actions(mission, command_map, dry_run=False)
     assert all(res.returncode == 0 for res in mission.execution_results)
     assert all(res.evidence == "process-executed" for res in mission.execution_results)
+    assert all("command_executed" in res.evidence_tags for res in mission.execution_results)
 
 
 def test_quality_and_satisfaction_gate_pass_path():
     mission = translate_checklist_to_actions(_build_mission())
-    mission = execute_mission_actions(
-        mission,
-        {action.id: f"echo ok-{action.id}" for action in mission.actions},
-        dry_run=True,
-    )
+    mission = execute_mission_actions(mission, {action.id: f"printf ok-{action.id} > /tmp/{action.id}.txt" for action in mission.actions}, dry_run=False)
     quality = evaluate_quality_gate(mission)
     mission.final_response = "architecture verification completed with evidence in x.py"
     satisfaction = evaluate_satisfaction_gate(mission)
@@ -111,8 +112,8 @@ def test_strategic_fail_even_when_technical_passes():
     )
     mission = execute_mission_actions(
         mission,
-        {action.id: f"echo ok-{action.id}" for action in mission.actions},
-        dry_run=True,
+        {action.id: f"printf ok-{action.id} > /tmp/{action.id}.txt" for action in mission.actions},
+        dry_run=False,
     )
     quality = evaluate_quality_gate(mission)
     mission.final_response = "Tests passed."
@@ -144,6 +145,7 @@ def test_action_verifier_reports_failures():
     mission.execution_results = []
     report = verify_actions(mission)
     assert report["passed"] is True
+    assert report["evidence_summary"]["insufficient_evidence_actions"] == []
 
 
 def test_quality_and_verifier_consume_blocked_execution_results():
@@ -157,3 +159,45 @@ def test_quality_and_verifier_consume_blocked_execution_results():
     quality = evaluate_quality_gate(mission)
     assert verify["passed"] is False
     assert quality["passed"] is False
+
+
+def test_test_command_generates_test_evidence_tags():
+    mission = translate_checklist_to_actions(_build_mission())
+    mission = execute_mission_actions(
+        mission,
+        {action.id: "python3 -m pytest --version >/dev/null 2>&1 || true" for action in mission.actions},
+        dry_run=False,
+        differentiator="per-action-test-evidence",
+    )
+    assert all("test_executed" in res.evidence_tags for res in mission.execution_results)
+    assert all("test_passed" in res.evidence_tags for res in mission.execution_results)
+    assert all(res.evidence_depth == "sufficient_evidence" for res in mission.execution_results)
+
+
+def test_file_and_report_update_evidence_tags():
+    mission = translate_checklist_to_actions(_build_mission())
+    command_map = {
+        action.id: f"printf report-{action.id} > /tmp/{action.id}.report.json"
+        for action in mission.actions
+    }
+    mission = execute_mission_actions(mission, command_map, dry_run=False)
+    assert all("artifact_changed" in res.evidence_tags for res in mission.execution_results)
+    assert all("file_updated" in res.evidence_tags for res in mission.execution_results)
+    assert all("report_updated" in res.evidence_tags for res in mission.execution_results)
+    assert all(res.evidence_depth == "sufficient_evidence" for res in mission.execution_results)
+
+
+def test_multi_step_shallow_evidence_not_completable():
+    mission = translate_checklist_to_actions(_build_mission())
+    mission = execute_mission_actions(
+        mission,
+        {action.id: f"echo shallow-{action.id}" for action in mission.actions},
+        dry_run=True,
+    )
+    quality = evaluate_quality_gate(mission)
+    mission.final_response = "verification completed with evidence in x.py"
+    satisfaction = evaluate_satisfaction_gate(mission)
+    mission = build_final_response(mission, quality, satisfaction)
+    assert quality["passed"] is False
+    assert any("insufficient action evidence depth" in g.lower() for g in quality["gaps"])
+    assert mission.status == "partial"
