@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any, Dict
 
 from igris.agent.mission.mission_orchestrator import run_mission_pipeline
+from igris.agent.mission.shadow_comparison import classify_mismatch
 
 
 def _loop_status_to_decision(loop_status: str, stop_reason: str) -> str:
@@ -59,6 +60,7 @@ def run_shadow_comparison(
         bool(compare_with_current_loop)
         and loop_decision != mission_brain_decision
     )
+    mismatch_class = classify_mismatch(loop_decision, mission_brain_decision)
     record: Dict[str, Any] = {
         "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         "loop_id": getattr(loop_result, "loop_id", ""),
@@ -67,6 +69,7 @@ def run_shadow_comparison(
         "loop_decision": loop_decision,
         "mission_brain_decision": mission_brain_decision,
         "decision_divergence": divergence,
+        "mismatch_class": mismatch_class,
         "quality_gate_passed": bool(mission_data.get("quality_gate_passed", False)),
         "satisfaction_gate_passed": bool(mission_data.get("satisfaction_gate_passed", False)),
         "evidence_depth_summary": _build_evidence_depth_summary(mission_data),
@@ -81,4 +84,3 @@ def run_shadow_comparison(
         record["shadow_record_path"] = str(out)
 
     return record
-

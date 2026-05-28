@@ -18,6 +18,8 @@
     "compare_with_current_loop": true,
     "telemetry_enabled": true,
     "rollback_to_wrapper_on_guardrail": true,
+    "auto_rollback_on_risky_mismatch": true,
+    "force_wrapper_mode": false,
     "allow_enforce_mode": false
   },
   "auto_commit": false,

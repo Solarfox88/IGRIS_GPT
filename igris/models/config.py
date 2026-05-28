@@ -56,6 +56,8 @@ class MissionBrainIntegrationConfig(BaseModel):
     compare_with_current_loop: bool = True
     telemetry_enabled: bool = True
     rollback_to_wrapper_on_guardrail: bool = True
+    auto_rollback_on_risky_mismatch: bool = True
+    force_wrapper_mode: bool = False
     # Hard safety guard: deep integration cannot become default without
     # explicit mandate.
     allow_enforce_mode: bool = False
@@ -120,6 +122,12 @@ class Config(BaseModel):
                 "IGRIS_MB_ROLLBACK_TO_WRAPPER_ON_GUARDRAIL", "true"
             ).lower()
             != "false",
+            auto_rollback_on_risky_mismatch=os.getenv(
+                "IGRIS_MB_AUTO_ROLLBACK_ON_RISKY_MISMATCH", "true"
+            ).lower()
+            != "false",
+            force_wrapper_mode=os.getenv("IGRIS_MB_FORCE_WRAPPER_MODE", "false").lower()
+            == "true",
             allow_enforce_mode=os.getenv("IGRIS_MB_ALLOW_ENFORCE_MODE", "false").lower()
             == "true",
         )
