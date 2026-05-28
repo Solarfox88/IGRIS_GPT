@@ -1,0 +1,32 @@
+{
+  "suite": "mission_brain_hardening_824_replay",
+  "cases": [
+    {
+      "case_id": "fc_case_791_m2",
+      "source_report": "reports/mission_brain/adoption/791/m2_report.json",
+      "declared_status_after_824": "partial",
+      "quality_passed": false,
+      "satisfaction_passed": false,
+      "insufficient_evidence_detected": true,
+      "evidence_depths": [
+        "shallow_evidence",
+        "shallow_evidence",
+        "shallow_evidence"
+      ]
+    },
+    {
+      "case_id": "fc_case_792_m4",
+      "source_report": "reports/mission_brain/adoption/792/m4_report.json",
+      "declared_status_after_824": "partial",
+      "quality_passed": false,
+      "satisfaction_passed": false,
+      "insufficient_evidence_detected": true,
+      "evidence_depths": [
+        "shallow_evidence",
+        "shallow_evidence",
+        "shallow_evidence"
+      ]
+    }
+  ],
+  "all_cases_diagnostic_partial_or_failed": true
+}
