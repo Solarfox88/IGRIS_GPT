@@ -33,6 +33,43 @@ def test_action_translation_and_execution_dry_run():
     assert all("dry_run_evidence" in result.evidence_tags for result in mission.execution_results)
 
 
+def test_single_step_sufficient_evidence_can_pass_quality_gate():
+    mission = understand_and_plan(
+        user_input="Verifica rapidamente lo stato missione",
+        project="igrisgpt",
+    )
+    mission = translate_checklist_to_actions(mission)
+    mission.requirements = mission.requirements[:1]
+    mission = execute_mission_actions(
+        mission,
+        {action.id: f"printf ok-{action.id} > /tmp/{action.id}.txt" for action in mission.actions},
+        dry_run=False,
+    )
+    quality = evaluate_quality_gate(mission)
+    assert len(mission.checklist) == 1
+    assert quality["passed"] is True
+
+
+def test_single_step_shallow_evidence_forces_quality_fail_and_partial():
+    mission = understand_and_plan(
+        user_input="Verifica rapidamente lo stato missione",
+        project="igrisgpt",
+    )
+    mission = translate_checklist_to_actions(mission)
+    mission = execute_mission_actions(
+        mission,
+        {action.id: f"echo shallow-{action.id}" for action in mission.actions},
+        dry_run=True,
+    )
+    quality = evaluate_quality_gate(mission)
+    mission.final_response = "verification completed with evidence"
+    satisfaction = evaluate_satisfaction_gate(mission)
+    mission = build_final_response(mission, quality, satisfaction)
+    assert quality["passed"] is False
+    assert "shallow_evidence" in quality.get("reasons", [])
+    assert mission.status == "partial"
+
+
 def test_execution_blocks_blind_retry_without_differentiator():
     mission = translate_checklist_to_actions(_build_mission())
     command_map = {action.id: "echo same" for action in mission.actions}
@@ -201,3 +238,36 @@ def test_multi_step_shallow_evidence_not_completable():
     assert quality["passed"] is False
     assert any("insufficient action evidence depth" in g.lower() for g in quality["gaps"])
     assert mission.status == "partial"
+
+
+def test_multi_step_all_sufficient_evidence_passes_quality():
+    mission = translate_checklist_to_actions(_build_mission())
+    mission = execute_mission_actions(
+        mission,
+        {action.id: f"printf ok-{action.id} > /tmp/{action.id}.txt" for action in mission.actions},
+        dry_run=False,
+    )
+    quality = evaluate_quality_gate(mission)
+    assert quality["passed"] is True
+    assert quality["reasons"] == []
+
+
+def test_multi_step_missing_evidence_fails_quality():
+    mission = translate_checklist_to_actions(_build_mission())
+    partial_map = {mission.actions[0].id: "printf only-one > /tmp/only-one.txt"}
+    mission = execute_mission_actions(mission, partial_map, dry_run=False)
+    quality = evaluate_quality_gate(mission)
+    assert quality["passed"] is False
+    assert "missing_evidence" in quality.get("reasons", [])
+
+
+def test_checklist_item_without_sufficient_action_evidence_fails_quality():
+    mission = translate_checklist_to_actions(_build_mission())
+    mission = execute_mission_actions(
+        mission,
+        {action.id: f"echo shallow-{action.id}" for action in mission.actions},
+        dry_run=True,
+    )
+    quality = evaluate_quality_gate(mission)
+    assert quality["passed"] is False
+    assert "incomplete_checklist_evidence" in quality.get("reasons", [])
