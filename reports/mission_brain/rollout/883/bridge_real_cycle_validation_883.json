@@ -1,0 +1,274 @@
+{
+  "epic": 880,
+  "subissue": 883,
+  "title": "Bridge Real Cycle Validation",
+  "total_cycles_validated": 30,
+  "validation_errors": 0,
+  "false_completed_count": 0,
+  "gate_violations": 0,
+  "combined_status_distribution": {
+    "technical_failure_with_goal_progress": 30
+  },
+  "next_action_recommendation_distribution": {
+    "recover_or_continue_from_partial_progress": 30
+  },
+  "reviewer_usefulness_score": 1.0,
+  "usefulness_threshold": 0.8,
+  "usefulness_threshold_met": true,
+  "dominant_next_action": "recover_or_continue_from_partial_progress",
+  "dominant_next_actionable": true,
+  "risk_introduced_candidates": 0,
+  "potential_false_completed": 0,
+  "potential_critical_false_completed": 0,
+  "per_cycle": [
+    {
+      "cycle_id": "batch1-c1",
+      "combined_status": "technical_failure_with_goal_progress",
+      "next_action": "recover_or_continue_from_partial_progress",
+      "is_gate": false,
+      "affects_loop": false,
+      "validation": "ok"
+    },
+    {
+      "cycle_id": "batch1-c2",
+      "combined_status": "technical_failure_with_goal_progress",
+      "next_action": "recover_or_continue_from_partial_progress",
+      "is_gate": false,
+      "affects_loop": false,
+      "validation": "ok"
+    },
+    {
+      "cycle_id": "batch1-c3",
+      "combined_status": "technical_failure_with_goal_progress",
+      "next_action": "recover_or_continue_from_partial_progress",
+      "is_gate": false,
+      "affects_loop": false,
+      "validation": "ok"
+    },
+    {
+      "cycle_id": "batch1-c4",
+      "combined_status": "technical_failure_with_goal_progress",
+      "next_action": "recover_or_continue_from_partial_progress",
+      "is_gate": false,
+      "affects_loop": false,
+      "validation": "ok"
+    },
+    {
+      "cycle_id": "batch1-c5",
+      "combined_status": "technical_failure_with_goal_progress",
+      "next_action": "recover_or_continue_from_partial_progress",
+      "is_gate": false,
+      "affects_loop": false,
+      "validation": "ok"
+    },
+    {
+      "cycle_id": "batch2-c1",
+      "combined_status": "technical_failure_with_goal_progress",
+      "next_action": "recover_or_continue_from_partial_progress",
+      "is_gate": false,
+      "affects_loop": false,
+      "validation": "ok"
+    },
+    {
+      "cycle_id": "batch2-c2",
+      "combined_status": "technical_failure_with_goal_progress",
+      "next_action": "recover_or_continue_from_partial_progress",
+      "is_gate": false,
+      "affects_loop": false,
+      "validation": "ok"
+    },
+    {
+      "cycle_id": "batch2-c3",
+      "combined_status": "technical_failure_with_goal_progress",
+      "next_action": "recover_or_continue_from_partial_progress",
+      "is_gate": false,
+      "affects_loop": false,
+      "validation": "ok"
+    },
+    {
+      "cycle_id": "batch2-c4",
+      "combined_status": "technical_failure_with_goal_progress",
+      "next_action": "recover_or_continue_from_partial_progress",
+      "is_gate": false,
+      "affects_loop": false,
+      "validation": "ok"
+    },
+    {
+      "cycle_id": "batch2-c5",
+      "combined_status": "technical_failure_with_goal_progress",
+      "next_action": "recover_or_continue_from_partial_progress",
+      "is_gate": false,
+      "affects_loop": false,
+      "validation": "ok"
+    },
+    {
+      "cycle_id": "ext-batch1-c11",
+      "combined_status": "technical_failure_with_goal_progress",
+      "next_action": "recover_or_continue_from_partial_progress",
+      "is_gate": false,
+      "affects_loop": false,
+      "validation": "ok"
+    },
+    {
+      "cycle_id": "ext-batch1-c12",
+      "combined_status": "technical_failure_with_goal_progress",
+      "next_action": "recover_or_continue_from_partial_progress",
+      "is_gate": false,
+      "affects_loop": false,
+      "validation": "ok"
+    },
+    {
+      "cycle_id": "ext-batch1-c13",
+      "combined_status": "technical_failure_with_goal_progress",
+      "next_action": "recover_or_continue_from_partial_progress",
+      "is_gate": false,
+      "affects_loop": false,
+      "validation": "ok"
+    },
+    {
+      "cycle_id": "ext-batch1-c14",
+      "combined_status": "technical_failure_with_goal_progress",
+      "next_action": "recover_or_continue_from_partial_progress",
+      "is_gate": false,
+      "affects_loop": false,
+      "validation": "ok"
+    },
+    {
+      "cycle_id": "ext-batch1-c15",
+      "combined_status": "technical_failure_with_goal_progress",
+      "next_action": "recover_or_continue_from_partial_progress",
+      "is_gate": false,
+      "affects_loop": false,
+      "validation": "ok"
+    },
+    {
+      "cycle_id": "ext-batch1-c16",
+      "combined_status": "technical_failure_with_goal_progress",
+      "next_action": "recover_or_continue_from_partial_progress",
+      "is_gate": false,
+      "affects_loop": false,
+      "validation": "ok"
+    },
+    {
+      "cycle_id": "ext-batch1-c17",
+      "combined_status": "technical_failure_with_goal_progress",
+      "next_action": "recover_or_continue_from_partial_progress",
+      "is_gate": false,
+      "affects_loop": false,
+      "validation": "ok"
+    },
+    {
+      "cycle_id": "ext-batch1-c18",
+      "combined_status": "technical_failure_with_goal_progress",
+      "next_action": "recover_or_continue_from_partial_progress",
+      "is_gate": false,
+      "affects_loop": false,
+      "validation": "ok"
+    },
+    {
+      "cycle_id": "ext-batch1-c19",
+      "combined_status": "technical_failure_with_goal_progress",
+      "next_action": "recover_or_continue_from_partial_progress",
+      "is_gate": false,
+      "affects_loop": false,
+      "validation": "ok"
+    },
+    {
+      "cycle_id": "ext-batch1-c20",
+      "combined_status": "technical_failure_with_goal_progress",
+      "next_action": "recover_or_continue_from_partial_progress",
+      "is_gate": false,
+      "affects_loop": false,
+      "validation": "ok"
+    },
+    {
+      "cycle_id": "ext-batch2-c21",
+      "combined_status": "technical_failure_with_goal_progress",
+      "next_action": "recover_or_continue_from_partial_progress",
+      "is_gate": false,
+      "affects_loop": false,
+      "validation": "ok"
+    },
+    {
+      "cycle_id": "ext-batch2-c22",
+      "combined_status": "technical_failure_with_goal_progress",
+      "next_action": "recover_or_continue_from_partial_progress",
+      "is_gate": false,
+      "affects_loop": false,
+      "validation": "ok"
+    },
+    {
+      "cycle_id": "ext-batch2-c23",
+      "combined_status": "technical_failure_with_goal_progress",
+      "next_action": "recover_or_continue_from_partial_progress",
+      "is_gate": false,
+      "affects_loop": false,
+      "validation": "ok"
+    },
+    {
+      "cycle_id": "ext-batch2-c24",
+      "combined_status": "technical_failure_with_goal_progress",
+      "next_action": "recover_or_continue_from_partial_progress",
+      "is_gate": false,
+      "affects_loop": false,
+      "validation": "ok"
+    },
+    {
+      "cycle_id": "ext-batch2-c25",
+      "combined_status": "technical_failure_with_goal_progress",
+      "next_action": "recover_or_continue_from_partial_progress",
+      "is_gate": false,
+      "affects_loop": false,
+      "validation": "ok"
+    },
+    {
+      "cycle_id": "ext-batch2-c26",
+      "combined_status": "technical_failure_with_goal_progress",
+      "next_action": "recover_or_continue_from_partial_progress",
+      "is_gate": false,
+      "affects_loop": false,
+      "validation": "ok"
+    },
+    {
+      "cycle_id": "ext-batch2-c27",
+      "combined_status": "technical_failure_with_goal_progress",
+      "next_action": "recover_or_continue_from_partial_progress",
+      "is_gate": false,
+      "affects_loop": false,
+      "validation": "ok"
+    },
+    {
+      "cycle_id": "ext-batch2-c28",
+      "combined_status": "technical_failure_with_goal_progress",
+      "next_action": "recover_or_continue_from_partial_progress",
+      "is_gate": false,
+      "affects_loop": false,
+      "validation": "ok"
+    },
+    {
+      "cycle_id": "ext-batch2-c29",
+      "combined_status": "technical_failure_with_goal_progress",
+      "next_action": "recover_or_continue_from_partial_progress",
+      "is_gate": false,
+      "affects_loop": false,
+      "validation": "ok"
+    },
+    {
+      "cycle_id": "ext-batch2-c30",
+      "combined_status": "technical_failure_with_goal_progress",
+      "next_action": "recover_or_continue_from_partial_progress",
+      "is_gate": false,
+      "affects_loop": false,
+      "validation": "ok"
+    }
+  ],
+  "guardrails": {
+    "is_gate_always_false": true,
+    "affects_loop_decision_always_false": true,
+    "no_false_completed": true,
+    "additive_only": true
+  },
+  "evaluation": "passed",
+  "stop_reason": null,
+  "next_subissue": 884
+}

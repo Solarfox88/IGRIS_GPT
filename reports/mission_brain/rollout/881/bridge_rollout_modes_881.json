@@ -1,0 +1,75 @@
+{
+  "epic": 880,
+  "subissue": 881,
+  "title": "Bridge Rollout Modes and Feature Flags",
+  "default_state": "disabled",
+  "default_enabled": false,
+  "default_is_gate": false,
+  "rollout_modes": [
+    {
+      "mode": "disabled",
+      "computes": false,
+      "emits_to_reports": false,
+      "is_gate": false,
+      "description": "Bridge completely off. Zero overhead. Default state."
+    },
+    {
+      "mode": "shadow_only",
+      "computes": true,
+      "emits_to_reports": false,
+      "is_gate": false,
+      "description": "Bridge computes but output not emitted to reports."
+    },
+    {
+      "mode": "diagnostic_only",
+      "computes": true,
+      "emits_to_reports": true,
+      "is_gate": false,
+      "description": "Bridge computes and emits to report diagnostics section. Informational only."
+    }
+  ],
+  "feature_flags": [
+    {
+      "name": "BRIDGE_DIAGNOSTIC_ENABLED",
+      "default": "false",
+      "env_var": "BRIDGE_DIAGNOSTIC_ENABLED"
+    },
+    {
+      "name": "BRIDGE_ROLLOUT_MODE",
+      "default": "disabled",
+      "env_var": "BRIDGE_ROLLOUT_MODE"
+    },
+    {
+      "name": "BRIDGE_LOG_ENABLED",
+      "default": "false",
+      "env_var": "BRIDGE_LOG_ENABLED"
+    }
+  ],
+  "rollback_procedure": {
+    "steps": [
+      "Set BRIDGE_DIAGNOSTIC_ENABLED=false (or unset)",
+      "Restart service \u2014 bridge off, zero overhead",
+      "Loop behavior identical to pre-bridge state"
+    ],
+    "reversible": true,
+    "data_loss": false,
+    "loop_behavior_changed": false,
+    "time_to_rollback": "immediate (env var + restart)"
+  },
+  "invariants": [
+    "is_gate is ALWAYS False",
+    "default_enabled is ALWAYS False",
+    "bridge output is ADDITIVE \u2014 never replaces existing fields",
+    "loop decision is NEVER derived from bridge output"
+  ],
+  "guardrails": {
+    "default_off": true,
+    "feature_flag_required": true,
+    "no_mandatory_gate": true,
+    "no_enable_by_default": true,
+    "rollback_reversible": true
+  },
+  "evaluation": "passed",
+  "stop_reason": null,
+  "next_subissue": 882
+}

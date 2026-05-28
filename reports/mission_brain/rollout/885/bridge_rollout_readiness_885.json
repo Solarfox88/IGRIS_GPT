@@ -1,0 +1,152 @@
+{
+  "epic": 880,
+  "subissue": 885,
+  "title": "Consolidated Rollout Readiness Report \u2014 Final Decision",
+  "subissues_completed": [
+    881,
+    882,
+    883,
+    884,
+    885
+  ],
+  "gate_chain_passed": true,
+  "risk_introduced_candidates": 0,
+  "potential_false_completed": 0,
+  "potential_critical_false_completed": 0,
+  "gate_violations": 0,
+  "false_completed_count": 0,
+  "total_cycles_validated": 30,
+  "reviewer_usefulness_score": 1.0,
+  "rollback_reversible": true,
+  "readiness_criteria": [
+    {
+      "criterion": "Feature flag default=off",
+      "met": true,
+      "required": true
+    },
+    {
+      "criterion": "is_gate always False",
+      "met": true,
+      "required": true
+    },
+    {
+      "criterion": "Rollback reversible",
+      "met": true,
+      "required": true
+    },
+    {
+      "criterion": "No false completed",
+      "met": true,
+      "required": true
+    },
+    {
+      "criterion": "No gate violations",
+      "met": true,
+      "required": true
+    },
+    {
+      "criterion": "No risk_introduced_candidates",
+      "met": true,
+      "required": true
+    },
+    {
+      "criterion": "usefulness >= 0.8",
+      "met": true,
+      "required": true
+    },
+    {
+      "criterion": "All cycles enriched correctly",
+      "met": true,
+      "required": true
+    },
+    {
+      "criterion": "Non-blocking (error resilient)",
+      "met": true,
+      "required": true
+    },
+    {
+      "criterion": "Loop decision unaffected",
+      "met": true,
+      "required": true
+    }
+  ],
+  "all_required_criteria_met": true,
+  "final_decision": "candidate_for_assisted_recovery_recommendations",
+  "final_decision_rationale": "All safety gates passed across 5 subissues. Bridge is production-safe as a diagnostic component: feature-flagged (default off), non-blocking, additive, rollback immediate. usefulness=1.0 on 30-cycle dataset. The next_action_recommendation (recover_or_continue_from_partial_progress) is actionable and more precise than a cold restart \u2014 it recovers goal-level information that the binary loop verdict discards. Decision: candidate_for_assisted_recovery_recommendations. This does NOT activate rollout. Activation requires explicit operator approval in a separate sprint, after validating diverse run outcome types.",
+  "summary": "EPIC #880 complete. 30 real cycles validated. reviewer_usefulness_score=1.0. false_completed_count=0, gate_violations=0, risk=0. Final decision: candidate_for_assisted_recovery_recommendations. Bridge is diagnostic-only advisory. No rollout. No mandatory gate. Default off. Rollback immediate.",
+  "findings": [
+    {
+      "id": "F1",
+      "finding": "Bridge is production-safe as a diagnostic component",
+      "evidence": "Feature-flagged (default off), non-blocking, additive only, rollback immediate.",
+      "impact": "positive"
+    },
+    {
+      "id": "F2",
+      "finding": "Bridge produces high-value output on the 30-cycle dataset",
+      "evidence": "usefulness=1.0. All 30 cycles: technical_failure_with_goal_progress \u2192 recover_from_partial.",
+      "impact": "positive"
+    },
+    {
+      "id": "F3",
+      "finding": "Dataset homogeneity limits validation breadth",
+      "evidence": "30/30 cycles are (failed, partial). Only 1 of 16 bridge mapping pairs exercised on real data. Diverse run outcomes needed before full rollout.",
+      "impact": "minor_gap"
+    },
+    {
+      "id": "F4",
+      "finding": "Recovery recommendation is actionable and non-trivial",
+      "evidence": "recover_or_continue_from_partial_progress is more precise than a cold restart. It saves goal-level progress context that the binary loop verdict discards.",
+      "impact": "positive"
+    },
+    {
+      "id": "F5",
+      "finding": "No false completed signals across all 30 cycles",
+      "evidence": "false_completed_count=0. combined=completed requires run=passed AND goal=completed.",
+      "impact": "positive"
+    }
+  ],
+  "recommendations": [
+    {
+      "id": "R1",
+      "recommendation": "Surface bridge_diagnostics in execution reports (diagnostic_only mode, opt-in)",
+      "rationale": "Safe, non-blocking, reversible. Adds goal-level context to run-level reports.",
+      "requires_approval": true,
+      "scope": "reporting"
+    },
+    {
+      "id": "R2",
+      "recommendation": "Use next_action_recommendation as advisory input to recovery planner",
+      "rationale": "Not a gate \u2014 an input. Recovery planner can use it or ignore it.",
+      "requires_approval": true,
+      "scope": "recovery_planning"
+    },
+    {
+      "id": "R3",
+      "recommendation": "Validate bridge on diverse run outcomes before expanding rollout",
+      "rationale": "Only 1/16 pairs tested on real data. Collect failed+completed, passed+partial, etc.",
+      "requires_approval": false,
+      "scope": "validation"
+    },
+    {
+      "id": "R4",
+      "recommendation": "Do NOT enable bridge as mandatory gate or default behavior",
+      "rationale": "Bridge is advisory/diagnostic. Decisions remain with the loop.",
+      "requires_approval": false,
+      "scope": "constraint"
+    }
+  ],
+  "guardrails": {
+    "default_off": true,
+    "feature_flag_required": true,
+    "no_mandatory_gate": true,
+    "no_enable_by_default": true,
+    "no_rollout_activation": true,
+    "no_integration_without_approval": true,
+    "candidate_does_not_mean_activated": true,
+    "loop_decision_unaffected": true
+  },
+  "evaluation": "passed",
+  "stop_reason": null,
+  "epic_status": "complete"
+}

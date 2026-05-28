@@ -1,0 +1,33 @@
+{
+  "epic": 880,
+  "subissue": 882,
+  "title": "Bridge Report Enrichment \u2014 Non-blocking Mode",
+  "total_cycles_enriched": 30,
+  "combined_status_distribution": {
+    "technical_failure_with_goal_progress": 30
+  },
+  "is_gate_violations": 0,
+  "affects_loop_decision_violations": 0,
+  "validation_results": {
+    "default_config_no_enrichment": true,
+    "shadow_config_no_enrichment": true,
+    "diagnostic_config_enriches": true,
+    "original_fields_preserved": true,
+    "strip_restores_original": true,
+    "error_resilient": true,
+    "is_gate_always_false": true,
+    "affects_loop_decision_always_false": true
+  },
+  "risk_introduced_candidates": 0,
+  "potential_critical_false_completed": 0,
+  "guardrails": {
+    "additive_only": true,
+    "non_blocking": true,
+    "feature_flagged": true,
+    "is_gate": false,
+    "affects_loop_decision": false
+  },
+  "evaluation": "passed",
+  "stop_reason": null,
+  "next_subissue": 883
+}

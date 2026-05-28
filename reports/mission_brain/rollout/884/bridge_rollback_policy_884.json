@@ -1,0 +1,75 @@
+{
+  "epic": 880,
+  "subissue": 884,
+  "title": "Bridge Rollback and Fallback Policy",
+  "rollback_steps": [
+    {
+      "step": 1,
+      "action": "Set BRIDGE_DIAGNOSTIC_ENABLED=false (or unset the env var)",
+      "effect": "BridgeConfig.enabled=False, should_emit=False",
+      "loop_impact": "none"
+    },
+    {
+      "step": 2,
+      "action": "Restart the IGRIS service",
+      "effect": "bridge_reporter.enrich_report() returns original reports unchanged",
+      "loop_impact": "none"
+    },
+    {
+      "step": 3,
+      "action": "Optionally strip existing bridge_diagnostics from stored reports",
+      "effect": "strip_bridge_diagnostics() removes the key; dict otherwise identical",
+      "loop_impact": "none"
+    }
+  ],
+  "fallback_policies": [
+    {
+      "scenario": "Bridge computation raises an exception",
+      "policy": "Return original report unchanged (non-blocking)",
+      "loop_impact": "none",
+      "data_loss": false
+    },
+    {
+      "scenario": "Bridge exceeds latency budget (max_latency_budget_ms)",
+      "policy": "Return original report unchanged (skip enrichment silently)",
+      "loop_impact": "none",
+      "data_loss": false
+    },
+    {
+      "scenario": "BRIDGE_DIAGNOSTIC_ENABLED env var not set",
+      "policy": "DEFAULT_BRIDGE_CONFIG (disabled) \u2014 no enrichment ever",
+      "loop_impact": "none",
+      "data_loss": false
+    },
+    {
+      "scenario": "Invalid run_status or goal_status input",
+      "policy": "Normalized to 'unknown' \u2192 insufficient_context (safe fallback)",
+      "loop_impact": "none",
+      "data_loss": false
+    }
+  ],
+  "validation_results": {
+    "strip_restores_original": true,
+    "default_config_never_enriches": true,
+    "exception_returns_original": true,
+    "rollback_reversible": true,
+    "rollback_data_loss": false,
+    "loop_behavior_unchanged_on_rollback": true
+  },
+  "rollback_properties": {
+    "reversible": true,
+    "data_loss": false,
+    "immediate": true,
+    "loop_decision_impact": "none",
+    "time_estimate": "env var change + service restart (<30s)"
+  },
+  "guardrails": {
+    "no_mandatory_gate": true,
+    "default_off": true,
+    "non_blocking": true,
+    "additive_only": true
+  },
+  "evaluation": "passed",
+  "stop_reason": null,
+  "next_subissue": 885
+}
