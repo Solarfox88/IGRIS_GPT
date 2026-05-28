@@ -1,0 +1,99 @@
+{
+  "epic": 886,
+  "subissue": 887,
+  "title": "Recovery Recommendation Taxonomy",
+  "recovery_actions": [
+    "continue_from_partial_progress",
+    "diagnose_failure",
+    "insufficient_context_request",
+    "mark_complete",
+    "request_context",
+    "rerun_with_differentiator",
+    "review_anomaly",
+    "unblock_then_continue",
+    "unblock_then_diagnose"
+  ],
+  "templates_count": 9,
+  "covered_combined_statuses": [
+    "blocked_goal_failed",
+    "blocked_with_goal_progress",
+    "completed",
+    "goal_complete_run_blocked",
+    "goal_complete_run_failed",
+    "hard_failure",
+    "insufficient_context",
+    "technical_failure_with_goal_progress",
+    "technical_success_but_goal_incomplete"
+  ],
+  "auto_executable_violations": 0,
+  "all_advisory_only": true,
+  "taxonomy_summary": [
+    {
+      "combined_status": "blocked_goal_failed",
+      "action": "unblock_then_diagnose",
+      "confidence": "medium",
+      "auto_executable": false
+    },
+    {
+      "combined_status": "blocked_with_goal_progress",
+      "action": "unblock_then_continue",
+      "confidence": "high",
+      "auto_executable": false
+    },
+    {
+      "combined_status": "completed",
+      "action": "mark_complete",
+      "confidence": "high",
+      "auto_executable": false
+    },
+    {
+      "combined_status": "goal_complete_run_blocked",
+      "action": "review_anomaly",
+      "confidence": "low",
+      "auto_executable": false
+    },
+    {
+      "combined_status": "goal_complete_run_failed",
+      "action": "review_anomaly",
+      "confidence": "low",
+      "auto_executable": false
+    },
+    {
+      "combined_status": "hard_failure",
+      "action": "diagnose_failure",
+      "confidence": "high",
+      "auto_executable": false
+    },
+    {
+      "combined_status": "insufficient_context",
+      "action": "request_context",
+      "confidence": "low",
+      "auto_executable": false
+    },
+    {
+      "combined_status": "technical_failure_with_goal_progress",
+      "action": "continue_from_partial_progress",
+      "confidence": "high",
+      "auto_executable": false
+    },
+    {
+      "combined_status": "technical_success_but_goal_incomplete",
+      "action": "rerun_with_differentiator",
+      "confidence": "medium",
+      "auto_executable": false
+    }
+  ],
+  "invariants": [
+    "auto_executable is ALWAYS False",
+    "advisory_only is ALWAYS True",
+    "safe_next_action is non-empty for all templates"
+  ],
+  "guardrails": {
+    "advisory_only": true,
+    "no_auto_execution": true,
+    "default_off": true
+  },
+  "evaluation": "passed",
+  "stop_reason": null,
+  "next_subissue": 888
+}

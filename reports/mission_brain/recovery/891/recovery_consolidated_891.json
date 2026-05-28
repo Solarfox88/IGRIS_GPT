@@ -1,0 +1,97 @@
+{
+  "epic": 886,
+  "subissue": 891,
+  "title": "Consolidated Advisory Readiness Report \u2014 Final Decision",
+  "subissues_completed": [
+    887,
+    888,
+    889,
+    890,
+    891
+  ],
+  "gate_chain_passed": true,
+  "risk_introduced_candidates": 0,
+  "potential_false_completed": 0,
+  "potential_critical_false_completed": 0,
+  "auto_executable_violations": 0,
+  "templates_count": 9,
+  "total_cycles_validated": 30,
+  "evidence_complete_count": 20,
+  "final_decision": "candidate_for_advisory_rollout",
+  "final_decision_rationale": "All safety gates passed. 9 recovery templates defined, all advisory-only, auto_executable=False everywhere. 30 cycles validated with 0 auto_exec violations. Dominant recommendation (continue_from_partial_progress) is actionable and non-trivial: it distinguishes targeted recovery from cold restart. Decision: candidate_for_advisory_rollout. This does NOT activate rollout. Activation requires explicit operator approval and integration into reporting pipeline.",
+  "summary": "EPIC #886 complete. 9 recovery templates, all advisory-only. 30 cycles validated. auto_executable_violations=0. Final decision: candidate_for_advisory_rollout. No auto-execution. No mandatory gate. Default off.",
+  "findings": [
+    {
+      "id": "F1",
+      "finding": "All 9 recovery templates are advisory-only with auto_executable=False",
+      "evidence": "templates_count=9, auto_executable_violations=0.",
+      "impact": "positive"
+    },
+    {
+      "id": "F2",
+      "finding": "30/30 cycles receive a valid recovery recommendation",
+      "evidence": "total_cycles=30, cycles_with_recommendation=30.",
+      "impact": "positive"
+    },
+    {
+      "id": "F3",
+      "finding": "Dominant recommendation: continue_from_partial_progress (high confidence)",
+      "evidence": "action_distribution={'continue_from_partial_progress': 30}.",
+      "impact": "positive"
+    },
+    {
+      "id": "F4",
+      "finding": "Evidence completeness: 20/30 cycles (new) have full evidence; 10 (baseline) are partial",
+      "evidence": "evidence_complete_count=20. Baseline cycles lack goal_class.",
+      "impact": "minor_gap"
+    },
+    {
+      "id": "F5",
+      "finding": "No auto-execution paths exist anywhere in the module",
+      "evidence": "auto_executable_violations=0 across all templates and all cycles.",
+      "impact": "positive"
+    }
+  ],
+  "recommendations": [
+    {
+      "id": "R1",
+      "recommendation": "Surface recovery_recommendation in execution reports (diagnostic_only mode, opt-in)",
+      "rationale": "Safe, advisory-only, reversible. Adds recovery context beyond raw loop failure.",
+      "requires_approval": true,
+      "scope": "reporting"
+    },
+    {
+      "id": "R2",
+      "recommendation": "Do NOT auto-execute any recovery recommendation",
+      "rationale": "Recommendations are advisory. Execution must always require explicit human/operator action.",
+      "requires_approval": false,
+      "scope": "constraint"
+    },
+    {
+      "id": "R3",
+      "recommendation": "Backfill goal_class in baseline cycles to improve evidence completeness",
+      "rationale": "10 baseline cycles lack goal_class \u2192 evidence_missing for required fields.",
+      "requires_approval": false,
+      "scope": "data_quality"
+    },
+    {
+      "id": "R4",
+      "recommendation": "Validate recovery recommendations on diverse run outcomes before expanded rollout",
+      "rationale": "30/30 cycles are (failed, partial) \u2014 only 1 of 9 templates exercised on real data.",
+      "requires_approval": false,
+      "scope": "validation"
+    }
+  ],
+  "guardrails": {
+    "advisory_only": true,
+    "no_auto_execution": true,
+    "default_off": true,
+    "no_mandatory_gate": true,
+    "no_rollout_activation": true,
+    "no_loop_modification": true,
+    "candidate_does_not_mean_activated": true
+  },
+  "evaluation": "passed",
+  "stop_reason": null,
+  "epic_status": "complete"
+}

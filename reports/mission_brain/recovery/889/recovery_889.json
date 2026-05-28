@@ -1,0 +1,489 @@
+{
+  "epic": 886,
+  "subissue": 889,
+  "title": "Feature Flag Integration",
+  "total_cycles": 30,
+  "cycles_with_recommendation": 30,
+  "auto_executable_violations": 0,
+  "validation_errors": 0,
+  "evidence_complete_count": 20,
+  "evidence_partial_count": 10,
+  "action_distribution": {
+    "continue_from_partial_progress": 30
+  },
+  "confidence_distribution": {
+    "high": 30
+  },
+  "risk_introduced_candidates": 0,
+  "potential_false_completed": 0,
+  "potential_critical_false_completed": 0,
+  "module_validation": {
+    "default_no_recommendation": true,
+    "diagnostic_has_recommendation": true,
+    "original_preserved": true,
+    "strip_removes_recommendation": true,
+    "feature_flag_controls_visibility": true
+  },
+  "per_cycle": [
+    {
+      "cycle_id": "batch1-c1",
+      "combined_status": "technical_failure_with_goal_progress",
+      "action": "continue_from_partial_progress",
+      "confidence": "high",
+      "evidence_present": [
+        "mission_brain_decision",
+        "current_loop_decision",
+        "mismatch_class (optional)"
+      ],
+      "evidence_missing": [
+        "goal_class"
+      ],
+      "auto_executable": false
+    },
+    {
+      "cycle_id": "batch1-c2",
+      "combined_status": "technical_failure_with_goal_progress",
+      "action": "continue_from_partial_progress",
+      "confidence": "high",
+      "evidence_present": [
+        "mission_brain_decision",
+        "current_loop_decision",
+        "mismatch_class (optional)"
+      ],
+      "evidence_missing": [
+        "goal_class"
+      ],
+      "auto_executable": false
+    },
+    {
+      "cycle_id": "batch1-c3",
+      "combined_status": "technical_failure_with_goal_progress",
+      "action": "continue_from_partial_progress",
+      "confidence": "high",
+      "evidence_present": [
+        "mission_brain_decision",
+        "current_loop_decision",
+        "mismatch_class (optional)"
+      ],
+      "evidence_missing": [
+        "goal_class"
+      ],
+      "auto_executable": false
+    },
+    {
+      "cycle_id": "batch1-c4",
+      "combined_status": "technical_failure_with_goal_progress",
+      "action": "continue_from_partial_progress",
+      "confidence": "high",
+      "evidence_present": [
+        "mission_brain_decision",
+        "current_loop_decision",
+        "mismatch_class (optional)"
+      ],
+      "evidence_missing": [
+        "goal_class"
+      ],
+      "auto_executable": false
+    },
+    {
+      "cycle_id": "batch1-c5",
+      "combined_status": "technical_failure_with_goal_progress",
+      "action": "continue_from_partial_progress",
+      "confidence": "high",
+      "evidence_present": [
+        "mission_brain_decision",
+        "current_loop_decision",
+        "mismatch_class (optional)"
+      ],
+      "evidence_missing": [
+        "goal_class"
+      ],
+      "auto_executable": false
+    },
+    {
+      "cycle_id": "batch2-c1",
+      "combined_status": "technical_failure_with_goal_progress",
+      "action": "continue_from_partial_progress",
+      "confidence": "high",
+      "evidence_present": [
+        "mission_brain_decision",
+        "current_loop_decision",
+        "mismatch_class (optional)"
+      ],
+      "evidence_missing": [
+        "goal_class"
+      ],
+      "auto_executable": false
+    },
+    {
+      "cycle_id": "batch2-c2",
+      "combined_status": "technical_failure_with_goal_progress",
+      "action": "continue_from_partial_progress",
+      "confidence": "high",
+      "evidence_present": [
+        "mission_brain_decision",
+        "current_loop_decision",
+        "mismatch_class (optional)"
+      ],
+      "evidence_missing": [
+        "goal_class"
+      ],
+      "auto_executable": false
+    },
+    {
+      "cycle_id": "batch2-c3",
+      "combined_status": "technical_failure_with_goal_progress",
+      "action": "continue_from_partial_progress",
+      "confidence": "high",
+      "evidence_present": [
+        "mission_brain_decision",
+        "current_loop_decision",
+        "mismatch_class (optional)"
+      ],
+      "evidence_missing": [
+        "goal_class"
+      ],
+      "auto_executable": false
+    },
+    {
+      "cycle_id": "batch2-c4",
+      "combined_status": "technical_failure_with_goal_progress",
+      "action": "continue_from_partial_progress",
+      "confidence": "high",
+      "evidence_present": [
+        "mission_brain_decision",
+        "current_loop_decision",
+        "mismatch_class (optional)"
+      ],
+      "evidence_missing": [
+        "goal_class"
+      ],
+      "auto_executable": false
+    },
+    {
+      "cycle_id": "batch2-c5",
+      "combined_status": "technical_failure_with_goal_progress",
+      "action": "continue_from_partial_progress",
+      "confidence": "high",
+      "evidence_present": [
+        "mission_brain_decision",
+        "current_loop_decision",
+        "mismatch_class (optional)"
+      ],
+      "evidence_missing": [
+        "goal_class"
+      ],
+      "auto_executable": false
+    },
+    {
+      "cycle_id": "ext-batch1-c11",
+      "combined_status": "technical_failure_with_goal_progress",
+      "action": "continue_from_partial_progress",
+      "confidence": "high",
+      "evidence_present": [
+        "mission_brain_decision",
+        "goal_class",
+        "current_loop_decision",
+        "goal_complexity (optional)",
+        "mismatch_class (optional)"
+      ],
+      "evidence_missing": [],
+      "auto_executable": false
+    },
+    {
+      "cycle_id": "ext-batch1-c12",
+      "combined_status": "technical_failure_with_goal_progress",
+      "action": "continue_from_partial_progress",
+      "confidence": "high",
+      "evidence_present": [
+        "mission_brain_decision",
+        "goal_class",
+        "current_loop_decision",
+        "goal_complexity (optional)",
+        "mismatch_class (optional)"
+      ],
+      "evidence_missing": [],
+      "auto_executable": false
+    },
+    {
+      "cycle_id": "ext-batch1-c13",
+      "combined_status": "technical_failure_with_goal_progress",
+      "action": "continue_from_partial_progress",
+      "confidence": "high",
+      "evidence_present": [
+        "mission_brain_decision",
+        "goal_class",
+        "current_loop_decision",
+        "goal_complexity (optional)",
+        "mismatch_class (optional)"
+      ],
+      "evidence_missing": [],
+      "auto_executable": false
+    },
+    {
+      "cycle_id": "ext-batch1-c14",
+      "combined_status": "technical_failure_with_goal_progress",
+      "action": "continue_from_partial_progress",
+      "confidence": "high",
+      "evidence_present": [
+        "mission_brain_decision",
+        "goal_class",
+        "current_loop_decision",
+        "goal_complexity (optional)",
+        "mismatch_class (optional)"
+      ],
+      "evidence_missing": [],
+      "auto_executable": false
+    },
+    {
+      "cycle_id": "ext-batch1-c15",
+      "combined_status": "technical_failure_with_goal_progress",
+      "action": "continue_from_partial_progress",
+      "confidence": "high",
+      "evidence_present": [
+        "mission_brain_decision",
+        "goal_class",
+        "current_loop_decision",
+        "goal_complexity (optional)",
+        "mismatch_class (optional)"
+      ],
+      "evidence_missing": [],
+      "auto_executable": false
+    },
+    {
+      "cycle_id": "ext-batch1-c16",
+      "combined_status": "technical_failure_with_goal_progress",
+      "action": "continue_from_partial_progress",
+      "confidence": "high",
+      "evidence_present": [
+        "mission_brain_decision",
+        "goal_class",
+        "current_loop_decision",
+        "goal_complexity (optional)",
+        "mismatch_class (optional)"
+      ],
+      "evidence_missing": [],
+      "auto_executable": false
+    },
+    {
+      "cycle_id": "ext-batch1-c17",
+      "combined_status": "technical_failure_with_goal_progress",
+      "action": "continue_from_partial_progress",
+      "confidence": "high",
+      "evidence_present": [
+        "mission_brain_decision",
+        "goal_class",
+        "current_loop_decision",
+        "goal_complexity (optional)",
+        "mismatch_class (optional)"
+      ],
+      "evidence_missing": [],
+      "auto_executable": false
+    },
+    {
+      "cycle_id": "ext-batch1-c18",
+      "combined_status": "technical_failure_with_goal_progress",
+      "action": "continue_from_partial_progress",
+      "confidence": "high",
+      "evidence_present": [
+        "mission_brain_decision",
+        "goal_class",
+        "current_loop_decision",
+        "goal_complexity (optional)",
+        "mismatch_class (optional)"
+      ],
+      "evidence_missing": [],
+      "auto_executable": false
+    },
+    {
+      "cycle_id": "ext-batch1-c19",
+      "combined_status": "technical_failure_with_goal_progress",
+      "action": "continue_from_partial_progress",
+      "confidence": "high",
+      "evidence_present": [
+        "mission_brain_decision",
+        "goal_class",
+        "current_loop_decision",
+        "goal_complexity (optional)",
+        "mismatch_class (optional)"
+      ],
+      "evidence_missing": [],
+      "auto_executable": false
+    },
+    {
+      "cycle_id": "ext-batch1-c20",
+      "combined_status": "technical_failure_with_goal_progress",
+      "action": "continue_from_partial_progress",
+      "confidence": "high",
+      "evidence_present": [
+        "mission_brain_decision",
+        "goal_class",
+        "current_loop_decision",
+        "goal_complexity (optional)",
+        "mismatch_class (optional)"
+      ],
+      "evidence_missing": [],
+      "auto_executable": false
+    },
+    {
+      "cycle_id": "ext-batch2-c21",
+      "combined_status": "technical_failure_with_goal_progress",
+      "action": "continue_from_partial_progress",
+      "confidence": "high",
+      "evidence_present": [
+        "mission_brain_decision",
+        "goal_class",
+        "current_loop_decision",
+        "goal_complexity (optional)",
+        "mismatch_class (optional)"
+      ],
+      "evidence_missing": [],
+      "auto_executable": false
+    },
+    {
+      "cycle_id": "ext-batch2-c22",
+      "combined_status": "technical_failure_with_goal_progress",
+      "action": "continue_from_partial_progress",
+      "confidence": "high",
+      "evidence_present": [
+        "mission_brain_decision",
+        "goal_class",
+        "current_loop_decision",
+        "goal_complexity (optional)",
+        "mismatch_class (optional)"
+      ],
+      "evidence_missing": [],
+      "auto_executable": false
+    },
+    {
+      "cycle_id": "ext-batch2-c23",
+      "combined_status": "technical_failure_with_goal_progress",
+      "action": "continue_from_partial_progress",
+      "confidence": "high",
+      "evidence_present": [
+        "mission_brain_decision",
+        "goal_class",
+        "current_loop_decision",
+        "goal_complexity (optional)",
+        "mismatch_class (optional)"
+      ],
+      "evidence_missing": [],
+      "auto_executable": false
+    },
+    {
+      "cycle_id": "ext-batch2-c24",
+      "combined_status": "technical_failure_with_goal_progress",
+      "action": "continue_from_partial_progress",
+      "confidence": "high",
+      "evidence_present": [
+        "mission_brain_decision",
+        "goal_class",
+        "current_loop_decision",
+        "goal_complexity (optional)",
+        "mismatch_class (optional)"
+      ],
+      "evidence_missing": [],
+      "auto_executable": false
+    },
+    {
+      "cycle_id": "ext-batch2-c25",
+      "combined_status": "technical_failure_with_goal_progress",
+      "action": "continue_from_partial_progress",
+      "confidence": "high",
+      "evidence_present": [
+        "mission_brain_decision",
+        "goal_class",
+        "current_loop_decision",
+        "goal_complexity (optional)",
+        "mismatch_class (optional)"
+      ],
+      "evidence_missing": [],
+      "auto_executable": false
+    },
+    {
+      "cycle_id": "ext-batch2-c26",
+      "combined_status": "technical_failure_with_goal_progress",
+      "action": "continue_from_partial_progress",
+      "confidence": "high",
+      "evidence_present": [
+        "mission_brain_decision",
+        "goal_class",
+        "current_loop_decision",
+        "goal_complexity (optional)",
+        "mismatch_class (optional)"
+      ],
+      "evidence_missing": [],
+      "auto_executable": false
+    },
+    {
+      "cycle_id": "ext-batch2-c27",
+      "combined_status": "technical_failure_with_goal_progress",
+      "action": "continue_from_partial_progress",
+      "confidence": "high",
+      "evidence_present": [
+        "mission_brain_decision",
+        "goal_class",
+        "current_loop_decision",
+        "goal_complexity (optional)",
+        "mismatch_class (optional)"
+      ],
+      "evidence_missing": [],
+      "auto_executable": false
+    },
+    {
+      "cycle_id": "ext-batch2-c28",
+      "combined_status": "technical_failure_with_goal_progress",
+      "action": "continue_from_partial_progress",
+      "confidence": "high",
+      "evidence_present": [
+        "mission_brain_decision",
+        "goal_class",
+        "current_loop_decision",
+        "goal_complexity (optional)",
+        "mismatch_class (optional)"
+      ],
+      "evidence_missing": [],
+      "auto_executable": false
+    },
+    {
+      "cycle_id": "ext-batch2-c29",
+      "combined_status": "technical_failure_with_goal_progress",
+      "action": "continue_from_partial_progress",
+      "confidence": "high",
+      "evidence_present": [
+        "mission_brain_decision",
+        "goal_class",
+        "current_loop_decision",
+        "goal_complexity (optional)",
+        "mismatch_class (optional)"
+      ],
+      "evidence_missing": [],
+      "auto_executable": false
+    },
+    {
+      "cycle_id": "ext-batch2-c30",
+      "combined_status": "technical_failure_with_goal_progress",
+      "action": "continue_from_partial_progress",
+      "confidence": "high",
+      "evidence_present": [
+        "mission_brain_decision",
+        "goal_class",
+        "current_loop_decision",
+        "goal_complexity (optional)",
+        "mismatch_class (optional)"
+      ],
+      "evidence_missing": [],
+      "auto_executable": false
+    }
+  ],
+  "guardrails": {
+    "advisory_only": true,
+    "no_auto_execution": true,
+    "feature_flagged": true,
+    "default_off": true,
+    "loop_decision_unchanged": true
+  },
+  "evaluation": "passed",
+  "stop_reason": null,
+  "next_subissue": 891
+}
