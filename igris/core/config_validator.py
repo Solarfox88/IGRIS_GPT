@@ -275,6 +275,22 @@ def validate_safety_policy() -> List[ConfigIssue]:
             message="VASTAI_REQUIRE_APPROVAL is disabled — Vast.ai actions can execute without approval",
         ))
 
+    mb_mode = os.environ.get("IGRIS_MB_INTEGRATION_MODE", "shadow").lower()
+    if mb_mode == "enforce":
+        allow_enforce = os.environ.get("IGRIS_MB_ALLOW_ENFORCE_MODE", "false").lower() == "true"
+        if not allow_enforce:
+            issues.append(ConfigIssue(
+                field="IGRIS_MB_INTEGRATION_MODE",
+                severity="error",
+                message=(
+                    "Mission Brain enforce mode requested without explicit authorization flag"
+                ),
+                fix_suggestion=(
+                    "Use IGRIS_MB_INTEGRATION_MODE=shadow or set "
+                    "IGRIS_MB_ALLOW_ENFORCE_MODE=true only with approved mandate"
+                ),
+            ))
+
     return issues
 
 

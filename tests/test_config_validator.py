@@ -229,6 +229,28 @@ class TestValidateSafetyPolicy:
             issues = validate_safety_policy()
             assert any("VASTAI_REQUIRE_APPROVAL" in i.field for i in issues)
 
+    def test_mission_brain_enforce_without_allow_is_error(self):
+        with mock.patch.dict(os.environ, {
+            "IGRIS_MB_INTEGRATION_MODE": "enforce",
+            "IGRIS_MB_ALLOW_ENFORCE_MODE": "false",
+        }):
+            issues = validate_safety_policy()
+            assert any(
+                i.severity == "error" and i.field == "IGRIS_MB_INTEGRATION_MODE"
+                for i in issues
+            )
+
+    def test_mission_brain_enforce_with_allow_no_error(self):
+        with mock.patch.dict(os.environ, {
+            "IGRIS_MB_INTEGRATION_MODE": "enforce",
+            "IGRIS_MB_ALLOW_ENFORCE_MODE": "true",
+        }):
+            issues = validate_safety_policy()
+            assert not any(
+                i.severity == "error" and i.field == "IGRIS_MB_INTEGRATION_MODE"
+                for i in issues
+            )
+
 
 # ---------------------------------------------------------------------------
 # Full validation

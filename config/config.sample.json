@@ -12,6 +12,14 @@
   "vastai": {
     "api_key": null
   },
+  "mission_brain_integration": {
+    "enabled": false,
+    "mode": "shadow",
+    "compare_with_current_loop": true,
+    "telemetry_enabled": true,
+    "rollback_to_wrapper_on_guardrail": true,
+    "allow_enforce_mode": false
+  },
   "auto_commit": false,
   "auto_push": false,
   "project_root": ".",
