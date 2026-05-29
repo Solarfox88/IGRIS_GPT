@@ -147,7 +147,36 @@ async def review_pr(request: PRReviewRequest, project_root: str) -> PRReviewResu
                 tie = await asyncio.to_thread(_call_codex_tiebreaker, request, project_root)
                 merged = tie
                 model_used = f"{model_used}+codex_tiebreaker"
-        return PRReviewResult(request.pr_number, merged["approved"], max(0.0, min(1.0, merged["confidence"])), model_used, merged.get("concerns", []), merged.get("suggestion", ""), time.time(), tiebreaker_used)
+        confidence = max(0.0, min(1.0, merged["confidence"]))
+        approved = bool(merged["approved"])
+
+        # Issue #523 — self-modification gate: enforce higher confidence threshold
+        # for PRs that touch IGRIS core files.
+        try:
+            from igris.core.self_modification_gate import touches_core_files, get_core_files, append_audit_record, _SELF_MOD_CONFIDENCE_THRESHOLD
+            _touched_core = touches_core_files(request.pr_diff, get_core_files())
+            if _touched_core:
+                if confidence < _SELF_MOD_CONFIDENCE_THRESHOLD:
+                    approved = False
+                    merged.setdefault("concerns", []).append(
+                        f"Self-modification: confidence {confidence:.2f} below threshold "
+                        f"{_SELF_MOD_CONFIDENCE_THRESHOLD:.2f} for core file(s): {_touched_core}"
+                    )
+                    merged["suggestion"] = merged.get("suggestion", "") + (
+                        " [SELF-MOD GATE] Merge blocked: raise confidence before auto-merging core files."
+                    )
+                append_audit_record(project_root, {
+                    "pr_number": request.pr_number,
+                    "touched_core": _touched_core,
+                    "confidence": confidence,
+                    "approved": approved,
+                    "checked_at": time.time(),
+                    "source": "smw_pr_review",
+                })
+        except Exception:
+            pass  # self-mod gate is best-effort, never blocks the review
+
+        return PRReviewResult(request.pr_number, approved, confidence, model_used, merged.get("concerns", []), merged.get("suggestion", ""), time.time(), tiebreaker_used)
     except (urllib.error.URLError, TimeoutError, json.JSONDecodeError, RuntimeError) as exc:
         logger.warning("PR review fail-open for PR #%s: %s", request.pr_number, exc)
         return PRReviewResult(request.pr_number, True, 0.3, "fail_open", [f"review API unavailable: {exc}"], "Manual follow-up recommended.", time.time(), tiebreaker_used)
