@@ -5498,10 +5498,37 @@ class SelfRepairSupervisor:
         run: Optional[SupervisorRun] = None,
     ) -> SupervisorRun:
         """Thin orchestrator — delegates to preflight and rank-loop phases."""
+        # Issue #540 — create WorkSession for this run (best-effort, never blocks)
+        _work_session = None
+        try:
+            from igris.core.work_session import WorkSession as _WS
+            _work_session = _WS.create(goal=config.goal, mission_id=None)
+        except Exception:
+            pass
+
         run, ctx = self._run_preflight_phase(run, config)
         if ctx is None:
+            if _work_session is not None:
+                try:
+                    _work_session.remember(str(self.project_root))
+                except Exception:
+                    pass
             return run
-        return self._run_rank_loop(run, config, **ctx)
+
+        result = self._run_rank_loop(run, config, **ctx)
+
+        if _work_session is not None:
+            try:
+                _commands = [
+                    {"action_type": e.phase, "outcome": e.status, "duration_ms": 0.0}
+                    for e in result.events
+                    if e.phase not in {"start", "queued"}
+                ]
+                _work_session.remember(str(self.project_root), commands_run=_commands)
+            except Exception:
+                pass
+
+        return result
 
     def _stage_report_fragment(
         self,

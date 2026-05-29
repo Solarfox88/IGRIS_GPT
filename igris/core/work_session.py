@@ -80,13 +80,76 @@ class WorkSession:
         self.updated_at = time.time()
         return self
 
-    def remember(self, project_root: str) -> None:
+    def remember(
+        self,
+        project_root: str,
+        commands_run: Optional[List[Dict[str, Any]]] = None,
+    ) -> None:
+        """Persist session outcome + command history to MemoryGraph.
+
+        Args:
+            project_root: Absolute path to IGRIS project root.
+            commands_run: Optional list of {action_type, outcome, duration_ms} dicts
+                from the reasoning loop steps. If provided, saved as a
+                'command_history' fact so IGRIS learns which tools work.
+        """
         try:
             from igris.core.memory_graph import MemoryGraph
             mg = MemoryGraph(project_root)
             report = self.delivery_report
-            mg.add_node("lesson", {"session_id": self.session_id, "goal": self.goal[:200], "files_modified": (report.files_modified if report else []), "outcome": self.status, "ci_status": (report.ci_status if report else "unknown"), "pr_url": (report.pr_url if report else ""), "failure_class": (report.last_failure_class if report else "")}, confidence=0.85)
-            mg.add_node("world_state_snapshot", {"session_id": self.session_id, "tests_pass": (report.ci_status == "green" if report else False), "pr_created": bool(report.pr_url if report else False), "ci_status": (report.ci_status if report else "unknown")})
+            mg.add_node(
+                "lesson",
+                {
+                    "session_id": self.session_id,
+                    "goal": self.goal[:200],
+                    "files_modified": (report.files_modified if report else []),
+                    "outcome": self.status,
+                    "ci_status": (report.ci_status if report else "unknown"),
+                    "pr_url": (report.pr_url if report else ""),
+                    "failure_class": (report.last_failure_class if report else ""),
+                },
+                confidence=0.85,
+            )
+            mg.add_node(
+                "world_state_snapshot",
+                {
+                    "session_id": self.session_id,
+                    "tests_pass": (report.ci_status == "green" if report else False),
+                    "pr_created": bool(report.pr_url if report else False),
+                    "ci_status": (report.ci_status if report else "unknown"),
+                },
+            )
+            # Issue #540 — persist command history so IGRIS learns per-tool effectiveness
+            if commands_run:
+                # Summarize: tool → {calls, successes, avg_ms}
+                tool_summary: Dict[str, Any] = {}
+                for cmd in commands_run:
+                    name = str(cmd.get("action_type", "unknown"))
+                    success = bool(cmd.get("outcome", "") == "success")
+                    duration = float(cmd.get("duration_ms", 0))
+                    if name not in tool_summary:
+                        tool_summary[name] = {"calls": 0, "successes": 0, "total_ms": 0.0}
+                    tool_summary[name]["calls"] += 1
+                    if success:
+                        tool_summary[name]["successes"] += 1
+                    tool_summary[name]["total_ms"] += duration
+                mg.add_node(
+                    "project_fact",
+                    {
+                        "session_id": self.session_id,
+                        "fact_type": "command_history",
+                        "goal": self.goal[:100],
+                        "tool_summary": {
+                            k: {
+                                "calls": v["calls"],
+                                "success_rate": round(v["successes"] / v["calls"], 2) if v["calls"] else 0.0,
+                                "avg_ms": round(v["total_ms"] / v["calls"], 1) if v["calls"] else 0.0,
+                            }
+                            for k, v in tool_summary.items()
+                        },
+                    },
+                    confidence=0.7,
+                )
         except Exception:
             pass
 

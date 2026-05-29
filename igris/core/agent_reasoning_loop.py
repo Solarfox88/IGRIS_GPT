@@ -773,6 +773,23 @@ class AgentReasoningLoop:
             step.error = str(e)
 
         step.duration_ms = int((time.monotonic() - t0) * 1000)
+
+        # Issue #532 — ReflectionHook: fire on complex steps only (best-effort, never blocks)
+        try:
+            from igris.core.reflection_hook import ReflectionHook as _ReflectionHook
+            if not hasattr(self, "_reflection_hook"):
+                self._reflection_hook = _ReflectionHook(self.project_root or ".")
+            _step_result = {
+                "action_type": action.action_type if "action" in dir() else "unknown",
+                "outcome": step.outcome,
+                "summary": step.result_summary or "",
+                "error": step.error or "",
+                "tool_count": 1,  # each _execute_step is one tool call
+            }
+            self._reflection_hook.on_step_complete(_step_result, goal=goal, project_root=self.project_root or ".")
+        except Exception:
+            pass  # ReflectionHook is best-effort
+
         return step
 
     @staticmethod
