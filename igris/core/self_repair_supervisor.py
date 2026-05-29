@@ -198,6 +198,28 @@ def _as_bool(value: Any, default: bool = False) -> bool:
     return default
 
 
+def _parse_issue_number(explicit: Any, goal: str = "") -> int:
+    """Extract issue number from explicit value or goal string (e.g. '#614').
+
+    Returns 0 if not found or invalid.
+    """
+    try:
+        if explicit:
+            n = int(explicit)
+            if n > 0:
+                return n
+    except (TypeError, ValueError):
+        pass
+    # Fallback: parse first #NNN from goal string
+    m = re.search(r"#(\d+)", goal)
+    if m:
+        try:
+            return int(m.group(1))
+        except (TypeError, ValueError):
+            pass
+    return 0
+
+
 @dataclass
 class CommandResult:
     success: bool = False
@@ -276,6 +298,8 @@ class RankSupervisorConfig:
     prior_capability_signals: Dict[str, int] = field(default_factory=dict)
     # Issue #730 — force re-validation of baseline cache even on SHA hit
     force_revalidate_baseline: bool = False
+    # Issue #615 — issue number for pre-run dependency validation (0 = not set)
+    issue_number: int = 0
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "RankSupervisorConfig":
@@ -323,6 +347,8 @@ class RankSupervisorConfig:
             prior_capability_signals=dict(data.get("prior_capability_signals") or {}),
             # Issue #730 — force baseline re-validation even on SHA hit
             force_revalidate_baseline=_as_bool(data.get("force_revalidate_baseline"), False),
+            # Issue #615 — issue number for dependency pre-check
+            issue_number=_parse_issue_number(data.get("issue_number", 0), str(data.get("goal", ""))),
         )
 
 
@@ -3354,6 +3380,30 @@ class SelfRepairSupervisor:
         ).strip()
         if tracked_dirty:
             return self._blocked(run, "workspace_dirty", "Workspace is not clean"), None
+
+        # Issue #615 — pre-run dependency validator
+        if config.issue_number:
+            try:
+                from igris.core.dependency_checker import DependencyChecker
+                _dep_checker = DependencyChecker(str(self.project_root))
+                _dep_ok, _dep_unsat = _dep_checker.check(config.issue_number)
+                run.add(
+                    "dependency_check",
+                    "satisfied" if _dep_ok else "blocked",
+                    f"Issue #{config.issue_number}: deps {'all satisfied' if _dep_ok else f'unsatisfied: {_dep_unsat}'}",
+                    issue_number=config.issue_number,
+                    unsatisfied=_dep_unsat,
+                )
+                if not _dep_ok:
+                    return self._blocked(
+                        run,
+                        "dependency_not_satisfied",
+                        f"Issue #{config.issue_number} has unsatisfied dependencies: {_dep_unsat}. "
+                        "Close or merge dependent issues first.",
+                    ), None
+            except Exception as _dep_exc:
+                # Dep check is best-effort: log but never block on error
+                run.add("dependency_check", "error", f"dep check error (non-fatal): {_dep_exc}")
 
         head = self.backend.git_log_head()
         run.add("git_head", "success" if head.success else "failure", _command_detail(head))
