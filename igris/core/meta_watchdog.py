@@ -21,6 +21,10 @@ def _get_code_health_monitor():
         _code_health_monitor_cls = CodeHealthMonitor
     return _code_health_monitor_cls
 
+# Issue #522 — OutcomeQualityTracker (24h background job)
+_last_quality_run: float = 0.0
+_QUALITY_RUN_INTERVAL = 86400  # 24h
+
 _SMW_POLL_SECONDS = 120
 _SMW_COOLDOWN_PATTERNS: Dict[str, float] = {}
 
@@ -85,6 +89,22 @@ async def _smw_loop(project_root: str) -> None:
                         )
                 except Exception as _chm_exc:
                     logger.warning("SMW code health monitor error (non-fatal): %s", _chm_exc)
+
+                # Issue #522 — OutcomeQualityTracker: update fix quality scores (24h interval)
+                global _last_quality_run
+                import time as _time_mod
+                if (_time_mod.time() - _last_quality_run) >= _QUALITY_RUN_INTERVAL:
+                    try:
+                        from igris.core.outcome_quality_tracker import OutcomeQualityTracker
+                        _oqt = OutcomeQualityTracker(project_root)
+                        _qr = await asyncio.to_thread(_oqt.run)
+                        logger.info(
+                            "SMW quality tracker: %d updated, %d skipped, %d error(s)",
+                            _qr.updated, _qr.skipped, len(_qr.errors),
+                        )
+                        _last_quality_run = _time_mod.time()
+                    except Exception as _oqt_exc:
+                        logger.warning("SMW quality tracker error (non-fatal): %s", _oqt_exc)
 
             try:
                 reviewed = {r.pr_number for r in load_review_results(project_root)}
