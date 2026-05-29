@@ -3709,6 +3709,26 @@ class SelfRepairSupervisor:
         _next = self._select_next_roadmap_issue(config)
         if not _next:
             return
+
+        # Issue #616 — skip candidates whose dependencies are unsatisfied
+        try:
+            from igris.core.dependency_checker import DependencyChecker
+            _dep_checker = DependencyChecker(str(self.project_root))
+            _dep_ok, _dep_unsat = _dep_checker.check(_next["number"])
+            if not _dep_ok:
+                run.add(
+                    "watchdog_dependency_skip",
+                    "skipped",
+                    f"Roadmap candidate #{_next['number']} skipped: unsatisfied deps {_dep_unsat}",
+                    issue_number=_next["number"],
+                    unsatisfied_deps=_dep_unsat,
+                )
+                return
+        except Exception as _dep_exc:
+            # Best-effort — never block roadmap autoselect on dep check error
+            run.add("watchdog_dependency_skip", "error",
+                    f"dep check error (non-fatal): {_dep_exc}", issue_number=_next["number"])
+
         run.add(
             "roadmap_next_target",
             "selected",
