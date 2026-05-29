@@ -16,6 +16,8 @@ NODE_TYPES = {
     "identity_fact", "project_fact", "command_recipe", "lesson",
     "decision", "run_event", "capability", "environment_fact",
     "world_state_snapshot",
+    # Memory Tree (#536)
+    "global_digest",
 }
 
 EDGE_TYPES = {
@@ -96,7 +98,46 @@ CREATE INDEX IF NOT EXISTS idx_edges_dst  ON memory_edges(dst_node);
                 (node_id, node_type, json.dumps(content), float(confidence), float(success_rate), now, now, json.dumps(tags or [])),
             )
             self.conn.commit()
+
+        # Memory Tree integration (#536): write to ContentStore + score
+        self._tree_write(node_id, node_type, content, confidence, tags or [], now)
+
         return node_id
+
+    def _tree_write(
+        self,
+        node_id: str,
+        node_type: str,
+        content: dict,
+        confidence: float,
+        tags: list,
+        created_at: float,
+    ) -> None:
+        """Write new node to ContentStore and compute its score (best-effort, never raises)."""
+        try:
+            from igris.core.memory_content_store import ContentStore
+            from igris.core.memory_scorer import MemoryScorer
+
+            store = ContentStore(str(self.project_root))
+            scorer = MemoryScorer(str(self.db_path.parent / "scores.db"))
+
+            text = json.dumps(content, ensure_ascii=False)
+            store.write(
+                chunk_id=node_id,
+                node_type=node_type,
+                content=text,
+                confidence=confidence,
+                tags=tags,
+                source=node_type,
+            )
+            scorer.score_and_store(
+                chunk_id=node_id,
+                node_type=node_type,
+                content=text,
+                created_at=created_at,
+            )
+        except Exception:
+            pass  # never block the main write path
 
     def add_edge(self, src_node, dst_node, edge_type, weight=1.0) -> str:
         if edge_type not in EDGE_TYPES:
