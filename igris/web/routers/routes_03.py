@@ -273,7 +273,33 @@ def create_router(deps) -> APIRouter:
         edge_count = g.conn.execute("SELECT COUNT(*) FROM memory_edges").fetchone()[0]
         rows = g.conn.execute("SELECT node_type, COUNT(*) as c FROM memory_nodes GROUP BY node_type").fetchall()
         migration_done = bool(g.conn.execute("SELECT 1 FROM memory_nodes WHERE node_type='environment_fact' AND content LIKE '%\"migration_done\"%' LIMIT 1").fetchone())
-        return {"node_count": node_count, "edge_count": edge_count, "node_types": {r[0]: r[1] for r in rows}, "migration_done": migration_done, "db_size_kb": round(g.db_path.stat().st_size / 1024.0, 2) if g.db_path.exists() else 0.0}
+        # Issue #616 — dependency_graph: best-effort (never fails the endpoint)
+        dependency_graph: Dict[str, object] = {}
+        try:
+            from igris.core.dependency_checker import DependencyChecker, load_dep_file
+            _dep_map = load_dep_file(str(CONFIG.project_root))
+            if _dep_map:
+                _checker = DependencyChecker(str(CONFIG.project_root))
+                for _issue_str, _deps in _dep_map.items():
+                    try:
+                        _dep_ok, _dep_unsat = _checker.check(int(_issue_str))
+                        dependency_graph[_issue_str] = {
+                            "deps": _deps,
+                            "satisfied": _dep_ok,
+                            "unsatisfied": _dep_unsat,
+                        }
+                    except Exception:
+                        dependency_graph[_issue_str] = {"deps": _deps, "satisfied": None}
+        except Exception:
+            pass
+        return {
+            "node_count": node_count,
+            "edge_count": edge_count,
+            "node_types": {r[0]: r[1] for r in rows},
+            "migration_done": migration_done,
+            "db_size_kb": round(g.db_path.stat().st_size / 1024.0, 2) if g.db_path.exists() else 0.0,
+            "dependency_graph": dependency_graph,
+        }
 
     @router.get("/api/memory/search")
     async def api_memory_search(q: str, node_type: Optional[str] = None, limit: int = 10) -> Dict[str, object]:
