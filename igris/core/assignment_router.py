@@ -336,6 +336,7 @@ def _compute_profile_stats(
     agent_role: str,
     task_type: str,
     profile: str,
+    project_root: Optional[str] = None,
 ) -> Dict[str, Any]:
     matching = [
         o for o in outcomes
@@ -349,9 +350,26 @@ def _compute_profile_stats(
     successes = sum(1 for o in matching if o.get("outcome") == "success")
     costs = [o.get("cost_usd", 0.0) for o in matching if isinstance(o.get("cost_usd"), (int, float))]
     attempts_list = [o.get("attempts", 1) for o in matching if isinstance(o.get("attempts"), int)]
+    success_rate = successes / total
+
+    # Issue #522 — quality-weighted success rate
+    quality_weighted: Optional[float] = None
+    if project_root:
+        try:
+            from igris.core.outcome_quality_tracker import (
+                load_quality_scores, avg_quality_for_profile,
+            )
+            scores = load_quality_scores(project_root)
+            avg_q = avg_quality_for_profile(matching, profile, scores, min_history=3)
+            if avg_q is not None:
+                quality_weighted = success_rate * avg_q
+        except Exception:
+            pass  # quality tracking is best-effort, never blocks routing
+
     return {
         "total": total,
-        "success_rate": successes / total,
+        "success_rate": success_rate,
+        "quality_weighted_success_rate": quality_weighted if quality_weighted is not None else success_rate,
         "avg_cost": sum(costs) / len(costs) if costs else 0.0,
         "avg_attempts": sum(attempts_list) / len(attempts_list) if attempts_list else 1.0,
     }
@@ -576,13 +594,20 @@ class AssignmentRouter:
         best_reasons = list(reasons)
 
         for cand in candidates:
-            profile_stats = _compute_profile_stats(outcomes, agent_role, task_type, cand.profile)
+            profile_stats = _compute_profile_stats(
+                outcomes, agent_role, task_type, cand.profile,
+                project_root=request.project_root if hasattr(request, "project_root") else None,
+            )
 
             if profile_stats and profile_stats["total"] >= _MIN_HISTORY_FOR_LEARNING:
-                p_success = profile_stats["success_rate"]
+                # Issue #522 — use quality-weighted success rate when available
+                p_success = profile_stats.get(
+                    "quality_weighted_success_rate",
+                    profile_stats["success_rate"],
+                )
                 avg_cost = profile_stats["avg_cost"]
                 avg_attempts = profile_stats["avg_attempts"]
-                source = "history"
+                source = "history" if profile_stats.get("quality_weighted_success_rate") is None else "history+quality"
             else:
                 p_success = cand.bootstrap_success_prob
                 avg_cost = cand.bootstrap_cost_per_attempt
