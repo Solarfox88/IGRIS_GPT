@@ -4285,7 +4285,13 @@ class SelfRepairSupervisor:
         def _is_epic(issue: Dict[str, Any]) -> bool:
             title = (issue.get("title") or "").lower()
             labels = [l.get("name", "").lower() for l in (issue.get("labels") or [])]
-            return any(k in title for k in EPIC_SKIP) or "epic" in labels
+            # Use word-boundary matching to avoid false positives from substrings:
+            # e.g. "arch" must not match "hierarchy", "phase" must not match "phase-2bis" label.
+            # We check labels by membership (exact element), not substring.
+            _is_epic_title = any(
+                re.search(r"\b" + k + r"\b", title) for k in EPIC_SKIP
+            )
+            return _is_epic_title or "epic" in labels
 
         def _priority(issue: Dict[str, Any]) -> tuple:
             labels = [l.get("name", "").lower() for l in (issue.get("labels") or [])]
