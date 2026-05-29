@@ -703,6 +703,13 @@ class AgentReasoningLoop:
             result_data = exec_result.get("result_data")
             if result_data is not None:
                 if isinstance(result_data, str):
+                    # Issue #531 — TokenJuice: compact before hard-truncate (best-effort)
+                    try:
+                        from igris.core.tool_output_compactor import ToolOutputCompactor
+                        _compact = ToolOutputCompactor()
+                        result_data = _compact.compress(result_data, source_type=action.action_type)
+                    except Exception:
+                        pass  # compactor is best-effort
                     _budget = self._tool_result_budget_bytes()
                     result_data, _bout = apply_tool_result_budget(result_data, _budget)
                     if _bout.truncated:

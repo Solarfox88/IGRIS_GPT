@@ -49,7 +49,7 @@ class CompactorConfig:
 class ToolOutputCompactor:
     """Compacts tool output using configurable rules."""
 
-    ANSI_ESCAPE = re.compile(r"(\x1b\[[0-9;]*[a-zA-Z]|", re.UNICODE)
+    ANSI_ESCAPE = re.compile(r"\x1b(?:\[[0-9;]*[a-zA-Z]|\].*?(?:\x1b\\|\a)|[^[a-z])", re.UNICODE)
 
     def __init__(self, config: Optional[CompactorConfig] = None):
         self.config = config or CompactorConfig()
