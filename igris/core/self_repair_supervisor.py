@@ -4271,7 +4271,7 @@ class SelfRepairSupervisor:
             import subprocess as _sub
             result = _sub.run(
                 ["gh", "issue", "list", "--label", "roadmap", "--state", "open",
-                 "--json", "number,title,labels", "--limit", "50"],
+                 "--json", "number,title,labels", "--limit", "200"],
                 capture_output=True, text=True, cwd=self.project_root, timeout=30,
             )
             if result.returncode != 0:
