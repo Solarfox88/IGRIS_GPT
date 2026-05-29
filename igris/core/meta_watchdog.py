@@ -12,6 +12,14 @@ from igris.core.smw_sensors import take_snapshot
 from igris.core.smw_teach import Incident, record_incident, teach_back
 from igris.core.smw_pr_review import PRReviewRequest, load_review_results, review_pr, save_review_result
 from igris.core.smw_weak_signals import run_all_detectors
+# Issue #521 — CodeHealthMonitor (lazy import to avoid startup overhead)
+_code_health_monitor_cls = None
+def _get_code_health_monitor():
+    global _code_health_monitor_cls
+    if _code_health_monitor_cls is None:
+        from igris.core.code_health_monitor import CodeHealthMonitor
+        _code_health_monitor_cls = CodeHealthMonitor
+    return _code_health_monitor_cls
 
 _SMW_POLL_SECONDS = 120
 _SMW_COOLDOWN_PATTERNS: Dict[str, float] = {}
@@ -63,6 +71,20 @@ async def _smw_loop(project_root: str) -> None:
                     logger.warning("SMW weak signal: %s - %s | action=%s", signal.name, signal.description, signal.recommended_action)
                     if signal.severity == "ACTION_REQUIRED":
                         await execute_action("open_diagnostic_issue", tier=2, dry_run=False, project_root=project_root, pattern_name=signal.name, evidence=signal.description, actions_tried=[])
+                # Issue #521 — CodeHealthMonitor: proactive code quality scan
+                try:
+                    _chm = _get_code_health_monitor()(project_root, dry_run=False)
+                    _health_report = await asyncio.to_thread(_chm.run, False)
+                    if _health_report.findings or _health_report.errors:
+                        logger.info(
+                            "SMW code health: %d finding(s), %d issue(s) opened, %d skipped (anti-spam), %d error(s)",
+                            len(_health_report.findings),
+                            len(_health_report.issues_opened),
+                            _health_report.issues_skipped,
+                            len(_health_report.errors),
+                        )
+                except Exception as _chm_exc:
+                    logger.warning("SMW code health monitor error (non-fatal): %s", _chm_exc)
 
             try:
                 reviewed = {r.pr_number for r in load_review_results(project_root)}
