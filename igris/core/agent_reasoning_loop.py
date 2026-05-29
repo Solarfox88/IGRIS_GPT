@@ -682,6 +682,23 @@ class AgentReasoningLoop:
             step.outcome = "success" if exec_result.get("success", False) else "failure"
             step.result_summary = exec_result.get("summary", "")
 
+            # 4a. Issue #534 — ToolTracker: record per-tool effectiveness (best-effort)
+            try:
+                from igris.core.tool_tracker import ToolTracker as _ToolTracker
+                _tt = _ToolTracker(self.project_root or ".")
+                _tool_duration_ms = (time.monotonic() - t0) * 1000
+                _error_snippet: str | None = None
+                if not exec_result.get("success", False):
+                    _error_snippet = str(exec_result.get("error", ""))[:200] or None
+                _tt.record(
+                    tool_name=action.action_type,
+                    success=bool(exec_result.get("success", False)),
+                    duration_ms=_tool_duration_ms,
+                    error_snippet=_error_snippet,
+                )
+            except Exception:
+                pass  # ToolTracker is best-effort, never crashes the step
+
             # 4b. Store structured result data (apply 16KB byte-cap before injection)
             result_data = exec_result.get("result_data")
             if result_data is not None:
