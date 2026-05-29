@@ -179,24 +179,31 @@ class TestParseResponse:
         result = _h._parse_response(raw, "m", 0.0)
         assert result["ok"] is True
 
-    def test_no_json_returns_error(self):
+    def test_no_json_uses_degraded_fallback(self):
+        # Non-JSON input → ok=True with degraded fallback (resilient design,
+        # intentionally changed from ok=False to avoid hard-blocking on LLM quirks).
         result = _h._parse_response("no json here at all", "m", 0.0)
-        assert result["ok"] is False
-        assert "no JSON" in result.get("error", "")
+        assert result["ok"] is True
+        assert "error" in result  # error field still set to explain the situation
+        assert result.get("confidence", 1.0) <= 0.1  # low confidence signals degraded path
+        assert result.get("requires_human_or_codex_audit") is True
 
     def test_invalid_json_returns_error(self):
         result = _h._parse_response("{bad json}", "m", 0.0)
         assert result["ok"] is False
         assert "JSON parse error" in result.get("error", "")
 
-    def test_missing_required_fields_sets_ok_false(self):
+    def test_missing_required_fields_sets_error_with_ok_true(self):
+        # Missing fields → ok=True with defaults + error message (resilient fallback).
+        # Intentionally changed: missing fields no longer hard-block; defaults are applied
+        # and the error field identifies what was missing.
         payload = _good_payload()
         del payload["diagnosis"]
         del payload["confidence"]
         raw = json.dumps(payload)
         result = _h._parse_response(raw, "m", 0.0)
-        assert result["ok"] is False
-        assert "diagnosis" in result.get("error", "")
+        assert result["ok"] is True
+        assert "diagnosis" in result.get("error", "")  # error field still names missing fields
 
     def test_cost_used_from_arg_when_not_in_payload(self):
         payload = _good_payload()
