@@ -37,6 +37,17 @@ try:
 except ImportError:
     pass
 
+# MissionBrain Advisory — lazy import, monitoring-only, never blocks run (#914)
+_selected_advisory_available = False
+try:
+    from igris.agent.mission.selected_advisory import (
+        enrich_cycle_selected as _enrich_cycle_selected,
+        make_selected_monitoring_config as _make_selected_monitoring_config,
+    )
+    _selected_advisory_available = True
+except ImportError:
+    pass
+
 
 REPAIRABLE_FAILURES = {
     "pytest_failure",
@@ -6162,11 +6173,36 @@ class SelfRepairSupervisor:
                 return ["igris/web/server.py", "igris/core/"]
             if any(k in t for k in ("dashboard", "badge", "ui", "card")):
                 return ["igris/web/static/**", "igris/web/templates/**"]
+            # Memory Tree specific layers — most precise match first
+            if any(k in t for k in ("memory_content_store", "content_store")):
+                return ["igris/core/memory_content_store.py", "tests/test_memory_content_store.py"]
+            if any(k in t for k in ("memory_scorer", "memoryscorer")):
+                return ["igris/core/memory_scorer.py", "tests/test_memory_scorer.py"]
+            if any(k in t for k in ("topic_tree", "topictree", "global_digest", "globaldigest")):
+                return [
+                    "igris/core/memory_topic_tree.py",
+                    "igris/core/memory_global_digest.py",
+                    "tests/test_memory_topic_tree.py",
+                ]
+            if any(k in t for k in ("memory tree", "memory_tree", "memorytree",
+                                     "memory chunker", "memory_chunker")):
+                return [
+                    "igris/core/memory_chunker.py",
+                    "igris/core/memory_graph.py",
+                    "igris/core/",
+                    "tests/",
+                ]
+            # Broader memory/hierarchy patterns
+            if any(k in t for k in ("memory", "chunk", "score", "topic", "global", "hierarchy")):
+                return ["igris/core/", "tests/"]
             if "test" in t:
                 return ["tests/"]
             if any(k in t for k in ("supervisor", "repair")):
                 return ["igris/core/self_repair_supervisor.py"]
-            return ["igris/**"]
+            # #913: fallback is now igris/core/ + tests/ instead of igris/**
+            # A broad igris/** scope caused no_diff_repair loops because Igris
+            # could not determine which file to edit.
+            return ["igris/core/", "tests/"]
 
         def _infer_test_targets(text: str) -> List[str]:
             # Extract explicit test file paths like tests/test_foo.py
@@ -6177,17 +6213,53 @@ class SelfRepairSupervisor:
                 return ["tests/"]
             return []
 
-        def _make_sub(title: str, goal_text: str) -> Dict[str, Any]:
+        def _make_sub(
+            title: str,
+            goal_text: str,
+            *,
+            explicit_file_scopes: Optional[List[str]] = None,
+            explicit_acceptance_criteria: Optional[List[str]] = None,
+            explicit_tests: Optional[List[str]] = None,
+        ) -> Dict[str, Any]:
+            """Build a sub-mission dict.
+
+            When explicit_* params are provided they take precedence over inference.
+            Anti-loop guard (#913): if both scopes and criteria are generic the sub-
+            mission is flagged human_approval_required=True so a human can refine them
+            before Igris runs — preventing the no_diff_repair → fallback loop.
+            """
             safe = _safe_redact(goal_text)
+            scopes = (
+                explicit_file_scopes
+                if explicit_file_scopes is not None
+                else _infer_file_scopes(goal_text)
+            )
+            criteria = (
+                explicit_acceptance_criteria
+                if explicit_acceptance_criteria is not None
+                else [f"{title} implemented and validated"]
+            )
+            tests = (
+                explicit_tests
+                if explicit_tests is not None
+                else _infer_test_targets(goal_text)
+            )
+            # Anti-loop guard: broad scope + generic criterion → require human review.
+            # This prevents Igris from entering a no_diff_repair loop where it cannot
+            # determine which file to edit or how to verify success.
+            _broad_scopes = {"igris/core/", "tests/", "igris/**"}
+            _scope_is_broad = set(scopes) <= _broad_scopes
+            _criteria_generic = criteria == [f"{title} implemented and validated"]
+            human_approval = _scope_is_broad and _criteria_generic
             return {
                 "title": title[:60],
                 "goal": safe,
                 "dependencies": [],
-                "acceptance_criteria": [f"{title} implemented and validated"],
-                "allowed_file_scopes": _infer_file_scopes(goal_text),
-                "tests": _infer_test_targets(goal_text),
+                "acceptance_criteria": criteria,
+                "allowed_file_scopes": scopes,
+                "tests": tests,
                 "risk_level": _infer_risk(goal_text),
-                "human_approval_required": False,
+                "human_approval_required": human_approval,
             }
 
         safe_goal = _safe_redact(str(goal))
@@ -6261,48 +6333,165 @@ class SelfRepairSupervisor:
             }
 
         # --- Strategy 4: semantic split for memory-tree hierarchy missions ---
+        # #913: Rewrote from 4 generic sub-missions to 5 explicit, bounded steps.
+        # Each step has: precise file_scopes, verifiable acceptance_criteria, explicit tests.
+        # Step 0 is read-only (architecture plan) and gates the implementation steps.
+        # human_approval_required=True so a human confirms the plan before Igris runs code.
         is_memory_tree_mission = (
             "memory tree" in gl
             and any(k in gl for k in ("chunk", "score", "topic", "global", "pipeline", "hierarchy"))
         )
         if is_memory_tree_mission:
             sub_missions = [
+                # Step 0 — read-only architecture plan (no production code written)
                 _make_sub(
-                    "MemoryTree: chunk layer contracts",
+                    "MemoryTree Step 0: architecture verification",
                     (
-                        "Implement chunk-layer contracts for Memory Tree hierarchy in issue #536. "
-                        "Define chunk node schema, stable IDs, and serialization boundary in core memory modules."
+                        "Read-only architecture pass for Memory Tree hierarchy (issue #536). "
+                        "Read igris/core/memory_chunker.py, igris/core/memory_graph.py, "
+                        "igris/core/memory_content_store.py (if it exists). "
+                        "Identify which of the 4 layers (ContentStore, Scorer, TopicTree, GlobalDigest) "
+                        "are missing or stub-only. "
+                        "Output a JSON plan to .igris/memory_tree_plan.json listing each layer with: "
+                        "layer_name, target_file, status (missing|stub|complete), "
+                        "first_function_to_implement. Do not write any production code."
                     ),
+                    explicit_file_scopes=[
+                        "igris/core/memory_chunker.py",
+                        "igris/core/memory_graph.py",
+                        "igris/core/memory_content_store.py",
+                        ".igris/memory_tree_plan.json",
+                    ],
+                    explicit_acceptance_criteria=[
+                        ".igris/memory_tree_plan.json exists and is valid JSON",
+                        "Each layer entry has status in {missing, stub, complete}",
+                        "No production code written or modified in this step",
+                    ],
+                    explicit_tests=[],
                 ),
+                # Step 1 — MemoryContentStore: raw storage layer
                 _make_sub(
-                    "MemoryTree: score aggregation layer",
+                    "MemoryTree Step 1: MemoryContentStore",
                     (
-                        "Implement score aggregation layer for Memory Tree hierarchy in issue #536. "
-                        "Promote chunk nodes to scored nodes with deterministic ordering and compatibility shims."
+                        "Implement igris/core/memory_content_store.py for Memory Tree hierarchy (issue #536). "
+                        "Create MemoryContentStore class with methods: "
+                        "store(chunk_id: str, content: str, metadata: dict) -> None, "
+                        "retrieve(chunk_id: str) -> dict, "
+                        "list_ids() -> List[str]. "
+                        "Use SQLite via the pattern in igris/core/memory_graph.py — no new dependencies. "
+                        "Write tests/test_memory_content_store.py with ≥3 unit tests covering "
+                        "store, retrieve, list_ids. All tests must pass with: "
+                        "pytest tests/test_memory_content_store.py"
                     ),
+                    explicit_file_scopes=[
+                        "igris/core/memory_content_store.py",
+                        "tests/test_memory_content_store.py",
+                    ],
+                    explicit_acceptance_criteria=[
+                        "igris/core/memory_content_store.py exists and is not a stub",
+                        "MemoryContentStore.store(), .retrieve(), .list_ids() all implemented",
+                        "tests/test_memory_content_store.py has ≥3 test functions",
+                        "pytest tests/test_memory_content_store.py exits with code 0",
+                    ],
+                    explicit_tests=["tests/test_memory_content_store.py"],
                 ),
+                # Step 2 — MemoryScorer: keyword-based relevance scoring
                 _make_sub(
-                    "MemoryTree: topic grouping layer",
+                    "MemoryTree Step 2: MemoryScorer",
                     (
-                        "Implement topic grouping layer for Memory Tree hierarchy in issue #536. "
-                        "Group scored nodes into topics with deterministic keys and explicit adapters."
+                        "Implement igris/core/memory_scorer.py for Memory Tree hierarchy (issue #536). "
+                        "Create MemoryScorer class with methods: "
+                        "score(chunk_id: str, query: str) -> float, "
+                        "rank(chunk_ids: List[str], query: str) -> List[Tuple[str, float]] "
+                        "(sorted descending by score). "
+                        "Use keyword overlap or TF-IDF — no external ML dependencies. "
+                        "Write tests/test_memory_scorer.py with ≥3 unit tests verifying "
+                        "score range [0,1] and rank ordering. All tests must pass with: "
+                        "pytest tests/test_memory_scorer.py"
                     ),
+                    explicit_file_scopes=[
+                        "igris/core/memory_scorer.py",
+                        "tests/test_memory_scorer.py",
+                    ],
+                    explicit_acceptance_criteria=[
+                        "igris/core/memory_scorer.py exists and is not a stub",
+                        "MemoryScorer.score() returns float in [0.0, 1.0]",
+                        "MemoryScorer.rank() returns list sorted by score descending",
+                        "tests/test_memory_scorer.py has ≥3 test functions",
+                        "pytest tests/test_memory_scorer.py exits with code 0",
+                    ],
+                    explicit_tests=["tests/test_memory_scorer.py"],
                 ),
+                # Step 3 — TopicTree + GlobalDigest: grouping and synthesis
                 _make_sub(
-                    "MemoryTree: global synthesis and tests",
+                    "MemoryTree Step 3: TopicTree and GlobalDigest",
                     (
-                        "Implement global synthesis layer for Memory Tree hierarchy in issue #536 and add focused tests. "
-                        "Validate chunk→score→topic→global end-to-end deterministic behavior."
+                        "Implement igris/core/memory_topic_tree.py for Memory Tree hierarchy (issue #536). "
+                        "Create TopicTree class with: "
+                        "add_chunk(chunk_id: str, topic_key: str) -> None, "
+                        "get_topic(topic_key: str) -> List[str], "
+                        "list_topics() -> List[str]. "
+                        "Create GlobalDigest class (same file or igris/core/memory_global_digest.py) with: "
+                        "summarize(topic_keys: List[str]) -> str, "
+                        "refresh() -> None. "
+                        "Write tests/test_memory_topic_tree.py with ≥4 unit tests. "
+                        "All tests must pass with: pytest tests/test_memory_topic_tree.py"
                     ),
+                    explicit_file_scopes=[
+                        "igris/core/memory_topic_tree.py",
+                        "igris/core/memory_global_digest.py",
+                        "tests/test_memory_topic_tree.py",
+                    ],
+                    explicit_acceptance_criteria=[
+                        "TopicTree.add_chunk(), .get_topic(), .list_topics() all implemented",
+                        "GlobalDigest.summarize() and .refresh() both implemented",
+                        "tests/test_memory_topic_tree.py has ≥4 test functions",
+                        "pytest tests/test_memory_topic_tree.py exits with code 0",
+                    ],
+                    explicit_tests=["tests/test_memory_topic_tree.py"],
+                ),
+                # Step 4 — Retrieval integration in memory_graph.py + feature flag
+                _make_sub(
+                    "MemoryTree Step 4: retrieval integration",
+                    (
+                        "Integrate Memory Tree layers into igris/core/memory_graph.py (issue #536). "
+                        "Add retrieve_tree(query: str, top_k: int = 5) -> List[dict] method that: "
+                        "(1) fetches chunk_ids from MemoryContentStore.list_ids(), "
+                        "(2) scores via MemoryScorer.rank(chunk_ids, query), "
+                        "(3) groups top results by topic via TopicTree, "
+                        "(4) returns top_k results as list of dicts with keys: "
+                        "chunk_id, content, score, topic. "
+                        "Gate the method behind IGRIS_MEMORY_TREE_ENABLED env var (default '0'): "
+                        "when disabled return [] immediately (no exception). "
+                        "Write tests/test_memory_tree_integration.py with ≥3 integration tests "
+                        "covering: enabled path returns results, disabled path returns [], "
+                        "result dicts have required keys. "
+                        "All tests must pass with: pytest tests/test_memory_tree_integration.py"
+                    ),
+                    explicit_file_scopes=[
+                        "igris/core/memory_graph.py",
+                        "tests/test_memory_tree_integration.py",
+                    ],
+                    explicit_acceptance_criteria=[
+                        "memory_graph.py has retrieve_tree() method",
+                        "IGRIS_MEMORY_TREE_ENABLED=0 → retrieve_tree() returns []",
+                        "IGRIS_MEMORY_TREE_ENABLED=1 → retrieve_tree() returns list of dicts",
+                        "Each result dict has keys: chunk_id, content, score, topic",
+                        "tests/test_memory_tree_integration.py has ≥3 test functions",
+                        "pytest tests/test_memory_tree_integration.py exits with code 0",
+                    ],
+                    explicit_tests=["tests/test_memory_tree_integration.py"],
                 ),
             ]
             return {
                 "why_too_large": _safe_redact(
-                    f"Memory Tree hierarchy mission requires staged implementation across 4 semantic layers. Signals: {signals}"
+                    f"Memory Tree hierarchy mission requires staged implementation across 5 bounded steps "
+                    f"(Step 0: read-only architecture plan → Steps 1-4: ContentStore, Scorer, "
+                    f"TopicTree+GlobalDigest, retrieval integration). Signals: {signals}"
                 ),
                 "sub_missions": sub_missions,
                 "first_sub_mission": sub_missions[0]["title"],
-                "human_approval_required": False,
+                "human_approval_required": True,
                 "generated_by": "deterministic_fallback",
             }
 
@@ -6971,6 +7160,35 @@ class SelfRepairSupervisor:
                 )
             except Exception:
                 pass
+        # Issue #914 — MissionBrain Advisory diagnostic (monitoring-only).
+        # Computes a recovery recommendation for failed/blocked runs without
+        # surfacing it in reports (should_emit=False, is_gate=False).
+        # Wrapped in bare except so it can NEVER block or modify run outcome.
+        if _selected_advisory_available:
+            try:
+                _goal_status = "partial" if run.repair_cycles_used > 0 else "failed"
+                _adv_cycle = {
+                    "cycle_id": getattr(run, "run_id", "unknown"),
+                    "current_loop_decision": "blocked",
+                    "mission_brain_decision": _goal_status,
+                    "report_type": "diagnostic",
+                    "failure_class": failure,
+                    "capability_signals": dict(run.capability_signals),
+                }
+                _adv_cfg = _make_selected_monitoring_config(include_blocked=True)
+                _adv_result = _enrich_cycle_selected(_adv_cycle, config=_adv_cfg)
+                run.add(
+                    "advisory_diagnostic",
+                    "computed",
+                    "MissionBrain Advisory diagnostic computed (monitoring-only, not surfaced)",
+                    combined_status=_adv_result.get(
+                        "bridge_diagnostics", {}
+                    ).get("combined_status", "unknown"),
+                    template_used=_adv_result.get("_advisory_template_used", "none"),
+                    advisory_surfaced=False,
+                )
+            except Exception:
+                pass  # advisory monitoring must never block or alter run outcome
         return run
 
     def _persist_blocked_outcome(
