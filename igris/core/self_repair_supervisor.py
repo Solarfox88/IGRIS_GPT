@@ -518,6 +518,7 @@ class SupervisorRun:
             "autorun_child_run_id": self.autorun_child_run_id,
             "autorun_policy": self.autorun_policy,
             "autorun_skipped_reason": self.autorun_skipped_reason,
+            "completion_mode": self.completion_mode,
         }
 
 
@@ -542,6 +543,8 @@ class SupervisorBackend(Protocol):
     def fetch_issue(self, issue_url: str) -> CommandResult: ...
     def restore_dangerous_diff(self) -> CommandResult: ...
     def restore_paths(self, paths: List[str]) -> CommandResult: ...
+    def checkout_main(self) -> CommandResult: ...
+    def delete_stale_rank_branches(self) -> CommandResult: ...
     def call_api_helper(self, packet: Dict[str, Any], model: str, max_tokens: int, timeout: int = 45) -> CommandResult: ...
     def api_helper_is_configured(self) -> bool: ...
 
@@ -1065,12 +1068,37 @@ class LocalSupervisorBackend:
         restore = self._run(["git", "restore", "--worktree", "--staged", "."], timeout=60)
         if not restore.success:
             return restore
-        # Remove untracked source/test/docs files left by a failed supervised
-        # branch. The argv is fixed and scoped; no force push or main mutation.
-        clean = self._run(["git", "clean", "-fd", "--", "igris", "tests", "docs"], timeout=60)
+        # Remove untracked files left by a failed supervised branch.
+        # Scope covers all common project directories (not just igris/tests/docs).
+        clean = self._run(["git", "clean", "-fd", "."], timeout=60)
         if not clean.success:
             return clean
         return CommandResult(True, restore.output + clean.output, "", 0)
+
+    def checkout_main(self) -> CommandResult:
+        """Switch back to main branch after a blocked/cancelled run."""
+        return self._run(["git", "checkout", "main"], timeout=30)
+
+    def delete_stale_rank_branches(self) -> CommandResult:
+        """Delete all local rank-* branches left by previous supervised runs."""
+        list_result = self._run(
+            ["git", "branch", "--list", "rank-*"],
+            timeout=15,
+        )
+        if not list_result.success:
+            return list_result
+        branches = [b.strip().lstrip("* ") for b in list_result.output.splitlines() if b.strip()]
+        if not branches:
+            return CommandResult(True, "no rank branches to delete", "", 0)
+        deleted, errors = [], []
+        for branch in branches:
+            r = self._run(["git", "branch", "-D", branch], timeout=15)
+            if r.success:
+                deleted.append(branch)
+            else:
+                errors.append(branch)
+        msg = f"deleted={deleted} errors={errors}"
+        return CommandResult(True, msg, "", 0)
 
     def restore_paths(self, paths: List[str]) -> CommandResult:
         selected = []
@@ -6108,6 +6136,20 @@ class SelfRepairSupervisor:
             "blocked_workspace_cleanup",
             "success" if restore.success else "failure",
             _command_detail(restore),
+        )
+        # Switch back to main so rank branch is not the current HEAD
+        checkout_result = self.backend.checkout_main()
+        run.add(
+            "blocked_workspace_checkout_main",
+            "success" if checkout_result.success else "failure",
+            _command_detail(checkout_result),
+        )
+        # Delete stale rank-* local branches left by supervised runs
+        branch_cleanup = self.backend.delete_stale_rank_branches()
+        run.add(
+            "blocked_workspace_branch_cleanup",
+            "success" if branch_cleanup.success else "failure",
+            _command_detail(branch_cleanup),
         )
         status_after = self.backend.git_status()
         run.add(
