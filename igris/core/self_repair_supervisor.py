@@ -7513,10 +7513,18 @@ def start_supervised_rank(data: Dict[str, Any], project_root: str) -> Supervisor
 
 
 def start_supervised_rank_async(data: Dict[str, Any], project_root: str) -> SupervisorRun:
-    """Create a run immediately and execute it in a background worker."""
+    """Create a run immediately and execute it in a background worker.
+
+    MBOP integration (#936): wraps the worker with Phases 1, 9, 10, 11, 12.
+    - Phase 1 (Intake): reads GitHub issue before run starts.
+    - Phases 9–12: quality gate, satisfaction gate, eval, next-step after completion.
+    MBOP hooks are best-effort: any failure is logged but never crashes the run.
+    """
     payload = dict(data)
     payload["defer_service_restart"] = True
     config = RankSupervisorConfig.from_dict(payload)
+    # mbop_enforce_quality_gate: opt-in per-issue to enforce QG (default: advisory-only)
+    mbop_enforce_qg = bool(data.get("mbop_enforce_quality_gate", False))
     supervisor = SelfRepairSupervisor(project_root=project_root)
     run = SupervisorRun(run_id=uuid.uuid4().hex[:12], rank_id=config.rank_id)
     if hasattr(supervisor, "_configure_run_tracking"):
@@ -7528,6 +7536,22 @@ def start_supervised_rank_async(data: Dict[str, Any], project_root: str) -> Supe
         RUN_STORE[run.run_id] = run
 
     def _worker() -> None:
+        import time as _time
+        _run_start = _time.time()
+
+        # --- MBOP Phase 1: Intake (pre-run) ---
+        _mbop_intake = None
+        try:
+            from igris.core.mbop_runner import mbop_pre_run
+            _mbop_intake = mbop_pre_run(
+                issue_number=config.issue_number,
+                project_root=project_root,
+                run_add_fn=run.add,
+            )
+        except Exception:  # noqa: BLE001
+            pass  # best-effort — never block the run
+
+        # --- Main supervisor run ---
         try:
             supervisor.run(config, run=run)
         except Exception as exc:
@@ -7537,6 +7561,22 @@ def start_supervised_rank_async(data: Dict[str, Any], project_root: str) -> Supe
             run.add("exception", "blocked", str(exc))
             run.report = {"autonomous": False, "blocked_reason": "Supervisor worker crashed"}
             run.touch()
+
+        # --- MBOP Phases 9–12: post-run hooks ---
+        try:
+            from igris.core.mbop_runner import mbop_post_run, MBOPIntakeResult
+            _intake = _mbop_intake if _mbop_intake is not None else MBOPIntakeResult(
+                issue_number=config.issue_number
+            )
+            mbop_post_run(
+                run=run,
+                intake=_intake,
+                project_root=project_root,
+                run_start_ts=_run_start,
+                enforce_quality_gate=mbop_enforce_qg,
+            )
+        except Exception:  # noqa: BLE001
+            pass  # best-effort — never crash after supervisor completed
 
     thread = threading.Thread(
         target=_worker,
