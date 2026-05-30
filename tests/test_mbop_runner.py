@@ -360,3 +360,158 @@ class TestMbopPostRun:
         intake = MBOPIntakeResult(issue_number=951)
         # Must not raise
         mbop_post_run(run, intake, str(tmp_path), time.time())
+
+
+# ---------------------------------------------------------------------------
+# Disk persistence — .igris/mbop_events.jsonl
+# ---------------------------------------------------------------------------
+
+class TestMbopPersistence:
+    """Verify that MBOP phases write to .igris/mbop_events.jsonl."""
+
+    def _jsonl_events(self, tmp_path):
+        """Read all events from the JSONL log."""
+        log = tmp_path / ".igris" / "mbop_events.jsonl"
+        if not log.exists():
+            return []
+        import json as _json
+        events = []
+        for line in log.read_text().splitlines():
+            line = line.strip()
+            if line:
+                events.append(_json.loads(line))
+        return events
+
+    def test_pre_run_writes_jsonl(self, tmp_path):
+        """mbop_pre_run writes a phase1 event to disk when run_id is provided."""
+        mock_gh_output = '{"title": "T", "body": "' + SAMPLE_ISSUE_BODY.replace('"', '\\"').replace("\n", "\\n") + '", "labels": []}'
+        with patch("subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(returncode=0, stdout=mock_gh_output, stderr="")
+            mbop_pre_run(issue_number=951, project_root=str(tmp_path), run_id="run-abc")
+        events = self._jsonl_events(tmp_path)
+        assert len(events) >= 1
+        phases = [e["phase"] for e in events]
+        assert "mbop_phase1_intake" in phases
+
+    def test_pre_run_jsonl_contains_run_id(self, tmp_path):
+        """Events in JSONL carry the run_id passed to mbop_pre_run."""
+        mock_gh_output = '{"title": "T", "body": "' + SAMPLE_ISSUE_BODY.replace('"', '\\"').replace("\n", "\\n") + '", "labels": []}'
+        with patch("subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(returncode=0, stdout=mock_gh_output, stderr="")
+            mbop_pre_run(issue_number=951, project_root=str(tmp_path), run_id="run-xyz")
+        events = self._jsonl_events(tmp_path)
+        assert all(e.get("run_id") == "run-xyz" for e in events)
+
+    def test_pre_run_no_run_id_still_writes(self, tmp_path):
+        """Even without a run_id, pre_run writes to disk (run_id='')."""
+        mock_gh_output = '{"title": "T", "body": "No MBOP section here.", "labels": []}'
+        with patch("subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(returncode=0, stdout=mock_gh_output, stderr="")
+            mbop_pre_run(issue_number=951, project_root=str(tmp_path))
+        events = self._jsonl_events(tmp_path)
+        assert len(events) >= 1
+
+    def test_post_run_writes_phase9_event(self, tmp_path):
+        """mbop_post_run writes a phase9 quality-gate event to disk."""
+        run = MagicMock()
+        run.status = "completed"
+        run.failure_class = ""
+        run.add = MagicMock()
+        intake = MBOPIntakeResult(issue_number=951)
+        with patch("igris.core.mbop_runner._get_modified_files", return_value=[]):
+            with patch("igris.core.mbop_runner._get_diff_text", return_value=""):
+                with patch("igris.core.mbop_runner._get_last_commit_message", return_value=""):
+                    mbop_post_run(run, intake, str(tmp_path), time.time(), run_id="run-post-1")
+        events = self._jsonl_events(tmp_path)
+        phases = [e["phase"] for e in events]
+        assert "mbop_phase9_quality_gate" in phases
+
+    def test_post_run_writes_all_phases(self, tmp_path):
+        """mbop_post_run writes Phase 9, 10, 11 (and optionally 12) events."""
+        run = MagicMock()
+        run.status = "completed"
+        run.failure_class = ""
+        run.add = MagicMock()
+        intake = MBOPIntakeResult(issue_number=951)
+        with patch("igris.core.mbop_runner._get_modified_files", return_value=[]):
+            with patch("igris.core.mbop_runner._get_diff_text", return_value=""):
+                with patch("igris.core.mbop_runner._get_last_commit_message", return_value=""):
+                    mbop_post_run(run, intake, str(tmp_path), time.time(), run_id="run-all")
+        events = self._jsonl_events(tmp_path)
+        phases = [e["phase"] for e in events]
+        assert "mbop_phase9_quality_gate" in phases
+        assert "mbop_phase10_satisfaction_gate" in phases
+        assert "mbop_phase11_post_task_eval" in phases
+
+    def test_jsonl_appends_across_runs(self, tmp_path):
+        """Multiple runs append events; older events are not overwritten."""
+        run = MagicMock()
+        run.status = "completed"
+        run.failure_class = ""
+        run.add = MagicMock()
+
+        for rid in ["run-A", "run-B"]:
+            intake = MBOPIntakeResult(issue_number=951)
+            with patch("igris.core.mbop_runner._get_modified_files", return_value=[]):
+                with patch("igris.core.mbop_runner._get_diff_text", return_value=""):
+                    with patch("igris.core.mbop_runner._get_last_commit_message", return_value=""):
+                        mbop_post_run(run, intake, str(tmp_path), time.time(), run_id=rid)
+
+        events = self._jsonl_events(tmp_path)
+        run_ids_seen = {e["run_id"] for e in events}
+        assert "run-A" in run_ids_seen
+        assert "run-B" in run_ids_seen
+
+    def test_jsonl_contains_issue_number(self, tmp_path):
+        """Every event includes the correct issue_number."""
+        run = MagicMock()
+        run.status = "completed"
+        run.failure_class = ""
+        run.add = MagicMock()
+        intake = MBOPIntakeResult(issue_number=1234)
+        with patch("igris.core.mbop_runner._get_modified_files", return_value=[]):
+            with patch("igris.core.mbop_runner._get_diff_text", return_value=""):
+                with patch("igris.core.mbop_runner._get_last_commit_message", return_value=""):
+                    mbop_post_run(run, intake, str(tmp_path), time.time(), run_id="run-issue")
+        events = self._jsonl_events(tmp_path)
+        assert all(e.get("issue_number") == 1234 for e in events)
+
+    def test_jsonl_survives_corrupt_line(self, tmp_path):
+        """Reader (mbop_log.read_all) skips corrupt lines without raising."""
+        from igris.core import mbop_log
+        log = tmp_path / ".igris" / "mbop_events.jsonl"
+        log.parent.mkdir(parents=True, exist_ok=True)
+        log.write_text('{"phase": "p1", "run_id": "r1"}\nBAD LINE NOT JSON\n{"phase": "p2", "run_id": "r1"}\n')
+        events = mbop_log.read_all(str(tmp_path))
+        assert len(events) == 2
+        assert events[0]["phase"] == "p1"
+        assert events[1]["phase"] == "p2"
+
+    def test_mbop_log_read_for_run(self, tmp_path):
+        """mbop_log.read_for_run filters by run_id correctly."""
+        from igris.core import mbop_log
+        log = tmp_path / ".igris" / "mbop_events.jsonl"
+        log.parent.mkdir(parents=True, exist_ok=True)
+        log.write_text(
+            '{"phase": "p1", "run_id": "r1", "issue_number": 1}\n'
+            '{"phase": "p2", "run_id": "r2", "issue_number": 2}\n'
+            '{"phase": "p3", "run_id": "r1", "issue_number": 1}\n'
+        )
+        events = mbop_log.read_for_run(str(tmp_path), "r1")
+        assert len(events) == 2
+        assert all(e["run_id"] == "r1" for e in events)
+
+    def test_mbop_log_summary_for_run(self, tmp_path):
+        """mbop_log.summary_for_run returns correct phase map."""
+        from igris.core import mbop_log
+        log = tmp_path / ".igris" / "mbop_events.jsonl"
+        log.parent.mkdir(parents=True, exist_ok=True)
+        log.write_text(
+            '{"phase": "mbop_phase1_intake", "run_id": "r1", "issue_number": 951, "status": "ok", "ts": "T1"}\n'
+            '{"phase": "mbop_phase9_quality_gate", "run_id": "r1", "issue_number": 951, "status": "pass", "ts": "T2"}\n'
+        )
+        summary = mbop_log.summary_for_run(str(tmp_path), "r1")
+        assert summary is not None
+        assert summary["event_count"] == 2
+        assert summary["phases"]["mbop_phase1_intake"] == "ok"
+        assert summary["phases"]["mbop_phase9_quality_gate"] == "pass"
