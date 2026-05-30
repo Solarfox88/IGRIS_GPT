@@ -592,6 +592,13 @@ def create_app() -> FastAPI:
     ):
         app.include_router(_mod.create_router(deps))
 
+    # ---- Register modular API routers (igris/api/) ----
+    try:
+        from igris.api.routes.github_admin import router as _github_admin_router
+        app.include_router(_github_admin_router)
+    except Exception:
+        pass  # best-effort — never block app startup
+
     return app
 
 
