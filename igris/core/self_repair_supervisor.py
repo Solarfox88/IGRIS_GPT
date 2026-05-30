@@ -6979,26 +6979,28 @@ class SelfRepairSupervisor:
                 )
                 # Propagate parent roadmap/priority/phase labels so the watchdog
                 # can discover and schedule sub-issues automatically.
-                if _parent_inherit_labels:
-                    # Also add depends-on-NNN labels for dependencies between sub-issues
-                    _sub_labels = list(_parent_inherit_labels)
-                    # Add depends-on labels for each listed dependency (other sub-issues)
-                    for _dep in deps:
-                        # deps may be issue URLs or "Sub-task N" style references
-                        import re as _re2
-                        _dep_num = _re2.search(r"#?(\d+)", str(_dep))
-                        if _dep_num:
-                            _sub_labels.append(f"depends-on-{_dep_num.group(1)}")
-                    try:
-                        import subprocess as _subp3
-                        _subp3.run(
-                            ["gh", "issue", "edit", url, "--add-label",
-                             ",".join(_sub_labels)],
-                            capture_output=True, text=True,
-                            cwd=self.project_root, timeout=20,
-                        )
-                    except Exception:
-                        pass  # Label application is best-effort
+                # Always add "no-decompose" so the watchdog knows this is a leaf
+                # sub-issue that must be implemented directly, not decomposed again.
+                _sub_labels = list(_parent_inherit_labels)
+                if "no-decompose" not in _sub_labels:
+                    _sub_labels.append("no-decompose")
+                # Also add depends-on-NNN labels for dependencies between sub-issues
+                for _dep in deps:
+                    # deps may be issue URLs or "Sub-task N" style references
+                    import re as _re2
+                    _dep_num = _re2.search(r"#?(\d+)", str(_dep))
+                    if _dep_num:
+                        _sub_labels.append(f"depends-on-{_dep_num.group(1)}")
+                try:
+                    import subprocess as _subp3
+                    _subp3.run(
+                        ["gh", "issue", "edit", url, "--add-label",
+                         ",".join(_sub_labels)],
+                        capture_output=True, text=True,
+                        cwd=self.project_root, timeout=20,
+                    )
+                except Exception:
+                    pass  # Label application is best-effort
             else:
                 run.add(
                     "subissue_created",
