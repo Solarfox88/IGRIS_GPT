@@ -484,7 +484,7 @@ async def _watchdog_loop(project_root: str) -> None:
 
 @asynccontextmanager
 async def _lifespan(app: FastAPI):
-    project_root = str(Path(__file__).resolve().parents[2])
+    project_root = str(CONFIG.project_root)
     task = asyncio.create_task(_watchdog_loop(project_root))
     _watchdog_logger.info("Watchdog started (poll=%ds)", _WATCHDOG_POLL_SECONDS)
     from igris.core.meta_watchdog import start_smw
