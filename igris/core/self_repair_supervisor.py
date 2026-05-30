@@ -1925,6 +1925,11 @@ class SelfRepairSupervisor:
         forever as 'running'.  We detect them here by checking that their PID
         is not the current process (or has no PID at all) and transition them
         to 'interrupted' so the UI is not misleading.  (Issue #722)
+
+        Parallel-run fix: runs already registered in the module-level RUN_STORE
+        are actively managed by this process — skip them.  This allows multiple
+        concurrent supervised runs (one SelfRepairSupervisor per run) without
+        each new instantiation cancelling the others.
         """
         _logger = logging.getLogger("igris.supervisor.startup")
         current_pid = os.getpid()
@@ -1933,6 +1938,10 @@ class SelfRepairSupervisor:
             for run_id, record in self._runs_index.items():
                 status = str(record.get("status", "")).strip().lower()
                 if status not in ("running", "cancelling"):
+                    continue
+                # Skip runs that are already in the in-memory store — they are
+                # live runs managed by this process (parallel multi-run support).
+                if run_id in RUN_STORE:
                     continue
                 run_pid = record.get("pid")
                 if run_pid is not None and int(run_pid) == current_pid:
