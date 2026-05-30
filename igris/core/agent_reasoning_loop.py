@@ -827,6 +827,59 @@ class AgentReasoningLoop:
             memory_items=self._memory_items,
         )
 
+    # Token budget thresholds for local profiles (#1044)
+    _LOCAL_TOKEN_WARN = 3000    # ~12 000 chars — warn and log
+    _LOCAL_TOKEN_CAP  = 3800    # ~15 200 chars — hard truncate before sending
+    _LOCAL_PROFILES   = {"local_light", "local_coder", "mini_execution"}
+
+    def _guard_context_window(
+        self,
+        system_prompt: str,
+        user_message: str,
+        context_packet: Any,
+    ) -> tuple:
+        """Truncate system_prompt/user_message when near local model token cap (#1044).
+
+        Returns the (possibly truncated) system_prompt, user_message pair.
+        Emits a warning to _world_state when truncation occurs.
+        """
+        profile = self.preferred_profile or ""
+        if profile not in self._LOCAL_PROFILES:
+            return system_prompt, user_message
+
+        # Estimate token count (~4 chars per token)
+        total_chars = len(system_prompt) + len(user_message)
+        token_estimate = total_chars // 4
+
+        if token_estimate <= self._LOCAL_TOKEN_WARN:
+            return system_prompt, user_message
+
+        # Log warning
+        self._world_state["context_window_warning"] = (
+            f"token_estimate={token_estimate} > warn_threshold={self._LOCAL_TOKEN_WARN} "
+            f"(profile={profile})"
+        )
+
+        if token_estimate <= self._LOCAL_TOKEN_CAP:
+            return system_prompt, user_message
+
+        # Hard cap exceeded — trim in order: file_context, then tool_result in state
+        # We approximate by reducing system_prompt proportionally from the bottom
+        target_chars = self._LOCAL_TOKEN_CAP * 4
+        budget_system = target_chars - len(user_message) - 200  # 200 chars overhead
+        if budget_system > 500 and len(system_prompt) > budget_system:
+            # Keep the front (role/rules) and end (action schema); cut the middle sections
+            keep_front = budget_system * 2 // 3
+            keep_back  = budget_system - keep_front
+            system_prompt = (
+                system_prompt[:keep_front]
+                + "\n... [context truncated for token budget] ...\n"
+                + system_prompt[-keep_back:]
+            )
+            self._world_state["context_window_truncated"] = True
+
+        return system_prompt, user_message
+
     def _decide_action(self, context_packet):
         """Decide next action via Model Orchestrator.
 
@@ -840,8 +893,15 @@ class AgentReasoningLoop:
 
         # Build prompt from context
         system_prompt = self._format_system_prompt(context_packet)
+        user_message = self._format_user_message(context_packet)
+
+        # Guard against silent truncation on local models (#1044)
+        system_prompt, user_message = self._guard_context_window(
+            system_prompt, user_message, context_packet
+        )
+
         messages = [
-            {"role": "user", "content": self._format_user_message(context_packet)},
+            {"role": "user", "content": user_message},
         ]
 
         orch_result = orch.complete(

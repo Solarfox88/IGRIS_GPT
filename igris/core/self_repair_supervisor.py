@@ -446,6 +446,8 @@ class SupervisorRun:
     autorun_child_run_id: str = ""
     autorun_policy: str = ""
     autorun_skipped_reason: str = ""
+    # MBOP Phase 1 intake — set before supervisor.run() so _rank_initial_context can read it (#1040)
+    mbop_intake: Any = None  # Optional[MBOPIntakeResult]
 
     def add(self, phase: str, status: str, detail: str = "", **data: Any) -> None:
         event = SupervisorEvent(phase=phase, status=status, detail=detail, data=data)
@@ -3185,7 +3187,7 @@ class SelfRepairSupervisor:
                         f"Acceptance criteria: {'; '.join(stage.acceptance_criteria)}"
                     )
                 )
-                stage_context = self._rank_initial_context(config)
+                stage_context = self._rank_initial_context(config, run=run)
                 stage_context.update({
                     "mission_orchestration_mode": plan.mode,
                     "mission_stage_id": stage.stage_id,
@@ -3917,7 +3919,7 @@ class SelfRepairSupervisor:
                 reasoning = self.backend.run_reasoning(
                     config.goal,
                     max_steps=max_reasoning_steps,
-                    initial_context=self._rank_initial_context(config),
+                    initial_context=self._rank_initial_context(config, run=run),
                     timeout=reasoning_timeout,
                     task_type=_routed_task_type,
                     preferred_profile=_routed_profile,
@@ -4646,7 +4648,11 @@ class SelfRepairSupervisor:
             return False
         return self._rank_ui_card_contract_satisfied() and self._rank_ui_visibility_signal_present()
 
-    def _rank_initial_context(self, config: RankSupervisorConfig) -> Dict[str, Any]:
+    def _rank_initial_context(
+        self,
+        config: RankSupervisorConfig,
+        run: Optional["SupervisorRun"] = None,
+    ) -> Dict[str, Any]:
         context: Dict[str, Any] = {
             "rank_test": config.rank_id,
             "project_root": self.project_root,
@@ -4725,6 +4731,28 @@ class SelfRepairSupervisor:
                         f"Create {target} directly."
                     )
                 break
+
+        # --- Inject MBOP Phase 1 intake fields (#1040) ---
+        # These let the reasoning loop know the exact target file/module and acceptance
+        # criteria from the start, eliminating blind find_files exploration.
+        _intake = getattr(run, "mbop_intake", None) if run is not None else None
+        if _intake is not None:
+            try:
+                if getattr(_intake, "what", ""):
+                    context["mbop_what"] = str(_intake.what)[:300]
+                if getattr(_intake, "where", ""):
+                    context["mbop_where"] = str(_intake.where)[:300]
+                if getattr(_intake, "why", ""):
+                    context["mbop_why"] = str(_intake.why)[:300]
+                if getattr(_intake, "acceptance_criteria", []):
+                    context["mbop_acceptance_criteria"] = list(_intake.acceptance_criteria[:10])
+                if getattr(_intake, "constraints", []):
+                    context["mbop_constraints"] = list(_intake.constraints[:5])
+                if getattr(_intake, "extraction_ok", False):
+                    context["mbop_intake_ok"] = True
+            except Exception:
+                pass  # best-effort — never block the run
+
         return context
 
     @staticmethod
@@ -5279,7 +5307,7 @@ class SelfRepairSupervisor:
             run.status = "failed"
             return False
 
-        repair_context = self._rank_initial_context(config)
+        repair_context = self._rank_initial_context(config, run=run)
         repair_context.update({
             "repair_cycle": cycle,
             "failure_class": failure,
@@ -6344,7 +6372,7 @@ class SelfRepairSupervisor:
         signals = dict(run.capability_signals)
 
         # --- emit decomposition_request event (same as before) ---
-        context = self._rank_initial_context(config)
+        context = self._rank_initial_context(config, run=run)
         context.update({
             "decomposition_required": True,
             "capability_limit_signals": signals,
@@ -7717,6 +7745,10 @@ def start_supervised_rank_async(data: Dict[str, Any], project_root: str) -> Supe
             )
         except Exception:
             pass
+
+        # --- Store MBOP intake on run so _rank_initial_context can inject it (#1040) ---
+        if _mbop_intake is not None:
+            run.mbop_intake = _mbop_intake
 
         # --- Main supervisor run ---
         try:
