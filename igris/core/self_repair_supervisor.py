@@ -1311,6 +1311,78 @@ def _extract_failed_pytest_nodes(text: str) -> List[str]:
     return out
 
 
+def _parse_pytest_collection_error(pytest_output: str) -> Optional[Dict[str, Any]]:
+    """Parse pytest output to extract actionable collection error details.
+
+    Returns a dict with error_type and context keys, or None if no known
+    collection error is detected.  Supported patterns:
+
+    * ``ImportError: cannot import name 'X' from 'Y'``
+    * ``ImportError: cannot import name 'X'``  (no module qualifier)
+    * ``ModuleNotFoundError: No module named 'X'``
+    * ``AttributeError: module 'X' has no attribute 'Y'``
+    * Generic ERROR during collection with no test selected (``no tests ran``)
+    """
+    if not pytest_output:
+        return None
+
+    text = pytest_output
+
+    # Pattern 1: ImportError: cannot import name 'Symbol' from 'module.path'
+    m = re.search(
+        r"ImportError: cannot import name ['\"]([^'\"]+)['\"] from ['\"]([^'\"]+)['\"]",
+        text,
+    )
+    if m:
+        return {
+            "error_type": "missing_symbol",
+            "missing_symbol": m.group(1),
+            "source_module": m.group(2),
+        }
+
+    # Pattern 1b: ImportError: cannot import name 'Symbol' (no 'from' clause)
+    m = re.search(r"ImportError: cannot import name ['\"]([^'\"]+)['\"]", text)
+    if m:
+        # Try to infer the module from the collection path
+        mod_m = re.search(r"from ([a-zA-Z0-9_.]+) import", text)
+        return {
+            "error_type": "missing_symbol",
+            "missing_symbol": m.group(1),
+            "source_module": mod_m.group(1) if mod_m else "",
+        }
+
+    # Pattern 2: ModuleNotFoundError: No module named 'X'
+    m = re.search(r"ModuleNotFoundError: No module named ['\"]([^'\"]+)['\"]", text)
+    if m:
+        return {
+            "error_type": "missing_module",
+            "missing_module": m.group(1),
+        }
+
+    # Pattern 3: AttributeError: module 'X' has no attribute 'Y'
+    m = re.search(
+        r"AttributeError: module ['\"]([^'\"]+)['\"] has no attribute ['\"]([^'\"]+)['\"]",
+        text,
+    )
+    if m:
+        return {
+            "error_type": "missing_symbol",
+            "missing_symbol": m.group(2),
+            "source_module": m.group(1),
+        }
+
+    # Pattern 4: generic collection error — EEE / no tests ran / ERROR collecting
+    if re.search(r"(ERROR collecting|no tests ran|= no tests ran =|EEE)", text):
+        # Extract the test file that failed collection
+        file_m = re.search(r"ERROR collecting (tests/[^\s]+\.py)", text)
+        return {
+            "error_type": "collection_error",
+            "failing_test_file": file_m.group(1) if file_m else "",
+        }
+
+    return None
+
+
 def _baseline_failure_is_transient(baseline: CommandResult, diagnostics: Optional[CommandResult]) -> bool:
     if baseline.returncode == 124:
         return True
@@ -5105,6 +5177,62 @@ class SelfRepairSupervisor:
                 "unrelated endpoints such as /api/rank/status or /dashboard."
             )
         if failure == "pytest_failure":
+            # --- Targeted collection-error diagnosis ---
+            # Extract the latest full_pytest failure detail from run events so we can
+            # build a precise repair goal instead of a generic "fix pytest" instruction.
+            _pytest_output: str = ""
+            for _ev in reversed(run.events):
+                if getattr(_ev, "phase", "") == "full_pytest" and getattr(_ev, "status", "") == "failure":
+                    _pytest_output = getattr(_ev, "detail", "") or ""
+                    break
+            if not _pytest_output:
+                # Also check targeted_tests events as fallback
+                for _ev in reversed(run.events):
+                    if getattr(_ev, "phase", "") == "targeted_tests" and getattr(_ev, "status", "") == "failure":
+                        _pytest_output = getattr(_ev, "detail", "") or ""
+                        break
+
+            _collection_err = _parse_pytest_collection_error(_pytest_output) if _pytest_output else None
+
+            if _collection_err:
+                _err_type = _collection_err.get("error_type", "")
+                if _err_type == "missing_symbol":
+                    _sym = _collection_err.get("missing_symbol", "")
+                    _mod = _collection_err.get("source_module", "")
+                    repair_goal = (
+                        f"Fix pytest collection ImportError: the test suite tries to import "
+                        f"'{_sym}' from '{_mod}' but that symbol does not exist there. "
+                        f"Steps: (1) read the failing test file(s) to understand how '{_sym}' "
+                        f"is used; (2) implement '{_sym}' in '{_mod}' (or the correct module) "
+                        f"with the exact API the tests expect; (3) run pytest and confirm "
+                        f"collection succeeds and all tests pass. "
+                        f"Keep changes minimal — do not refactor unrelated code."
+                    )
+                elif _err_type == "missing_module":
+                    _missing_mod = _collection_err.get("missing_module", "")
+                    repair_goal = (
+                        f"Fix pytest collection ModuleNotFoundError: module '{_missing_mod}' "
+                        f"is imported by the test suite but cannot be found. "
+                        f"Steps: (1) check if '{_missing_mod}' is a project module that needs "
+                        f"to be created or if it is a missing dependency; (2) if it is a "
+                        f"project module, create it with the minimum API required by the tests; "
+                        f"(3) if it is a third-party package, add it to requirements and "
+                        f"install it; (4) run pytest and confirm collection succeeds. "
+                        f"Keep changes minimal."
+                    )
+                elif _err_type == "collection_error":
+                    _tf = _collection_err.get("failing_test_file", "")
+                    repair_goal = (
+                        f"Fix pytest collection error{' in ' + _tf if _tf else ''}. "
+                        f"The test collection phase failed (EEE / no tests ran). "
+                        f"Steps: (1) run 'python -m pytest --collect-only' to reproduce the "
+                        f"exact error; (2) read the failing test file{'  ' + _tf if _tf else ''} "
+                        f"and the module(s) it imports; (3) fix the root cause (missing class, "
+                        f"wrong import path, syntax error, etc.); (4) run pytest and confirm "
+                        f"all tests are collected and pass. Keep changes minimal."
+                    )
+
+            # Always append the FastAPI test-client reminder
             repair_goal += (
                 " CRITICAL — this is a FastAPI application. Any test file MUST use "
                 "'from fastapi.testclient import TestClient' and instantiate the client as "
