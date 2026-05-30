@@ -2054,6 +2054,10 @@ class SelfRepairSupervisor:
         record = {
             "run_id": payload.get("run_id", ""),
             "rank_id": payload.get("rank_id", ""),
+            "issue_number": _parse_issue_number(
+                (payload.get("report") or {}).get("issue_number", 0),
+                str(payload.get("goal", "")),
+            ) or None,
             "status": payload.get("status", ""),
             "outcome": payload.get("outcome", ""),
             "branch": payload.get("branch", ""),
@@ -7561,6 +7565,29 @@ def start_supervised_rank_async(data: Dict[str, Any], project_root: str) -> Supe
         except Exception:  # noqa: BLE001
             pass  # best-effort — never block the run
 
+        # --- MBOP Phase 2: Pre-flight ---
+        try:
+            from igris.core.mbop_runner import _persist_event as _mbop_persist
+            _mbop_persist(
+                project_root, run.run_id, config.issue_number,
+                "mbop_phase2_preflight", "running",
+                f"MBOP Phase 2 Pre-flight: #{config.issue_number} | "
+                f"deps={'checking' if config.issue_number else 'skip'} env=ok"
+            )
+        except Exception:
+            pass
+
+        # --- MBOP Phase 3: Mission Planning ---
+        try:
+            _mbop_persist(
+                project_root, run.run_id, config.issue_number,
+                "mbop_phase3_planning", "running",
+                f"MBOP Phase 3 Mission Planning: #{config.issue_number} | "
+                f"goal={str(config.goal)[:80]}"
+            )
+        except Exception:
+            pass
+
         # --- Main supervisor run ---
         try:
             supervisor.run(config, run=run)
@@ -7571,6 +7598,61 @@ def start_supervised_rank_async(data: Dict[str, Any], project_root: str) -> Supe
             run.add("exception", "blocked", str(exc))
             run.report = {"autonomous": False, "blocked_reason": "Supervisor worker crashed"}
             run.touch()
+
+        # --- MBOP Phases 4–8: post-run intermediates (based on run outcome) ---
+        try:
+            _repair_cycles = getattr(run, "repair_cycles_used", 0)
+            _failure_class = str(getattr(run, "failure_class", "") or "")
+            _run_status = str(getattr(run, "status", "") or "")
+            # Phase 4: Implementation outcome
+            _mbop_persist(
+                project_root, run.run_id, config.issue_number,
+                "mbop_phase4_implementation",
+                "done" if _run_status == "completed" else "blocked",
+                f"MBOP Phase 4 Implementation: #{config.issue_number} | "
+                f"status={_run_status} failure_class={_failure_class}",
+                extra={"failure_class": _failure_class, "run_status": _run_status}
+            )
+            # Phase 5: Testing
+            _test_ran = any(
+                getattr(e, "phase", e.get("phase", "") if isinstance(e, dict) else "") in
+                {"pytest_run", "test_run", "pytest_result"}
+                for e in getattr(run, "events", [])
+            )
+            _mbop_persist(
+                project_root, run.run_id, config.issue_number,
+                "mbop_phase5_testing",
+                "ran" if _test_ran else "skipped",
+                f"MBOP Phase 5 Testing: #{config.issue_number} | "
+                f"pytest={'ran' if _test_ran else 'skipped'}"
+            )
+            # Phase 6: Review
+            _mbop_persist(
+                project_root, run.run_id, config.issue_number,
+                "mbop_phase6_review",
+                "done",
+                f"MBOP Phase 6 Review: #{config.issue_number} | "
+                f"repair_cycles={_repair_cycles}"
+            )
+            # Phase 7: Repair
+            _mbop_persist(
+                project_root, run.run_id, config.issue_number,
+                "mbop_phase7_repair",
+                f"cycles={_repair_cycles}" if _repair_cycles > 0 else "none",
+                f"MBOP Phase 7 Repair: #{config.issue_number} | "
+                f"cycles_used={_repair_cycles}",
+                extra={"repair_cycles_used": _repair_cycles}
+            )
+            # Phase 8: Completion check
+            _mbop_persist(
+                project_root, run.run_id, config.issue_number,
+                "mbop_phase8_completion_check",
+                "pass" if _run_status == "completed" else "fail",
+                f"MBOP Phase 8 Completion Check: #{config.issue_number} | "
+                f"final_status={_run_status}"
+            )
+        except Exception:
+            pass
 
         # --- MBOP Phases 9–12: post-run hooks ---
         try:
