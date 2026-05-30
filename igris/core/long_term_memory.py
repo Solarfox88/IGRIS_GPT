@@ -1,8 +1,8 @@
 """
-Long-term persistent memory with domain indexing and rolling summary.
+Long-term persistent memory with domain index and rolling summary.
 
-Provides LongTermMemory for storing structured memory entries with domain tags,
-auto-generated rolling summaries, and MemoryRetriever for contextual lookup.
+Stores memory entries keyed by domain, supports rolling summary generation
+for maintaining a concise compressed view of past events.
 """
 
 from __future__ import annotations
@@ -24,317 +24,234 @@ from igris.models.config import CONFIG
 
 @dataclass
 class MemoryEntry:
-    """A single memory entry with domain tag and metadata."""
-    id: str = field(default_factory=lambda: uuid.uuid4().hex[:12])
-    timestamp: float = field(default_factory=time.time)
-    domain: str = "general"
+    """A single memory entry with metadata."""
+    id: str = field(default_factory=lambda: str(uuid.uuid4()))
+    domain: str = ""
     content: str = ""
-    importance: float = 0.5  # 0.0 (trivial) to 1.0 (critical)
+    timestamp: float = field(default_factory=time.time)
+    source: str = ""
     tags: List[str] = field(default_factory=list)
-    source: str = ""  # e.g. "teacher", "gate_override", "user"
-    expiry: Optional[float] = None  # None = never expires
-
-    def to_dict(self) -> Dict[str, Any]:
-        return asdict(self)
-
-    @classmethod
-    def from_dict(cls, d: Dict[str, Any]) -> MemoryEntry:
-        return cls(**d)
-
-
-@dataclass
-class RollingSummary:
-    """Summarised view of a domain's memory over a rolling window."""
-    domain: str
-    window_start: float
-    window_end: float
-    entry_count: int
-    summary_text: str
-    last_updated: float = field(default_factory=time.time)
+    importance: float = 1.0  # 0.0 (low) to 1.0 (high)
 
 
 @dataclass
 class DomainIndex:
-    """Index of domains with metadata for fast retrieval."""
-    domains: Dict[str, Dict[str, Any]] = field(default_factory=dict)
-    # domain -> { "last_updated": float, "entry_count": int, "latest_summary": str }
+    """Index of memory entries for a given domain."""
+    domain: str = ""
+    entries: List[str] = field(default_factory=list)  # list of entry ids
+    latest_timestamp: float = 0.0
+    entry_count: int = 0
+
+
+@dataclass
+class RollingSummary:
+    """Rolling summary of memory entries for a domain."""
+    domain: str = ""
+    summary: str = ""
+    last_updated: float = 0.0
+    version: int = 0
+    entry_count_since_summary: int = 0
 
 
 # ---------------------------------------------------------------------------
-# Persistence helpers
-# ---------------------------------------------------------------------------
-
-_MEMORY_DIR = CONFIG.igris_path / "memory" / "long_term"
-_DOMAIN_INDEX_FILE = _MEMORY_DIR / "domain_index.json"
-_ENTRIES_DIR = _MEMORY_DIR / "entries"
-_SUMMARIES_DIR = _MEMORY_DIR / "summaries"
-
-
-def _ensure_dirs() -> None:
-    _MEMORY_DIR.mkdir(parents=True, exist_ok=True)
-    _ENTRIES_DIR.mkdir(parents=True, exist_ok=True)
-    _SUMMARIES_DIR.mkdir(parents=True, exist_ok=True)
-
-
-def _load_domain_index() -> DomainIndex:
-    _ensure_dirs()
-    if _DOMAIN_INDEX_FILE.exists():
-        raw = json.loads(_DOMAIN_INDEX_FILE.read_text())
-        return DomainIndex(**raw)
-    return DomainIndex()
-
-
-def _save_domain_index(index: DomainIndex) -> None:
-    _DOMAIN_INDEX_FILE.write_text(json.dumps(asdict(index), indent=2))
-
-
-def _entry_path(entry_id: str) -> Path:
-    return _ENTRIES_DIR / f"{entry_id}.json"
-
-
-def _domain_summary_path(domain: str) -> Path:
-    safe_name = domain.replace(" ", "_").replace("/", "_").replace("\\", "_")
-    return _SUMMARIES_DIR / f"{safe_name}.json"
-
-
-# ---------------------------------------------------------------------------
-# LongTermMemory
+# Main class
 # ---------------------------------------------------------------------------
 
 class LongTermMemory:
-    """Persistent memory store with domain indexing and rolling summaries.
+    """Persistent, domain-indexed memory with rolling summary."""
 
-    Entries are stored as individual JSON files under .igris/memory/long_term/entries/
-    indexed by domain in domain_index.json.  Rolling summaries are regenerated
-    periodically when the entry count crosses a threshold.
-    """
+    def __init__(self, base_path: Optional[Path] = None) -> None:
+        self._base_path = base_path or Path(CONFIG.igris_dir) / "memory" / "long_term"
+        self._base_path.mkdir(parents=True, exist_ok=True)
+        self._entries_file = self._base_path / "entries.json"
+        self._index_file = self._base_path / "index.json"
+        self._summary_file = self._base_path / "summary.json"
+        self._entries: Dict[str, MemoryEntry] = {}
+        self._index: Dict[str, DomainIndex] = {}
+        self._summaries: Dict[str, RollingSummary] = {}
+        self._load()
 
-    def __init__(self, max_entries_per_domain: int = 1000,
-                 summary_entry_threshold: int = 50) -> None:
-        self._max_entries = max_entries_per_domain
-        self._summary_threshold = summary_entry_threshold
-        self._domain_index = _load_domain_index()
+    # ------------------------------------------------------------------
+    # Persistence helpers
+    # ------------------------------------------------------------------
 
-    # ---- Public API ----
+    def _load(self) -> None:
+        """Load state from disk."""
+        if self._entries_file.exists():
+            with open(self._entries_file, "r") as f:
+                raw = json.load(f)
+                for k, v in raw.items():
+                    self._entries[k] = MemoryEntry(**v)
+        if self._index_file.exists():
+            with open(self._index_file, "r") as f:
+                raw = json.load(f)
+                for k, v in raw.items():
+                    self._index[k] = DomainIndex(**v)
+        if self._summary_file.exists():
+            with open(self._summary_file, "r") as f:
+                raw = json.load(f)
+                for k, v in raw.items():
+                    self._summaries[k] = RollingSummary(**v)
 
-    def store(self, entry: MemoryEntry) -> str:
-        """Persist a memory entry, update domain index, and trigger summary if needed."""
-        redacted_content = redact_secrets(entry.content)
-        entry.content = redacted_content
+    def _save(self) -> None:
+        """Save state to disk."""
+        # Convert dataclasses to dicts, redact content
+        entries_dict = {
+            eid: asdict(entry)
+            for eid, entry in self._entries.items()
+        }
+        for e in entries_dict.values():
+            e["content"] = redact_secrets(e["content"])
 
-        # Enforce max entries per domain (evict oldest if necessary)
-        self._evict_if_needed(entry.domain)
+        index_dict = {k: asdict(v) for k, v in self._index.items()}
+        summary_dict = {k: asdict(v) for k, v in self._summaries.items()}
 
-        # Write entry file
-        path = _entry_path(entry.id)
-        path.write_text(json.dumps(entry.to_dict(), indent=2))
+        with open(self._entries_file, "w") as f:
+            json.dump(entries_dict, f, indent=2, default=str)
+        with open(self._index_file, "w") as f:
+            json.dump(index_dict, f, indent=2, default=str)
+        with open(self._summary_file, "w") as f:
+            json.dump(summary_dict, f, indent=2, default=str)
+
+    # ------------------------------------------------------------------
+    # Public API
+    # ------------------------------------------------------------------
+
+    def add_entry(self, domain: str, content: str, source: str = "",
+                  tags: Optional[List[str]] = None,
+                  importance: float = 1.0) -> MemoryEntry:
+        """Add a memory entry for a given domain."""
+        entry = MemoryEntry(
+            domain=domain,
+            content=content,
+            source=source,
+            tags=tags or [],
+            importance=importance
+        )
+        self._entries[entry.id] = entry
 
         # Update domain index
-        domain_data = self._domain_index.domains.setdefault(entry.domain, {
-            "last_updated": 0.0,
-            "entry_count": 0,
-            "latest_summary": ""
-        })
-        domain_data["last_updated"] = time.time()
-        domain_data["entry_count"] = domain_data.get("entry_count", 0) + 1
+        if domain not in self._index:
+            self._index[domain] = DomainIndex(domain=domain)
+        idx = self._index[domain]
+        idx.entries.append(entry.id)
+        idx.latest_timestamp = max(idx.latest_timestamp, entry.timestamp)
+        idx.entry_count += 1
 
-        _save_domain_index(self._domain_index)
+        # Invalidate summary so it will be regenerated
+        if domain in self._summaries:
+            self._summaries[domain].entry_count_since_summary += 1
 
-        # Check if summary regeneration is needed
-        if domain_data["entry_count"] % self._summary_threshold == 0:
-            self._regenerate_summary(entry.domain)
+        self._save()
+        return entry
 
-        return entry.id
+    def get_entries(self, domain: str,
+                    limit: int = 100,
+                    offset: int = 0) -> List[MemoryEntry]:
+        """Retrieve entries for a domain, ordered by timestamp descending."""
+        if domain not in self._index:
+            return []
+        entry_ids = self._index[domain].entries
+        # Sort by timestamp descending
+        sorted_ids = sorted(
+            entry_ids,
+            key=lambda eid: self._entries[eid].timestamp,
+            reverse=True
+        )
+        selected = sorted_ids[offset:offset+limit]
+        return [self._entries[eid] for eid in selected]
 
-    def retrieve(self, domain: Optional[str] = None,
-                 tags: Optional[List[str]] = None,
-                 limit: int = 10,
-                 min_importance: float = 0.0) -> List[MemoryEntry]:
-        """Retrieve memory entries, optionally filtered by domain and tags."""
-        entries: List[MemoryEntry] = []
-        for entry_file in _ENTRIES_DIR.iterdir():
-            if entry_file.suffix != ".json":
+    def search_entries(self, query: str,
+                       domains: Optional[List[str]] = None,
+                       limit: int = 50) -> List[MemoryEntry]:
+        """Search entries by keyword in content (simple substring match)."""
+        query_lower = query.lower()
+        results: List[MemoryEntry] = []
+        for entry in self._entries.values():
+            if domains and entry.domain not in domains:
                 continue
-            try:
-                entry = MemoryEntry.from_dict(json.loads(entry_file.read_text()))
-            except (json.JSONDecodeError, KeyError):
-                continue
+            if query_lower in entry.content.lower():
+                results.append(entry)
+        results.sort(key=lambda e: e.timestamp, reverse=True)
+        return results[:limit]
 
-            if domain and entry.domain != domain:
-                continue
-            if tags and not set(tags).issubset(set(entry.tags)):
-                continue
-            if entry.importance < min_importance:
-                continue
+    def generate_summary(self, domain: str, force: bool = False) -> str:
+        """Generate or retrieve a rolling summary for a domain.
 
-            entries.append(entry)
+        In a production system this would use an LLM; here we produce a
+        simple concatenation of recent unique tags and a count of entries.
+        """
+        if domain not in self._index:
+            return ""
 
-        # Sort by timestamp descending, limit
-        entries.sort(key=lambda e: e.timestamp, reverse=True)
-        return entries[:limit]
+        curr = self._summaries.get(domain)
+        if curr and not force and curr.entry_count_since_summary < 10:
+            return curr.summary
 
-    def get_domain_summary(self, domain: str) -> Optional[RollingSummary]:
-        """Return the latest rolling summary for a domain, if exists."""
-        path = _domain_summary_path(domain)
-        if path.exists():
-            raw = json.loads(path.read_text())
-            return RollingSummary(**raw)
+        entries = self.get_entries(domain, limit=100)
+        if not entries:
+            return ""
+
+        # Build a naive summary: most common tags, date range, entry count
+        tag_counts: Dict[str, int] = {}
+        for e in entries:
+            for t in e.tags:
+                tag_counts[t] = tag_counts.get(t, 0) + 1
+        top_tags = sorted(tag_counts.items(), key=lambda x: -x[1])[:5]
+        tag_str = ", ".join(f"{tag}({cnt})" for tag, cnt in top_tags)
+
+        start_ts = min(e.timestamp for e in entries)
+        end_ts = max(e.timestamp for e in entries)
+        summary_text = (
+            f"Domain: {domain} | Entries: {len(entries)} | "
+            f"From: {start_ts:.2f} To: {end_ts:.2f} | "
+            f"Top tags: {tag_str}"
+        )
+
+        new_summary = RollingSummary(
+            domain=domain,
+            summary=summary_text,
+            last_updated=time.time(),
+            version=(curr.version + 1) if curr else 1,
+            entry_count_since_summary=0
+        )
+        self._summaries[domain] = new_summary
+        self._save()
+        return summary_text
+
+    def get_summary(self, domain: str) -> Optional[str]:
+        """Get current summary for a domain if it exists."""
+        if domain in self._summaries:
+            return self._summaries[domain].summary
         return None
 
-    def list_domains(self) -> List[str]:
-        """Return all known domains."""
-        return list(self._domain_index.domains.keys())
+    def delete_entry(self, entry_id: str) -> bool:
+        """Delete a specific entry by its ID."""
+        if entry_id not in self._entries:
+            return False
+        entry = self._entries[entry_id]
+        domain = entry.domain
+        # Remove from index
+        if domain in self._index:
+            idx = self._index[domain]
+            if entry_id in idx.entries:
+                idx.entries.remove(entry_id)
+                idx.entry_count -= 1
+                if idx.entry_count == 0:
+                    del self._index[domain]
+        # Remove entry
+        del self._entries[entry_id]
+        self._save()
+        return True
 
-    def forget_old_entries(self, max_age_seconds: float = 3600 * 24 * 30) -> int:
-        """Remove entries older than max_age_seconds. Returns count removed."""
-        now = time.time()
-        count = 0
-        for entry_file in _ENTRIES_DIR.iterdir():
-            if entry_file.suffix != ".json":
-                continue
-            try:
-                entry = MemoryEntry.from_dict(json.loads(entry_file.read_text()))
-            except (json.JSONDecodeError, KeyError):
-                entry_file.unlink(missing_ok=True)
-                count += 1
-                continue
-
-            age = now - entry.timestamp
-            if entry.expiry is not None and now > entry.expiry:
-                entry_file.unlink(missing_ok=True)
-                count += 1
-                self._decrement_domain_count(entry.domain)
-            elif age > max_age_seconds:
-                entry_file.unlink(missing_ok=True)
-                count += 1
-                self._decrement_domain_count(entry.domain)
-
-        return count
-
-    # ---- Internal helpers ----
-
-    def _evict_if_needed(self, domain: str) -> None:
-        entries = self.retrieve(domain=domain, limit=self._max_entries + 1)
-        if len(entries) > self._max_entries:
-            # Remove oldest entries beyond the limit
-            to_remove = entries[self._max_entries:]
-            for entry in to_remove:
-                path = _entry_path(entry.id)
-                path.unlink(missing_ok=True)
-                self._decrement_domain_count(domain)
-
-    def _decrement_domain_count(self, domain: str) -> None:
-        if domain in self._domain_index.domains:
-            self._domain_index.domains[domain]["entry_count"] = max(
-                0, self._domain_index.domains[domain]["entry_count"] - 1
-            )
-            _save_domain_index(self._domain_index)
-
-    def _regenerate_summary(self, domain: str) -> None:
-        entries = self.retrieve(domain=domain, limit=self._summary_threshold)
-        if not entries:
-            return
-
-        # Simple concatenation summary (can be replaced with LLM call later)
-        summary_text = "; ".join(
-            f"{e.timestamp}: {e.content[:200]}" for e in entries[::-1]
-        )
-        if len(summary_text) > 2000:
-            summary_text = summary_text[:2000] + "..."
-
-        summary = RollingSummary(
-            domain=domain,
-            window_start=entries[-1].timestamp,
-            window_end=entries[0].timestamp,
-            entry_count=len(entries),
-            summary_text=summary_text
-        )
-        path = _domain_summary_path(domain)
-        path.write_text(json.dumps(asdict(summary), indent=2))
-
-        # Update domain index with summary
-        if domain in self._domain_index.domains:
-            self._domain_index.domains[domain]["latest_summary"] = summary_text
-            _save_domain_index(self._domain_index)
-
-
-# ---------------------------------------------------------------------------
-# MemoryRetriever
-# ---------------------------------------------------------------------------
-
-class MemoryRetriever:
-    """Contextual memory retriever that wraps LongTermMemory with scoring and ranking.
-
-    Provides relevance scoring based on domain match, tag overlap, recency, and importance.
-    """
-
-    def __init__(self, memory: LongTermMemory) -> None:
-        self._memory = memory
-
-    def query(self, domain: Optional[str] = None,
-              tags: Optional[List[str]] = None,
-              keywords: Optional[List[str]] = None,
-              max_results: int = 10,
-              recency_weight: float = 1.0,
-              importance_weight: float = 1.0) -> List[MemoryEntry]:
-        """Retrieve and score entries based on context."""
-        candidates = self._memory.retrieve(domain=domain, tags=tags,
-                                            limit=max_results * 3)
-
-        scored: List[tuple[float, MemoryEntry]] = []
-        for entry in candidates:
-            score = 0.0
-
-            # Domain match bonus
-            if domain and entry.domain == domain:
-                score += 2.0
-
-            # Tag overlap
-            if tags:
-                overlap = len(set(tags) & set(entry.tags))
-                score += overlap * 1.5
-
-            # Keyword match in content
-            if keywords:
-                content_lower = entry.content.lower()
-                keyword_matches = sum(1 for kw in keywords if kw.lower() in content_lower)
-                score += keyword_matches * 1.0
-
-            # Recency (normalised to hours)
-            age_hours = (time.time() - entry.timestamp) / 3600
-            recency_score = max(0, 1 - (age_hours / 720))  # 30 days = 0
-            score += recency_weight * recency_score
-
-            # Importance
-            score += importance_weight * entry.importance
-
-            scored.append((score, entry))
-
-        # Sort descending by score, return top max_results
-        scored.sort(key=lambda x: x[0], reverse=True)
-        return [entry for _, entry in scored[:max_results]]
-
-    def query_by_domain(self, domain: str, max_results: int = 10) -> List[MemoryEntry]:
-        """Quick retrieval of top entries for a domain, weighted by importance."""
-        return self.query(domain=domain, max_results=max_results)
-
-    def query_by_tags(self, tags: List[str], domain: Optional[str] = None,
-                      max_results: int = 10) -> List[MemoryEntry]:
-        """Retrieve entries matching tags, optionally filtered by domain."""
-        return self.query(domain=domain, tags=tags, max_results=max_results)
-
-
-# ---------------------------------------------------------------------------
-# Convenience factory
-# ---------------------------------------------------------------------------
-
-def create_long_term_memory() -> LongTermMemory:
-    """Create a LongTermMemory instance with default config."""
-    return LongTermMemory()
-
-
-def create_memory_retriever(memory: Optional[LongTermMemory] = None) -> MemoryRetriever:
-    """Create a MemoryRetriever wrapping the given or default memory."""
-    if memory is None:
-        memory = create_long_term_memory()
-    return MemoryRetriever(memory)
+    def clear_domain(self, domain: str) -> bool:
+        """Remove all entries for a given domain."""
+        if domain not in self._index:
+            return False
+        for eid in self._index[domain].entries:
+            del self._entries[eid]
+        del self._index[domain]
+        if domain in self._summaries:
+            del self._summaries[domain]
+        self._save()
+        return True
