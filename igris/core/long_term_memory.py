@@ -1,354 +1,340 @@
-"""Long-term persistent memory with domain index and rolling summary.
+"""
+Long-term persistent memory with domain indexing and rolling summary.
 
-Provides LongTermMemory for storing/retrieving persistent facts across sessions,
-and MemoryRetriever for context-aware retrieval with decay and relevance scoring.
+Provides LongTermMemory for storing structured memory entries with domain tags,
+auto-generated rolling summaries, and MemoryRetriever for contextual lookup.
 """
 
 from __future__ import annotations
 
 import json
-import os
 import time
-from collections import defaultdict
-from dataclasses import dataclass, field, asdict
+import uuid
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Set, Tuple
+from typing import Any, Dict, List, Optional
+
+from igris.core.safety import redact_secrets
+from igris.models.config import CONFIG
 
 
 # ---------------------------------------------------------------------------
-# Data structures
+# Data models
 # ---------------------------------------------------------------------------
-
 
 @dataclass
-class MemoryFact:
-    """A single stored fact with metadata."""
-    key: str
-    value: str
+class MemoryEntry:
+    """A single memory entry with domain tag and metadata."""
+    id: str = field(default_factory=lambda: uuid.uuid4().hex[:12])
+    timestamp: float = field(default_factory=time.time)
     domain: str = "general"
+    content: str = ""
+    importance: float = 0.5  # 0.0 (trivial) to 1.0 (critical)
     tags: List[str] = field(default_factory=list)
-    created_at: float = field(default_factory=time.time)
-    updated_at: float = field(default_factory=time.time)
-    access_count: int = 0
-    last_accessed: float = field(default_factory=time.time)
-    ttl: Optional[float] = None  # seconds relative to updated_at; None = no expiry
-    importance: float = 1.0  # 0.0 to 1.0 for decay weighting
+    source: str = ""  # e.g. "teacher", "gate_override", "user"
+    expiry: Optional[float] = None  # None = never expires
 
-    def is_expired(self, now: float | None = None) -> bool:
-        if self.ttl is None:
-            return False
-        now = now or time.time()
-        return now - self.updated_at > self.ttl
+    def to_dict(self) -> Dict[str, Any]:
+        return asdict(self)
 
-    def touch(self) -> None:
-        self.access_count += 1
-        self.last_accessed = time.time()
+    @classmethod
+    def from_dict(cls, d: Dict[str, Any]) -> MemoryEntry:
+        return cls(**d)
 
 
 @dataclass
 class RollingSummary:
-    """Compact summary of recent/high-value memories for a domain."""
+    """Summarised view of a domain's memory over a rolling window."""
     domain: str
-    summary_text: str = ""
+    window_start: float
+    window_end: float
+    entry_count: int
+    summary_text: str
     last_updated: float = field(default_factory=time.time)
-    fact_keys: Set[str] = field(default_factory=set)
 
-    def update(self, facts: List[MemoryFact], max_summary_length: int = 500) -> None:
-        """Regenerate summary from a list of facts (most recent first)."""
-        sorted_facts = sorted(facts, key=lambda f: f.updated_at, reverse=True)[:10]
-        lines = []
-        for f in sorted_facts:
-            line = f"{f.key}: {f.value[:80]}"
-            lines.append(line)
-        self.summary_text = "\n".join(lines)[:max_summary_length]
-        self.fact_keys = {f.key for f in sorted_facts}
-        self.last_updated = time.time()
+
+@dataclass
+class DomainIndex:
+    """Index of domains with metadata for fast retrieval."""
+    domains: Dict[str, Dict[str, Any]] = field(default_factory=dict)
+    # domain -> { "last_updated": float, "entry_count": int, "latest_summary": str }
 
 
 # ---------------------------------------------------------------------------
-# Memory store
+# Persistence helpers
 # ---------------------------------------------------------------------------
 
+_MEMORY_DIR = CONFIG.igris_path / "memory" / "long_term"
+_DOMAIN_INDEX_FILE = _MEMORY_DIR / "domain_index.json"
+_ENTRIES_DIR = _MEMORY_DIR / "entries"
+_SUMMARIES_DIR = _MEMORY_DIR / "summaries"
+
+
+def _ensure_dirs() -> None:
+    _MEMORY_DIR.mkdir(parents=True, exist_ok=True)
+    _ENTRIES_DIR.mkdir(parents=True, exist_ok=True)
+    _SUMMARIES_DIR.mkdir(parents=True, exist_ok=True)
+
+
+def _load_domain_index() -> DomainIndex:
+    _ensure_dirs()
+    if _DOMAIN_INDEX_FILE.exists():
+        raw = json.loads(_DOMAIN_INDEX_FILE.read_text())
+        return DomainIndex(**raw)
+    return DomainIndex()
+
+
+def _save_domain_index(index: DomainIndex) -> None:
+    _DOMAIN_INDEX_FILE.write_text(json.dumps(asdict(index), indent=2))
+
+
+def _entry_path(entry_id: str) -> Path:
+    return _ENTRIES_DIR / f"{entry_id}.json"
+
+
+def _domain_summary_path(domain: str) -> Path:
+    safe_name = domain.replace(" ", "_").replace("/", "_").replace("\\", "_")
+    return _SUMMARIES_DIR / f"{safe_name}.json"
+
+
+# ---------------------------------------------------------------------------
+# LongTermMemory
+# ---------------------------------------------------------------------------
 
 class LongTermMemory:
-    """Persistent, domain-indexed memory with rolling summaries and TTL-based expiry.
+    """Persistent memory store with domain indexing and rolling summaries.
 
-    Supports JSON serialisation to disk, domain-based queries, importance-weighted
-    retrieval, and automatic decaying of rarely accessed facts.
+    Entries are stored as individual JSON files under .igris/memory/long_term/entries/
+    indexed by domain in domain_index.json.  Rolling summaries are regenerated
+    periodically when the entry count crosses a threshold.
     """
 
-    def __init__(self, storage_path: str | Path | None = None):
-        self._storage_path: Path
-        if storage_path:
-            self._storage_path = Path(storage_path)
-        else:
-            base = os.environ.get("IGRIS_DATA_DIR", "/tmp/igris_data")
-            self._storage_path = Path(base) / "long_term_memory.json"
-        self._storage_path.parent.mkdir(parents=True, exist_ok=True)
+    def __init__(self, max_entries_per_domain: int = 1000,
+                 summary_entry_threshold: int = 50) -> None:
+        self._max_entries = max_entries_per_domain
+        self._summary_threshold = summary_entry_threshold
+        self._domain_index = _load_domain_index()
 
-        self._facts: Dict[str, MemoryFact] = {}  # key -> fact
-        self._domain_index: Dict[str, Set[str]] = defaultdict(set)  # domain -> set of keys
-        self._tag_index: Dict[str, Set[str]] = defaultdict(set)  # tag -> set of keys
-        self._rollups: Dict[str, RollingSummary] = {}  # domain -> summary
+    # ---- Public API ----
 
-        self._load()
+    def store(self, entry: MemoryEntry) -> str:
+        """Persist a memory entry, update domain index, and trigger summary if needed."""
+        redacted_content = redact_secrets(entry.content)
+        entry.content = redacted_content
 
-    # ---- persistence ----
+        # Enforce max entries per domain (evict oldest if necessary)
+        self._evict_if_needed(entry.domain)
 
-    def _load(self) -> None:
-        if not self._storage_path.exists():
-            return
-        try:
-            raw = json.loads(self._storage_path.read_text())
-            for fact_dict in raw.get("facts", []):
-                f = MemoryFact(**fact_dict)
-                self._facts[f.key] = f
-                self._domain_index[f.domain].add(f.key)
-                for tag in f.tags:
-                    self._tag_index[tag].add(f.key)
-            for rollup_dict in raw.get("rollups", []):
-                rs = RollingSummary(**rollup_dict)
-                self._rollups[rs.domain] = rs
-        except Exception:
-            # Corrupted file -> start fresh
-            self._facts.clear()
-            self._domain_index.clear()
-            self._tag_index.clear()
-            self._rollups.clear()
+        # Write entry file
+        path = _entry_path(entry.id)
+        path.write_text(json.dumps(entry.to_dict(), indent=2))
 
-    def _save(self) -> None:
-        data = {
-            "facts": [asdict(f) for f in self._facts.values()],
-            "rollups": [asdict(rs) for rs in self._rollups.values()],
-        }
-        self._storage_path.write_text(json.dumps(data, indent=2))
+        # Update domain index
+        domain_data = self._domain_index.domains.setdefault(entry.domain, {
+            "last_updated": 0.0,
+            "entry_count": 0,
+            "latest_summary": ""
+        })
+        domain_data["last_updated"] = time.time()
+        domain_data["entry_count"] = domain_data.get("entry_count", 0) + 1
 
-    # ---- CRUD ----
+        _save_domain_index(self._domain_index)
 
-    def store(self, key: str, value: str, domain: str = "general",
-              tags: List[str] | None = None, ttl: float | None = None,
-              importance: float = 1.0) -> None:
-        """Store a new fact, or update an existing one."""
+        # Check if summary regeneration is needed
+        if domain_data["entry_count"] % self._summary_threshold == 0:
+            self._regenerate_summary(entry.domain)
+
+        return entry.id
+
+    def retrieve(self, domain: Optional[str] = None,
+                 tags: Optional[List[str]] = None,
+                 limit: int = 10,
+                 min_importance: float = 0.0) -> List[MemoryEntry]:
+        """Retrieve memory entries, optionally filtered by domain and tags."""
+        entries: List[MemoryEntry] = []
+        for entry_file in _ENTRIES_DIR.iterdir():
+            if entry_file.suffix != ".json":
+                continue
+            try:
+                entry = MemoryEntry.from_dict(json.loads(entry_file.read_text()))
+            except (json.JSONDecodeError, KeyError):
+                continue
+
+            if domain and entry.domain != domain:
+                continue
+            if tags and not set(tags).issubset(set(entry.tags)):
+                continue
+            if entry.importance < min_importance:
+                continue
+
+            entries.append(entry)
+
+        # Sort by timestamp descending, limit
+        entries.sort(key=lambda e: e.timestamp, reverse=True)
+        return entries[:limit]
+
+    def get_domain_summary(self, domain: str) -> Optional[RollingSummary]:
+        """Return the latest rolling summary for a domain, if exists."""
+        path = _domain_summary_path(domain)
+        if path.exists():
+            raw = json.loads(path.read_text())
+            return RollingSummary(**raw)
+        return None
+
+    def list_domains(self) -> List[str]:
+        """Return all known domains."""
+        return list(self._domain_index.domains.keys())
+
+    def forget_old_entries(self, max_age_seconds: float = 3600 * 24 * 30) -> int:
+        """Remove entries older than max_age_seconds. Returns count removed."""
         now = time.time()
-        if key in self._facts:
-            fact = self._facts[key]
-            fact.value = value
-            fact.domain = domain
-            fact.tags = tags or []
-            fact.updated_at = now
-            fact.ttl = ttl
-            fact.importance = importance
-            fact.touch()
-        else:
-            fact = MemoryFact(
-                key=key,
-                value=value,
-                domain=domain,
-                tags=tags or [],
-                created_at=now,
-                updated_at=now,
-                ttl=ttl,
-                importance=importance,
+        count = 0
+        for entry_file in _ENTRIES_DIR.iterdir():
+            if entry_file.suffix != ".json":
+                continue
+            try:
+                entry = MemoryEntry.from_dict(json.loads(entry_file.read_text()))
+            except (json.JSONDecodeError, KeyError):
+                entry_file.unlink(missing_ok=True)
+                count += 1
+                continue
+
+            age = now - entry.timestamp
+            if entry.expiry is not None and now > entry.expiry:
+                entry_file.unlink(missing_ok=True)
+                count += 1
+                self._decrement_domain_count(entry.domain)
+            elif age > max_age_seconds:
+                entry_file.unlink(missing_ok=True)
+                count += 1
+                self._decrement_domain_count(entry.domain)
+
+        return count
+
+    # ---- Internal helpers ----
+
+    def _evict_if_needed(self, domain: str) -> None:
+        entries = self.retrieve(domain=domain, limit=self._max_entries + 1)
+        if len(entries) > self._max_entries:
+            # Remove oldest entries beyond the limit
+            to_remove = entries[self._max_entries:]
+            for entry in to_remove:
+                path = _entry_path(entry.id)
+                path.unlink(missing_ok=True)
+                self._decrement_domain_count(domain)
+
+    def _decrement_domain_count(self, domain: str) -> None:
+        if domain in self._domain_index.domains:
+            self._domain_index.domains[domain]["entry_count"] = max(
+                0, self._domain_index.domains[domain]["entry_count"] - 1
             )
-            self._facts[key] = fact
-            self._domain_index[domain].add(key)
-            for tag in (tags or []):
-                self._tag_index[tag].add(key)
-        # Update rolling summary for the domain
-        domain_facts = self.get_by_domain(domain, include_expired=False)
-        if domain not in self._rollups:
-            self._rollups[domain] = RollingSummary(domain=domain)
-        self._rollups[domain].update(domain_facts)
-        self._save()
+            _save_domain_index(self._domain_index)
 
-    def get(self, key: str) -> Optional[MemoryFact]:
-        fact = self._facts.get(key)
-        if fact is None:
-            return None
-        if fact.is_expired():
-            self._delete_fact(key)
-            self._save()
-            return None
-        fact.touch()
-        self._save()
-        return fact
-
-    def delete(self, key: str) -> bool:
-        if key not in self._facts:
-            return False
-        self._delete_fact(key)
-        self._save()
-        return True
-
-    def _delete_fact(self, key: str) -> None:
-        fact = self._facts.pop(key, None)
-        if fact is None:
+    def _regenerate_summary(self, domain: str) -> None:
+        entries = self.retrieve(domain=domain, limit=self._summary_threshold)
+        if not entries:
             return
-        self._domain_index[fact.domain].discard(key)
-        if not self._domain_index[fact.domain]:
-            del self._domain_index[fact.domain]
-        for tag in fact.tags:
-            self._tag_index[tag].discard(key)
-            if not self._tag_index[tag]:
-                del self._tag_index[tag]
 
-    # ---- queries ----
+        # Simple concatenation summary (can be replaced with LLM call later)
+        summary_text = "; ".join(
+            f"{e.timestamp}: {e.content[:200]}" for e in entries[::-1]
+        )
+        if len(summary_text) > 2000:
+            summary_text = summary_text[:2000] + "..."
 
-    def get_by_domain(self, domain: str, include_expired: bool = False) -> List[MemoryFact]:
-        keys = self._domain_index.get(domain, set())
-        facts = []
-        now = time.time()
-        for k in keys:
-            f = self._facts.get(k)
-            if f is None:
-                continue
-            if not include_expired and f.is_expired(now):
-                continue
-            facts.append(f)
-        return facts
+        summary = RollingSummary(
+            domain=domain,
+            window_start=entries[-1].timestamp,
+            window_end=entries[0].timestamp,
+            entry_count=len(entries),
+            summary_text=summary_text
+        )
+        path = _domain_summary_path(domain)
+        path.write_text(json.dumps(asdict(summary), indent=2))
 
-    def get_by_tag(self, tag: str, include_expired: bool = False) -> List[MemoryFact]:
-        keys = self._tag_index.get(tag, set())
-        facts = []
-        now = time.time()
-        for k in keys:
-            f = self._facts.get(k)
-            if f is None:
-                continue
-            if not include_expired and f.is_expired(now):
-                continue
-            facts.append(f)
-        return facts
-
-    def get_all(self, include_expired: bool = False) -> List[MemoryFact]:
-        now = time.time()
-        if include_expired:
-            return list(self._facts.values())
-        return [f for f in self._facts.values() if not f.is_expired(now)]
-
-    def get_domain_summary(self, domain: str) -> Optional[str]:
-        rs = self._rollups.get(domain)
-        if rs is None:
-            return None
-        # Check if summary is stale relative to latest fact updates
-        domain_facts = self.get_by_domain(domain, include_expired=False)
-        if domain_facts:
-            latest = max(f.updated_at for f in domain_facts)
-            if latest > rs.last_updated:
-                rs.update(domain_facts)
-                self._save()
-        return rs.summary_text
-
-    def search(self, query: str, max_results: int = 10) -> List[Tuple[MemoryFact, float]]:
-        """Simple substring search over keys and values, scored by importance and recency."""
-        now = time.time()
-        results = []
-        q = query.lower()
-        for fact in self._facts.values():
-            if fact.is_expired(now):
-                continue
-            score = 0.0
-            if q in fact.key.lower():
-                score += 0.5
-            if q in fact.value.lower():
-                score += 0.3
-            if q in fact.domain.lower():
-                score += 0.2
-            # Add decay: higher importance, more recent = higher score
-            recency_factor = 1.0 - min(1.0, (now - fact.updated_at) / (86400 * 30))  # 30 day half-life
-            score += fact.importance * recency_factor * 0.5
-            if score > 0.0:
-                results.append((fact, score))
-        results.sort(key=lambda x: x[1], reverse=True)
-        return results[:max_results]
-
-    def clear_expired(self) -> int:
-        """Remove all expired facts and return count removed."""
-        now = time.time()
-        to_remove = [k for k, f in self._facts.items() if f.is_expired(now)]
-        for k in to_remove:
-            self._delete_fact(k)
-        if to_remove:
-            self._save()
-        return len(to_remove)
-
-    def fact_count(self) -> int:
-        return len(self._facts)
+        # Update domain index with summary
+        if domain in self._domain_index.domains:
+            self._domain_index.domains[domain]["latest_summary"] = summary_text
+            _save_domain_index(self._domain_index)
 
 
 # ---------------------------------------------------------------------------
-# MemoryRetriever: context-aware retrieval with decay and relevance
+# MemoryRetriever
 # ---------------------------------------------------------------------------
-
 
 class MemoryRetriever:
-    """High-level retriever that combines multiple memory sources with scoring."""
+    """Contextual memory retriever that wraps LongTermMemory with scoring and ranking.
 
-    def __init__(self, long_term_memory: LongTermMemory, decay_rate: float = 0.9):
-        self._ltm = long_term_memory
-        self._decay_rate = decay_rate
+    Provides relevance scoring based on domain match, tag overlap, recency, and importance.
+    """
 
-    def retrieve(self, query: str, domains: List[str] | None = None,
-                 tags: List[str] | None = None,
-                 max_results: int = 5) -> List[MemoryFact]:
-        """Retrieve facts matching query, optionally filtered by domains and tags.
+    def __init__(self, memory: LongTermMemory) -> None:
+        self._memory = memory
 
-        Returns facts sorted by relevance score (descending).
-        """
-        candidates: Dict[str, MemoryFact] = {}
+    def query(self, domain: Optional[str] = None,
+              tags: Optional[List[str]] = None,
+              keywords: Optional[List[str]] = None,
+              max_results: int = 10,
+              recency_weight: float = 1.0,
+              importance_weight: float = 1.0) -> List[MemoryEntry]:
+        """Retrieve and score entries based on context."""
+        candidates = self._memory.retrieve(domain=domain, tags=tags,
+                                            limit=max_results * 3)
 
-        if domains:
-            for d in domains:
-                for f in self._ltm.get_by_domain(d):
-                    candidates[f.key] = f
-        if tags:
-            for t in tags:
-                for f in self._ltm.get_by_tag(t):
-                    candidates[f.key] = f
-
-        if not domains and not tags:
-            # Use search directly
-            scored = self._ltm.search(query, max_results=max_results)
-            return [f for f, _ in scored]
-
-        # Score candidates
-        now = time.time()
-        scored: List[Tuple[MemoryFact, float]] = []
-        q = query.lower()
-        for fact in candidates.values():
-            if fact.is_expired(now):
-                continue
+        scored: List[tuple[float, MemoryEntry]] = []
+        for entry in candidates:
             score = 0.0
-            if q in fact.key.lower():
-                score += 0.4
-            if q in fact.value.lower():
-                score += 0.3
-            if q in fact.domain.lower():
-                score += 0.2
-            # Recency bonus
-            hours_since_access = (now - fact.last_accessed) / 3600
-            decay = self._decay_rate ** hours_since_access
-            score += fact.importance * decay * 0.5
-            scored.append((fact, score))
 
-        scored.sort(key=lambda x: x[1], reverse=True)
-        return [f for f, _ in scored[:max_results]]
+            # Domain match bonus
+            if domain and entry.domain == domain:
+                score += 2.0
 
-    def get_relevant_summaries(self, domains: List[str] | None = None) -> Dict[str, str]:
-        """Get rolling summaries for given domains (or all if None)."""
-        if domains:
-            return {d: s for d in domains if (s := self._ltm.get_domain_summary(d))}
-        # All domains
-        all_domains = set(self._ltm._domain_index.keys())  # access internal for completeness
-        return {d: s for d in all_domains if (s := self._ltm.get_domain_summary(d))}
+            # Tag overlap
+            if tags:
+                overlap = len(set(tags) & set(entry.tags))
+                score += overlap * 1.5
 
-    def store_and_retrieve(self, key: str, value: str, domain: str = "general",
-                           tags: List[str] | None = None,
-                           ttl: float | None = None,
-                           importance: float = 1.0,
-                           query: str | None = None,
-                           max_results: int = 5) -> List[MemoryFact]:
-        """Store a fact and return related facts based on optional query."""
-        self._ltm.store(key, value, domain, tags, ttl, importance)
-        q = query or value
-        return self.retrieve(q, domains=[domain] if domain else None, max_results=max_results)
+            # Keyword match in content
+            if keywords:
+                content_lower = entry.content.lower()
+                keyword_matches = sum(1 for kw in keywords if kw.lower() in content_lower)
+                score += keyword_matches * 1.0
+
+            # Recency (normalised to hours)
+            age_hours = (time.time() - entry.timestamp) / 3600
+            recency_score = max(0, 1 - (age_hours / 720))  # 30 days = 0
+            score += recency_weight * recency_score
+
+            # Importance
+            score += importance_weight * entry.importance
+
+            scored.append((score, entry))
+
+        # Sort descending by score, return top max_results
+        scored.sort(key=lambda x: x[0], reverse=True)
+        return [entry for _, entry in scored[:max_results]]
+
+    def query_by_domain(self, domain: str, max_results: int = 10) -> List[MemoryEntry]:
+        """Quick retrieval of top entries for a domain, weighted by importance."""
+        return self.query(domain=domain, max_results=max_results)
+
+    def query_by_tags(self, tags: List[str], domain: Optional[str] = None,
+                      max_results: int = 10) -> List[MemoryEntry]:
+        """Retrieve entries matching tags, optionally filtered by domain."""
+        return self.query(domain=domain, tags=tags, max_results=max_results)
+
+
+# ---------------------------------------------------------------------------
+# Convenience factory
+# ---------------------------------------------------------------------------
+
+def create_long_term_memory() -> LongTermMemory:
+    """Create a LongTermMemory instance with default config."""
+    return LongTermMemory()
+
+
+def create_memory_retriever(memory: Optional[LongTermMemory] = None) -> MemoryRetriever:
+    """Create a MemoryRetriever wrapping the given or default memory."""
+    if memory is None:
+        memory = create_long_term_memory()
+    return MemoryRetriever(memory)
