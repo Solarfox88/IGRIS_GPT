@@ -448,6 +448,9 @@ class SupervisorRun:
     autorun_skipped_reason: str = ""
     # MBOP Phase 1 intake — set before supervisor.run() so _rank_initial_context can read it (#1040)
     mbop_intake: Any = None  # Optional[MBOPIntakeResult]
+    # Supervisor-first autonomy policy (#147)
+    completion_mode: str = ""        # set at end of run; read by MBOP Phase 11
+    behavior_tracker: Any = None     # BehaviorTracker instance; created in _worker
 
     def add(self, phase: str, status: str, detail: str = "", **data: Any) -> None:
         event = SupervisorEvent(phase=phase, status=status, detail=detail, data=data)
@@ -5999,6 +6002,7 @@ class SelfRepairSupervisor:
             failure_class=run.failure_class,
             stage_statuses=stage_statuses,
         )
+        run.completion_mode = completion_mode  # (#147) expose for MBOP Phase 11
         run.report = {
             "autonomous": True,
             "manual_remaining": manual_remaining,
@@ -6035,6 +6039,7 @@ class SelfRepairSupervisor:
             "post_merge_runtime",
             "final_report",
         }
+        run.completion_mode = completion_mode  # (#147)
         run.add("completion", "degraded", detail, mode=completion_mode)
         run.status = "completed"
         run.outcome = "Completed"
@@ -7579,6 +7584,7 @@ class SelfRepairSupervisor:
         run.status = "blocked"
         run.outcome = "Blocked"
         run.failure_class = failure
+        run.completion_mode = f"blocked/{failure}"  # (#147)
         run.add("blocked", "blocked", detail)
         if cleanup_workspace:
             self._cleanup_blocked_workspace(run)
@@ -7756,6 +7762,16 @@ def start_supervised_rank_async(data: Dict[str, Any], project_root: str) -> Supe
         import time as _time
         _run_start = _time.time()
 
+        # --- (#147) Initialise BehaviorTracker for this run ---
+        try:
+            from igris.core.behavior_tracker import BehaviorTracker
+            run.behavior_tracker = BehaviorTracker(
+                run_id=run.run_id,
+                issue_number=config.issue_number,
+            )
+        except Exception:  # noqa: BLE001
+            pass  # best-effort — never block the run
+
         # --- MBOP Phase 1: Intake (pre-run) ---
         _mbop_intake = None
         try:
@@ -7876,6 +7892,59 @@ def start_supervised_rank_async(data: Dict[str, Any], project_root: str) -> Supe
                 enforce_quality_gate=mbop_enforce_qg,
                 run_id=run.run_id,
             )
+        except Exception:  # noqa: BLE001
+            pass  # best-effort — never crash after supervisor completed
+
+        # --- (#147) Supervisor self-audit post-run ---
+        try:
+            if run.behavior_tracker is not None:
+                _run_status = str(getattr(run, "status", "") or "")
+                _failure_class = str(getattr(run, "failure_class", "") or "")
+                _repair_cycles = int(getattr(run, "repair_cycles_used", 0) or 0)
+                _completion_mode = str(getattr(run, "completion_mode", "") or "")
+                _escalations_used = int(getattr(run, "api_escalations_used", 0) or 0)
+                _max_escalations = int(getattr(run, "max_api_escalations_per_run", 0) or 0)
+                _budget_exhausted = bool(
+                    _max_escalations > 0 and _escalations_used >= _max_escalations
+                )
+                _report = dict(getattr(run, "report", {}) or {})
+                _smoke_ran = bool(_report.get("post_merge_smoke") is not None)
+                _pytest_evidence = any(
+                    e.phase in ("full_pytest", "targeted_tests", "baseline_tests")
+                    and e.status in ("success", "failure")
+                    for e in getattr(run, "events", [])
+                )
+                # Workspace dirty = git status has uncommitted changes
+                _workspace_dirty = False
+                try:
+                    _gs = subprocess.run(
+                        ["git", "status", "--porcelain"],
+                        capture_output=True, text=True, cwd=project_root, timeout=10,
+                    )
+                    _workspace_dirty = bool(_gs.stdout.strip())
+                except Exception:
+                    pass
+                audit = run.behavior_tracker.self_audit(
+                    run_status=_run_status,
+                    failure_class=_failure_class,
+                    repair_cycles_used=_repair_cycles,
+                    smoke_ran=_smoke_ran,
+                    pytest_ran=_pytest_evidence,
+                    workspace_dirty=_workspace_dirty,
+                    escalation_budget_exhausted=_budget_exhausted,
+                    escalation_was_called=_escalations_used > 0,
+                    completion_mode=_completion_mode,
+                    project_root=project_root,
+                )
+                audit_summary = run.behavior_tracker.summary()
+                run.add(
+                    "supervisor_self_audit", "done",
+                    f"Self-audit complete: {audit_summary}",
+                    missed_behaviors=audit.missed_behaviors[:10],
+                    opened_issues=audit.opened_issues,
+                    notes=audit.notes[:5],
+                    behavior_log=run.behavior_tracker.to_dict(),
+                )
         except Exception:  # noqa: BLE001
             pass  # best-effort — never crash after supervisor completed
 
