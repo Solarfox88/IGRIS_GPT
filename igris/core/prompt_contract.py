@@ -109,7 +109,7 @@ Respond with exactly one JSON object (no markdown, no explanation outside JSON):
 
 ## Available Context
 {file_context}
-"""
+{examples_context}"""
 
 
 # ---------------------------------------------------------------------------
@@ -167,6 +167,7 @@ def build_reasoning_prompt(
     state_context: str = "No state information available.",
     recent_actions: str = "No recent actions.",
     file_context: str = "No files loaded.",
+    examples_context: str = "",
 ) -> str:
     """Build the complete system prompt for the reasoning loop.
 
@@ -176,6 +177,7 @@ def build_reasoning_prompt(
         state_context: Current world state summary
         recent_actions: Recent action history and results
         file_context: Relevant file contents / code context
+        examples_context: Optional CoT step-by-step examples (#1043 fix)
 
     Returns:
         Complete system prompt string
@@ -193,6 +195,7 @@ def build_reasoning_prompt(
         state_context=state_context,
         recent_actions=recent_actions,
         file_context=file_context,
+        examples_context=("\n" + examples_context) if examples_context else "",
     )
 
 
