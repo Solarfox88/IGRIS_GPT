@@ -52,9 +52,10 @@ from igris.agent.mission.status_bridge import (
 # Excluded statuses — never generate a proposal for these
 # ---------------------------------------------------------------------------
 
-EXCLUDED_RUN_STATUSES: FrozenSet[str] = frozenset({"passed", "completed"})
+EXCLUDED_RUN_STATUSES: FrozenSet[str] = frozenset({"passed", "completed", "cancelled"})
 EXCLUDED_GOAL_STATUSES: FrozenSet[str] = frozenset({"completed"})
 EXCLUDED_PROPOSAL_TYPES: FrozenSet[str] = frozenset({"completed"})
+ALLOWED_TRIGGER_STATUSES: FrozenSet[str] = frozenset({"failed", "blocked"})
 
 # ---------------------------------------------------------------------------
 # Proposal types — never use "completed"
@@ -163,7 +164,7 @@ class RecoveryProposal:
     """
     # Identity
     proposal_id: str = field(default_factory=lambda: uuid.uuid4().hex[:16])
-    source_advisory_id: str = ""   # ID of advisory that triggered this proposal
+    source_advisory_id: str = field(default_factory=lambda: f"advisory-{uuid.uuid4().hex[:12]}")
     timestamp: float = field(default_factory=time.time)
 
     # Trigger context
@@ -198,6 +199,8 @@ class RecoveryProposal:
         # Core invariants — normalize rather than crash on bool coercion
         object.__setattr__(self, "auto_executable", False)
         object.__setattr__(self, "approval_required", True)
+        if not str(self.source_advisory_id).strip():
+            object.__setattr__(self, "source_advisory_id", f"advisory-{uuid.uuid4().hex[:12]}")
 
         # Proposal type must never be "completed"
         if self.proposal_type in EXCLUDED_PROPOSAL_TYPES:
@@ -279,10 +282,12 @@ class ProposalValidator:
             )
         if not proposal.proposal_id:
             raise ValueError("INVARIANT VIOLATION: proposal_id must be non-empty")
-        if proposal.trigger_status in EXCLUDED_RUN_STATUSES:
+        if not str(proposal.source_advisory_id).strip():
+            raise ValueError("INVARIANT VIOLATION: source_advisory_id must be non-empty")
+        if proposal.trigger_status not in ALLOWED_TRIGGER_STATUSES:
             raise ValueError(
                 f"INVARIANT VIOLATION: trigger_status {proposal.trigger_status!r} "
-                f"is in excluded statuses (passed/completed)"
+                f"must be one of {sorted(ALLOWED_TRIGGER_STATUSES)}"
             )
         if proposal.confidence not in CONFIDENCE_LEVELS:
             raise ValueError(
@@ -314,6 +319,14 @@ class ProposalValidator:
             raise ValueError(
                 f"INVARIANT VIOLATION: proposal_type must not be in {EXCLUDED_PROPOSAL_TYPES}"
             )
+        if not str(d.get("source_advisory_id", "")).strip():
+            raise ValueError(
+                "INVARIANT VIOLATION: source_advisory_id must be non-empty in dict"
+            )
+        if str(d.get("trigger_status", "")).strip().lower() not in ALLOWED_TRIGGER_STATUSES:
+            raise ValueError(
+                f"INVARIANT VIOLATION: trigger_status must be one of {sorted(ALLOWED_TRIGGER_STATUSES)}"
+            )
         for action in d.get("suggested_actions", []):
             if action.get("auto_executable") is not False:
                 raise ValueError("INVARIANT VIOLATION: suggested_action.auto_executable")
@@ -324,9 +337,12 @@ class ProposalValidator:
     @classmethod
     def is_excluded_status(cls, run_status: str, goal_status: str) -> bool:
         """Return True if this status combination should never generate a proposal."""
+        run = str(run_status or "").strip().lower()
+        goal = str(goal_status or "").strip().lower()
         return (
-            run_status in EXCLUDED_RUN_STATUSES
-            or goal_status in EXCLUDED_GOAL_STATUSES
+            run not in ALLOWED_TRIGGER_STATUSES
+            or run in EXCLUDED_RUN_STATUSES
+            or goal in EXCLUDED_GOAL_STATUSES
         )
 
 
@@ -418,8 +434,9 @@ def _generate_proposal_internal(
     """Internal proposal builder. Never raises (called from generate_recovery_proposal)."""
     # Extract run/goal status
     ctx = cycle or report
-    run_status = str(ctx.get("current_loop_decision") or report.get("run_status") or "unknown")
+    run_status_raw = str(ctx.get("current_loop_decision") or report.get("run_status") or "unknown")
     goal_status = str(ctx.get("mission_brain_decision") or report.get("goal_status") or "unknown")
+    run_status = run_status_raw.strip().lower()
 
     # Exclusion check
     if ProposalValidator.is_excluded_status(run_status, goal_status):
@@ -479,7 +496,11 @@ def _generate_proposal_internal(
     risk_level = _compute_risk_level(suggested_actions)
 
     proposal = RecoveryProposal(
-        source_advisory_id=source_advisory_id,
+        source_advisory_id=_resolve_source_advisory_id(
+            report=report,
+            advisory=advisory,
+            provided_source_advisory_id=source_advisory_id,
+        ),
         trigger_status=run_status,
         combined_status=combined_status,
         proposal_type=proposal_type,
@@ -532,6 +553,27 @@ def _extract_valid_progress(
         progress.append(f"Changes committed at {str(commit_sha)[:8]}")
 
     return progress
+
+
+def _resolve_source_advisory_id(
+    report: Dict[str, Any],
+    advisory: Optional[Dict[str, Any]],
+    provided_source_advisory_id: str,
+) -> str:
+    """Resolve source_advisory_id with explicit trace, never empty."""
+    candidate = str(provided_source_advisory_id or "").strip()
+    if candidate:
+        return candidate
+    if isinstance(advisory, dict):
+        for key in ("advisory_id", "id", "source_advisory_id"):
+            value = str(advisory.get(key, "")).strip()
+            if value:
+                return value
+    for key in ("advisory_id", "source_advisory_id", "report_id", "run_id"):
+        value = str(report.get(key, "")).strip()
+        if value:
+            return f"advisory:{value}"
+    return f"advisory-{uuid.uuid4().hex[:12]}"
 
 
 def _build_suggested_actions(
