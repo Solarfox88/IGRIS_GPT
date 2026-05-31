@@ -159,7 +159,7 @@ class TestCIRepairLoopDiagnose:
     def test_diagnose_module_not_found(self, tmp_path):
         loop = self._loop(tmp_path)
         diag = loop._diagnose("ModuleNotFoundError: No module named 'igris.foo'")
-        assert diag["failure_type"] == "import_error"
+        assert diag["failure_type"] == "dependency_error"
 
     def test_diagnose_syntax_error(self, tmp_path):
         loop = self._loop(tmp_path)

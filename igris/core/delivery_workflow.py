@@ -330,12 +330,19 @@ class DeliveryWorkflow:
         """
         log_lower = log_text.lower()
 
-        if "ImportError" in log_text or "ModuleNotFoundError" in log_text:
+        # Classification contract:
+        # - import_error: local import/syntax wiring issues in project code
+        # - dependency_error: missing external module / dependency not installed
+        if "ModuleNotFoundError" in log_text:
+            return "dependency_error"
+        if "ImportError" in log_text:
             return "import_error"
         if "SyntaxError" in log_text or "IndentationError" in log_text:
             return "syntax_error"
         if "ruff format" in log_lower and ("would reformat" in log_lower or "reformatted" in log_lower):
             return "formatting_error"
+        if "ruff check" in log_lower and re.search(r"\b[EFWCI]\d{3,4}\b", log_text):
+            return "lint_error"
         if "ruff" in log_lower and ("error" in log_lower or "warning" in log_lower):
             return "lint_error"
         if ("flake8" in log_lower or "pylint" in log_lower) and "error" in log_lower:

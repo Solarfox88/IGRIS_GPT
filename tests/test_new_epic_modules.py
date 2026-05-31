@@ -682,7 +682,7 @@ class TestCIRepairLoopDiagnose:
 
     def test_import_error_detected(self):
         d = self.loop._diagnose("ModuleNotFoundError: no module named foo")
-        assert d["failure_type"] == "import_error"
+        assert d["failure_type"] == "dependency_error"
 
     def test_syntax_error_detected(self):
         d = self.loop._diagnose("SyntaxError: invalid syntax on line 5")
