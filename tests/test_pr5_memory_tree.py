@@ -14,6 +14,7 @@ import json
 import sqlite3
 import tempfile
 import time
+import uuid
 from pathlib import Path
 from typing import Any, Dict
 from unittest.mock import MagicMock, patch
@@ -46,7 +47,7 @@ def _insert_node(
     updated_at: float | None = None,
 ) -> str:
     """Helper: insert a raw node into the memory graph DB."""
-    node_id = f"test_{node_type}_{int(time.time() * 1000)}"
+    node_id = f"test_{node_type}_{int(time.time() * 1000)}_{uuid.uuid4().hex[:8]}"
     ts = updated_at or time.time()
     mg.conn.execute(
         """
