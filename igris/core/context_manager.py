@@ -72,6 +72,8 @@ class ContextPacket:
     recent_actions: str = ""
     error_context: str = ""
     memory_context: str = ""
+    # PR 5 — memory influence summary from build_memory_context_packet()
+    memory_influence: str = ""
     role: str = "coder"
     budget_chars: int = 16000
     used_chars: int = 0
@@ -86,6 +88,7 @@ class ContextPacket:
             "recent_actions": redact_secrets(self.recent_actions),
             "error_context": redact_secrets(self.error_context),
             "memory_context": redact_secrets(self.memory_context),
+            "memory_influence": redact_secrets(self.memory_influence),
             "role": self.role,
             "budget_chars": self.budget_chars,
             "used_chars": self.used_chars,
@@ -345,16 +348,24 @@ class ContextManager:
         if len(state_text) > len(packet.state_context):
             truncated.append("state_context")
 
-        # 5. Memory context
+        # 5. Memory context — PR 5: use build_memory_context_packet() for structured data
         graph_items = list(memory_items or [])
         try:
             from igris.core.memory_graph import MemoryGraph
             mg = MemoryGraph(self.project_root or ".")
-            graph_items.extend(mg.get_lessons_for_goal(goal, limit=5))
-            graph_items.extend(mg.query_by_intent(goal, node_type="project_fact", limit=3))
-            recipe = mg.get_command_recipe(goal)
+            mem_packet = mg.build_memory_context_packet(
+                goal,
+                lesson_limit=5,
+                fact_limit=3,
+                include_health=True,
+            )
+            graph_items.extend(mem_packet.get("lessons", []))
+            graph_items.extend(mem_packet.get("project_facts", []))
+            recipe = mem_packet.get("command_recipe")
             if recipe:
                 graph_items.append(recipe)
+            # Expose memory influence summary for downstream consumers
+            packet.memory_influence = mem_packet.get("memory_influence", "")
         except Exception:
             pass
         memory_text = self._build_memory_context(graph_items)
