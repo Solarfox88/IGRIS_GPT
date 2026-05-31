@@ -69,6 +69,9 @@ def _call_blocked(run: SupervisorRun, failure: str = "reasoning_loop_blocked") -
     supervisor._api_escalation_report_fragment = lambda r: {}
     supervisor._stage_report_fragment = lambda mp, ss: {}
     supervisor._failure_memory = None
+    supervisor._run_store = types.SimpleNamespace(
+        transition=lambda _run, new_status, reason="": setattr(_run, "status", new_status)
+    )
     return supervisor._blocked(run, failure, "test detail")
 
 
@@ -168,3 +171,25 @@ class TestAdvisoryFlag:
 
     def test_flag_is_bool(self):
         assert isinstance(sup_module._selected_advisory_available, bool)
+
+
+class TestRunStoreWiring:
+
+    def test_blocked_uses_transition_store(self):
+        run = _make_run()
+        supervisor = SelfRepairSupervisor.__new__(SelfRepairSupervisor)
+        supervisor.project_root = "/tmp/test_project"
+        supervisor._cleanup_blocked_workspace = lambda r: None
+        supervisor._api_escalation_report_fragment = lambda r: {}
+        supervisor._stage_report_fragment = lambda mp, ss: {}
+        supervisor._failure_memory = None
+        calls = []
+        supervisor._run_store = types.SimpleNamespace(
+            transition=lambda _run, new_status, reason="": (
+                calls.append((new_status, reason)),
+                setattr(_run, "status", new_status),
+            )
+        )
+        result = supervisor._blocked(run, "reasoning_loop_blocked", "test detail")
+        assert result.status == "blocked"
+        assert calls and calls[0][0] == "blocked"
