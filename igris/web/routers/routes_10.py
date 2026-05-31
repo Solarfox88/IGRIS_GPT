@@ -582,7 +582,7 @@ def create_router(deps) -> APIRouter:
                 RecoveryProposalConfig,
             )
             pr10_config = RecoveryProposalConfig()
-            if pr10_config.enabled and outcome not in ("success", "in_progress"):
+            if pr10_config.enabled and outcome == "blocked":
                 report_payload = {
                     "run_status": status,
                     "goal_status": status,

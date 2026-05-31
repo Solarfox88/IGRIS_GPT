@@ -224,12 +224,17 @@ class TestProposalValidator:
 
     def test_excluded_trigger_status_detected(self):
         p = _make_proposal(trigger_status="passed")
-        with pytest.raises(ValueError, match="excluded"):
+        with pytest.raises(ValueError, match="trigger_status"):
             ProposalValidator.validate(p)
 
     def test_completed_trigger_status_detected(self):
         p = _make_proposal(trigger_status="completed")
-        with pytest.raises(ValueError, match="excluded"):
+        with pytest.raises(ValueError, match="trigger_status"):
+            ProposalValidator.validate(p)
+
+    def test_cancelled_trigger_status_detected(self):
+        p = _make_proposal(trigger_status="cancelled")
+        with pytest.raises(ValueError, match="trigger_status"):
             ProposalValidator.validate(p)
 
     def test_empty_proposal_id_detected(self):
@@ -238,8 +243,17 @@ class TestProposalValidator:
         with pytest.raises(ValueError, match="proposal_id"):
             ProposalValidator.validate(p)
 
+    def test_empty_source_advisory_id_detected(self):
+        p = _make_proposal()
+        object.__setattr__(p, "source_advisory_id", "")
+        with pytest.raises(ValueError, match="source_advisory_id"):
+            ProposalValidator.validate(p)
+
     def test_is_excluded_status_passed_completed(self):
         assert ProposalValidator.is_excluded_status("passed", "completed") is True
+
+    def test_is_excluded_status_cancelled_excluded(self):
+        assert ProposalValidator.is_excluded_status("cancelled", "partial") is True
 
     def test_is_excluded_status_passed_partial(self):
         # passed run → excluded even if goal is partial
@@ -361,6 +375,14 @@ class TestGenerateRecoveryProposal:
         result = generate_recovery_proposal(report, config=_config())
         assert result is None
 
+    def test_no_proposal_for_cancelled(self):
+        report = {
+            "current_loop_decision": "cancelled",
+            "mission_brain_decision": "partial",
+        }
+        result = generate_recovery_proposal(report, config=_config())
+        assert result is None
+
     def test_proposal_has_required_fields(self):
         report = _failed_report()
         result = generate_recovery_proposal(report, config=_config())
@@ -444,6 +466,12 @@ class TestGenerateRecoveryProposal:
         assert result is not None
         assert result.source_advisory_id == "adv-xyz-123"
 
+    def test_source_advisory_id_auto_generated_when_missing(self):
+        report = _failed_report()
+        result = generate_recovery_proposal(report, config=_config())
+        assert result is not None
+        assert result.source_advisory_id
+
     def test_generate_is_non_blocking_on_error(self):
         """generate_recovery_proposal must never raise."""
         # Invalid report
@@ -496,6 +524,14 @@ class TestReportEnrichment:
         report = {
             "current_loop_decision": "passed",
             "mission_brain_decision": "completed",
+        }
+        result = enrich_report_with_proposal(report, config=_config())
+        assert "recovery_proposal" not in result
+
+    def test_no_enrichment_for_cancelled(self):
+        report = {
+            "current_loop_decision": "cancelled",
+            "mission_brain_decision": "partial",
         }
         result = enrich_report_with_proposal(report, config=_config())
         assert "recovery_proposal" not in result
