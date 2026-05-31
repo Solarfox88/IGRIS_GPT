@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import json
 import os
+import shlex
 import subprocess
 import time
 import urllib.error
@@ -87,6 +88,59 @@ class LocalCommandRunner(CommandRunner):
             return CommandResult(returncode=1, stderr=str(exc)[:300])
 
 
+class SSHCommandRunner(CommandRunner):
+    """Safe remote runner via SSH for stage-1 VPS operations."""
+
+    def __init__(self, hostname: str, user: str = "", port: int = 22) -> None:
+        self.hostname = hostname
+        self.user = user.strip()
+        self.port = int(port or 22)
+
+    def _target(self) -> str:
+        return f"{self.user}@{self.hostname}" if self.user else self.hostname
+
+    @staticmethod
+    def _quote_cmd(cmd: List[str]) -> str:
+        return " ".join(shlex.quote(part) for part in cmd)
+
+    def run(
+        self,
+        cmd: List[str],
+        cwd: Optional[str] = None,
+        timeout: int = 30,
+    ) -> CommandResult:
+        remote_cmd = self._quote_cmd(cmd)
+        if cwd:
+            remote_cmd = f"cd {shlex.quote(cwd)} && {remote_cmd}"
+        ssh_cmd = [
+            "ssh",
+            "-p",
+            str(self.port),
+            "-o",
+            "BatchMode=yes",
+            "-o",
+            "StrictHostKeyChecking=accept-new",
+            self._target(),
+            remote_cmd,
+        ]
+        try:
+            r = subprocess.run(
+                ssh_cmd,
+                capture_output=True,
+                text=True,
+                timeout=timeout,
+            )
+            return CommandResult(
+                returncode=r.returncode,
+                stdout=r.stdout or "",
+                stderr=r.stderr or "",
+            )
+        except subprocess.TimeoutExpired:
+            return CommandResult(returncode=124, stderr=f"ssh command timed out after {timeout}s")
+        except Exception as exc:
+            return CommandResult(returncode=1, stderr=str(exc)[:300])
+
+
 class FakeCommandRunner(CommandRunner):
     """In-memory fake runner for unit tests.
 
@@ -142,6 +196,8 @@ class HostConfig:
     allowed_services: List[str] = field(default_factory=list)
     requires_backup: bool = True
     health_url: str = ""           # URL for post-deploy health check
+    ssh_user: str = ""
+    ssh_port: int = 22
 
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)
@@ -156,6 +212,8 @@ class HostConfig:
             allowed_services=data.get("allowed_services", []),
             requires_backup=data.get("requires_backup", True),
             health_url=data.get("health_url", ""),
+            ssh_user=data.get("ssh_user", ""),
+            ssh_port=int(data.get("ssh_port", 22) or 22),
         )
 
 
@@ -291,6 +349,7 @@ class DevOpsManager:
         self,
         hostname: Optional[str] = None,
         min_disk_pct_free: int = 10,
+        runner: Optional[CommandRunner] = None,
     ) -> Dict[str, Any]:
         """Run pre-deploy preflight checks locally.
 
@@ -301,12 +360,13 @@ class DevOpsManager:
 
         Returns a dict with individual check results and an overall ``ok`` flag.
         """
+        effective_runner = runner or self._runner
         checks: Dict[str, Any] = {}
         ts = time.time()
 
         # 1. Disk space
         try:
-            _r = self._runner.run(
+            _r = effective_runner.run(
                 ["df", "-P", str(self.project_root)],
                 timeout=5,
             )
@@ -332,7 +392,7 @@ class DevOpsManager:
 
         # 2. Git working-tree state
         try:
-            _g = self._runner.run(
+            _g = effective_runner.run(
                 ["git", "status", "--porcelain"],
                 cwd=str(self.project_root),
                 timeout=5,
@@ -344,7 +404,7 @@ class DevOpsManager:
 
         # 3. IGRIS service reachability
         try:
-            _nc = self._runner.run(
+            _nc = effective_runner.run(
                 ["nc", "-z", "-w", "2", "localhost", "7778"],
                 timeout=5,
             )
@@ -373,6 +433,7 @@ class DevOpsManager:
         self,
         hostname: Optional[str] = None,
         health_url: str = "",
+        runner: Optional[CommandRunner] = None,
     ) -> Dict[str, Any]:
         """Post-deploy verification.
 
@@ -382,11 +443,12 @@ class DevOpsManager:
 
         Returns a dict with results and an overall ``ok`` flag.
         """
+        effective_runner = runner or self._runner
         checks: Dict[str, Any] = {}
 
         # Service port
         try:
-            _nc = self._runner.run(
+            _nc = effective_runner.run(
                 ["nc", "-z", "-w", "3", "localhost", "7778"],
                 timeout=6,
             )
@@ -458,8 +520,26 @@ class DevOpsManager:
             report["abort_reason"] = f"unknown strategy: {strategy!r}; valid: {sorted(self.VALID_STRATEGIES)}"
             return report
 
+        host_cfg = self._hosts.get(hostname) if hostname else None
+        if host_cfg is not None:
+            policy = check_action_allowed(host_cfg.policy, "deploy")
+            report["policy"] = {
+                "hostname": host_cfg.hostname,
+                "allowed": policy["allowed"],
+                "reason": policy["reason"],
+            }
+            if not policy["allowed"]:
+                report["deployed"] = False
+                report["abort_reason"] = policy["reason"]
+                return report
+        runner = self._effective_runner(host_cfg)
+
         # Preflight
-        preflight = self.run_preflight(hostname=hostname, min_disk_pct_free=min_disk_pct_free)
+        preflight = self.run_preflight(
+            hostname=hostname,
+            min_disk_pct_free=min_disk_pct_free,
+            runner=runner,
+        )
         report["preflight"] = preflight
         if not preflight["ok"]:
             report["deployed"] = False
@@ -469,10 +549,17 @@ class DevOpsManager:
         if dry_run or strategy == "dry_run":
             report["deployed"] = False
             report["note"] = "dry_run: preflight passed, no action taken"
+            report["dry_run_evidence"] = self._build_dry_run_evidence(
+                strategy=strategy,
+                hostname=hostname,
+                health_url=health_url,
+                host_cfg=host_cfg,
+                runner=runner,
+            )
             return report
 
         # Snapshot pre-deploy git SHA for rollback
-        pre_sha_r = self._runner.run(
+        pre_sha_r = runner.run(
             ["git", "rev-parse", "HEAD"],
             cwd=str(self.project_root),
             timeout=5,
@@ -486,6 +573,8 @@ class DevOpsManager:
             service_name=service_name,
             compose_file=compose_file,
             nginx_webroot=nginx_webroot,
+            runner=runner,
+            host_cfg=host_cfg,
         )
         report["action"] = action_result
         action_ok = all(v.get("ok", False) for v in action_result.values() if isinstance(v, dict))
@@ -493,7 +582,11 @@ class DevOpsManager:
 
         # Postcheck (only if action succeeded)
         if action_ok:
-            postcheck = self.run_postcheck(hostname=hostname, health_url=health_url)
+            postcheck = self.run_postcheck(
+                hostname=hostname,
+                health_url=health_url,
+                runner=runner,
+            )
             report["postcheck"] = postcheck
             report["postcheck_ok"] = postcheck["ok"]
             # PR 3: auto-rollback if postcheck fails
@@ -502,6 +595,8 @@ class DevOpsManager:
                     strategy=strategy,
                     pre_deploy_sha=pre_deploy_sha,
                     service_name=service_name,
+                    runner=runner,
+                    host_cfg=host_cfg,
                 )
                 report["rollback"] = rollback
                 report["deployed"] = False
@@ -518,6 +613,8 @@ class DevOpsManager:
         service_name: str = "igris",
         compose_file: str = "docker-compose.yml",
         nginx_webroot: str = "/var/www/html",
+        runner: Optional[CommandRunner] = None,
+        host_cfg: Optional[HostConfig] = None,
     ) -> Dict[str, Any]:
         """Execute the deploy action for the given strategy.
 
@@ -525,10 +622,26 @@ class DevOpsManager:
         """
         action: Dict[str, Any] = {}
         cwd = str(self.project_root)
+        effective_runner = runner or self._runner
+
+        def _blocked(msg: str) -> Dict[str, Any]:
+            return {"policy_blocked": {"ok": False, "output": msg[:300]}}
+
+        if host_cfg is not None:
+            if not self._path_allowed(host_cfg, cwd):
+                return _blocked(f"project root not allowed by host policy: {cwd}")
+            if strategy == "static_nginx" and not self._path_allowed(host_cfg, nginx_webroot):
+                return _blocked(f"nginx_webroot not allowed by host policy: {nginx_webroot}")
+            if strategy == "docker_compose" and not self._service_allowed(host_cfg, "docker"):
+                return _blocked("service docker is not allowed by host policy")
+            if strategy == "static_nginx" and not self._service_allowed(host_cfg, "nginx"):
+                return _blocked("service nginx is not allowed by host policy")
+            if strategy in ("git_pull_restart", "systemd_app") and not self._service_allowed(host_cfg, service_name):
+                return _blocked(f"service {service_name!r} is not allowed by host policy")
 
         if strategy in ("git_pull_restart", "systemd_app"):
             # Step 1: git pull
-            r_pull = self._runner.run(["git", "pull", "--ff-only"], cwd=cwd, timeout=60)
+            r_pull = effective_runner.run(["git", "pull", "--ff-only"], cwd=cwd, timeout=60)
             action["git_pull"] = {
                 "ok": r_pull.ok,
                 "output": (r_pull.stdout + r_pull.stderr)[:500],
@@ -538,7 +651,7 @@ class DevOpsManager:
 
             # Step 2: restart service
             svc = service_name if strategy == "systemd_app" else "igris"
-            r_restart = self._runner.run(
+            r_restart = effective_runner.run(
                 ["systemctl", "restart", svc], timeout=30
             )
             action["restart"] = {
@@ -549,7 +662,7 @@ class DevOpsManager:
 
         elif strategy == "docker_compose":
             # Step 1: git pull
-            r_pull = self._runner.run(["git", "pull", "--ff-only"], cwd=cwd, timeout=60)
+            r_pull = effective_runner.run(["git", "pull", "--ff-only"], cwd=cwd, timeout=60)
             action["git_pull"] = {
                 "ok": r_pull.ok,
                 "output": (r_pull.stdout + r_pull.stderr)[:500],
@@ -559,7 +672,7 @@ class DevOpsManager:
 
             # Step 2: docker-compose up
             compose_cmd = ["docker-compose", "-f", compose_file, "up", "-d", "--build"]
-            r_compose = self._runner.run(compose_cmd, cwd=cwd, timeout=120)
+            r_compose = effective_runner.run(compose_cmd, cwd=cwd, timeout=120)
             action["docker_compose_up"] = {
                 "ok": r_compose.ok,
                 "output": (r_compose.stdout + r_compose.stderr)[:500],
@@ -567,7 +680,7 @@ class DevOpsManager:
 
         elif strategy == "static_nginx":
             # Step 1: git pull
-            r_pull = self._runner.run(["git", "pull", "--ff-only"], cwd=cwd, timeout=60)
+            r_pull = effective_runner.run(["git", "pull", "--ff-only"], cwd=cwd, timeout=60)
             action["git_pull"] = {
                 "ok": r_pull.ok,
                 "output": (r_pull.stdout + r_pull.stderr)[:500],
@@ -576,7 +689,7 @@ class DevOpsManager:
                 return action
 
             # Step 2: copy files to webroot (rsync)
-            r_sync = self._runner.run(
+            r_sync = effective_runner.run(
                 ["rsync", "-a", "--delete", "dist/", nginx_webroot + "/"],
                 cwd=cwd,
                 timeout=30,
@@ -589,7 +702,7 @@ class DevOpsManager:
                 return action
 
             # Step 3: nginx reload
-            r_nginx = self._runner.run(["nginx", "-s", "reload"], timeout=10)
+            r_nginx = effective_runner.run(["nginx", "-s", "reload"], timeout=10)
             action["nginx_reload"] = {
                 "ok": r_nginx.ok,
                 "output": r_nginx.stderr[:200],
@@ -603,6 +716,8 @@ class DevOpsManager:
         pre_deploy_sha: str = "",
         service_name: str = "igris",
         compose_file: str = "docker-compose.yml",
+        runner: Optional[CommandRunner] = None,
+        host_cfg: Optional[HostConfig] = None,
     ) -> Dict[str, Any]:
         """Roll back a deploy by resetting to pre_deploy_sha and restarting.
 
@@ -615,6 +730,7 @@ class DevOpsManager:
             "timestamp": time.time(),
         }
         cwd = str(self.project_root)
+        effective_runner = runner or self._runner
         steps: Dict[str, Any] = {}
 
         if not pre_deploy_sha:
@@ -623,7 +739,7 @@ class DevOpsManager:
             return result
 
         # Git reset to pre-deploy SHA
-        r_reset = self._runner.run(
+        r_reset = effective_runner.run(
             ["git", "reset", "--hard", pre_deploy_sha],
             cwd=cwd,
             timeout=15,
@@ -642,14 +758,24 @@ class DevOpsManager:
 
         # Restart service (strategy-specific)
         if strategy in ("git_pull_restart", "systemd_app"):
-            r_restart = self._runner.run(["systemctl", "restart", service_name], timeout=30)
+            if host_cfg is not None and not self._service_allowed(host_cfg, service_name):
+                steps["restart"] = {"ok": False, "service": service_name, "output": "policy blocked"}
+                result["steps"] = steps
+                result["ok"] = False
+                return result
+            r_restart = effective_runner.run(["systemctl", "restart", service_name], timeout=30)
             steps["restart"] = {
                 "ok": r_restart.ok,
                 "service": service_name,
                 "output": r_restart.stderr[:200],
             }
         elif strategy == "docker_compose":
-            r_compose = self._runner.run(
+            if host_cfg is not None and not self._service_allowed(host_cfg, "docker"):
+                steps["docker_compose_up"] = {"ok": False, "output": "policy blocked"}
+                result["steps"] = steps
+                result["ok"] = False
+                return result
+            r_compose = effective_runner.run(
                 ["docker-compose", "-f", compose_file, "up", "-d"],
                 cwd=cwd,
                 timeout=120,
@@ -659,12 +785,85 @@ class DevOpsManager:
                 "output": (r_compose.stdout + r_compose.stderr)[:300],
             }
         elif strategy == "static_nginx":
-            r_nginx = self._runner.run(["nginx", "-s", "reload"], timeout=10)
+            if host_cfg is not None and not self._service_allowed(host_cfg, "nginx"):
+                steps["nginx_reload"] = {"ok": False, "output": "policy blocked"}
+                result["steps"] = steps
+                result["ok"] = False
+                return result
+            r_nginx = effective_runner.run(["nginx", "-s", "reload"], timeout=10)
             steps["nginx_reload"] = {"ok": r_nginx.ok, "output": r_nginx.stderr[:200]}
 
         result["steps"] = steps
         result["ok"] = all(v.get("ok", False) for v in steps.values())
         return result
+
+    def _effective_runner(self, host_cfg: Optional[HostConfig]) -> CommandRunner:
+        if host_cfg is None:
+            return self._runner
+        host = str(host_cfg.hostname or "").strip().lower()
+        if host in {"", "localhost", "127.0.0.1"}:
+            return self._runner
+        return SSHCommandRunner(
+            hostname=host_cfg.hostname,
+            user=host_cfg.ssh_user,
+            port=host_cfg.ssh_port,
+        )
+
+    @staticmethod
+    def _service_allowed(host_cfg: HostConfig, service: str) -> bool:
+        allowed = {str(s).strip().lower() for s in host_cfg.allowed_services or [] if str(s).strip()}
+        if not allowed:
+            return True
+        return str(service or "").strip().lower() in allowed
+
+    @staticmethod
+    def _path_allowed(host_cfg: HostConfig, path: str) -> bool:
+        norm = str(path or "").strip()
+        if not norm:
+            return False
+        allowed = [str(p).strip() for p in host_cfg.allowed_paths or [] if str(p).strip()]
+        if not allowed:
+            return True
+        return any(norm.startswith(prefix) for prefix in allowed)
+
+    def _build_dry_run_evidence(
+        self,
+        *,
+        strategy: str,
+        hostname: Optional[str],
+        health_url: str,
+        host_cfg: Optional[HostConfig],
+        runner: CommandRunner,
+    ) -> Dict[str, Any]:
+        target = hostname or "localhost"
+        planned: List[str] = []
+        if strategy in ("git_pull_restart", "systemd_app"):
+            planned = ["git pull --ff-only", "systemctl restart igris"]
+        elif strategy == "docker_compose":
+            planned = ["git pull --ff-only", "docker-compose -f docker-compose.yml up -d --build"]
+        elif strategy == "static_nginx":
+            planned = ["git pull --ff-only", "rsync dist/ ...", "nginx -s reload"]
+
+        nginx = runner.run(["nginx", "-t"], timeout=8)
+        docker = runner.run(["docker", "ps", "--format", "{{.Names}}"], timeout=8)
+        ssl_probe: Dict[str, Any] = {"available": False}
+        if health_url.startswith("https://"):
+            ssl_probe["available"] = True
+            ssl_probe["target"] = health_url
+        browser_url = health_url or "http://localhost:7778/api/ping"
+        browser = self.run_smoke_test(url=browser_url)
+
+        return {
+            "target_host": target,
+            "planned_commands": planned,
+            "policy_enforced": bool(host_cfg is not None),
+            "allowed_paths": list(host_cfg.allowed_paths) if host_cfg else [],
+            "allowed_services": list(host_cfg.allowed_services) if host_cfg else [],
+            "nginx": nginx.to_dict(),
+            "docker": docker.to_dict(),
+            "ssl": ssl_probe,
+            "browser": browser,
+        }
 
     # ------------------------------------------------------------------
     # Smoke test
