@@ -225,6 +225,14 @@ class ParallelTaskRunner:
     - Dependency graph: tasks run in topological order via build_dependency_order()
     - merge_results() aggregates outputs into a summary
     - detect_file_conflicts() pre-run conflict detection
+
+    PR 4 hardening:
+    - _run_one() now acquires per-file asyncio.Lock for every path in
+      task.initial_context["file_scopes"] BEFORE acquiring the semaphore.
+      Locks are sorted by path to prevent deadlock.
+    - Dependency failure propagation: if any task in depends_on failed,
+      the dependent task is skipped with skip_reason set.
+    - _failed_task_ids tracks all non-success tasks for dependency skip.
     """
 
     def __init__(self, project_root: str, max_concurrent: int = 3) -> None:
@@ -232,34 +240,127 @@ class ParallelTaskRunner:
         self.max_concurrent = max_concurrent
         self._semaphore = asyncio.Semaphore(max_concurrent)
         self._completed_results: Dict[str, ParallelResult] = {}
+        # PR 4: track failed task IDs for dependency failure skip
+        self._failed_task_ids: Set[str] = set()
+        # PR 4: per-file asyncio.Locks for conflict serialization
+        self._file_locks: Dict[str, asyncio.Lock] = {}
+        self._file_locks_mutex: Optional[asyncio.Lock] = None  # lazily initialized
+
+    def _get_file_locks_mutex(self) -> asyncio.Lock:
+        """Lazily initialize file locks mutex (requires running event loop)."""
+        if self._file_locks_mutex is None:
+            self._file_locks_mutex = asyncio.Lock()
+        return self._file_locks_mutex
+
+    async def _acquire_file_locks(
+        self,
+        file_scopes: List[str],
+    ) -> List[asyncio.Lock]:
+        """Acquire per-file asyncio.Locks for all paths in file_scopes.
+
+        PR 4: locks are sorted alphabetically to prevent deadlock when
+        multiple tasks try to lock the same set of files in different orders.
+
+        Returns the list of acquired locks (caller must release them).
+        """
+        if not file_scopes:
+            return []
+
+        # Normalize and deduplicate paths
+        norm_paths = sorted(set(str(Path(p).as_posix()) for p in file_scopes))
+
+        # Create locks for new paths
+        mutex = self._get_file_locks_mutex()
+        async with mutex:
+            for path in norm_paths:
+                if path not in self._file_locks:
+                    self._file_locks[path] = asyncio.Lock()
+
+        # Acquire all locks (sorted order — deadlock-free)
+        acquired: List[asyncio.Lock] = []
+        for path in norm_paths:
+            lock = self._file_locks[path]
+            await lock.acquire()
+            acquired.append(lock)
+        return acquired
+
+    @staticmethod
+    def _release_file_locks(acquired: List[asyncio.Lock]) -> None:
+        """Release all acquired file locks."""
+        for lock in acquired:
+            if lock.locked():
+                lock.release()
 
     async def _run_one(self, task: ParallelTask) -> ParallelResult:
-        async with self._semaphore:
-            try:
-                loop = AgentReasoningLoop(
-                    project_root=self.project_root,
-                    max_steps=task.max_steps,
-                    task_type=task.task_type,
-                    preferred_profile=task.preferred_profile,
-                )
-                result = await asyncio.to_thread(
-                    loop.run,
-                    goal=task.goal,
-                    initial_context=task.initial_context,
-                )
-                pr = ParallelResult(task_id=task.task_id, result=result)
-                # Collect modified files for merge
-                if hasattr(result, "files_modified"):
-                    pr.merged_files = list(result.files_modified or [])
-                return pr
-            except Exception as exc:
-                logger.error("parallel task %s failed: %s", task.task_id, exc)
-                return ParallelResult(task_id=task.task_id, result=None, error=str(exc))
+        """Run a single task with file locking and dependency failure skip.
+
+        PR 4 hardening:
+        1. Check dependency failure: if any dependency failed, skip this task.
+        2. Acquire per-file asyncio.Locks for task.initial_context["file_scopes"].
+        3. Acquire semaphore (bounded concurrency).
+        4. Execute task.
+        5. Release file locks.
+        6. Track failures in _failed_task_ids.
+        """
+        # PR 4 — Dependency failure skip
+        failed_deps = [dep for dep in task.depends_on if dep in self._failed_task_ids]
+        if failed_deps:
+            skip_reason = f"dependency failed: {failed_deps}"
+            logger.warning("skipping task %s: %s", task.task_id, skip_reason)
+            pr = ParallelResult(
+                task_id=task.task_id,
+                result=None,
+                skipped=True,
+                skip_reason=skip_reason,
+            )
+            # Propagate skip as failure so downstream deps are also skipped
+            self._failed_task_ids.add(task.task_id)
+            return pr
+
+        # PR 4 — Acquire per-file locks (sorted, deadlock-free)
+        file_scopes: List[str] = list(task.initial_context.get("file_scopes") or [])
+        acquired_locks: List[asyncio.Lock] = await self._acquire_file_locks(file_scopes)
+
+        try:
+            async with self._semaphore:
+                try:
+                    loop = AgentReasoningLoop(
+                        project_root=self.project_root,
+                        max_steps=task.max_steps,
+                        task_type=task.task_type,
+                        preferred_profile=task.preferred_profile,
+                    )
+                    result = await asyncio.to_thread(
+                        loop.run,
+                        goal=task.goal,
+                        initial_context=task.initial_context,
+                    )
+                    pr = ParallelResult(task_id=task.task_id, result=result)
+                    # Collect modified files for merge
+                    if hasattr(result, "files_modified"):
+                        pr.merged_files = list(result.files_modified or [])
+                    # PR 4 — track failure for dependency propagation
+                    if not pr.success:
+                        self._failed_task_ids.add(task.task_id)
+                    return pr
+                except Exception as exc:
+                    logger.error("parallel task %s failed: %s", task.task_id, exc)
+                    self._failed_task_ids.add(task.task_id)
+                    return ParallelResult(task_id=task.task_id, result=None, error=str(exc))
+        finally:
+            # PR 4 — Always release file locks
+            self._release_file_locks(acquired_locks)
 
     async def run(self, tasks: List[ParallelTask]) -> List[ParallelResult]:
-        """Run tasks respecting dependency order (Epic #1075)."""
+        """Run tasks respecting dependency order (Epic #1075).
+
+        PR 4: resets _failed_task_ids at start of each run() invocation.
+        """
         if not tasks:
             return []
+
+        # PR 4 — reset failure tracking for this run
+        self._failed_task_ids = set()
 
         # Check if any task has dependencies — if not, run all in parallel
         has_deps = any(t.depends_on for t in tasks)
