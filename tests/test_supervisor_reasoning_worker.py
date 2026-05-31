@@ -48,8 +48,13 @@ def test_worksession_created_and_phases_advance(tmp_path, monkeypatch):
 
 def test_result_dict_includes_work_session_id(tmp_path, monkeypatch, capsys):
     payload = {"project_root": str(tmp_path), "goal": "x", "max_steps": 1}
+
+    def fake_run(self, goal, initial_context, step_callback=None):
+        return LoopResult(status="finished", total_steps=1)
+
     monkeypatch.setattr("sys.stdin", __import__("io").StringIO(json.dumps(payload)))
-    with patch("igris.core.supervisor_reasoning_worker.WorkSession") as ws:
+    with patch("igris.core.agent_reasoning_loop.AgentReasoningLoop.run", fake_run), \
+         patch("igris.core.supervisor_reasoning_worker.WorkSession") as ws:
         ws_inst = ws.create.return_value
         ws_inst.session_id = "abc123"
         ws_inst.goal = "x"
@@ -60,8 +65,13 @@ def test_result_dict_includes_work_session_id(tmp_path, monkeypatch, capsys):
 
 def test_remember_called_after_deliver(tmp_path, monkeypatch):
     payload = {"project_root": str(tmp_path), "goal": "x", "max_steps": 1}
+
+    def fake_run(self, goal, initial_context, step_callback=None):
+        return LoopResult(status="finished", total_steps=1)
+
     monkeypatch.setattr("sys.stdin", __import__("io").StringIO(json.dumps(payload)))
-    with patch("igris.core.supervisor_reasoning_worker.WorkSession") as ws:
+    with patch("igris.core.agent_reasoning_loop.AgentReasoningLoop.run", fake_run), \
+         patch("igris.core.supervisor_reasoning_worker.WorkSession") as ws:
         ws_inst = ws.create.return_value
         ws_inst.session_id = "abc123"
         ws_inst.goal = "x"
