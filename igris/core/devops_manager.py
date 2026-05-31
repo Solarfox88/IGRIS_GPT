@@ -16,9 +16,115 @@ import subprocess
 import time
 import urllib.error
 import urllib.request
+from abc import ABC, abstractmethod
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional
+
+
+# ---------------------------------------------------------------------------
+# Command Runner abstraction — PR 3
+# ---------------------------------------------------------------------------
+
+@dataclass
+class CommandResult:
+    """Result of a command execution."""
+    returncode: int
+    stdout: str = ""
+    stderr: str = ""
+
+    @property
+    def ok(self) -> bool:
+        return self.returncode == 0
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "returncode": self.returncode,
+            "stdout": self.stdout[:500],
+            "stderr": self.stderr[:300],
+            "ok": self.ok,
+        }
+
+
+class CommandRunner(ABC):
+    """Abstract command executor — decouples DevOpsManager from subprocess."""
+
+    @abstractmethod
+    def run(
+        self,
+        cmd: List[str],
+        cwd: Optional[str] = None,
+        timeout: int = 30,
+    ) -> CommandResult:
+        """Execute a command and return a CommandResult."""
+
+
+class LocalCommandRunner(CommandRunner):
+    """Real subprocess-based runner for production use."""
+
+    def run(
+        self,
+        cmd: List[str],
+        cwd: Optional[str] = None,
+        timeout: int = 30,
+    ) -> CommandResult:
+        try:
+            r = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                timeout=timeout,
+                cwd=cwd,
+            )
+            return CommandResult(
+                returncode=r.returncode,
+                stdout=r.stdout or "",
+                stderr=r.stderr or "",
+            )
+        except subprocess.TimeoutExpired:
+            return CommandResult(returncode=124, stderr=f"command timed out after {timeout}s")
+        except Exception as exc:
+            return CommandResult(returncode=1, stderr=str(exc)[:300])
+
+
+class FakeCommandRunner(CommandRunner):
+    """In-memory fake runner for unit tests.
+
+    Usage:
+        runner = FakeCommandRunner()
+        runner.set_result("git pull", CommandResult(returncode=0, stdout="Already up to date."))
+        runner.set_result("systemctl", CommandResult(returncode=0))
+    """
+
+    def __init__(self) -> None:
+        self._results: Dict[str, CommandResult] = {}
+        self.calls: List[Dict[str, Any]] = []
+        self._default_result = CommandResult(returncode=0, stdout="", stderr="")
+
+    def set_result(self, cmd_pattern: str, result: CommandResult) -> None:
+        """Register a result for commands matching cmd_pattern (substring match)."""
+        self._results[cmd_pattern] = result
+
+    def set_default_result(self, result: CommandResult) -> None:
+        """Set the default result for unmatched commands."""
+        self._default_result = result
+
+    def run(
+        self,
+        cmd: List[str],
+        cwd: Optional[str] = None,
+        timeout: int = 30,
+    ) -> CommandResult:
+        self.calls.append({"cmd": list(cmd), "cwd": cwd, "timeout": timeout})
+        cmd_str = " ".join(cmd)
+        # Longest matching pattern wins
+        match = None
+        match_len = -1
+        for pattern, result in self._results.items():
+            if pattern in cmd_str and len(pattern) > match_len:
+                match = result
+                match_len = len(pattern)
+        return match if match is not None else self._default_result
 
 
 # ---------------------------------------------------------------------------
@@ -95,10 +201,16 @@ class DevOpsManager:
     #: Relative path inside project root for the host registry JSON.
     _REGISTRY_FILE = ".igris/devops_hosts.json"
 
-    def __init__(self, project_root: str) -> None:
+    def __init__(
+        self,
+        project_root: str,
+        runner: Optional[CommandRunner] = None,
+    ) -> None:
         self.project_root = Path(project_root)
         self._registry_path = self.project_root / self._REGISTRY_FILE
         self._hosts: Dict[str, HostConfig] = {}
+        # PR 3: injectable runner for tests; defaults to real subprocess runner
+        self._runner: CommandRunner = runner or LocalCommandRunner()
         self._load_registry()
 
     # ------------------------------------------------------------------
@@ -194,11 +306,11 @@ class DevOpsManager:
 
         # 1. Disk space
         try:
-            _r = subprocess.run(
+            _r = self._runner.run(
                 ["df", "-P", str(self.project_root)],
-                capture_output=True, text=True, timeout=5,
+                timeout=5,
             )
-            if _r.returncode == 0:
+            if _r.ok:
                 lines = _r.stdout.strip().splitlines()
                 if len(lines) >= 2:
                     parts = lines[1].split()
@@ -220,23 +332,23 @@ class DevOpsManager:
 
         # 2. Git working-tree state
         try:
-            _g = subprocess.run(
+            _g = self._runner.run(
                 ["git", "status", "--porcelain"],
-                capture_output=True, text=True, timeout=5,
                 cwd=str(self.project_root),
+                timeout=5,
             )
-            is_clean = _g.returncode == 0 and not _g.stdout.strip()
+            is_clean = _g.ok and not _g.stdout.strip()
             checks["git"] = {"ok": True, "clean": is_clean, "dirty": not is_clean}
         except Exception as exc:
             checks["git"] = {"ok": False, "error": str(exc)[:200]}
 
         # 3. IGRIS service reachability
         try:
-            _nc = subprocess.run(
+            _nc = self._runner.run(
                 ["nc", "-z", "-w", "2", "localhost", "7778"],
-                capture_output=True, timeout=5,
+                timeout=5,
             )
-            reachable = _nc.returncode == 0
+            reachable = _nc.ok
             checks["service"] = {
                 "ok": True,  # non-blocking: just report, don't fail preflight
                 "reachable": reachable,
@@ -274,14 +386,14 @@ class DevOpsManager:
 
         # Service port
         try:
-            _nc = subprocess.run(
+            _nc = self._runner.run(
                 ["nc", "-z", "-w", "3", "localhost", "7778"],
-                capture_output=True, timeout=6,
+                timeout=6,
             )
             checks["service"] = {
-                "ok": _nc.returncode == 0,
+                "ok": _nc.ok,
                 "port": 7778,
-                "reachable": _nc.returncode == 0,
+                "reachable": _nc.ok,
             }
         except Exception as exc:
             checks["service"] = {"ok": False, "error": str(exc)[:200]}
@@ -307,6 +419,11 @@ class DevOpsManager:
     # Deploy flow
     # ------------------------------------------------------------------
 
+    #: Valid deploy strategies
+    VALID_STRATEGIES = frozenset({
+        "git_pull_restart", "systemd_app", "docker_compose", "static_nginx", "dry_run",
+    })
+
     def run_deploy(
         self,
         strategy: str = "git_pull_restart",
@@ -314,12 +431,17 @@ class DevOpsManager:
         health_url: str = "",
         dry_run: bool = False,
         min_disk_pct_free: int = 10,
+        service_name: str = "igris",
+        compose_file: str = "docker-compose.yml",
+        nginx_webroot: str = "/var/www/html",
+        auto_rollback: bool = True,
     ) -> Dict[str, Any]:
-        """Execute a deploy cycle: preflight → action → postcheck.
+        """Execute a deploy cycle: preflight → snapshot → action → postcheck → rollback.
 
-        Supported strategies:
-        - ``git_pull_restart``: git pull then systemctl restart igris
-        - ``dry_run``: preflight only, no action
+        PR 3 additions:
+        - Strategies: git_pull_restart | systemd_app | docker_compose | static_nginx | dry_run
+        - Snapshot pre-deploy SHA for rollback reference
+        - auto_rollback: if postcheck fails after action, run_rollback() automatically
 
         Returns a full deploy report.
         """
@@ -328,7 +450,13 @@ class DevOpsManager:
             "hostname": hostname or "localhost",
             "dry_run": dry_run,
             "timestamp": time.time(),
+            "auto_rollback": auto_rollback,
         }
+
+        if strategy not in self.VALID_STRATEGIES:
+            report["deployed"] = False
+            report["abort_reason"] = f"unknown strategy: {strategy!r}; valid: {sorted(self.VALID_STRATEGIES)}"
+            return report
 
         # Preflight
         preflight = self.run_preflight(hostname=hostname, min_disk_pct_free=min_disk_pct_free)
@@ -343,53 +471,200 @@ class DevOpsManager:
             report["note"] = "dry_run: preflight passed, no action taken"
             return report
 
+        # Snapshot pre-deploy git SHA for rollback
+        pre_sha_r = self._runner.run(
+            ["git", "rev-parse", "HEAD"],
+            cwd=str(self.project_root),
+            timeout=5,
+        )
+        pre_deploy_sha = pre_sha_r.stdout.strip() if pre_sha_r.ok else ""
+        report["pre_deploy_sha"] = pre_deploy_sha
+
         # Deploy action
-        action_result: Dict[str, Any] = {}
-        if strategy == "git_pull_restart":
-            try:
-                _pull = subprocess.run(
-                    ["git", "pull", "--ff-only"],
-                    capture_output=True, text=True, timeout=60,
-                    cwd=str(self.project_root),
-                )
-                action_result["git_pull"] = {
-                    "ok": _pull.returncode == 0,
-                    "output": _pull.stdout.strip()[:500] + _pull.stderr.strip()[:200],
-                }
-            except Exception as exc:
-                action_result["git_pull"] = {"ok": False, "error": str(exc)[:200]}
-
-            if action_result.get("git_pull", {}).get("ok", False):
-                try:
-                    _restart = subprocess.run(
-                        ["systemctl", "restart", "igris"],
-                        capture_output=True, text=True, timeout=30,
-                    )
-                    action_result["restart"] = {
-                        "ok": _restart.returncode == 0,
-                        "output": _restart.stderr.strip()[:300],
-                    }
-                except Exception as exc:
-                    action_result["restart"] = {"ok": False, "error": str(exc)[:200]}
-        else:
-            action_result["error"] = f"unknown strategy: {strategy}"
-
+        action_result = self._run_deploy_strategy(
+            strategy=strategy,
+            service_name=service_name,
+            compose_file=compose_file,
+            nginx_webroot=nginx_webroot,
+        )
         report["action"] = action_result
         action_ok = all(v.get("ok", False) for v in action_result.values() if isinstance(v, dict))
         report["deployed"] = action_ok
 
         # Postcheck (only if action succeeded)
         if action_ok:
-            # Brief pause to allow service to come up
-            time.sleep(2)
             postcheck = self.run_postcheck(hostname=hostname, health_url=health_url)
             report["postcheck"] = postcheck
             report["postcheck_ok"] = postcheck["ok"]
+            # PR 3: auto-rollback if postcheck fails
+            if not postcheck["ok"] and auto_rollback and pre_deploy_sha:
+                rollback = self.run_rollback(
+                    strategy=strategy,
+                    pre_deploy_sha=pre_deploy_sha,
+                    service_name=service_name,
+                )
+                report["rollback"] = rollback
+                report["deployed"] = False
+                report["abort_reason"] = "postcheck failed; auto-rollback executed"
         else:
             report["postcheck"] = None
             report["postcheck_ok"] = False
 
         return report
+
+    def _run_deploy_strategy(
+        self,
+        strategy: str,
+        service_name: str = "igris",
+        compose_file: str = "docker-compose.yml",
+        nginx_webroot: str = "/var/www/html",
+    ) -> Dict[str, Any]:
+        """Execute the deploy action for the given strategy.
+
+        Returns a dict of step_name → {ok, output} pairs.
+        """
+        action: Dict[str, Any] = {}
+        cwd = str(self.project_root)
+
+        if strategy in ("git_pull_restart", "systemd_app"):
+            # Step 1: git pull
+            r_pull = self._runner.run(["git", "pull", "--ff-only"], cwd=cwd, timeout=60)
+            action["git_pull"] = {
+                "ok": r_pull.ok,
+                "output": (r_pull.stdout + r_pull.stderr)[:500],
+            }
+            if not r_pull.ok:
+                return action
+
+            # Step 2: restart service
+            svc = service_name if strategy == "systemd_app" else "igris"
+            r_restart = self._runner.run(
+                ["systemctl", "restart", svc], timeout=30
+            )
+            action["restart"] = {
+                "ok": r_restart.ok,
+                "service": svc,
+                "output": r_restart.stderr[:300],
+            }
+
+        elif strategy == "docker_compose":
+            # Step 1: git pull
+            r_pull = self._runner.run(["git", "pull", "--ff-only"], cwd=cwd, timeout=60)
+            action["git_pull"] = {
+                "ok": r_pull.ok,
+                "output": (r_pull.stdout + r_pull.stderr)[:500],
+            }
+            if not r_pull.ok:
+                return action
+
+            # Step 2: docker-compose up
+            compose_cmd = ["docker-compose", "-f", compose_file, "up", "-d", "--build"]
+            r_compose = self._runner.run(compose_cmd, cwd=cwd, timeout=120)
+            action["docker_compose_up"] = {
+                "ok": r_compose.ok,
+                "output": (r_compose.stdout + r_compose.stderr)[:500],
+            }
+
+        elif strategy == "static_nginx":
+            # Step 1: git pull
+            r_pull = self._runner.run(["git", "pull", "--ff-only"], cwd=cwd, timeout=60)
+            action["git_pull"] = {
+                "ok": r_pull.ok,
+                "output": (r_pull.stdout + r_pull.stderr)[:500],
+            }
+            if not r_pull.ok:
+                return action
+
+            # Step 2: copy files to webroot (rsync)
+            r_sync = self._runner.run(
+                ["rsync", "-a", "--delete", "dist/", nginx_webroot + "/"],
+                cwd=cwd,
+                timeout=30,
+            )
+            action["rsync"] = {
+                "ok": r_sync.ok,
+                "output": (r_sync.stdout + r_sync.stderr)[:300],
+            }
+            if not r_sync.ok:
+                return action
+
+            # Step 3: nginx reload
+            r_nginx = self._runner.run(["nginx", "-s", "reload"], timeout=10)
+            action["nginx_reload"] = {
+                "ok": r_nginx.ok,
+                "output": r_nginx.stderr[:200],
+            }
+
+        return action
+
+    def run_rollback(
+        self,
+        strategy: str = "git_pull_restart",
+        pre_deploy_sha: str = "",
+        service_name: str = "igris",
+        compose_file: str = "docker-compose.yml",
+    ) -> Dict[str, Any]:
+        """Roll back a deploy by resetting to pre_deploy_sha and restarting.
+
+        PR 3: structured rollback tied to deploy strategy.
+        Returns a dict with rollback steps and overall ok flag.
+        """
+        result: Dict[str, Any] = {
+            "strategy": strategy,
+            "pre_deploy_sha": pre_deploy_sha,
+            "timestamp": time.time(),
+        }
+        cwd = str(self.project_root)
+        steps: Dict[str, Any] = {}
+
+        if not pre_deploy_sha:
+            result["ok"] = False
+            result["error"] = "no pre_deploy_sha provided; cannot rollback"
+            return result
+
+        # Git reset to pre-deploy SHA
+        r_reset = self._runner.run(
+            ["git", "reset", "--hard", pre_deploy_sha],
+            cwd=cwd,
+            timeout=15,
+        )
+        steps["git_reset"] = {
+            "ok": r_reset.ok,
+            "sha": pre_deploy_sha,
+            "output": (r_reset.stdout + r_reset.stderr)[:300],
+        }
+
+        if not r_reset.ok:
+            result["steps"] = steps
+            result["ok"] = False
+            result["error"] = "git reset failed; manual intervention required"
+            return result
+
+        # Restart service (strategy-specific)
+        if strategy in ("git_pull_restart", "systemd_app"):
+            r_restart = self._runner.run(["systemctl", "restart", service_name], timeout=30)
+            steps["restart"] = {
+                "ok": r_restart.ok,
+                "service": service_name,
+                "output": r_restart.stderr[:200],
+            }
+        elif strategy == "docker_compose":
+            r_compose = self._runner.run(
+                ["docker-compose", "-f", compose_file, "up", "-d"],
+                cwd=cwd,
+                timeout=120,
+            )
+            steps["docker_compose_up"] = {
+                "ok": r_compose.ok,
+                "output": (r_compose.stdout + r_compose.stderr)[:300],
+            }
+        elif strategy == "static_nginx":
+            r_nginx = self._runner.run(["nginx", "-s", "reload"], timeout=10)
+            steps["nginx_reload"] = {"ok": r_nginx.ok, "output": r_nginx.stderr[:200]}
+
+        result["steps"] = steps
+        result["ok"] = all(v.get("ok", False) for v in steps.values())
+        return result
 
     # ------------------------------------------------------------------
     # Smoke test

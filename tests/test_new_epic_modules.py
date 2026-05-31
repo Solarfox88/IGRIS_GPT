@@ -806,7 +806,7 @@ class TestCIRepairLoopRun:
 
         with patch.object(loop, "_fetch_ci_logs", return_value="AssertionError: boom"), \
              patch.object(loop, "_ci_is_green", return_value=True), \
-             patch.object(loop, "_push_fix", return_value=True):
+             patch.object(loop, "_push_fix_with_safety_gate", return_value=True):
             result = loop.run(backend)
 
         assert isinstance(result, CIRepairResult)
@@ -817,7 +817,7 @@ class TestCIRepairLoopRun:
 
         with patch.object(loop, "_fetch_ci_logs", return_value="FAILED tests/test_x.py::foo"), \
              patch.object(loop, "_ci_is_green", return_value=True), \
-             patch.object(loop, "_push_fix", return_value=True):
+             patch.object(loop, "_push_fix_with_safety_gate", return_value=True):
             result = loop.run(backend)
 
         assert result.resolved is True
@@ -828,7 +828,7 @@ class TestCIRepairLoopRun:
 
         with patch.object(loop, "_fetch_ci_logs", return_value="FAILED tests/x.py::t"), \
              patch.object(loop, "_ci_is_green", return_value=False), \
-             patch.object(loop, "_push_fix", return_value=True):
+             patch.object(loop, "_push_fix_with_safety_gate", return_value=True):
             result = loop.run(backend)
 
         assert result.resolved is False
@@ -840,7 +840,7 @@ class TestCIRepairLoopRun:
 
         with patch.object(loop, "_fetch_ci_logs", return_value="FAILED tests/x.py::t"), \
              patch.object(loop, "_ci_is_green", return_value=False), \
-             patch.object(loop, "_push_fix", return_value=True):
+             patch.object(loop, "_push_fix_with_safety_gate", return_value=True):
             result = loop.run(backend)
 
         assert result.attempt_count >= 1
@@ -851,7 +851,7 @@ class TestCIRepairLoopRun:
 
         with patch.object(loop, "_fetch_ci_logs", return_value="FAILED tests/x.py::t"), \
              patch.object(loop, "_ci_is_green", return_value=False), \
-             patch.object(loop, "_push_fix", return_value=True):
+             patch.object(loop, "_push_fix_with_safety_gate", return_value=True):
             result = loop.run(backend)
 
         assert isinstance(result, CIRepairResult)
@@ -869,7 +869,7 @@ class TestCIRepairLoopRun:
         with patch.object(loop, "_fetch_ci_logs", return_value="ruff: error E501"), \
              patch.object(loop, "_try_deterministic_lint_fix", return_value=ruff_attempt), \
              patch.object(loop, "_ci_is_green", return_value=True), \
-             patch.object(loop, "_push_fix", return_value=True):
+             patch.object(loop, "_push_fix_with_safety_gate", return_value=True):
             result = loop.run(backend)
 
         assert result.resolved is True
@@ -880,7 +880,7 @@ class TestCIRepairLoopRun:
 
         with patch.object(loop, "_fetch_ci_logs", return_value="FAILED tests/x.py::t"), \
              patch.object(loop, "_ci_is_green", return_value=True), \
-             patch.object(loop, "_push_fix", return_value=True):
+             patch.object(loop, "_push_fix_with_safety_gate", return_value=True):
             result = loop.run(backend)
 
         assert result.total_duration_seconds >= 0.0
