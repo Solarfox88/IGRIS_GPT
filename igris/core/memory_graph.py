@@ -598,3 +598,199 @@ CREATE INDEX IF NOT EXISTS idx_edges_dst  ON memory_edges(dst_node);
             report["scorer_available"] = False
 
         return report
+
+    def check_consistency(self) -> Dict[str, Any]:
+        """PR 5 — Consistency healthcheck beyond basic SQLite check.
+
+        Validates content/score/embedding integrity for memory nodes.
+
+        Checks:
+          - Nodes with empty/null content (content_empty_count)
+          - Nodes with invalid/null confidence scores (invalid_score_count)
+          - Nodes with stale timestamps (older than stale_days_threshold)
+          - Contradicted lessons (multiple lessons for same goal_type with conflicting advice)
+          - Overall health: healthy | degraded | failing
+
+        Returns:
+            Dict with consistency metrics and overall_health field.
+        """
+        report: Dict[str, Any] = {
+            "content_empty_count": 0,
+            "invalid_score_count": 0,
+            "stale_node_count": 0,
+            "contradicted_lesson_count": 0,
+            "total_nodes_checked": 0,
+            "overall_health": "healthy",
+            "errors": [],
+        }
+        stale_days_threshold = 90  # nodes older than 90 days may be stale
+
+        try:
+            rows = self.conn.execute(
+                "SELECT node_id, node_type, content, confidence, created_at, updated_at "
+                "FROM memory_nodes"
+            ).fetchall()
+            total = len(rows)
+            report["total_nodes_checked"] = total
+
+            content_empty = 0
+            invalid_score = 0
+            stale_count = 0
+            import json as _json
+            import time as _time
+
+            stale_threshold_ts = _time.time() - (stale_days_threshold * 86400)
+
+            # Lesson content index for contradiction detection
+            lesson_advice: Dict[str, List[str]] = {}
+
+            for row in rows:
+                # Check content
+                content_raw = row["content"] if hasattr(row, "__getitem__") else row[2]
+                if not content_raw or content_raw in ("{}", "null", ""):
+                    content_empty += 1
+                    continue
+
+                try:
+                    content = _json.loads(content_raw) if isinstance(content_raw, str) else content_raw
+                except Exception:
+                    content_empty += 1
+                    continue
+
+                # Check confidence score (column is "confidence" in schema)
+                try:
+                    score = float(row["confidence"]) if hasattr(row, "__getitem__") else float(row[3] or 0)
+                    if not (0.0 <= score <= 1.0):
+                        invalid_score += 1
+                except (TypeError, ValueError):
+                    invalid_score += 1
+
+                # Check staleness (use updated_at if available)
+                try:
+                    node_type = row["node_type"] if hasattr(row, "__getitem__") else row[1]
+                    if node_type == "lesson":
+                        updated_at = row["updated_at"] if hasattr(row, "__getitem__") else row[5]
+                        if updated_at and float(updated_at) < stale_threshold_ts:
+                            stale_count += 1
+                except Exception:
+                    pass
+
+                # Collect lesson advice for contradiction check
+                try:
+                    node_type = row["node_type"] if hasattr(row, "__getitem__") else row[1]
+                    if node_type == "lesson" and isinstance(content, dict):
+                        goal_type = content.get("goal_type", "")
+                        advice = content.get("lesson", content.get("advice", content.get("summary", "")))
+                        if goal_type and advice:
+                            lesson_advice.setdefault(goal_type, []).append(str(advice))
+                except Exception:
+                    pass
+
+            # Count contradictions: goal_type with 3+ conflicting lessons
+            contradicted = sum(
+                1 for goal_type, advices in lesson_advice.items()
+                if len(set(advices)) >= 3
+            )
+
+            report["content_empty_count"] = content_empty
+            report["invalid_score_count"] = invalid_score
+            report["stale_node_count"] = stale_count
+            report["contradicted_lesson_count"] = contradicted
+
+            # Determine overall health
+            if content_empty > max(total // 5, 5) or invalid_score > max(total // 5, 5):
+                report["overall_health"] = "failing"
+            elif content_empty > 0 or invalid_score > 0 or stale_count > max(total // 10, 10):
+                report["overall_health"] = "degraded"
+            else:
+                report["overall_health"] = "healthy"
+
+        except Exception as exc:
+            report["errors"].append(f"consistency_check_error: {exc}")
+            report["overall_health"] = "failing"
+
+        return report
+
+    def build_memory_context_packet(
+        self,
+        goal: str,
+        *,
+        lesson_limit: int = 5,
+        fact_limit: int = 3,
+        include_health: bool = True,
+    ) -> Dict[str, Any]:
+        """PR 5 — Build a structured memory context packet for Context Manager.
+
+        Returns a typed dict containing:
+          - lessons: List[dict] — relevant lessons for the goal
+          - project_facts: List[dict] — relevant project facts
+          - command_recipe: Optional[dict] — relevant command recipe
+          - health: Dict — memory health status (from healthcheck)
+          - consistency: Dict — consistency report (from check_consistency)
+          - memory_influence: str — human-readable summary of what memory contributed
+          - total_items: int
+          - goal: str — the goal this packet was built for
+
+        Non-blocking: on any error, returns a partial/empty packet.
+        Never includes secret data (relies on memory_graph secret filtering).
+        """
+        packet: Dict[str, Any] = {
+            "goal": goal[:200] if goal else "",
+            "lessons": [],
+            "project_facts": [],
+            "command_recipe": None,
+            "health": {},
+            "consistency": {},
+            "memory_influence": "",
+            "total_items": 0,
+        }
+
+        try:
+            lessons = self.get_lessons_for_goal(goal, limit=lesson_limit)
+            packet["lessons"] = lessons
+        except Exception as exc:
+            packet["health"]["lessons_error"] = str(exc)[:100]
+
+        try:
+            facts = self.query_by_intent(goal, node_type="project_fact", limit=fact_limit)
+            packet["project_facts"] = facts
+        except Exception as exc:
+            packet["health"]["facts_error"] = str(exc)[:100]
+
+        try:
+            recipe = self.get_command_recipe(goal)
+            if recipe:
+                packet["command_recipe"] = recipe
+        except Exception:
+            pass
+
+        if include_health:
+            try:
+                packet["health"] = {**packet.get("health", {}), **self.memory_healthcheck()}
+            except Exception as exc:
+                packet["health"]["healthcheck_error"] = str(exc)[:100]
+
+            try:
+                packet["consistency"] = self.check_consistency()
+            except Exception as exc:
+                packet["consistency"] = {"overall_health": "unknown", "error": str(exc)[:100]}
+
+        total = len(packet["lessons"]) + len(packet["project_facts"])
+        if packet["command_recipe"]:
+            total += 1
+        packet["total_items"] = total
+
+        # Build human-readable memory influence summary
+        influence_parts = []
+        if packet["lessons"]:
+            influence_parts.append(f"{len(packet['lessons'])} lesson(s) retrieved")
+        if packet["project_facts"]:
+            influence_parts.append(f"{len(packet['project_facts'])} project fact(s) retrieved")
+        if packet["command_recipe"]:
+            influence_parts.append("command recipe found")
+        health_status = packet.get("consistency", {}).get("overall_health", "unknown")
+        if health_status != "healthy":
+            influence_parts.append(f"memory health: {health_status}")
+        packet["memory_influence"] = "; ".join(influence_parts) if influence_parts else "no memory context"
+
+        return packet
