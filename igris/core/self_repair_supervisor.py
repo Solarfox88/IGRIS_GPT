@@ -6340,16 +6340,20 @@ class SelfRepairSupervisor:
                         "Post-merge runtime checks skipped because PR workflow is disabled.",
                         no_op=True,
                     )
-        self._transition_run_status(run, "completed", "rank completion reached")
-        run.outcome = "Completed"
+        final_report_ok = True
         if stage_statuses and "final_report" in stage_statuses:
             if self._required_stages_green(stage_statuses):
                 self._set_stage_status(run, stage_statuses, "final_report", "success", "All required mission stages are green.")
             else:
                 self._set_stage_status(run, stage_statuses, "final_report", "failure", "Required mission stage is missing or failed.")
-                self._transition_run_status(run, "blocked", "final_report required stage failure")
-                run.outcome = "Blocked"
-                run.failure_class = "infrastructure_bug"
+                final_report_ok = False
+        if final_report_ok:
+            self._transition_run_status(run, "completed", "rank completion reached")
+            run.outcome = "Completed"
+        else:
+            self._transition_run_status(run, "blocked", "final_report required stage failure")
+            run.outcome = "Blocked"
+            run.failure_class = "infrastructure_bug"
         post_smoke_success = False if post_merge_smoke is None else post_merge_smoke.success
         # post_merge_smoke is only non-None when a merge was actually executed
         smoke_applicable = post_merge_smoke is not None
@@ -6400,16 +6404,20 @@ class SelfRepairSupervisor:
         }
         run.completion_mode = completion_mode  # (#147)
         run.add("completion", "degraded", detail, mode=completion_mode)
-        self._transition_run_status(run, "completed", "no-op completion reached")
-        run.outcome = "Completed"
+        final_report_ok = True
         if stage_statuses and "final_report" in stage_statuses:
             if self._required_stages_green(stage_statuses, exclude_stage_ids=_noop_exclude):
                 self._set_stage_status(run, stage_statuses, "final_report", "success", "No-op completion validated with required stages satisfied.")
             else:
                 self._set_stage_status(run, stage_statuses, "final_report", "failure", "No-op completion rejected: required stage missing.")
-                self._transition_run_status(run, "blocked", "no-op required stage missing")
-                run.outcome = "Blocked"
-                run.failure_class = "reasoning_loop_blocked"
+                final_report_ok = False
+        if final_report_ok:
+            self._transition_run_status(run, "completed", "no-op completion reached")
+            run.outcome = "Completed"
+        else:
+            self._transition_run_status(run, "blocked", "no-op required stage missing")
+            run.outcome = "Blocked"
+            run.failure_class = "reasoning_loop_blocked"
         run.report = {
             "autonomous": True,
             "manual_remaining": "",
