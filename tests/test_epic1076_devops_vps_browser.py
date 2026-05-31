@@ -23,7 +23,9 @@ import pytest
 from fastapi.testclient import TestClient
 
 from igris.core.devops_manager import (
+    CommandResult,
     DevOpsManager,
+    FakeCommandRunner,
     HostConfig,
     check_action_allowed,
 )
@@ -330,6 +332,43 @@ class TestDevOpsManagerDeploy:
             result = mgr.run_deploy(strategy="dry_run")
 
         assert result["deployed"] is False
+
+    def test_dry_run_collects_stage1_evidence(self, tmp_path):
+        runner = FakeCommandRunner()
+        runner.set_result("df -P", CommandResult(returncode=0, stdout=self._disk_ok()))
+        runner.set_result("git status --porcelain", CommandResult(returncode=0, stdout=""))
+        runner.set_result("nc -z -w 2 localhost 7778", CommandResult(returncode=0, stdout=""))
+        runner.set_result("nginx -t", CommandResult(returncode=0, stdout="ok"))
+        runner.set_result("docker ps", CommandResult(returncode=0, stdout="igris-app"))
+        mgr = DevOpsManager(str(tmp_path), runner=runner)
+        result = mgr.run_deploy(strategy="dry_run", dry_run=True, health_url="http://localhost:7778/api/ping")
+        assert "dry_run_evidence" in result
+        assert "nginx" in result["dry_run_evidence"]
+        assert "docker" in result["dry_run_evidence"]
+        assert "browser" in result["dry_run_evidence"]
+
+    def test_deploy_blocks_service_not_allowed_by_host_policy(self, tmp_path):
+        runner = FakeCommandRunner()
+        runner.set_result("df -P", CommandResult(returncode=0, stdout=self._disk_ok()))
+        runner.set_result("git status --porcelain", CommandResult(returncode=0, stdout=""))
+        runner.set_result("nc -z -w 2 localhost 7778", CommandResult(returncode=0, stdout=""))
+        mgr = DevOpsManager(str(tmp_path), runner=runner)
+        mgr.register_host(
+            HostConfig(
+                hostname="localhost",
+                policy="operator",
+                allowed_paths=["/home", str(tmp_path)],
+                allowed_services=["nginx"],  # igris restart not allowed
+            )
+        )
+        result = mgr.run_deploy(
+            strategy="git_pull_restart",
+            hostname="localhost",
+            dry_run=False,
+            service_name="igris",
+        )
+        assert result["deployed"] is False
+        assert "policy_blocked" in (result.get("action") or {})
 
 
 # ---------------------------------------------------------------------------
