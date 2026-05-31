@@ -792,6 +792,93 @@ def create_router(deps) -> APIRouter:
         return report
 
     # ------------------------------------------------------------------
+    # Epic #1076 extended — Host registry, policy, deploy, smoke test
+    # ------------------------------------------------------------------
+
+    @router.get("/api/devops/hosts")
+    async def api_devops_hosts_list() -> Dict[str, object]:
+        """List all registered deployment hosts — Epic #1076."""
+        from igris.core.devops_manager import DevOpsManager
+        mgr = DevOpsManager(str(CONFIG.project_root))
+        return {"hosts": mgr.list_hosts()}
+
+    @router.post("/api/devops/hosts")
+    async def api_devops_hosts_register(request: Request) -> Dict[str, object]:
+        """Register (or update) a deployment host — Epic #1076.
+
+        Body: { hostname, alias?, policy?, allowed_paths?, allowed_services?,
+                requires_backup?, health_url? }
+        """
+        from igris.core.devops_manager import DevOpsManager, HostConfig
+        data = await request.json()
+        hostname = data.get("hostname", "").strip()
+        if not hostname:
+            from fastapi import HTTPException
+            raise HTTPException(status_code=422, detail="hostname is required")
+        config = HostConfig.from_dict(data)
+        mgr = DevOpsManager(str(CONFIG.project_root))
+        return mgr.register_host(config)
+
+    @router.delete("/api/devops/hosts/{hostname}")
+    async def api_devops_hosts_remove(hostname: str) -> Dict[str, object]:
+        """Remove a host from the registry — Epic #1076."""
+        from igris.core.devops_manager import DevOpsManager
+        mgr = DevOpsManager(str(CONFIG.project_root))
+        result = mgr.remove_host(hostname)
+        if not result.get("removed"):
+            from fastapi import HTTPException
+            raise HTTPException(status_code=404, detail=result.get("error", "host not found"))
+        return result
+
+    @router.get("/api/devops/hosts/{hostname}/policy")
+    async def api_devops_host_policy(hostname: str, action: str = "deploy") -> Dict[str, object]:
+        """Check whether *action* is permitted on *hostname* — Epic #1076."""
+        from igris.core.devops_manager import DevOpsManager
+        mgr = DevOpsManager(str(CONFIG.project_root))
+        return mgr.check_policy(hostname, action)
+
+    @router.post("/api/devops/preflight")
+    async def api_devops_preflight(request: Request) -> Dict[str, object]:
+        """Run pre-deploy preflight checks — Epic #1076.
+
+        Body: { hostname? (for labelling), min_disk_pct_free? (default 10) }
+        """
+        from igris.core.devops_manager import DevOpsManager
+        data = await request.json()
+        mgr = DevOpsManager(str(CONFIG.project_root))
+        return mgr.run_preflight(
+            hostname=data.get("hostname"),
+            min_disk_pct_free=int(data.get("min_disk_pct_free", 10)),
+        )
+
+    @router.post("/api/devops/deploy")
+    async def api_devops_deploy(request: Request) -> Dict[str, object]:
+        """Full deploy cycle: preflight → action → postcheck — Epic #1076.
+
+        Body: { strategy? (default git_pull_restart), hostname?, health_url?,
+                dry_run? (default false) }
+        """
+        from igris.core.devops_manager import DevOpsManager
+        data = await request.json()
+        mgr = DevOpsManager(str(CONFIG.project_root))
+        return mgr.run_deploy(
+            strategy=data.get("strategy", "git_pull_restart"),
+            hostname=data.get("hostname"),
+            health_url=data.get("health_url", ""),
+            dry_run=bool(data.get("dry_run", False)),
+        )
+
+    @router.get("/api/devops/smoke")
+    async def api_devops_smoke(url: str = "") -> Dict[str, object]:
+        """HTTP smoke test — GET a URL and return evidence — Epic #1076.
+
+        Defaults to http://localhost:7778/api/ping if no url given.
+        """
+        from igris.core.devops_manager import DevOpsManager
+        mgr = DevOpsManager(str(CONFIG.project_root))
+        return mgr.run_smoke_test(url=url)
+
+    # ------------------------------------------------------------------
     # Integration Layer — Epic #62
     # ------------------------------------------------------------------
 
