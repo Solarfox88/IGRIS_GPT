@@ -72,7 +72,14 @@ class CIRepairResult:
 # ---------------------------------------------------------------------------
 
 class CIRepairLoop:
-    """Orchestrates CI failure diagnosis and repair for a PR."""
+    """Orchestrates CI failure diagnosis and repair for a PR.
+
+    PR 1 hardening additions:
+    - Repeated-failure stop: if same failure type repeats 2x with no diff → stop
+    - No-diff stop: don't push if nothing changed after LLM repair
+    - Extended diagnosis: 12 failure types (was 4)
+    - Repair packet with allowed_files and diff context
+    """
 
     def __init__(
         self,
@@ -80,12 +87,16 @@ class CIRepairLoop:
         pr_number: int,
         original_goal: str,
         max_attempts: int = MAX_ATTEMPTS,
+        allowed_files: Optional[List[str]] = None,
     ) -> None:
         self.project_root = project_root
         self.pr_number = pr_number
         self.original_goal = original_goal
         self.max_attempts = max_attempts
+        self.allowed_files: List[str] = allowed_files or []
         self._attempts: List[CIRepairAttempt] = []
+        self._prev_failure_type: str = ""
+        self._repeated_failure_count: int = 0
 
     # ------------------------------------------------------------------
     # Public API
@@ -93,6 +104,10 @@ class CIRepairLoop:
 
     def run(self, backend: Any, wait_for_ci: Optional[Callable] = None) -> CIRepairResult:
         """Run the CI repair loop.
+
+        PR 1 additions:
+        - Stops if same failure type repeats without any diff produced.
+        - Builds a structured repair packet for the LLM.
 
         Args:
             backend: supervisor backend with run_reasoning() method
@@ -119,18 +134,41 @@ class CIRepairLoop:
                 failure_type, len(diagnosis.get("failing_tests", [])),
             )
 
-            # 2. Try deterministic fix for lint errors
-            if failure_type == "lint_error":
+            # PR 1 — Repeated-failure stop
+            if failure_type == self._prev_failure_type and failure_type != "unknown":
+                self._repeated_failure_count += 1
+                if self._repeated_failure_count >= 2:
+                    _log.warning(
+                        "CIRepairLoop: same failure type %r repeated %d times — stopping",
+                        failure_type, self._repeated_failure_count,
+                    )
+                    self._attempts.append(CIRepairAttempt(
+                        attempt=attempt_num,
+                        failure_type=failure_type,
+                        strategy="skip",
+                        goal_sent="",
+                        success=False,
+                        duration_seconds=0.0,
+                        error=f"repeated_failure_stop: {failure_type} x{self._repeated_failure_count}",
+                    ))
+                    break
+            else:
+                self._prev_failure_type = failure_type
+                self._repeated_failure_count = 1
+
+            # 2. Try deterministic fix for lint/formatting errors
+            if failure_type in ("lint_error", "formatting_error"):
                 attempt = self._try_deterministic_lint_fix(attempt_num)
                 self._attempts.append(attempt)
                 if attempt.success:
-                    # Push fix and check CI
-                    self._push_fix("ci-repair: fix lint errors")
-                    if self._ci_is_green(wait_for_ci):
+                    # PR 1 — safety gate before push
+                    pushed = self._push_fix_with_safety_gate("ci-repair: fix lint/format errors")
+                    if pushed and self._ci_is_green(wait_for_ci):
                         break
                     continue
 
-            # 3. Build targeted LLM goal
+            # 3. Build structured repair packet for LLM
+            repair_packet = self._build_repair_packet(diagnosis)
             repair_goal = self._build_llm_repair_goal(diagnosis)
             attempt_start = time.monotonic()
 
@@ -138,12 +176,7 @@ class CIRepairLoop:
                 result = backend.run_reasoning(
                     repair_goal,
                     max_steps=60,
-                    initial_context={
-                        "pr_number": self.pr_number,
-                        "failure_type": failure_type,
-                        "failing_tests": diagnosis.get("failing_tests", []),
-                        "diagnosis": diagnosis,
-                    },
+                    initial_context=repair_packet,
                     timeout=600,
                     task_type="code_repair",
                     preferred_profile=None,
@@ -172,8 +205,19 @@ class CIRepairLoop:
 
             self._attempts.append(attempt)
 
-            if attempt.success and self._ci_is_green(wait_for_ci):
-                break
+            if attempt.success:
+                # PR 1 — no-diff stop + safety gate before push
+                pushed = self._push_fix_with_safety_gate(
+                    f"ci-repair: attempt {attempt_num + 1} / {failure_type}"
+                )
+                if not pushed:
+                    _log.warning(
+                        "CIRepairLoop: no diff or push failed after attempt %d — stopping",
+                        attempt_num + 1,
+                    )
+                    break
+                if self._ci_is_green(wait_for_ci):
+                    break
 
         resolved = bool(self._attempts) and self._ci_is_green(wait_for_ci)
         summary = "" if resolved else self._build_failure_summary()
@@ -227,19 +271,13 @@ class CIRepairLoop:
     # ------------------------------------------------------------------
 
     def _diagnose(self, log_text: str) -> Dict[str, Any]:
-        """Classify CI failure from log text."""
+        """Classify CI failure from log text — PR 1: uses extended classifier."""
         import re
-        failure_type = "unknown"
+        from igris.core.delivery_workflow import DeliveryWorkflow
+        failure_type = DeliveryWorkflow._classify_failure_type(log_text)
         failing_tests: List[str] = []
 
-        if "ImportError" in log_text or "ModuleNotFoundError" in log_text:
-            failure_type = "import_error"
-        elif "SyntaxError" in log_text or "IndentationError" in log_text:
-            failure_type = "syntax_error"
-        elif "ruff" in log_text.lower() and ("error" in log_text.lower() or "warning" in log_text.lower()):
-            failure_type = "lint_error"
-        elif "FAILED tests/" in log_text or "AssertionError" in log_text:
-            failure_type = "test_failure"
+        if failure_type in ("test_failure", "assertion_failure"):
             pattern = re.compile(r"FAILED\s+(tests/[^\s:]+(?:::[^\s]+)?)")
             seen: Dict[str, bool] = {}
             for m in pattern.finditer(log_text):
@@ -252,6 +290,40 @@ class CIRepairLoop:
             "failure_type": failure_type,
             "failing_tests": failing_tests,
             "log_excerpt": log_text[:2000],
+        }
+
+    def _build_repair_packet(self, diagnosis: Dict[str, Any]) -> Dict[str, Any]:
+        """Build a structured repair context packet for the LLM.
+
+        PR 1 — richer than the old initial_context; includes allowed files,
+        current diff, and explicit constraints so the LLM cannot go out of scope.
+        """
+        # Fetch current diff for context
+        current_diff = ""
+        try:
+            r = subprocess.run(
+                ["git", "diff", "HEAD"],
+                cwd=self.project_root, capture_output=True, text=True, timeout=15,
+            )
+            current_diff = r.stdout[:3000] if r.returncode == 0 else ""
+        except Exception:
+            pass
+
+        return {
+            "pr_number": self.pr_number,
+            "failure_type": diagnosis.get("failure_type", "unknown"),
+            "failing_tests": diagnosis.get("failing_tests", []),
+            "log_excerpt": diagnosis.get("log_excerpt", "")[:1000],
+            "original_goal": self.original_goal[:400],
+            "allowed_files": self.allowed_files,
+            "current_diff_preview": current_diff[:1500],
+            "constraints": [
+                "Fix only the source code; do NOT modify test files.",
+                "Do NOT introduce new dependencies unless strictly required.",
+                "Do NOT change files outside allowed_files if specified.",
+                "Run the failing tests after your fix and verify they pass.",
+                "Produce a final_summary explaining what you changed and why.",
+            ],
         }
 
     # ------------------------------------------------------------------
@@ -370,17 +442,64 @@ class CIRepairLoop:
         except Exception:
             return False
 
-    def _push_fix(self, message: str) -> bool:
-        """Commit and push any staged/modified files."""
+    def _push_fix_with_safety_gate(self, message: str) -> bool:
+        """Stage, safety-check, commit, and push modified files.
+
+        PR 1 — Adds:
+        1. No-diff stop: if nothing is staged/modified, return False immediately.
+        2. Safety gate: run CommitSafetyGate before commit.
+        3. Falls back to legacy _push_fix behaviour on gate errors.
+        """
         try:
-            subprocess.run(["git", "add", "-u"], cwd=self.project_root, check=True, capture_output=True)
+            # Stage all modified tracked files
+            subprocess.run(
+                ["git", "add", "-u"],
+                cwd=self.project_root, capture_output=True,
+            )
+            # No-diff stop: check if there is anything staged
+            diff_check = subprocess.run(
+                ["git", "diff", "--cached", "--name-only"],
+                cwd=self.project_root, capture_output=True, text=True,
+            )
+            staged_files = [
+                f.strip() for f in diff_check.stdout.splitlines() if f.strip()
+            ]
+            if not staged_files:
+                _log.warning("_push_fix_with_safety_gate: no diff after repair — skipping push")
+                return False
+
+            # Safety gate — block if any secret/artifact file is staged
+            try:
+                from igris.core.commit_safety import CommitSafetyGate
+                gate = CommitSafetyGate(self.project_root)
+                report = gate.scan(staged_files)
+                if not report.ok:
+                    _log.error(
+                        "_push_fix_with_safety_gate: BLOCKED by safety gate: %s",
+                        report.summary[:300],
+                    )
+                    # Unstage the blocked files
+                    for fr in report.blocked_files:
+                        subprocess.run(
+                            ["git", "restore", "--staged", fr.path],
+                            cwd=self.project_root, capture_output=True,
+                        )
+                    return False
+            except Exception as exc:
+                _log.warning("_push_fix_with_safety_gate: safety gate import failed: %s", exc)
+
             r = subprocess.run(
                 ["git", "commit", "-m", message],
                 cwd=self.project_root, capture_output=True, text=True,
             )
             if r.returncode != 0:
+                _log.warning("_push_fix_with_safety_gate: commit failed: %s", r.stderr[:200])
                 return False
-            subprocess.run(["git", "push"], cwd=self.project_root, check=True, capture_output=True)
+            subprocess.run(
+                ["git", "push"],
+                cwd=self.project_root, check=True, capture_output=True,
+            )
+            _log.info("_push_fix_with_safety_gate: pushed %d file(s): %s", len(staged_files), staged_files[:5])
             return True
         except Exception as exc:
             _log.warning("CIRepairLoop._push_fix: %s", exc)

@@ -6,7 +6,7 @@ import re
 import subprocess
 import time
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 _log = logging.getLogger("igris.delivery")
 
@@ -290,21 +290,12 @@ class DeliveryWorkflow:
     def diagnose_ci_failure_structured(self, log_text: str, failed_jobs: List[str]) -> dict:
         """Return a structured CI failure diagnosis from raw log text.
 
-        Epic #1071 — enriches the existing diagnosis with parsed test names
-        and a human-readable summary so the repair loop can target specific
-        failing tests rather than retrying the whole suite.
+        PR 1 hardening — extended to detect 10+ failure types.
         """
-        failure_type = "unknown"
+        failure_type = self._classify_failure_type(log_text)
         failing_tests: List[str] = []
 
-        if "ImportError" in log_text or "ModuleNotFoundError" in log_text:
-            failure_type = "import_error"
-        elif "SyntaxError" in log_text:
-            failure_type = "syntax_error"
-        elif "ruff" in log_text.lower() or "flake8" in log_text.lower():
-            failure_type = "lint_error"
-        elif "FAILED tests/" in log_text or "AssertionError" in log_text:
-            failure_type = "test_failure"
+        if failure_type in ("test_failure", "assertion_failure"):
             failing_tests = self.parse_failing_tests(log_text)
 
         if failure_type == "test_failure" and failing_tests:
@@ -325,6 +316,144 @@ class DeliveryWorkflow:
             "log_excerpt": log_text[:2000],
             "summary": summary,
         }
+
+    @staticmethod
+    def _classify_failure_type(log_text: str) -> str:
+        """Classify a CI failure from log text into a typed failure class.
+
+        PR 1 — supports 12 failure types (was 4).
+
+        Types (in priority order):
+          import_error, syntax_error, formatting_error, lint_error,
+          dependency_error, environment_error, permission_error,
+          timeout, assertion_failure, test_failure, flaky_test_suspected, unknown
+        """
+        log_lower = log_text.lower()
+
+        if "ImportError" in log_text or "ModuleNotFoundError" in log_text:
+            return "import_error"
+        if "SyntaxError" in log_text or "IndentationError" in log_text:
+            return "syntax_error"
+        if "ruff format" in log_lower and ("would reformat" in log_lower or "reformatted" in log_lower):
+            return "formatting_error"
+        if "ruff" in log_lower and ("error" in log_lower or "warning" in log_lower):
+            return "lint_error"
+        if ("flake8" in log_lower or "pylint" in log_lower) and "error" in log_lower:
+            return "lint_error"
+        if (
+            "could not install" in log_lower
+            or "no matching distribution" in log_lower
+            or "requirement" in log_lower and "failed" in log_lower
+        ):
+            return "dependency_error"
+        if (
+            "environment" in log_lower and "error" in log_lower
+            or "missing environment variable" in log_lower
+            or "env var" in log_lower and "not set" in log_lower
+        ):
+            return "environment_error"
+        if "permissionerror" in log_lower or "permission denied" in log_lower:
+            return "permission_error"
+        if (
+            "time limit exceeded" in log_lower
+            or "timed out" in log_lower
+            or "timeout" in log_lower and "error" in log_lower
+        ):
+            return "timeout"
+        # Flaky test heuristics: retry keywords or non-deterministic patterns
+        if (
+            "flaky" in log_lower
+            or ("connectionerror" in log_lower and "FAILED tests/" in log_text)
+            or ("connection refused" in log_lower and "FAILED tests/" in log_text)
+        ):
+            return "flaky_test_suspected"
+        if "AssertionError" in log_text and "FAILED tests/" not in log_text:
+            return "assertion_failure"
+        if "FAILED tests/" in log_text or "AssertionError" in log_text:
+            return "test_failure"
+        return "unknown"
+
+    # ------------------------------------------------------------------
+    # PR 1 — Pre-merge safety check
+    # ------------------------------------------------------------------
+
+    def pre_merge_safety_check(
+        self,
+        pr_number: int,
+        branch: str,
+        *,
+        allowed_scopes: Optional[List[str]] = None,
+        issue_goal: str = "",
+    ) -> Tuple[bool, str]:
+        """Run all safety checks before merging a PR.
+
+        Checks (in order):
+        1. PR is not a draft.
+        2. CI is green.
+        3. Diff scope — no blocked files, no out-of-scope changes.
+        4. Secret scan on changed file paths.
+
+        Returns (ok, reason).
+        """
+        from igris.core.commit_safety import CommitSafetyGate, validate_diff_scope
+
+        # 1. PR state: not draft
+        try:
+            result = subprocess.run(
+                ["gh", "pr", "view", str(pr_number), "--json", "isDraft,state"],
+                cwd=self.project_root, capture_output=True, text=True, timeout=15,
+            )
+            if result.returncode == 0:
+                info = json.loads(result.stdout or "{}")
+                if info.get("isDraft"):
+                    return False, "pr_is_draft"
+                if info.get("state", "").upper() not in ("OPEN",):
+                    return False, f"pr_state_not_open: {info.get('state')}"
+        except Exception as exc:
+            _log.warning("pre_merge_safety_check: pr view failed: %s", exc)
+
+        # 2. CI green (quick check — not a full wait)
+        try:
+            result = subprocess.run(
+                ["gh", "pr", "checks", str(pr_number),
+                 "--json", "name,status,conclusion"],
+                cwd=self.project_root, capture_output=True, text=True, timeout=15,
+            )
+            if result.returncode == 0:
+                checks = json.loads(result.stdout or "[]")
+                pending = [c for c in checks if c.get("status") != "completed"]
+                if pending:
+                    return False, f"ci_still_pending: {[c['name'] for c in pending[:3]]}"
+                failed = [
+                    c for c in checks
+                    if c.get("conclusion") not in ("success", "skipped", "neutral")
+                ]
+                if failed:
+                    return False, f"ci_failed: {[c['name'] for c in failed[:3]]}"
+        except Exception as exc:
+            _log.warning("pre_merge_safety_check: pr checks failed: %s", exc)
+
+        # 3. Diff scope + safety scan on changed files
+        try:
+            diff_result = subprocess.run(
+                ["git", "diff", "--name-only", f"main...{branch}"],
+                cwd=self.project_root, capture_output=True, text=True, timeout=15,
+            )
+            if diff_result.returncode == 0:
+                changed = [f.strip() for f in diff_result.stdout.splitlines() if f.strip()]
+                gate = CommitSafetyGate(self.project_root)
+                safety = gate.scan(changed)
+                if not safety.ok:
+                    return False, f"safety_gate_failed: {safety.summary[:300]}"
+                scope = validate_diff_scope(
+                    changed, allowed_scopes=allowed_scopes, issue_goal=issue_goal
+                )
+                if not scope.ok:
+                    return False, f"diff_scope_violation: {scope.summary[:300]}"
+        except Exception as exc:
+            _log.warning("pre_merge_safety_check: diff scan failed: %s", exc)
+
+        return True, "ok"
 
     # ------------------------------------------------------------------
     # Epic #1071 — Branch hygiene check
