@@ -160,16 +160,9 @@ class DeliveryWorkflow:
         log_text = log_result.stdout[:6000] if log_result.returncode == 0 else ""
         if not log_text:
             return None
-        failure_type = "unknown"
-        if "ImportError" in log_text or "ModuleNotFoundError" in log_text:
-            failure_type = "import_error"
-        elif "FAILED tests/" in log_text or "AssertionError" in log_text:
-            failure_type = "test_failure"
-        elif "SyntaxError" in log_text:
-            failure_type = "syntax_error"
-        elif "ruff" in log_text.lower() or "flake8" in log_text.lower():
-            failure_type = "lint_error"
-        return {"run_id": run_id, "failed_jobs": failed_jobs, "failure_type": failure_type, "log_excerpt": log_text}
+        diagnosis = self.diagnose_ci_failure_structured(log_text, failed_jobs)
+        diagnosis["run_id"] = run_id
+        return diagnosis
 
     def _apply_ci_fix(self, diagnosis: dict) -> bool:
         failure_type = diagnosis.get("failure_type", "unknown")

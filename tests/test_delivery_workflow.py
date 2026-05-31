@@ -74,7 +74,7 @@ def test_fix_ci_loop_calls_diagnose_on_red(tmp_path):
 
 def test_diagnose_ci_failure_classifies_lint(tmp_path):
     dw = DeliveryWorkflow(str(tmp_path))
-    with patch("igris.core.delivery_workflow.subprocess.run", side_effect=[_cp(0, '[{"databaseId": 1}]'), _cp(0, "ruff found issues")]):
+    with patch("igris.core.delivery_workflow.subprocess.run", side_effect=[_cp(0, '[{"databaseId": 1}]'), _cp(0, "ruff check\nF401 unused import")]):
         diagnosis = dw._diagnose_ci_failure(1, ["ci"])
     assert diagnosis["failure_type"] == "lint_error"
 
@@ -83,7 +83,7 @@ def test_diagnose_ci_failure_classifies_test(tmp_path):
     dw = DeliveryWorkflow(str(tmp_path))
     with patch("igris.core.delivery_workflow.subprocess.run", side_effect=[_cp(0, '[{"databaseId": 1}]'), _cp(0, "AssertionError: bad")]):
         diagnosis = dw._diagnose_ci_failure(1, ["ci"])
-    assert diagnosis["failure_type"] == "test_failure"
+    assert diagnosis["failure_type"] == "assertion_failure"
 
 
 def test_apply_ci_fix_lint_runs_ruff(tmp_path):
