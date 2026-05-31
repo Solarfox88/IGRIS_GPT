@@ -368,13 +368,44 @@ def create_router(deps) -> APIRouter:
             for e in run.events
         ]
 
+        # PR 10 — acceptance evidence panel (secrets redacted)
+        acceptance_evidence = getattr(run, "acceptance_evidence", None)
+        safe_acceptance: Optional[Dict] = None
+        if isinstance(acceptance_evidence, dict):
+            safe_acceptance = {
+                k: _safe_redact(v) if isinstance(v, str) else v
+                for k, v in acceptance_evidence.items()
+            }
+        elif acceptance_evidence is not None:
+            safe_acceptance = {"raw": _safe_redact(str(acceptance_evidence))}
+
+        # PR 10 — gate phase events (acceptance_gate, semantic_gate, quality_gate)
+        evidence_events = []
+        for ev in (run.events or []):
+            phase = getattr(ev, "phase", None) or (ev.get("phase", "") if isinstance(ev, dict) else "")
+            if phase in ("acceptance_gate", "semantic_gate", "evidence_collection", "quality_gate"):
+                detail = getattr(ev, "detail", None) or (ev.get("detail", "") if isinstance(ev, dict) else "")
+                status_ev = getattr(ev, "status", None) or (ev.get("status", "") if isinstance(ev, dict) else "")
+                ts = getattr(ev, "ts", 0) or (ev.get("ts", 0) if isinstance(ev, dict) else 0)
+                evidence_events.append({
+                    "phase": phase,
+                    "status": status_ev,
+                    "detail": _safe_redact(str(detail))[:300],
+                    "ts": ts,
+                })
+
         return {
             "run_id": run_id,
+            "status": getattr(run, "status", None) or "unknown",
             "diff_summary": diff_summary,
             "test_results": test_results,
             "cost_breakdown": cost_breakdown,
             "total_cost_usd": round(total_cost, 6),
             "key_events": key_events,
+            # PR 10 additions
+            "acceptance_evidence": safe_acceptance,
+            "evidence_events": evidence_events,
+            "evidence_count": len(evidence_events),
         }
 
     # ------------------------------------------------------------------
@@ -543,6 +574,51 @@ def create_router(deps) -> APIRouter:
             start_ts = getattr(run.events[0], "ts", None)
         elapsed = round(_time.time() - float(start_ts), 1) if start_ts else None
 
+        # PR 10 — advisory card (feature-flagged, advisory-only, never for passed/completed)
+        advisory_card: Optional[Dict[str, object]] = None
+        try:
+            from igris.agent.mission.recovery_proposal import (
+                generate_recovery_proposal,
+                RecoveryProposalConfig,
+            )
+            pr10_config = RecoveryProposalConfig()
+            if pr10_config.enabled and outcome not in ("success", "in_progress"):
+                report_payload = {
+                    "run_status": status,
+                    "goal_status": status,
+                    "failure_class": run.failure_class or "",
+                    "goal": _safe_redact(run.goal) if run.goal else "",
+                    "repair_cycles": run.repair_cycles_used,
+                }
+                proposal = generate_recovery_proposal(report_payload, config=pr10_config)
+                if proposal is not None:
+                    advisory_card = {
+                        "proposal_id": proposal.proposal_id,
+                        "proposal_type": proposal.proposal_type,
+                        "problem_summary": proposal.problem_summary,
+                        "trigger_status": proposal.trigger_status,
+                        "confidence": proposal.confidence,
+                        "risk_level": proposal.risk_level,
+                        "suggested_actions": [
+                            {
+                                "description": a.description,
+                                "rationale": a.rationale,
+                                "risk_level": getattr(a, "risk_level", "low"),
+                                "auto_executable": False,
+                                "requires_approval": True,
+                            }
+                            for a in (proposal.suggested_actions or [])
+                        ],
+                        # Advisory invariants — always present for consumer clarity
+                        "advisory_only": True,
+                        "auto_executable": False,
+                        "is_gate": False,
+                        "affects_loop_decision": False,
+                        "approval_required": True,
+                    }
+        except Exception:
+            advisory_card = None
+
         return {
             "run_id": run_id,
             "outcome": outcome,
@@ -563,6 +639,89 @@ def create_router(deps) -> APIRouter:
                 "same_failure_count": getattr(run, "same_failure_count", 0),
             },
             "recommendations": recommendations,
+            # PR 10 — advisory card (None when disabled or not applicable)
+            "advisory_card": advisory_card,
+        }
+
+    @router.get("/api/rank/runs/{run_id}/advisory")
+    async def api_rank_run_advisory(run_id: str) -> Dict[str, object]:
+        """Advisory card endpoint — PR 10 Control Room UX.
+
+        Returns a structured advisory/recovery proposal for operator review.
+        Advisory proposals are NEVER executable; they are purely informational.
+
+        Invariants (always present in response):
+            advisory_only: true
+            auto_executable: false
+            is_gate: false
+            affects_loop_decision: false
+            approval_required: true
+
+        Returns 404 if run not found.
+        Returns advisory_card: null if feature flag disabled or status excluded.
+        """
+        from igris.core.self_repair_supervisor import get_supervised_run
+        from igris.agent.mission.recovery_proposal import (
+            generate_recovery_proposal,
+            RecoveryProposalConfig,
+        )
+        run = get_supervised_run(run_id)
+        if run is None:
+            raise HTTPException(status_code=404, detail="rank run not found")
+
+        config = RecoveryProposalConfig()
+        advisory_card: Optional[Dict[str, object]] = None
+        feature_enabled = config.enabled
+
+        if config.enabled:
+            try:
+                status = run.status or "unknown"
+                report_payload = {
+                    "run_status": status,
+                    "goal_status": status,
+                    "failure_class": getattr(run, "failure_class", "") or "",
+                    "goal": _safe_redact(run.goal) if run.goal else "",
+                    "repair_cycles": getattr(run, "repair_cycles_used", 0),
+                }
+                proposal = generate_recovery_proposal(report_payload, config=config)
+                if proposal is not None:
+                    advisory_card = {
+                        "proposal_id": proposal.proposal_id,
+                        "proposal_type": proposal.proposal_type,
+                        "problem_summary": proposal.problem_summary,
+                        "trigger_status": proposal.trigger_status,
+                        "confidence": proposal.confidence,
+                        "risk_level": proposal.risk_level,
+                        "suggested_actions": [
+                            {
+                                "description": a.description,
+                                "rationale": a.rationale,
+                                "risk_level": getattr(a, "risk_level", "low"),
+                                "auto_executable": False,
+                                "requires_approval": True,
+                            }
+                            for a in (proposal.suggested_actions or [])
+                        ],
+                        "advisory_only": True,
+                        "auto_executable": False,
+                        "is_gate": False,
+                        "affects_loop_decision": False,
+                        "approval_required": True,
+                        "generated_at": proposal.timestamp,
+                    }
+            except Exception:
+                advisory_card = None
+
+        return {
+            "run_id": run_id,
+            "status": run.status or "unknown",
+            "feature_enabled": feature_enabled,
+            "advisory_card": advisory_card,
+            # Always re-assert advisory invariants at envelope level
+            "advisory_only": True,
+            "auto_executable": False,
+            "is_gate": False,
+            "affects_loop_decision": False,
         }
 
     # ------------------------------------------------------------------
