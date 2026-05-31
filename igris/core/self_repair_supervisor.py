@@ -6782,6 +6782,45 @@ class SelfRepairSupervisor:
             generated_by=decomposition.get("generated_by", "unknown"),
         )
         run.decomposition = decomposition
+
+        # Epic #1078 — DecompositionValidator quality gate.
+        # Validate sub_missions structure and log a quality score so the operator
+        # can identify noisy / low-quality decompositions in the audit trail.
+        _sub_missions_raw = decomposition.get("sub_missions") or []
+        if _sub_missions_raw:
+            try:
+                from igris.core.decomposition_validator import DecompositionValidator
+                _val_report = DecompositionValidator().validate(_sub_missions_raw)
+                run.add(
+                    "decomposition_quality",
+                    "ok" if _val_report.valid else "warning",
+                    (
+                        f"DecompositionValidator: valid={_val_report.valid} "
+                        f"score={_val_report.quality_score:.2f} "
+                        f"issues={len(_val_report.issues)}"
+                        + (
+                            " — " + "; ".join(i.message for i in _val_report.issues[:3])
+                            if _val_report.issues else ""
+                        )
+                    ),
+                    quality_score=round(_val_report.quality_score, 3),
+                    valid=_val_report.valid,
+                    issue_count=len(_val_report.issues),
+                    issue_codes=[i.code for i in _val_report.issues],
+                )
+                decomposition["_quality_score"] = round(_val_report.quality_score, 3)
+                decomposition["_quality_valid"] = _val_report.valid
+                decomposition["_quality_issues"] = [
+                    {"code": i.code, "message": i.message, "index": i.index}
+                    for i in _val_report.issues
+                ]
+            except Exception as _val_exc:
+                run.add(
+                    "decomposition_quality",
+                    "skipped",
+                    f"DecompositionValidator unavailable: {_val_exc}",
+                )
+
         return decomposition
 
     def _api_helper_decompose(
@@ -7404,6 +7443,39 @@ class SelfRepairSupervisor:
                 cap=_MAX_SUBISSUES,
             )
             sub_missions = sub_missions[:_MAX_SUBISSUES]
+
+        # Epic #1078 — File scope overlap detection.
+        # Build ParallelTask-like dicts from sub_missions so we can detect which
+        # files would be touched by multiple concurrent sub-issues, and log
+        # conflicts so the operator can add explicit serialisation (depends_on).
+        try:
+            from igris.core.parallel_task_runner import ParallelTask, detect_file_conflicts
+            _ptasks = [
+                ParallelTask(
+                    task_id=str(sub.get("title", f"sub_{j}")),
+                    goal=str(sub.get("goal", "")),
+                    initial_context={"file_scopes": sub.get("allowed_file_scopes") or []},
+                    depends_on=list(sub.get("dependencies") or []),
+                )
+                for j, sub in enumerate(sub_missions)
+            ]
+            _scope_conflicts = detect_file_conflicts(_ptasks)
+            if _scope_conflicts:
+                run.add(
+                    "subissue_scope_conflict",
+                    "warning",
+                    f"File scope overlap detected across {len(_scope_conflicts)} file(s): "
+                    + "; ".join(
+                        f"{f} → {ids}" for f, ids in list(_scope_conflicts.items())[:5]
+                    ),
+                    conflicts=_scope_conflicts,
+                )
+        except Exception as _sc_exc:
+            run.add(
+                "subissue_scope_conflict",
+                "skipped",
+                f"Scope conflict detection unavailable: {_sc_exc}",
+            )
 
         for i, sub in enumerate(sub_missions):
             title = _safe_redact(str(sub.get("title", f"Sub-task {i+1}")))
