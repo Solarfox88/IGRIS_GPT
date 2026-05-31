@@ -27,6 +27,7 @@ from typing import Any, Dict, List, Optional, Protocol, Set, Tuple
 from igris.core.safety import redact_secrets
 from igris.core.failure_memory import FailureMemory, FailureRisk
 from igris.core.acceptance_gate import check_acceptance_evidence
+from igris.core.supervisor_run_store import RunTransitionValidator, SupervisorRunStore, SupervisorRunStoreError
 
 # AssignmentRouter — lazy import to avoid circular deps at module load
 _assignment_router_available = False
@@ -2167,6 +2168,7 @@ class SelfRepairSupervisor:
     def __init__(self, project_root: str, backend: Optional[SupervisorBackend] = None):
         self.project_root = project_root
         self.backend = backend or LocalSupervisorBackend(project_root)
+        self._run_store = SupervisorRunStore(project_root=project_root, strict_transitions=True)
         self._audit_path = Path(project_root) / ".igris" / "supervisor_audit.json"
         self._audit_index = self._load_audit_index()
         self._runs_path = Path(project_root) / ".igris" / "supervisor_runs.json"
@@ -2356,12 +2358,53 @@ class SelfRepairSupervisor:
             self._persist_runs_index()
 
     def _configure_run_tracking(self, run: SupervisorRun, config: RankSupervisorConfig) -> None:
+        if self._run_store.get(run.run_id) is None:
+            self._run_store.register(run)
         run.audit_resolver = self._resolve_event_audit
         run.update_hook = self._persist_run_snapshot
         run.max_repair_cycles = config.max_repair_cycles
         run.max_api_escalations_per_run = config.max_api_escalations_per_run
         run.max_api_budget_usd = round(config.max_api_budget_usd, 6)
         run.goal = config.goal
+
+    def _transition_run_status(self, run: SupervisorRun, new_status: str, reason: str = "") -> None:
+        """Transition run status through SupervisorRunStore with safe fallback."""
+        _log = logging.getLogger("igris.supervisor.run_store")
+        current = str(getattr(run, "status", "") or "")
+        try:
+            self._run_store.transition(run, new_status, reason=reason)
+            return
+        except SupervisorRunStoreError as exc:
+            _log.warning(
+                "Run store rejected transition run_id=%s %s -> %s (%s): %s",
+                getattr(run, "run_id", ""),
+                current,
+                new_status,
+                reason,
+                exc,
+            )
+        except Exception as exc:
+            _log.warning(
+                "Run store transition degraded run_id=%s %s -> %s (%s): %s",
+                getattr(run, "run_id", ""),
+                current,
+                new_status,
+                reason,
+                exc,
+            )
+
+        # Degraded fallback path: preserve terminal guard even if store is unavailable.
+        allowed, _ = RunTransitionValidator.validate(current, new_status)
+        if allowed:
+            run.status = new_status
+        else:
+            _log.warning(
+                "Fallback transition blocked run_id=%s %s -> %s (%s)",
+                getattr(run, "run_id", ""),
+                current,
+                new_status,
+                reason,
+            )
 
     def _cancel_if_requested(
         self,
@@ -6229,7 +6272,7 @@ class SelfRepairSupervisor:
                                 else "Post-merge runtime smoke failed.",
                             )
                         if not post_merge_smoke.success:
-                            run.status = "blocked"
+                            self._transition_run_status(run, "blocked", "post-merge smoke failed")
                             run.outcome = "Blocked"
                             run.failure_class = "infrastructure_bug"
                             _deg, _deg_reason = self._compute_degraded_completion(
@@ -6297,14 +6340,14 @@ class SelfRepairSupervisor:
                         "Post-merge runtime checks skipped because PR workflow is disabled.",
                         no_op=True,
                     )
-        run.status = "completed"
+        self._transition_run_status(run, "completed", "rank completion reached")
         run.outcome = "Completed"
         if stage_statuses and "final_report" in stage_statuses:
             if self._required_stages_green(stage_statuses):
                 self._set_stage_status(run, stage_statuses, "final_report", "success", "All required mission stages are green.")
             else:
                 self._set_stage_status(run, stage_statuses, "final_report", "failure", "Required mission stage is missing or failed.")
-                run.status = "blocked"
+                self._transition_run_status(run, "blocked", "final_report required stage failure")
                 run.outcome = "Blocked"
                 run.failure_class = "infrastructure_bug"
         post_smoke_success = False if post_merge_smoke is None else post_merge_smoke.success
@@ -6357,14 +6400,14 @@ class SelfRepairSupervisor:
         }
         run.completion_mode = completion_mode  # (#147)
         run.add("completion", "degraded", detail, mode=completion_mode)
-        run.status = "completed"
+        self._transition_run_status(run, "completed", "no-op completion reached")
         run.outcome = "Completed"
         if stage_statuses and "final_report" in stage_statuses:
             if self._required_stages_green(stage_statuses, exclude_stage_ids=_noop_exclude):
                 self._set_stage_status(run, stage_statuses, "final_report", "success", "No-op completion validated with required stages satisfied.")
             else:
                 self._set_stage_status(run, stage_statuses, "final_report", "failure", "No-op completion rejected: required stage missing.")
-                run.status = "blocked"
+                self._transition_run_status(run, "blocked", "no-op required stage missing")
                 run.outcome = "Blocked"
                 run.failure_class = "reasoning_loop_blocked"
         run.report = {
@@ -6496,7 +6539,7 @@ class SelfRepairSupervisor:
     ) -> SupervisorRun:
         run.cancel_requested = True
         run.cancel_reason = reason
-        run.status = "cancelled"
+        self._transition_run_status(run, "cancelled", reason)
         run.outcome = "Cancelled"
         run.failure_class = "user_cancelled"
         run.add("cancelled", "cancelled", reason)
@@ -8205,7 +8248,7 @@ class SelfRepairSupervisor:
         stage_statuses: Optional[Dict[str, Dict[str, Any]]] = None,
         cleanup_workspace: bool = False,
     ) -> SupervisorRun:
-        run.status = "blocked"
+        self._transition_run_status(run, "blocked", detail)
         run.outcome = "Blocked"
         run.failure_class = failure
         run.completion_mode = f"blocked/{failure}"  # (#147)
@@ -8443,7 +8486,7 @@ def start_supervised_rank_async(data: Dict[str, Any], project_root: str) -> Supe
         try:
             supervisor.run(config, run=run)
         except Exception as exc:
-            run.status = "blocked"
+            supervisor._transition_run_status(run, "blocked", "worker exception")
             run.outcome = "Blocked"
             run.failure_class = "supervisor_bug"
             run.add("exception", "blocked", str(exc))
@@ -8602,15 +8645,14 @@ def cancel_supervised_run(run_id: str, project_root: str, reason: str = "Cancell
     cancel_reason = str(reason or "Cancelled by user").strip() or "Cancelled by user"
     run.cancel_requested = True
     run.cancel_reason = cancel_reason
-    if current_status != "cancelling":
-        run.status = "cancelling"
-        run.add("cancel_request", "running", cancel_reason, requested_by="api")
-    else:
-        run.add("cancel_request", "running", cancel_reason, requested_by="api", duplicate=True)
-
     supervisor = SelfRepairSupervisor(project_root=project_root)
     if hasattr(supervisor, "_configure_run_tracking"):
         supervisor._configure_run_tracking(run, RankSupervisorConfig.from_dict({"goal": "", "rank_id": run.rank_id}))
+    if current_status != "cancelling":
+        supervisor._transition_run_status(run, "cancelling", cancel_reason)
+        run.add("cancel_request", "running", cancel_reason, requested_by="api")
+    else:
+        run.add("cancel_request", "running", cancel_reason, requested_by="api", duplicate=True)
     return supervisor._cancelled(run, cancel_reason, cleanup_workspace=True)
 
 
