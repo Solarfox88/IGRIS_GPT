@@ -311,7 +311,8 @@ class TestClassifyFailureType:
         assert self._classify("ImportError: cannot import name 'foo'") == "import_error"
 
     def test_module_not_found(self):
-        assert self._classify("ModuleNotFoundError: No module named 'bar'") == "import_error"
+        # Contract: missing module/dependency is dependency_error (not import_error)
+        assert self._classify("ModuleNotFoundError: No module named 'bar'") == "dependency_error"
 
     def test_syntax_error(self):
         assert self._classify("SyntaxError: invalid syntax at line 42") == "syntax_error"
