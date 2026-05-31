@@ -63,6 +63,16 @@ _DNS_RE = re.compile(r"\b(dig|nslookup|host|resolvectl)\b.*\b(update|set|add|del
 _ENV_RE = re.compile(r"(\.env|\.secrets|\.pem|\.key|id_rsa|credentials|token|password|api[._]key)", re.IGNORECASE)
 _SECRET_ACCESS_RE = re.compile(r"\b(cat|less|more|head|tail|grep|awk|sed)\b.*\.(env|secret|pem|key)", re.IGNORECASE)
 
+# PR 2 additions — patterns previously missing
+# Inline code execution: bash -c "...", sh -c "...", python -c "..."
+_INLINE_EXEC_RE = re.compile(r"\b(bash|sh|zsh|fish|dash|python[23]?|py)\s+-c\b")
+# xargs feeding rm (equivalent to rm but bypasses _RM_RE)
+_XARGS_RM_RE = re.compile(r"\bxargs\b.*\brm\b|\brm\b.*\bxargs\b")
+# find with -delete flag or -exec rm
+_FIND_DELETE_RE = re.compile(r"\bfind\b.*(-delete|-exec\s+rm|-exec\s+unlink)")
+# Shell metacharacters unsafe in template parameters
+_UNSAFE_PARAM_CHARS_RE = re.compile(r'[;&|`$<>(){}\[\]\\!#~\n\r]')
+
 
 @dataclass
 class ParsedCommand:
@@ -94,6 +104,10 @@ class ParsedCommand:
     has_dns_modify: bool = False
     has_env_access: bool = False
     has_secret_access: bool = False
+    # PR 2 additions
+    has_inline_exec: bool = False    # bash -c / python -c / sh -c
+    has_xargs_rm: bool = False       # xargs rm (equivalent to rm)
+    has_find_delete: bool = False    # find -delete / find -exec rm
     flags: List[str] = field(default_factory=list)
 
     def to_dict(self) -> Dict[str, Any]:
@@ -171,6 +185,10 @@ def parse_command(raw: str) -> ParsedCommand:
     cmd.has_dns_modify = bool(_DNS_RE.search(raw))
     cmd.has_env_access = bool(_ENV_RE.search(raw))
     cmd.has_secret_access = bool(_SECRET_ACCESS_RE.search(raw))
+    # PR 2 additions
+    cmd.has_inline_exec = bool(_INLINE_EXEC_RE.search(raw))
+    cmd.has_xargs_rm = bool(_XARGS_RM_RE.search(raw))
+    cmd.has_find_delete = bool(_FIND_DELETE_RE.search(raw))
 
     # Collect flags
     for p in cmd.flags_list():
@@ -217,6 +235,15 @@ def classify_command_risk(parsed: ParsedCommand) -> str:
         return "critical"
     if parsed.has_secret_access:
         return "critical"
+    # PR 2 — inline code execution is always CRITICAL (arbitrary code)
+    if parsed.has_inline_exec:
+        return "critical"
+    # PR 2 — xargs rm with wildcard or sudo is CRITICAL
+    if parsed.has_xargs_rm and (parsed.has_wildcard or parsed.has_sudo):
+        return "critical"
+    # PR 2 — find -delete with sudo or abs path is CRITICAL
+    if parsed.has_find_delete and (parsed.has_sudo or parsed.has_abs_path):
+        return "critical"
 
     # HIGH — requires rollback/policy
     if parsed.has_sudo:
@@ -224,6 +251,11 @@ def classify_command_risk(parsed: ParsedCommand) -> str:
     if parsed.has_rm:
         return "high"
     if parsed.has_delete:
+        return "high"
+    # PR 2 — xargs rm and find -delete are HIGH (equivalent to rm)
+    if parsed.has_xargs_rm:
+        return "high"
+    if parsed.has_find_delete:
         return "high"
     if parsed.has_systemctl:
         return "high"
@@ -338,6 +370,80 @@ class SafetyEvent:
 
 
 # ---------------------------------------------------------------------------
+# Rollback Plan — structured, not just text
+# ---------------------------------------------------------------------------
+
+@dataclass
+class RollbackPlan:
+    """Structured rollback plan for HIGH/CRITICAL commands.
+
+    PR 2: replaces the text-only get_rollback_suggestion() with a typed
+    dataclass that callers (DevOpsManager, DeliveryWorkflow) can act on.
+    """
+    command: str = ""
+    risk_level: str = "unknown"
+    backup_cmd: str = ""       # Run BEFORE to snapshot state
+    restore_cmd: str = ""      # Run AFTER to undo
+    steps: List[str] = field(default_factory=list)
+    automated: bool = False    # Can IGRIS execute rollback without approval?
+    notes: str = ""
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "command": self.command,
+            "risk_level": self.risk_level,
+            "backup_cmd": self.backup_cmd,
+            "restore_cmd": self.restore_cmd,
+            "steps": self.steps,
+            "automated": self.automated,
+            "notes": self.notes,
+        }
+
+
+# ---------------------------------------------------------------------------
+# Host-aware policy
+# ---------------------------------------------------------------------------
+
+class HostAwarePolicy:
+    """Infer environment from hostname and apply host-aware risk rules.
+
+    PR 2: production/staging hosts should automatically escalate risk
+    thresholds without manual environment= parameter.
+
+    Usage:
+        env = HostAwarePolicy.infer_environment()  # reads socket.gethostname()
+        engine = CommandRiskEngine(environment=env)
+    """
+
+    _PRODUCTION_PATTERNS = [r"prod", r"production", r"live", r"prd", r"-prd-", r"\.prod\."]
+    _STAGING_PATTERNS = [r"stag", r"staging", r"stage", r"stg", r"-stg-"]
+
+    @classmethod
+    def infer_environment(cls, hostname: Optional[str] = None) -> str:
+        """Return 'production' | 'staging' | 'dev' based on hostname.
+
+        If hostname is None, reads from socket.gethostname().
+        """
+        import socket
+        h = (hostname or socket.gethostname()).lower()
+        if any(re.search(p, h) for p in cls._PRODUCTION_PATTERNS):
+            return "production"
+        if any(re.search(p, h) for p in cls._STAGING_PATTERNS):
+            return "staging"
+        return "dev"
+
+    @classmethod
+    def from_hostname(cls, hostname: Optional[str] = None) -> "CommandRiskEngine":
+        """Create a CommandRiskEngine with environment inferred from hostname.
+
+        Usage:
+            engine = HostAwarePolicy.from_hostname()
+        """
+        env = cls.infer_environment(hostname)
+        return CommandRiskEngine(environment=env)
+
+
+# ---------------------------------------------------------------------------
 # Command Risk Engine
 # ---------------------------------------------------------------------------
 
@@ -441,24 +547,100 @@ class CommandRiskEngine:
 
         Epic #1072 — Binding rollback hints let operators know how to undo
         a command if it runs and causes problems.
+
+        Deprecated: use build_rollback_plan() for structured output.
+        """
+        plan = self.build_rollback_plan(command, event)
+        if plan.steps:
+            return " | ".join(plan.steps)
+        return plan.notes
+
+    def build_rollback_plan(self, command: str, event: "SafetyEvent") -> RollbackPlan:
+        """Return a structured RollbackPlan for a CRITICAL/HIGH command.
+
+        PR 2: replaces text-only get_rollback_suggestion() with a typed
+        RollbackPlan that DevOpsManager and DeliveryWorkflow can act on.
         """
         cmd_lower = command.lower()
-        if "rm " in cmd_lower or "rmdir" in cmd_lower:
-            return "Restore from the last git commit or backup: `git checkout -- .`"
-        if "drop table" in cmd_lower or "truncate table" in cmd_lower:
-            return "Restore from the last database snapshot or `pg_dump` backup."
-        if "git reset --hard" in cmd_lower:
-            return "Use `git reflog` to find the pre-reset SHA and `git reset --hard <SHA>`."
-        if "git clean" in cmd_lower:
-            return "Untracked files cannot be recovered after `git clean -f`. Restore from backup."
-        if "dd if=" in cmd_lower or "mkfs" in cmd_lower:
-            return "Disk write is irreversible. Restore from full disk backup or snapshot."
-        if event.final_risk in ("critical", "high"):
-            return (
-                f"Command classified as {event.final_risk}. Take a snapshot or backup before running. "
-                "To rollback: restore from the most recent backup of affected resources."
-            )
-        return ""
+        plan = RollbackPlan(command=command, risk_level=event.final_risk)
+
+        # Check inline exec FIRST — it's more dangerous than rm
+        if ("bash -c" in cmd_lower or "sh -c" in cmd_lower
+                or re.search(r"\bpython[23]?\s+-c\b", cmd_lower)):
+            plan.backup_cmd = "git stash && git add -A && git stash"
+            plan.restore_cmd = "git checkout -- ."
+            plan.steps = [
+                "Inline code execution: snapshot all changed files before running.",
+                "Restore any modified files from git: `git checkout -- .`",
+            ]
+            plan.automated = False
+            plan.notes = "Inline exec arbitrary code — manual review required before execution."
+
+        elif "rm " in cmd_lower or "rmdir" in cmd_lower or "xargs" in cmd_lower:
+            plan.backup_cmd = "git stash && git add -A && git stash"
+            plan.restore_cmd = "git checkout -- ."
+            plan.steps = [
+                "Before running: commit or stash any staged changes.",
+                "Restore deleted files: `git checkout -- .`",
+                "If not tracked by git: restore from the last filesystem backup.",
+            ]
+            plan.automated = True
+            plan.notes = "Deleted files can be recovered from git history if previously tracked."
+
+        elif "drop table" in cmd_lower or "truncate table" in cmd_lower:
+            plan.backup_cmd = "pg_dump $DATABASE_URL > backup_$(date +%s).sql"
+            plan.restore_cmd = "psql $DATABASE_URL < backup_<timestamp>.sql"
+            plan.steps = [
+                "Before running: create a full DB dump with pg_dump.",
+                "Restore: psql $DATABASE_URL < backup_<timestamp>.sql",
+            ]
+            plan.automated = False
+            plan.notes = "Database destructive operation — manual snapshot required."
+
+        elif "git reset --hard" in cmd_lower:
+            plan.backup_cmd = "git log --oneline -5  # note the current SHA"
+            plan.restore_cmd = "git reset --hard <pre-reset-SHA>"
+            plan.steps = [
+                "Note current HEAD SHA: `git rev-parse HEAD`",
+                "After reset: use `git reflog` to find the pre-reset SHA.",
+                "Restore: `git reset --hard <pre-reset-SHA>`",
+            ]
+            plan.automated = True
+            plan.notes = "Git reflog retains commits for 90 days by default."
+
+        elif "git clean" in cmd_lower:
+            plan.backup_cmd = "git stash -u  # stash untracked files"
+            plan.restore_cmd = "git stash pop"
+            plan.steps = [
+                "Before running: `git stash -u` to save untracked files.",
+                "Restore: `git stash pop`",
+                "Permanently deleted untracked files cannot be recovered without a backup.",
+            ]
+            plan.automated = False
+            plan.notes = "Untracked files cannot be recovered after git clean -f without stash."
+
+        elif "dd if=" in cmd_lower or "mkfs" in cmd_lower or "wipefs" in cmd_lower:
+            plan.backup_cmd = "dd if=<device> of=<backup_file> bs=4M"
+            plan.restore_cmd = "dd if=<backup_file> of=<device> bs=4M"
+            plan.steps = [
+                "Before running: create a full disk image backup with `dd`.",
+                "Restore: `dd if=<backup_file> of=<device> bs=4M`",
+                "This operation is IRREVERSIBLE without a prior disk image.",
+            ]
+            plan.automated = False
+            plan.notes = "Disk write is irreversible without a full disk image backup."
+
+        elif event.final_risk in ("critical", "high"):
+            plan.backup_cmd = "git add -A && git stash"
+            plan.restore_cmd = "git stash pop"
+            plan.steps = [
+                f"Command classified as {event.final_risk} — take a snapshot before running.",
+                "Restore from the most recent backup of affected resources.",
+            ]
+            plan.automated = False
+            plan.notes = f"Risk level {event.final_risk} — manual rollback required."
+
+        return plan
 
     def is_destructive(self, command: str) -> bool:
         """Epic #1072 — Pre-check: return True if command matches destructive patterns.
@@ -609,7 +791,28 @@ class CommandRiskEngine:
         """Evaluate a parametrized shell template.
 
         Templates are safer than raw commands — validated parameters only.
+        PR 2: parameter values are validated for shell metacharacters before
+        rendering to prevent template injection attacks.
         """
+        # PR 2 — validate params before rendering
+        param_error = self._validate_template_params(parameters)
+        if param_error:
+            event = SafetyEvent(
+                command=f"template:{template_id}",
+                mission_id=mission_id,
+                trace_id=trace_id,
+                decision="blocked",
+                reason=f"template param injection: {param_error}",
+                final_risk="critical",
+                deterministic_risk="critical",
+            )
+            self._event_log.append(event)
+            return event, RiskReviewResult(
+                risk_assessment="critical",
+                reasons=[param_error],
+                should_execute=False,
+            )
+
         rendered = self._render_template(template_id, parameters)
         event, review = self.evaluate_command(
             command=rendered,
@@ -764,6 +967,26 @@ class CommandRiskEngine:
 
         # UNKNOWN — needs approval
         return "needs_approval", f"Unknown risk: {', '.join(review.reasons) or 'unrecognized command'}"
+
+    @staticmethod
+    def _validate_template_params(parameters: Dict[str, str]) -> Optional[str]:
+        """Validate template parameters — block shell metacharacters.
+
+        PR 2: prevents template injection by rejecting values containing
+        shell operators (;, |, &, $, backtick, <, >, {, }, etc.).
+
+        Returns error message string if invalid, None if all params are safe.
+        """
+        for key, value in parameters.items():
+            if _UNSAFE_PARAM_CHARS_RE.search(str(value)):
+                # Find the offending character for clear error message
+                m = _UNSAFE_PARAM_CHARS_RE.search(str(value))
+                char = m.group(0) if m else "?"
+                return (
+                    f"param {key!r} contains unsafe shell character {char!r} "
+                    f"in value {str(value)[:40]!r}"
+                )
+        return None
 
     @staticmethod
     def _render_template(template_id: str, parameters: Dict[str, str]) -> str:
