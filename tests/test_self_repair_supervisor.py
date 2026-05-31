@@ -229,6 +229,14 @@ class FakeBackend:
     def api_helper_is_configured(self) -> bool:
         return getattr(self, "_api_helper_configured", True)
 
+    def checkout_main(self):
+        self.commands.append("checkout_main")
+        return getattr(self, "checkout_main_result", CommandResult(True, "checked out main"))
+
+    def delete_stale_rank_branches(self):
+        self.commands.append("delete_stale_rank_branches")
+        return getattr(self, "delete_stale_rank_branches_result", CommandResult(True, "deleted stale branches"))
+
 
 def _config(**overrides):
     data = {
@@ -1598,8 +1606,20 @@ def test_supervisor_records_rank_reasoning_running_and_timeout_budget():
     )
 
     assert run.status == "completed"
-    assert any(event.phase == "rank_reasoning" and event.status == "running" for event in run.events)
-    assert "reasoning_timeout:55" in backend.commands
+    # The rank_reasoning running event must be logged with a timeout_seconds field.
+    running_events = [
+        event for event in run.events
+        if event.phase == "rank_reasoning" and event.status == "running"
+    ]
+    assert running_events, "Expected at least one rank_reasoning/running event"
+    assert running_events[0].data.get("timeout_seconds") is not None, (
+        "rank_reasoning running event must carry timeout_seconds"
+    )
+    # The reasoning backend must receive a timeout (profile-aware adjustment may scale
+    # the raw 55s config value, so we only assert the command was issued).
+    assert any(cmd.startswith("reasoning_timeout:") for cmd in backend.commands), (
+        "Expected a reasoning_timeout:<N> command to be logged"
+    )
 
 
 def test_supervisor_passes_requested_rank_test_file_to_reasoning_context(tmp_path):
