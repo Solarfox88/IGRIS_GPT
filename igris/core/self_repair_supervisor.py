@@ -5662,6 +5662,55 @@ class SelfRepairSupervisor:
         env_profile = os.environ.get("IGRIS_EXECUTION_PREFERRED_PROFILE", "")
         if env_profile and not strategy_profile:
             repair_profile = env_profile
+        # Epic #1074 — Wire decide_repair_strategy() for explicit, auditable strategy.
+        # The strategy module makes the same decision as the inline logic above but
+        # in a pure, testable function. We use it here to:
+        #   (a) emit a structured 'repair_strategy_decision' event for audit
+        #   (b) early-exit with skip_repair=True when the strategy says so
+        #   (c) prepend strategy.goal_prefix to the repair_goal for context
+        try:
+            from igris.core.repair_strategy import RepairContext, decide_repair_strategy
+            _rs_ctx = RepairContext(
+                failure_class=failure,
+                cycle=cycle,
+                same_failure_count=int(run.same_failure_count or 0),
+                max_repair_cycles=int(config.max_repair_cycles or 3),
+                base_timeout_seconds=int(config.reasoning_timeout_seconds or 900),
+                has_high_risk_advice=high_risk_advice,
+                has_execution_plan=has_execution_plan,
+                capability_signals=dict(run.capability_signals or {}),
+            )
+            _rs = decide_repair_strategy(_rs_ctx)
+            run.add(
+                "repair_strategy_decision",
+                "skip" if _rs.skip_repair else "proceed",
+                (
+                    f"strategy: task_type={_rs.task_type} profile={_rs.profile!r} "
+                    f"timeout={_rs.timeout_seconds}s skip={_rs.skip_repair}"
+                    + (f" reason={_rs.skip_reason}" if _rs.skip_repair else "")
+                    + (f" escalate_decompose={_rs.escalate_to_decomposition}" if _rs.escalate_to_decomposition else "")
+                ),
+                task_type=_rs.task_type,
+                profile=_rs.profile,
+                timeout_seconds=_rs.timeout_seconds,
+                skip_repair=_rs.skip_repair,
+                skip_reason=_rs.skip_reason,
+                escalate_to_decomposition=_rs.escalate_to_decomposition,
+                same_failure_count=int(run.same_failure_count or 0),
+                notes=_rs.notes,
+            )
+            if _rs.skip_repair:
+                return False
+            # Prepend goal_prefix for additional context (does not override full goal logic above)
+            if _rs.goal_prefix and not repair_goal.startswith(_rs.goal_prefix):
+                repair_goal = f"{_rs.goal_prefix} {repair_goal}"
+        except Exception as _rs_exc:
+            run.add(
+                "repair_strategy_decision",
+                "skipped",
+                f"decide_repair_strategy unavailable: {_rs_exc}",
+            )
+
         run.add(
             "repair_reasoning",
             "running",
