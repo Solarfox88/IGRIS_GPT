@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="it">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -7,17 +7,33 @@
     <link rel="stylesheet" href="/static/css/style.css" />
   </head>
   <body>
-    <header>
-      <div class="header-left">
-        <h1>IGRIS_GPT</h1>
-        <span id="header-status" class="badge">loading...</span>
-        <span id="header-provider" class="badge badge-dim"></span>
-      </div>
-    </header>
-
     <div class="layout">
-      <!-- Left: real chat panel wired by /static/js/app.js to /api/sessions and /api/chat/stream -->
+      <aside class="sidebar" id="sidebar">
+        <button type="button" class="toggle-btn" id="sidebar-toggle" aria-label="Collassa sidebar">☰</button>
+        <h1 class="brand-title"><span class="icon">⚡</span><span class="label">IGRIS v2</span></h1>
+        <nav class="sidebar-nav" role="tablist" aria-label="Sezioni principali">
+          <button type="button" class="tab active" data-tab="dashboard" role="tab" aria-label="Dashboard"><span class="icon">📊</span><span class="label">Dashboard</span></button>
+          <button type="button" class="tab" data-tab="code" role="tab" aria-label="Code"><span class="icon">📁</span><span class="label">Code</span></button>
+          <button type="button" class="tab" data-tab="tasks" role="tab" aria-label="Tasks"><span class="icon">📋</span><span class="label">Tasks</span></button>
+          <button type="button" class="tab" data-tab="terminal" role="tab" aria-label="Terminal"><span class="icon">💻</span><span class="label">Terminal</span></button>
+          <button type="button" class="tab" data-tab="memory" role="tab" aria-label="Memory"><span class="icon">🧠</span><span class="label">Memory</span></button>
+          <button type="button" class="tab" data-tab="safety" role="tab" aria-label="Safety"><span class="icon">🛡️</span><span class="label">Safety</span></button>
+          <button type="button" class="tab" data-tab="advanced" role="tab" aria-label="Advanced"><span class="icon">⚙️</span><span class="label">Advanced</span></button>
+        </nav>
+        <div class="status-badge">
+          <div class="status-line">
+            <span class="dot" id="sidebar-status-dot"></span>
+            <span id="header-status">loading...</span>
+          </div>
+          <small id="header-provider">provider...</small>
+        </div>
+      </aside>
+
       <section class="chat-panel" aria-label="Chat">
+        <div class="chat-header">
+          <span>💬 IGRIS Chat</span>
+          <span class="chat-header-meta">connesso</span>
+        </div>
         <div id="chat-messages" class="chat-messages"></div>
         <form id="chat-form" class="chat-form">
           <input type="text" id="chat-input" placeholder="Ask IGRIS..." autocomplete="off" aria-label="Chat input" />
@@ -25,18 +41,11 @@
         </form>
       </section>
 
-      <!-- Right: connected agentic console. Element IDs are intentionally stable for app.js. -->
-      <section class="console-panel" aria-label="Agentic Console">
-        <nav class="tab-bar" role="tablist">
-          <button type="button" class="tab active" data-tab="dashboard" role="tab" aria-label="Dashboard">Dashboard</button>
-          <button type="button" class="tab" data-tab="code" role="tab" aria-label="Code">Code</button>
-          <button type="button" class="tab" data-tab="tasks" role="tab" aria-label="Tasks">Tasks</button>
-          <button type="button" class="tab" data-tab="terminal" role="tab" aria-label="Terminal">Terminal</button>
-          <button type="button" class="tab" data-tab="memory" role="tab" aria-label="Memory">Memory</button>
-          <button type="button" class="tab" data-tab="safety" role="tab" aria-label="Safety">Safety</button>
-          <button type="button" class="tab" data-tab="advanced" role="tab" aria-label="Advanced">Advanced</button>
-        </nav>
-
+      <section class="console-panel" id="right-panel" aria-label="Agentic Console">
+        <div class="panel-header">
+          <button type="button" class="toggle-btn" id="panel-toggle" aria-label="Collassa pannello">◀</button>
+          <h2 id="section-title">Dashboard</h2>
+        </div>
         <div class="tab-content">
           <!-- Dashboard: connected mission control, no static fake counters. -->
           <div id="tab-dashboard" class="tab-pane active" role="tabpanel">
@@ -352,6 +361,52 @@
         </div>
       </section>
     </div>
+    <script>
+      (function () {
+        var sidebar = document.getElementById("sidebar");
+        var rightPanel = document.getElementById("right-panel");
+        var sidebarToggle = document.getElementById("sidebar-toggle");
+        var panelToggle = document.getElementById("panel-toggle");
+        var sectionTitle = document.getElementById("section-title");
+        var statusBadge = document.getElementById("header-status");
+        var statusDot = document.getElementById("sidebar-status-dot");
+
+        if (sidebarToggle) {
+          sidebarToggle.addEventListener("click", function () {
+            sidebar.classList.toggle("collapsed");
+            sidebarToggle.textContent = sidebar.classList.contains("collapsed") ? "☰" : "✕";
+          });
+        }
+        if (panelToggle) {
+          panelToggle.addEventListener("click", function () {
+            rightPanel.classList.toggle("collapsed");
+            panelToggle.textContent = rightPanel.classList.contains("collapsed") ? "▶" : "◀";
+          });
+        }
+
+        function syncTitleFromActiveTab() {
+          var active = document.querySelector(".sidebar-nav .tab.active .label");
+          if (active && sectionTitle) sectionTitle.textContent = active.textContent.trim();
+        }
+
+        Array.prototype.forEach.call(document.querySelectorAll(".sidebar-nav .tab"), function (tab) {
+          tab.addEventListener("click", function () {
+            window.requestAnimationFrame(syncTitleFromActiveTab);
+          });
+        });
+
+        var statusObserver = new MutationObserver(function () {
+          if (!statusBadge || !statusDot) return;
+          var value = (statusBadge.textContent || "").toLowerCase();
+          statusDot.className = "dot";
+          if (value.indexOf("ok") >= 0 || value.indexOf("online") >= 0) statusDot.classList.add("green");
+          else if (value.indexOf("warn") >= 0 || value.indexOf("degraded") >= 0) statusDot.classList.add("yellow");
+          else statusDot.classList.add("red");
+        });
+        if (statusBadge) statusObserver.observe(statusBadge, { childList: true, subtree: true, characterData: true });
+        syncTitleFromActiveTab();
+      })();
+    </script>
     <script src="/static/js/app.js"></script>
   </body>
 </html>
