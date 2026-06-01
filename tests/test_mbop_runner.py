@@ -261,10 +261,22 @@ class TestMbopPhase10SatisfactionGate:
         assert result.passed
 
     def test_structural_test_detection_via_quality_gate(self):
+        """pytest green alone is NOT enough for test-like AC — requires test file in diff (#1105 fix)."""
         intake = self._make_intake(["pytest coverage updated for endpoint"])
         qg = MBOPQualityGateResult(passed=True, pytest_ran=True, pytest_passed=True)
+        # No test file in diff → should NOT be covered
         result = mbop_phase10_satisfaction_gate(intake, "small diff", "", qg)
+        assert not result.passed
+        assert intake.acceptance_criteria[0] in result.criteria_missing
+
+    def test_structural_test_detection_via_quality_gate_with_test_file(self):
+        """pytest green + test file in diff → covered."""
+        intake = self._make_intake(["pytest coverage updated for endpoint"])
+        qg = MBOPQualityGateResult(passed=True, pytest_ran=True, pytest_passed=True)
+        diff = "+++ b/tests/test_endpoint.py\n+def test_ping(): pass"
+        result = mbop_phase10_satisfaction_gate(intake, diff, "", qg)
         assert result.passed
+        assert intake.acceptance_criteria[0] in result.criteria_covered
 
 
 # ---------------------------------------------------------------------------

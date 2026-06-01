@@ -283,6 +283,65 @@ class TestExecutionRouting:
             else:
                 os.environ["OPENAI_API_KEY"] = orig
 
+
+class TestProviderErrorClassificationIntegration:
+    def test_fallback_provider_selected_when_allowed(self, monkeypatch):
+        providers = {
+            "deepseek": ProviderConfig(name="deepseek", base_url="http://x", model="m1"),
+            "openai": ProviderConfig(name="openai", base_url="http://y", model="m2", api_key_env="OPENAI_API_KEY"),
+        }
+        monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
+        orch = ModelOrchestrator(providers=providers, retry_max_attempts=0)
+        calls = {"n": 0}
+
+        def _fake_call(provider, *args, **kwargs):
+            calls["n"] += 1
+            if provider.name == "deepseek":
+                raise RuntimeError("HTTP Error 429: Too Many Requests")
+            return OrchestratorResult(text="ok", provider=provider.name, model=provider.model, success=True)
+
+        orch._call_provider = _fake_call  # type: ignore[attr-defined]
+        result = orch.complete(task_type="cheap_cloud_reasoning", messages=[{"role": "user", "content": "hi"}])
+        assert result.success is True
+        assert result.provider == "openai"
+        assert calls["n"] >= 2
+
+    def test_blocked_when_no_safe_fallback(self, monkeypatch):
+        providers = {
+            "deepseek": ProviderConfig(name="deepseek", base_url="http://x", model="m1"),
+            "openai": ProviderConfig(name="openai", base_url="http://y", model="m2", api_key_env="OPENAI_API_KEY"),
+        }
+        monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
+        orch = ModelOrchestrator(providers=providers, retry_max_attempts=0)
+
+        def _fake_call(provider, *args, **kwargs):
+            raise RuntimeError("HTTP Error 401 unauthorized sk-test-super-secret")
+
+        orch._call_provider = _fake_call  # type: ignore[attr-defined]
+        result = orch.complete(task_type="cheap_cloud_reasoning", messages=[{"role": "user", "content": "hi"}])
+        assert result.success is False
+        assert result.error_category == "auth_error"
+        assert result.error_retryable is False
+        assert "sk-test-super-secret" not in result.fallback_reason
+
+    def test_retry_policy_respected_for_timeout(self, monkeypatch):
+        providers = {
+            "deepseek": ProviderConfig(name="deepseek", base_url="http://x", model="m1"),
+        }
+        orch = ModelOrchestrator(providers=providers, retry_max_attempts=1, retry_base_delay=0.0)
+        attempts = {"n": 0}
+
+        def _fake_call(provider, *args, **kwargs):
+            attempts["n"] += 1
+            raise RuntimeError("timeout while calling provider")
+
+        orch._call_provider = _fake_call  # type: ignore[attr-defined]
+        monkeypatch.setattr("igris.core.model_orchestrator.time.sleep", lambda *_: None)
+        result = orch.complete(task_type="cheap_cloud_reasoning", messages=[{"role": "user", "content": "hi"}])
+        assert result.success is False
+        assert result.error_category == "timeout"
+        assert attempts["n"] == 2  # initial + 1 retry
+
     def test_endpoint_implementation_profile_is_cloud_first(self):
         """endpoint_implementation chain must start with openai, not ollama."""
         orch = ModelOrchestrator()
