@@ -403,3 +403,81 @@ class TestEvaluateCommandIntegration:
         event, _ = engine.evaluate_command("ls -la /tmp")
         assert event.final_risk == "low"
         assert event.decision == "allowed"
+
+
+# ---------------------------------------------------------------------------
+# 8. Host-aware policy + structured explanation
+# ---------------------------------------------------------------------------
+
+class TestHostAwareCommandPolicy:
+
+    def test_disallowed_service_is_blocked(self):
+        engine = _engine("operator")
+        event, _ = engine.evaluate_command(
+            "systemctl restart igris",
+            host_context={
+                "hostname": "vps-01",
+                "policy": "operator",
+                "allowed_services": ["nginx"],
+                "allowed_paths": ["/home", "/opt/app"],
+            },
+        )
+        assert event.decision == "blocked"
+        assert "host policy" in event.reason
+        assert "igris" in event.reason
+
+    def test_allowed_service_populates_decision_explanation(self):
+        engine = _engine("operator")
+        event, _ = engine.evaluate_command(
+            "systemctl restart nginx",
+            host_context={
+                "hostname": "vps-01",
+                "policy": "operator",
+                "allowed_services": ["nginx"],
+                "allowed_paths": ["/home", "/opt/app"],
+                "structured_tool_available": True,
+            },
+        )
+        assert event.decision in ("needs_approval", "allowed")
+        assert event.decision_explanation["host_context"]["hostname"] == "vps-01"
+        assert event.decision_explanation["structured_tool_available"] is True
+        assert event.decision_explanation["rollback_plan"] is not None
+
+    def test_outside_allowed_path_is_blocked(self):
+        engine = _engine("operator")
+        event, _ = engine.evaluate_command(
+            "cat /etc/passwd",
+            host_context={
+                "hostname": "vps-01",
+                "policy": "operator",
+                "allowed_services": ["nginx"],
+                "allowed_paths": ["/home", "/opt/app"],
+            },
+        )
+        assert event.decision == "blocked"
+        assert "host policy" in event.reason
+        assert "/etc/passwd" in event.reason
+
+    def test_api_risk_evaluate_forwards_host_context(self):
+        from fastapi.testclient import TestClient
+        from igris.web.server import create_app
+
+        app = create_app()
+        client = TestClient(app)
+        resp = client.post(
+            "/api/risk/evaluate",
+            json={
+                "command": "systemctl restart igris",
+                "use_llm_reviewer": False,
+                "host_context": {
+                    "hostname": "vps-01",
+                    "policy": "operator",
+                    "allowed_services": ["nginx"],
+                    "allowed_paths": ["/home", "/opt/app"],
+                },
+            },
+        )
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["event"]["decision"] == "blocked"
+        assert body["event"]["decision_explanation"]["host_context"]["hostname"] == "vps-01"

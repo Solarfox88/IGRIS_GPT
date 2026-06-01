@@ -1213,6 +1213,7 @@ def create_router(deps) -> APIRouter:
             command=content.get("command", ""),
             context=content.get("context", ""),
             mission_id=content.get("mission_id", ""),
+            host_context=content.get("host_context"),
         )
         return {"event": event.to_dict(), "review": review.to_dict()}
 
@@ -1229,6 +1230,7 @@ def create_router(deps) -> APIRouter:
             template_id=content.get("template_id", ""),
             parameters=content.get("parameters", {}),
             mission_id=content.get("mission_id", ""),
+            host_context=content.get("host_context"),
         )
         return {"event": event.to_dict(), "review": review.to_dict()}
 
