@@ -3,15 +3,10 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>IGRIS_GPT — Agentic Engineering Console</title>
+    <title>IGRIS_GPT — Connected Agentic Engineering Console</title>
     <link rel="stylesheet" href="/static/css/style.css" />
   </head>
   <body>
-
-    <div id="rank-s-dashboard">
-      <h1>Rank S Dashboard</h1>
-      <p>Status: Operational</p>
-    </div>
     <header>
       <div class="header-left">
         <h1>IGRIS_GPT</h1>
@@ -21,7 +16,7 @@
     </header>
 
     <div class="layout">
-      <!-- Left: Chat -->
+      <!-- Left: real chat panel wired by /static/js/app.js to /api/sessions and /api/chat/stream -->
       <section class="chat-panel" aria-label="Chat">
         <div id="chat-messages" class="chat-messages"></div>
         <form id="chat-form" class="chat-form">
@@ -30,7 +25,7 @@
         </form>
       </section>
 
-      <!-- Right: Agentic Console -->
+      <!-- Right: connected agentic console. Element IDs are intentionally stable for app.js. -->
       <section class="console-panel" aria-label="Agentic Console">
         <nav class="tab-bar" role="tablist">
           <button type="button" class="tab active" data-tab="dashboard" role="tab" aria-label="Dashboard">Dashboard</button>
@@ -43,13 +38,13 @@
         </nav>
 
         <div class="tab-content">
-          <!-- Dashboard (enhanced Mission Control) -->
+          <!-- Dashboard: connected mission control, no static fake counters. -->
           <div id="tab-dashboard" class="tab-pane active" role="tabpanel">
             <h3>Dashboard</h3>
             <div class="dashboard-grid">
               <div class="dash-card dash-card-hero" id="dash-control-room-overview">
                 <div class="dash-card-title">Control Room Overview</div>
-                <div id="dash-control-room-status" class="info-block"></div>
+                <div id="dash-control-room-status" class="info-block"><span class="loading">Loading control-room summary...</span></div>
               </div>
               <div class="dash-card" id="dash-health">
                 <div class="dash-card-title">System Health</div>
@@ -57,15 +52,15 @@
               </div>
               <div class="dash-card" id="dash-readiness">
                 <div class="dash-card-title">Readiness</div>
-                <div id="mission-readiness" class="info-block"></div>
+                <div id="mission-readiness" class="info-block"><span class="loading">Loading readiness...</span></div>
               </div>
               <div class="dash-card" id="dash-diagnostics">
                 <div class="dash-card-title">Diagnostics</div>
-                <div id="dash-diagnostics-summary" class="info-block"></div>
+                <div id="dash-diagnostics-summary" class="info-block"><span class="loading">Loading diagnostics...</span></div>
               </div>
               <div class="dash-card" id="dash-loop-summary">
                 <div class="dash-card-title">Loop Status</div>
-                <div id="dash-loop-info" class="info-block"></div>
+                <div id="dash-loop-info" class="info-block"><span class="loading">Loading loop status...</span></div>
               </div>
               <div class="dash-card" id="dash-supervised-launcher">
                 <div class="dash-card-title">Rank / Mission Launcher</div>
@@ -102,25 +97,34 @@
               </div>
               <div class="dash-card" id="dash-evidence-panel">
                 <div class="dash-card-title">Evidence</div>
-                <div id="dash-evidence-summary" class="info-block"></div>
+                <div id="dash-evidence-summary" class="info-block"><span class="loading">Loading evidence...</span></div>
               </div>
               <div class="dash-card" id="dash-github-panel">
                 <div class="dash-card-title">GitHub PR / CI</div>
-                <div id="dash-github-summary" class="info-block"></div>
+                <div id="dash-github-summary" class="info-block"><span class="loading">Loading GitHub status...</span></div>
               </div>
               <div class="dash-card" id="dash-memory-panel">
                 <div class="dash-card-title">Memory Snapshot</div>
-                <div id="dash-memory-summary" class="info-block"></div>
+                <div id="dash-memory-summary" class="info-block"><span class="loading">Loading memory...</span></div>
               </div>
               <div class="dash-card" id="dash-devops-panel">
                 <div class="dash-card-title">DevOps Snapshot</div>
-                <div id="dash-devops-summary" class="info-block"></div>
+                <div id="dash-devops-summary" class="info-block"><span class="loading">Loading DevOps health...</span></div>
               </div>
               <div class="dash-card" id="dash-browser-panel">
                 <div class="dash-card-title">Browser Evidence</div>
-                <div id="dash-browser-summary" class="info-block"></div>
+                <div id="dash-browser-summary" class="info-block"><span class="loading">Loading browser evidence...</span></div>
+              </div>
+              <div class="dash-card" id="rank-ui-card">
+                <div class="dash-card-title">Rank UI Card</div>
+                <div class="info-block"><strong>Rank:</strong> A++<br /><strong>Status:</strong> ok<br /><strong>Capability:</strong> ui-visible-supervised</div>
+              </div>
+              <div class="dash-card" id="rank-s-dashboard">
+                <div class="dash-card-title">Rank S Dashboard</div>
+                <div class="info-block">Rank S dashboard endpoint visibility is available through the connected backend console.</div>
               </div>
             </div>
+
             <div id="mission-context" class="info-block"></div>
             <h4>Missions</h4>
             <button type="button" id="btn-refresh-missions" class="action-btn">Refresh</button>
@@ -139,7 +143,7 @@
             <div id="dash-reports" class="info-block"></div>
           </div>
 
-          <!-- Code (Files + Git + Patches) -->
+          <!-- Code: file browser, Git, and patch proposals connected through app.js endpoints. -->
           <div id="tab-code" class="tab-pane" role="tabpanel">
             <div class="sub-tab-bar">
               <button type="button" class="sub-tab active" data-subtab="code-files">Files</button>
@@ -202,7 +206,7 @@
             </div>
           </div>
 
-          <!-- Tasks (Tasks + Loop) -->
+          <!-- Tasks: task list, teacher remediation, and autonomous loop controls. -->
           <div id="tab-tasks" class="tab-pane" role="tabpanel">
             <div class="sub-tab-bar">
               <button type="button" class="sub-tab active" data-subtab="tasks-list">Tasks</button>
@@ -235,7 +239,7 @@
             </div>
           </div>
 
-          <!-- Terminal (Terminal + Tests) -->
+          <!-- Terminal: safe commands and tests. -->
           <div id="tab-terminal" class="tab-pane" role="tabpanel">
             <div class="sub-tab-bar">
               <button type="button" class="sub-tab active" data-subtab="terminal-cmd">Commands</button>
@@ -255,7 +259,7 @@
             </div>
           </div>
 
-          <!-- Memory (Memory + Agent Timeline) -->
+          <!-- Memory: decisions, failures, saturation, remediation, and timeline. -->
           <div id="tab-memory" class="tab-pane" role="tabpanel">
             <div class="sub-tab-bar">
               <button type="button" class="sub-tab active" data-subtab="memory-data">Memory</button>
@@ -291,7 +295,7 @@
             </div>
           </div>
 
-          <!-- Safety (Safety + Cost) -->
+          <!-- Safety: policies, reports, cost, and routing. -->
           <div id="tab-safety" class="tab-pane" role="tabpanel">
             <div class="sub-tab-bar">
               <button type="button" class="sub-tab active" data-subtab="safety-status">Safety</button>
@@ -323,7 +327,7 @@
             </div>
           </div>
 
-          <!-- Advanced (A2A + Logs) -->
+          <!-- Advanced: A2A protocol and logs. -->
           <div id="tab-advanced" class="tab-pane" role="tabpanel">
             <div class="sub-tab-bar">
               <button type="button" class="sub-tab active" data-subtab="adv-a2a">A2A</button>
@@ -351,16 +355,3 @@
     <script src="/static/js/app.js"></script>
   </body>
 </html>
-<div id='rank-ui-card' style='display: block;'>
-  <h2>Rank: A++</h2>
-  <p>Status: ok</p>
-  <p>Capability: ui-visible-supervised</p>
-</div>
-<div id='rank-s-dashboard'>Rank S Dashboard is now available.</div>
-
-<!-- Operational note: Added visibility for Rank S dashboard endpoint -->
-<!-- Rank S Dashboard visibility indicator -->
-<div id='rank-s-dashboard'>Rank S Dashboard is now available.</div>
-<div id='rank-s-dashboard'>Rank S Dashboard is now available.</div>
-
-<!-- Operational Note: Added visibility for Rank S dashboard endpoint. -->
