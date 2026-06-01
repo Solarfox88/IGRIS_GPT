@@ -32,6 +32,7 @@ import uuid
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
+from igris.core.llm_error_classifier import classify_llm_provider_error
 from igris.core.safety import redact_secrets
 from igris.models.config import CONFIG
 
@@ -378,6 +379,9 @@ class OrchestratorResult:
     estimated_cost: float = 0.0
     success: bool = False
     error: str = ""
+    error_category: str = ""
+    error_retryable: bool = False
+    error_severity: str = ""
     request_id: str = field(default_factory=lambda: f"req-{uuid.uuid4().hex[:8]}")
 
     def to_dict(self) -> Dict[str, Any]:
@@ -394,6 +398,9 @@ class OrchestratorResult:
             "estimated_cost": self.estimated_cost,
             "success": self.success,
             "error": self.error,
+            "error_category": self.error_category,
+            "error_retryable": self.error_retryable,
+            "error_severity": self.error_severity,
             "request_id": self.request_id,
         }
 
@@ -470,6 +477,9 @@ class ModelOrchestrator:
 
         t0 = time.monotonic()
         last_error = ""
+        last_category = "unknown"
+        last_retryable = False
+        last_severity = "medium"
 
         for i, provider_name in enumerate(chain):
             provider = self.providers.get(provider_name)
@@ -487,13 +497,10 @@ class ModelOrchestrator:
                 )
                 continue
 
-            # Retry loop with exponential backoff
+            # Retry loop guided by provider-agnostic error classifier.
             attempt_error = ""
+            attempt_classification = None
             for attempt in range(self._retry_max_attempts + 1):
-                if attempt > 0:
-                    delay = self._retry_base_delay * (2 ** (attempt - 1))
-                    time.sleep(delay)
-
                 try:
                     result = self._call_provider(
                         provider, messages, system_prompt,
@@ -512,12 +519,31 @@ class ModelOrchestrator:
                     return result
 
                 except Exception as e:
-                    attempt_error = str(e)
-                    continue
+                    attempt_classification = classify_llm_provider_error(
+                        exception=e,
+                        message=str(e),
+                    )
+                    attempt_error = attempt_classification.reason
+                    last_category = attempt_classification.category
+                    last_retryable = attempt_classification.retryable
+                    last_severity = attempt_classification.severity
+                    # Conservative retry policy from classification
+                    if not attempt_classification.retryable:
+                        break
+                    if attempt >= self._retry_max_attempts:
+                        break
+                    delay = max(
+                        self._retry_base_delay * (2 ** attempt),
+                        float(attempt_classification.backoff_seconds or 0.0),
+                    )
+                    time.sleep(delay)
 
             # All retries exhausted for this provider
             self._circuit_breaker.record_failure(provider_name, attempt_error)
             last_error = attempt_error
+            # Stop cross-provider fallback when classification disallows switch.
+            if attempt_classification and not attempt_classification.provider_switch_allowed:
+                break
 
         # All providers failed — deterministic fallback
         elapsed = int((time.monotonic() - t0) * 1000)
@@ -531,6 +557,9 @@ class ModelOrchestrator:
             latency_ms=elapsed,
             success=False,
             error="All providers unavailable",
+            error_category=last_category,
+            error_retryable=last_retryable,
+            error_severity=last_severity,
         )
         self._record_call(result, task_type)
         return result
@@ -772,6 +801,9 @@ class ModelOrchestrator:
             "output_tokens": result.output_tokens,
             "estimated_cost": result.estimated_cost,
             "fallback_used": result.fallback_used,
+            "error_category": result.error_category,
+            "error_retryable": result.error_retryable,
+            "error_severity": result.error_severity,
             "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         })
 
