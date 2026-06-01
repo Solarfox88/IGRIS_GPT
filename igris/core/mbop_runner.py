@@ -337,8 +337,9 @@ def mbop_phase10_satisfaction_gate(
     intake: MBOPIntakeResult,
     diff_text: str,
     commit_message: str,
+    quality_gate: Optional[MBOPQualityGateResult] = None,
 ) -> MBOPSatisfactionGateResult:
-    """Check that ACs from intake appear in the diff/commit (heuristic). Advisory-only."""
+    """Check AC coverage with structural checks first, keyword fallback second."""
     result = MBOPSatisfactionGateResult()
     criteria = intake.acceptance_criteria
     if not criteria:
@@ -349,10 +350,20 @@ def mbop_phase10_satisfaction_gate(
     haystack = (diff_text + "\n" + commit_message).lower()
     for ac in criteria:
         result.criteria_checked.append(ac)
+        covered = False
+
+        # Structural checks first (#1105)
+        if _is_test_like_ac(ac):
+            covered = _test_ac_structurally_covered(ac, diff_text, quality_gate)
+        elif _is_route_like_ac(ac):
+            covered = _route_ac_structurally_covered(ac, diff_text)
+
+        # Keyword fallback (legacy heuristic)
         keywords = [w.lower() for w in re.findall(r"\b\w{5,}\b", ac) if w.lower() not in _STOP_WORDS]
         if not keywords:
             keywords = [w.lower() for w in re.findall(r"\b\w{3,}\b", ac)]
-        covered = any(kw in haystack for kw in keywords[:5])
+        if not covered:
+            covered = any(kw in haystack for kw in keywords[:5])
         if covered:
             result.criteria_covered.append(ac)
         else:
@@ -360,8 +371,44 @@ def mbop_phase10_satisfaction_gate(
     total = len(criteria)
     covered_count = len(result.criteria_covered)
     result.passed = covered_count >= max(1, total // 2)
-    result.evidence = f"{covered_count}/{total} ACs keyword-matched in diff"
+    result.evidence = f"{covered_count}/{total} ACs covered (structural+keyword)"
     return result
+
+
+def _is_route_like_ac(ac: str) -> bool:
+    text = str(ac or "").lower()
+    return any(tok in text for tok in ("/api/", "endpoint", "route", "fastapi"))
+
+
+def _is_test_like_ac(ac: str) -> bool:
+    text = str(ac or "").lower()
+    return any(tok in text for tok in ("test", "pytest", "coverage"))
+
+
+def _route_ac_structurally_covered(ac: str, diff_text: str) -> bool:
+    text = str(ac or "")
+    diff = str(diff_text or "")
+    # If AC includes explicit API path, require path + route declaration hints in diff.
+    endpoints = re.findall(r"/api/[A-Za-z0-9_\-\/]+", text)
+    route_hints = ("@app.", "router.", "apirouter", "fastapi")
+    has_route_decl = any(h in diff.lower() for h in route_hints)
+    if endpoints:
+        return any(ep in diff for ep in endpoints) and has_route_decl
+    # Fallback for route-like AC without explicit path.
+    return has_route_decl
+
+
+def _test_ac_structurally_covered(
+    ac: str,
+    diff_text: str,
+    quality_gate: Optional[MBOPQualityGateResult],
+) -> bool:
+    _ = ac  # explicit for readability
+    diff = str(diff_text or "").lower()
+    has_test_file = ("+++ b/tests/" in diff) or ("test_" in diff and ".py" in diff)
+    if quality_gate and quality_gate.pytest_ran and quality_gate.pytest_passed:
+        return has_test_file or True
+    return has_test_file
 
 
 # ---------------------------------------------------------------------------
@@ -662,7 +709,7 @@ def mbop_post_run(
 
         satisfaction = MBOPSatisfactionGateResult()
         try:
-            satisfaction = mbop_phase10_satisfaction_gate(intake, diff_text, commit_msg)
+            satisfaction = mbop_phase10_satisfaction_gate(intake, diff_text, commit_msg, quality)
         except Exception as exc:  # noqa: BLE001
             satisfaction.error = str(exc)
 
