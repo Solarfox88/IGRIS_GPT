@@ -351,18 +351,23 @@ def mbop_phase10_satisfaction_gate(
     for ac in criteria:
         result.criteria_checked.append(ac)
         covered = False
+        structurally_classified = False
 
         # Structural checks first (#1105)
         if _is_test_like_ac(ac):
+            structurally_classified = True
             covered = _test_ac_structurally_covered(ac, diff_text, quality_gate)
         elif _is_route_like_ac(ac):
+            structurally_classified = True
             covered = _route_ac_structurally_covered(ac, diff_text)
 
-        # Keyword fallback (legacy heuristic)
-        keywords = [w.lower() for w in re.findall(r"\b\w{5,}\b", ac) if w.lower() not in _STOP_WORDS]
-        if not keywords:
-            keywords = [w.lower() for w in re.findall(r"\b\w{3,}\b", ac)]
-        if not covered:
+        # Keyword fallback (legacy heuristic) — only for ACs that are NOT
+        # structurally classified. Prevents false positives where keyword
+        # match overrides a negative structural check (#1105 fix).
+        if not covered and not structurally_classified:
+            keywords = [w.lower() for w in re.findall(r"\b\w{5,}\b", ac) if w.lower() not in _STOP_WORDS]
+            if not keywords:
+                keywords = [w.lower() for w in re.findall(r"\b\w{3,}\b", ac)]
             covered = any(kw in haystack for kw in keywords[:5])
         if covered:
             result.criteria_covered.append(ac)
@@ -403,11 +408,20 @@ def _test_ac_structurally_covered(
     diff_text: str,
     quality_gate: Optional[MBOPQualityGateResult],
 ) -> bool:
-    _ = ac  # explicit for readability
+    """Check if a test-like AC is structurally covered.
+
+    Requires evidence of a relevant test file in the diff.
+    pytest green alone is NOT sufficient — there must be a test file
+    added or modified (prevents false positives where pytest passes
+    but no test was actually written for this AC).
+    """
     diff = str(diff_text or "").lower()
     has_test_file = ("+++ b/tests/" in diff) or ("test_" in diff and ".py" in diff)
+
+    # pytest green + test file present = strong structural evidence
     if quality_gate and quality_gate.pytest_ran and quality_gate.pytest_passed:
-        return has_test_file or True
+        return has_test_file
+    # pytest not run or failed: still allow if test file is in the diff
     return has_test_file
 
 
