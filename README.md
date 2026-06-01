@@ -63,6 +63,36 @@ Open: **http://localhost:7778**
 
 ---
 
+## Docker (Optional, Self-Hosted Baseline)
+
+Docker is optional and does not replace the local runtime flow.
+
+```bash
+docker build -t igris-gpt:dev .
+docker run --rm -p 7778:7778 \
+  -e IGRIS_HOST=0.0.0.0 \
+  -e IGRIS_PORT=7778 \
+  -e PROJECT_ROOT=/workspace \
+  -e WORKSPACE_ROOT=/workspace \
+  -v "$(pwd)":/workspace \
+  -v igris_data:/app/.igris \
+  igris-gpt:dev
+```
+
+Or with compose:
+
+```bash
+cp .env.docker.example .env.docker
+docker compose --env-file .env.docker up --build
+```
+
+Notes:
+- No secrets are baked into the image.
+- `.env` and secret-like files are excluded by `.dockerignore`.
+- Default compose setup is dev/self-host friendly and keeps runtime data in `igris_data`.
+
+---
+
 ## Configuration
 
 Copy `.env.example` to `.env` and edit:
