@@ -2743,6 +2743,77 @@ class SelfRepairSupervisor:
             return 0.0
 
     @staticmethod
+    def _collect_repair_diagnostics(
+        run: "SupervisorRun",
+        failure: str,
+        cycle: int,
+    ) -> Dict[str, Any]:
+        """Collect diagnostics from prior attempts in the CURRENT run (#1103).
+
+        Returns a dict of context keys that get merged into ``repair_context``
+        so the repair reasoning worker knows:
+        * why the previous attempt failed (stop_reason, failure_class, detail)
+        * what tests failed (pytest output snippet)
+        * how many repair cycles have been used
+        * prior repair strategy decisions (for strategy awareness)
+        """
+        diag: Dict[str, Any] = {}
+
+        # --- Repair cycle summary (always present) ---
+        diag["repair_cycles_used"] = int(getattr(run, "repair_cycles_used", 0) or 0)
+        diag["same_failure_count"] = int(getattr(run, "same_failure_count", 0) or 0)
+
+        events = getattr(run, "events", [])
+        if not events:
+            return diag
+
+        # --- Previous reasoning stop reason ---
+        for ev in reversed(events):
+            phase = getattr(ev, "phase", "")
+            if phase in ("rank_reasoning", "repair_reasoning"):
+                detail = getattr(ev, "detail", "") or ""
+                ev_data = ev.data if hasattr(ev, "data") else (ev if isinstance(ev, dict) else {})
+                stop = ev_data.get("stop_reason", "")
+                if stop or detail:
+                    diag["previous_stop_reason"] = str(stop)[:200] if stop else ""
+                    diag["previous_reasoning_summary"] = str(detail)[:300]
+                    break
+
+        # --- Previous pytest failures ---
+        for ev in reversed(events):
+            phase = getattr(ev, "phase", "")
+            status = getattr(ev, "status", "")
+            if phase in ("full_pytest", "targeted_tests", "baseline_tests") and status == "failure":
+                detail = getattr(ev, "detail", "") or ""
+                diag["previous_pytest_failure"] = str(detail)[:500]
+                break
+
+        # --- Files modified in prior attempts ---
+        modified_files: list = []
+        for ev in reversed(events):
+            ev_data = ev.data if hasattr(ev, "data") else (ev if isinstance(ev, dict) else {})
+            fm = ev_data.get("files_modified")
+            if fm:
+                modified_files = list(fm)[:10]
+                break
+        if modified_files:
+            diag["previous_files_modified"] = modified_files
+
+        # --- Previous repair strategy (for strategy awareness) ---
+        for ev in reversed(events):
+            phase = getattr(ev, "phase", "")
+            if phase == "repair_strategy_decision":
+                ev_data = ev.data if hasattr(ev, "data") else (ev if isinstance(ev, dict) else {})
+                diag["previous_repair_strategy"] = {
+                    "task_type": ev_data.get("task_type", ""),
+                    "profile": ev_data.get("profile", ""),
+                    "notes": str(ev_data.get("notes", ""))[:200],
+                }
+                break
+
+        return diag
+
+    @staticmethod
     def _strategy_for_repair(
         run: SupervisorRun,
         has_execution_plan: bool,
@@ -5653,6 +5724,14 @@ class SelfRepairSupervisor:
             "api_helper_advice": helper_advice or {},
             "api_helper_advisory_only": True,
         })
+
+        # --- #1103 — MBOP post-run feedback for repair cycles ---
+        # Inject diagnostics from the CURRENT run's prior attempts so the
+        # repair reasoning knows exactly why the previous attempt failed
+        # and which acceptance criteria are still missing.
+        repair_context.update(
+            self._collect_repair_diagnostics(run, failure, cycle)
+        )
         if failure == "wrong_file_edit" and _wrong_paths:
             repair_context["constraint_wrong_file_history"] = {
                 "previous_wrong_paths": _wrong_paths,

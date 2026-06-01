@@ -476,11 +476,34 @@ class ContextManager:
                     "→ Use this result. Do NOT repeat the same action."
                 )
 
+        # --- Repair diagnostics (#1103) ---
+        prev_stop = str(world_state.get("previous_stop_reason", "") or "").strip()
+        prev_summary = str(world_state.get("previous_reasoning_summary", "") or "").strip()
+        prev_pytest = str(world_state.get("previous_pytest_failure", "") or "").strip()
+        if prev_stop or prev_summary or prev_pytest:
+            repair_parts: List[str] = []
+            if prev_stop:
+                repair_parts.append(f"  STOP REASON: {prev_stop[:200]}")
+            if prev_summary:
+                repair_parts.append(f"  SUMMARY: {prev_summary[:300]}")
+            if prev_pytest:
+                repair_parts.append(f"  PYTEST FAILURE: {prev_pytest[:400]}")
+            prev_files = world_state.get("previous_files_modified")
+            if prev_files and isinstance(prev_files, list):
+                repair_parts.append(f"  FILES MODIFIED: {', '.join(str(f) for f in prev_files[:10])}")
+            sections.append(
+                "## PREVIOUS ATTEMPT DIAGNOSTICS\n" + "\n".join(repair_parts)
+                + "\n→ Address the issues above. Do NOT repeat the same approach."
+            )
+
         # --- Condensed remaining state (skip MBOP and directive keys already shown) ---
         _skip_keys = {
             "discovered_files", "search_matched_files", "last_tool_result",
             "anti_repeat_triggered", "anti_repeat_diagnosis", "anti_repeat_retryable",
             "mbop_what", "mbop_where", "mbop_why", "mbop_acceptance_criteria",
+            "previous_stop_reason", "previous_reasoning_summary",
+            "previous_pytest_failure", "previous_files_modified",
+            "previous_repair_strategy",
         }
         # Also skip tool_result_history when at budget risk (keep max 2 recent)
         _tool_history = world_state.get("tool_result_history")
