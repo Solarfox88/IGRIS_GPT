@@ -2,15 +2,13 @@
 GitHub Write Gateway API Routes
 Endpoints for gated GitHub write operations: comment, label, issue management, PR merge, actions trigger.
 """
-from fastapi import APIRouter, HTTPException, Depends
+import os
+from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 from typing import Optional, List, Dict, Any
 import logging
 
 from igris.core.github_write_gateway import GitHubWriteGateway, GitHubWriteResult
-from igris.core.authorization_gate import AuthorizationGate
-from igris.core.judgment_layer import JudgmentLayer
-
 router = APIRouter(prefix="/api/github/write", tags=["github-write"])
 
 logger = logging.getLogger(__name__)
@@ -121,15 +119,14 @@ def _make_url(repo: str, resource: str, number: int) -> str:
 
 
 def _get_gateway(dry_run: bool = True) -> GitHubWriteGateway:
-    auth_gate = AuthorizationGate()
-    judgment = JudgmentLayer()
-    return GitHubWriteGateway(auth_gate=auth_gate, judgment_layer=judgment, dry_run=dry_run)
+    project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    return GitHubWriteGateway(project_root=project_root, dry_run=dry_run, repo_path=project_root)
 
 
 def _result_to_response(result: GitHubWriteResult) -> dict:
     advisory = None
-    if result.judgment and hasattr(result.judgment, "risk_level"):
-        advisory = f"risk={result.judgment.risk_level}"
+    if result.advisory:
+        advisory = result.advisory.message
     return {
         "status": "ok" if result.success else "error",
         "message": result.output or result.error or "",
