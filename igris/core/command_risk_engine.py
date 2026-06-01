@@ -21,6 +21,7 @@ import re
 import time
 import uuid
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 from igris.core.safety import redact_secrets
@@ -349,6 +350,7 @@ class SafetyEvent:
     decision: str = "blocked"  # allowed | blocked | needs_approval
     reason: str = ""
     review_result: Optional[Dict[str, Any]] = None
+    decision_explanation: Dict[str, Any] = field(default_factory=dict)
     mission_id: str = ""
     trace_id: str = ""
 
@@ -364,6 +366,7 @@ class SafetyEvent:
             "decision": self.decision,
             "reason": redact_secrets(self.reason),
             "review_result": self.review_result,
+            "decision_explanation": self.decision_explanation,
             "mission_id": self.mission_id,
             "trace_id": self.trace_id,
         }
@@ -489,6 +492,175 @@ class CommandRiskEngine:
         # Returning a non-None string means "block with this reason"
         self._prechecks: List[Any] = []
         self._postchecks: List[Any] = []
+
+    @staticmethod
+    def _normalize_host_context(host_context: Any) -> Dict[str, Any]:
+        """Normalize host metadata from dict-like or object-like inputs."""
+        if not host_context:
+            return {}
+        if isinstance(host_context, dict):
+            raw = dict(host_context)
+        else:
+            raw = {
+                key: getattr(host_context, key, None)
+                for key in (
+                    "hostname",
+                    "alias",
+                    "policy",
+                    "allowed_paths",
+                    "allowed_services",
+                    "requires_backup",
+                    "approval_mode",
+                    "authorized_hosts",
+                    "structured_tool_available",
+                )
+            }
+
+        allowed_paths = [
+            str(path).strip()
+            for path in (raw.get("allowed_paths") or [])
+            if str(path).strip()
+        ]
+        allowed_services = [
+            str(service).strip().lower()
+            for service in (raw.get("allowed_services") or [])
+            if str(service).strip()
+        ]
+        authorized_hosts = [
+            str(host).strip()
+            for host in (raw.get("authorized_hosts") or [])
+            if str(host).strip()
+        ]
+
+        return {
+            "hostname": str(raw.get("hostname") or raw.get("host") or "").strip(),
+            "alias": str(raw.get("alias") or "").strip(),
+            "policy": str(raw.get("policy") or "safe").strip().lower() or "safe",
+            "allowed_paths": allowed_paths,
+            "allowed_services": allowed_services,
+            "requires_backup": bool(raw.get("requires_backup", True)),
+            "approval_mode": str(raw.get("approval_mode") or "").strip().lower(),
+            "authorized_hosts": authorized_hosts,
+            "structured_tool_available": bool(raw.get("structured_tool_available", False)),
+        }
+
+    @staticmethod
+    def _extract_host_service(parsed: ParsedCommand) -> str:
+        """Best-effort service name for host policy checks."""
+        if parsed.has_systemctl:
+            skip = {
+                "restart",
+                "start",
+                "stop",
+                "status",
+                "reload",
+                "enable",
+                "disable",
+                "is-active",
+                "daemon-reload",
+                "--user",
+                "--now",
+                "-q",
+                "--no-pager",
+            }
+            for arg in parsed.args:
+                if arg.startswith("-") or arg in skip:
+                    continue
+                return arg
+        if parsed.has_nginx:
+            return "nginx"
+        if parsed.has_docker:
+            return "docker"
+        return ""
+
+    @staticmethod
+    def _extract_absolute_paths(command: str) -> List[str]:
+        """Return absolute paths mentioned in a shell command string."""
+        paths = []
+        for match in re.finditer(r"(?<![\w.-])/(?:[^\s'\"|&;<>`$]+)", command):
+            path = match.group(0).rstrip(").,")
+            if path:
+                paths.append(path)
+        return paths
+
+    @staticmethod
+    def _path_allowed(target: str, allowed_paths: List[str]) -> bool:
+        """Return True if target is under one of the allowed paths."""
+        target_path = Path(target)
+        for allowed in allowed_paths:
+            try:
+                allowed_path = Path(allowed)
+                if str(target_path).startswith(str(allowed_path)):
+                    return True
+            except Exception:
+                continue
+        return False
+
+    def _host_policy_reason(
+        self,
+        command: str,
+        parsed: ParsedCommand,
+        host_context: Dict[str, Any],
+    ) -> Optional[str]:
+        """Return a host-policy block reason, or None if allowed."""
+        if not host_context:
+            return None
+
+        hostname = host_context.get("hostname") or "unknown-host"
+        policy = host_context.get("policy") or "safe"
+        allowed_paths = host_context.get("allowed_paths") or []
+        allowed_services = host_context.get("allowed_services") or []
+
+        if parsed.has_systemctl or parsed.has_nginx or parsed.has_docker:
+            service = self._extract_host_service(parsed)
+            if allowed_services and service and service not in allowed_services:
+                return (
+                    f"host policy blocks service {service!r} on {hostname!r} "
+                    f"(allowed: {allowed_services})"
+                )
+
+        if allowed_paths:
+            for abs_path in self._extract_absolute_paths(command):
+                if not self._path_allowed(abs_path, allowed_paths):
+                    return (
+                        f"host policy blocks path {abs_path!r} on {hostname!r} "
+                        f"(allowed paths: {allowed_paths})"
+                    )
+
+        if policy == "production" and parsed.has_systemctl:
+            return f"host policy blocks systemctl command on production host {hostname!r}"
+
+        return None
+
+    def _build_decision_explanation(
+        self,
+        event: SafetyEvent,
+        review: RiskReviewResult,
+        host_context: Optional[Any] = None,
+        contextual_reasons: Optional[List[str]] = None,
+        rollback_plan: Optional[RollbackPlan] = None,
+    ) -> Dict[str, Any]:
+        """Build the structured decision explanation for audit/reporting."""
+        host = self._normalize_host_context(host_context)
+        explanation = {
+            "decision": event.decision,
+            "final_risk": event.final_risk,
+            "deterministic_risk": event.deterministic_risk,
+            "llm_review_used": bool(event.llm_risk),
+            "deterministic_reasons": [event.reason] if event.reason else [],
+            "contextual_reasons": contextual_reasons or [],
+            "required_prechecks": list(review.recommended_prechecks or []),
+            "required_postchecks": list(review.recommended_postchecks or []),
+            "rollback_plan": rollback_plan.to_dict() if rollback_plan else None,
+            "safer_alternative": review.safer_alternative,
+            "structured_tool_available": host.get("structured_tool_available", False),
+            "host_context": {
+                k: host.get(k)
+                for k in ("hostname", "policy", "allowed_paths", "allowed_services")
+                if host.get(k)
+            },
+        }
+        return explanation
 
     def register_precheck(self, fn: Any) -> None:
         """Register a precheck hook called before command evaluation.
@@ -657,6 +829,7 @@ class CommandRiskEngine:
         mission_id: str = "",
         trace_id: str = "",
         cwd: Optional[str] = None,
+        host_context: Optional[Any] = None,
     ) -> Tuple[SafetyEvent, RiskReviewResult]:
         """Evaluate a raw shell command through the full risk pipeline.
 
@@ -672,6 +845,7 @@ class CommandRiskEngine:
             mission_id=mission_id,
             trace_id=trace_id,
         )
+        host = self._normalize_host_context(host_context)
 
         # Epic #1072 — run precheck hooks before any evaluation
         precheck_block = self._run_prechecks(command, event)
@@ -680,6 +854,10 @@ class CommandRiskEngine:
             event.reason = f"precheck: {precheck_block}"
             event.final_risk = "high"
             event.deterministic_risk = "high"
+            event.decision_explanation = self._build_decision_explanation(
+                event, RiskReviewResult(), host_context=host,
+                contextual_reasons=[f"precheck:{precheck_block}"],
+            )
             self._event_log.append(event)
             return event, RiskReviewResult()
 
@@ -692,6 +870,10 @@ class CommandRiskEngine:
             event.final_risk = det_risk
             event.decision = "dry_run"
             event.reason = f"dry_run mode: would classify as {det_risk}"
+            event.decision_explanation = self._build_decision_explanation(
+                event, RiskReviewResult(), host_context=host,
+                contextual_reasons=["dry_run mode"],
+            )
             self._event_log.append(event)
             return event, RiskReviewResult()
 
@@ -713,6 +895,10 @@ class CommandRiskEngine:
                 event.decision = "blocked"
                 event.deterministic_risk = "high"
                 event.final_risk = "high"
+                event.decision_explanation = self._build_decision_explanation(
+                    event, RiskReviewResult(), host_context=host,
+                    contextual_reasons=[f"cwd:{_cwd_resolved}"],
+                )
                 self._event_log.append(event)
                 return event, RiskReviewResult()
             if not _in_project:
@@ -727,6 +913,21 @@ class CommandRiskEngine:
         det_risk = classify_command_risk(parsed)
         event.deterministic_risk = det_risk
 
+        host_block = self._host_policy_reason(command, parsed, host)
+        if host_block:
+            event.decision = "blocked"
+            event.reason = f"host policy: {host_block}"
+            event.deterministic_risk = "high"
+            event.final_risk = "high"
+            event.decision_explanation = self._build_decision_explanation(
+                event,
+                RiskReviewResult(),
+                host_context=host,
+                contextual_reasons=[host_block],
+            )
+            self._event_log.append(event)
+            return event, RiskReviewResult()
+
         # Epic #1072 — Destructive pre-check: escalate in production
         if self.is_destructive(command):
             if self.environment == "production":
@@ -737,6 +938,10 @@ class CommandRiskEngine:
                 )
                 event.decision = "blocked"
                 event.final_risk = "critical"
+                event.decision_explanation = self._build_decision_explanation(
+                    event, RiskReviewResult(), host_context=host,
+                    contextual_reasons=["production destructive block"],
+                )
                 self._event_log.append(event)
                 return event, RiskReviewResult()
             elif self.environment == "staging" and det_risk not in ("high", "critical"):
@@ -760,6 +965,14 @@ class CommandRiskEngine:
                 f"Blocked in production environment (risk={event.final_risk}): "
                 + (", ".join(review.reasons) or "policy")
             )
+            rollback_plan = self.build_rollback_plan(command, event) if event.final_risk in ("high", "critical") else None
+            event.decision_explanation = self._build_decision_explanation(
+                event,
+                review,
+                host_context=host,
+                contextual_reasons=["production risk block"],
+                rollback_plan=rollback_plan,
+            )
             self._event_log.append(event)
             return event, review
 
@@ -775,6 +988,14 @@ class CommandRiskEngine:
             if postcheck_block:
                 event.decision = "blocked"
                 event.reason = f"postcheck: {postcheck_block}"
+        rollback_plan = self.build_rollback_plan(command, event) if event.final_risk in ("high", "critical") else None
+        event.decision_explanation = self._build_decision_explanation(
+            event,
+            review,
+            host_context=host,
+            contextual_reasons=[reason for reason in [event.reason] if reason],
+            rollback_plan=rollback_plan,
+        )
 
         # 6. Log event
         self._event_log.append(event)
@@ -787,6 +1008,7 @@ class CommandRiskEngine:
         parameters: Dict[str, str],
         mission_id: str = "",
         trace_id: str = "",
+        host_context: Optional[Any] = None,
     ) -> Tuple[SafetyEvent, RiskReviewResult]:
         """Evaluate a parametrized shell template.
 
@@ -819,6 +1041,7 @@ class CommandRiskEngine:
             context=f"Template: {template_id}",
             mission_id=mission_id,
             trace_id=trace_id,
+            host_context=host_context,
         )
         # Templates get a risk reduction (one level down from raw)
         if event.final_risk == "high":
