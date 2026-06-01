@@ -22,6 +22,8 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+from igris.core.browser_evidence import BrowserRunner, run_browser_smoke_with_fallback
+
 
 # ---------------------------------------------------------------------------
 # Command Runner abstraction — PR 3
@@ -851,7 +853,7 @@ class DevOpsManager:
             ssl_probe["available"] = True
             ssl_probe["target"] = health_url
         browser_url = health_url or "http://localhost:7778/api/ping"
-        browser = self.run_smoke_test(url=browser_url)
+        browser = self.run_browser_smoke(url=browser_url)
 
         return {
             "target_host": target,
@@ -915,3 +917,20 @@ class DevOpsManager:
                 error=str(exc)[:200],
             )
         return result
+
+    def run_browser_smoke(
+        self,
+        *,
+        url: str = "",
+        selector: str = "body",
+        runner: Optional[BrowserRunner] = None,
+    ) -> Dict[str, Any]:
+        """Browser/UI smoke with optional Playwright and graceful degradation."""
+        target = url.strip() or "http://localhost:7778/"
+        result = run_browser_smoke_with_fallback(
+            url=target,
+            selector=selector,
+            artifact_dir=str(self.project_root / ".igris" / "browser"),
+            runner=runner,
+        )
+        return result.to_dict()
