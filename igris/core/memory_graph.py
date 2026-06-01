@@ -741,6 +741,8 @@ CREATE INDEX IF NOT EXISTS idx_edges_dst  ON memory_edges(dst_node);
             "command_recipe": None,
             "health": {},
             "consistency": {},
+            "pipeline": {},
+            "reindex": {},
             "memory_influence": "",
             "total_items": 0,
         }
@@ -775,6 +777,24 @@ CREATE INDEX IF NOT EXISTS idx_edges_dst  ON memory_edges(dst_node);
             except Exception as exc:
                 packet["consistency"] = {"overall_health": "unknown", "error": str(exc)[:100]}
 
+        try:
+            packet["pipeline"] = self.build_memory_tree_pipeline_report(goal)
+        except Exception as exc:
+            packet["pipeline"] = {
+                "degraded": True,
+                "reason": f"pipeline_report_error: {str(exc)[:120]}",
+                "stages": [],
+            }
+
+        try:
+            packet["reindex"] = self.get_memory_reindex_report()
+        except Exception as exc:
+            packet["reindex"] = {
+                "safe": False,
+                "degraded": True,
+                "reason": f"reindex_report_error: {str(exc)[:120]}",
+            }
+
         total = len(packet["lessons"]) + len(packet["project_facts"])
         if packet["command_recipe"]:
             total += 1
@@ -791,6 +811,150 @@ CREATE INDEX IF NOT EXISTS idx_edges_dst  ON memory_edges(dst_node);
         health_status = packet.get("consistency", {}).get("overall_health", "unknown")
         if health_status != "healthy":
             influence_parts.append(f"memory health: {health_status}")
+        pipeline_status = packet.get("pipeline", {}).get("status", "")
+        if pipeline_status and pipeline_status != "healthy" and influence_parts:
+            influence_parts.append(f"memory pipeline: {pipeline_status}")
         packet["memory_influence"] = "; ".join(influence_parts) if influence_parts else "no memory context"
 
         return packet
+
+    def build_memory_tree_pipeline_report(
+        self,
+        goal: str,
+        *,
+        top_k: int = 5,
+        lesson_limit: int = 5,
+        fact_limit: int = 3,
+    ) -> Dict[str, Any]:
+        """Return an explicit hierarchical memory pipeline report.
+
+        The report is read-only and safe: if topic/global digests are unavailable,
+        it degrades rather than mutating memory state.
+        """
+        from igris.core.memory_content_store import ContentStore
+        from igris.core.memory_global_digest import GlobalDigest
+        from igris.core.memory_retrieval import MemoryRetrieval
+        from igris.core.memory_scorer import MemoryScorer
+        from igris.core.memory_topic_tree import TopicTree
+
+        store = ContentStore(str(self.project_root))
+        topic_db = str(self.project_root / ".igris" / "memory" / "topics.db")
+        scores_db = str(self.project_root / ".igris" / "memory" / "scores.db")
+        topic_tree = TopicTree(topic_db, top_k=max(3, top_k), rebuild_every_n=1000)
+        scorer = MemoryScorer(scores_db)
+        retriever = MemoryRetrieval(store, topic_tree, scorer, self)
+        digest = GlobalDigest(str(self.project_root))
+
+        all_chunks = store.read_all()
+        if all_chunks:
+            topic_tree.update(all_chunks)
+
+        source_lessons = self.get_lessons_for_goal(goal, limit=lesson_limit)
+        project_facts = self.query_by_intent(goal, node_type="project_fact", limit=fact_limit)
+        topic_hits = topic_tree.search_topics(goal, limit=top_k)
+        global_today = digest.get_today(store)
+        retrieved = retriever.search(goal, top_k=top_k)
+
+        penalty_tags: Dict[str, int] = {"stale": 0, "contradiction": 0}
+        for item in retrieved:
+            node = self.get_node(str(item.get("chunk_id", "")))
+            tags = list((node or {}).get("tags") or [])
+            if "stale" in tags:
+                penalty_tags["stale"] += 1
+            if "contradicted" in tags:
+                penalty_tags["contradiction"] += 1
+            if item.get("source") == "memory_graph":
+                payload = item.get("content", "")
+                if "stale" in str(payload).lower():
+                    penalty_tags["stale"] += 1
+
+        degraded_reasons: List[str] = []
+        if not source_lessons and not project_facts:
+            degraded_reasons.append("no_source_event_matches")
+        if not topic_hits:
+            degraded_reasons.append("topic_digest_missing")
+        if not global_today:
+            degraded_reasons.append("global_digest_missing")
+        if not retrieved:
+            degraded_reasons.append("retrieval_empty")
+        if penalty_tags["stale"]:
+            degraded_reasons.append("stale_penalty_applied")
+        if penalty_tags["contradiction"]:
+            degraded_reasons.append("contradiction_penalty_applied")
+
+        status = "healthy" if not degraded_reasons else "degraded"
+        return {
+            "status": status,
+            "degraded": bool(degraded_reasons),
+            "reasons": degraded_reasons,
+            "stages": [
+                {
+                    "name": "source_event",
+                    "status": "ok" if (source_lessons or project_facts) else "degraded",
+                    "evidence": {
+                        "lessons": len(source_lessons),
+                        "project_facts": len(project_facts),
+                    },
+                },
+                {
+                    "name": "topic_digest",
+                    "status": "ok" if topic_hits else "degraded",
+                    "topics": [t.get("topic", "") for t in topic_hits[:top_k]],
+                    "summaries": [t.get("summary", "") for t in topic_hits[:top_k]],
+                },
+                {
+                    "name": "global_digest",
+                    "status": "ok" if global_today else "degraded",
+                    "day": (global_today or {}).get("day", ""),
+                    "issues_worked": len((global_today or {}).get("issues_worked", [])),
+                },
+                {
+                    "name": "retrieval_multilevel",
+                    "status": "ok" if retrieved else "degraded",
+                    "sources": [r.get("source", "") for r in retrieved[:top_k]],
+                    "count": len(retrieved),
+                },
+                {
+                    "name": "context_flow",
+                    "status": "ok" if status == "healthy" else "degraded",
+                    "memory_influence": "; ".join(
+                        part for part in [
+                            f"{len(source_lessons)} lesson(s)" if source_lessons else "",
+                            f"{len(project_facts)} project fact(s)" if project_facts else "",
+                            f"{len(topic_hits)} topic hit(s)" if topic_hits else "",
+                            f"{len(retrieved)} retrieval hit(s)" if retrieved else "",
+                        ] if part
+                    ) or "no memory context",
+                },
+            ],
+            "penalties": {
+                "stale": penalty_tags["stale"],
+                "contradiction": penalty_tags["contradiction"],
+            },
+            "retrieved": retrieved,
+            "topic_hits": topic_hits,
+            "global_digest": global_today,
+        }
+
+    def get_memory_reindex_report(self) -> Dict[str, Any]:
+        """Return a safe, read-only migration/reindex status report."""
+        done = self.conn.execute(
+            "SELECT 1 FROM memory_nodes WHERE node_type='environment_fact' AND content LIKE '%\"migration_done\"%' LIMIT 1"
+        ).fetchone()
+        root = self.project_root / ".igris" / "memory"
+        legacy_sources = {
+            "decisions": (root / "decisions.json").exists(),
+            "failures": (root / "failures.json").exists(),
+            "smw_knowledge_base": (self.project_root / ".igris" / "smw_knowledge_base.json").exists(),
+            "assignment_outcomes": (root / "assignment_outcomes.json").exists(),
+        }
+        legacy_present = any(legacy_sources.values())
+        return {
+            "safe": True,
+            "status": "done" if done else "pending",
+            "already_migrated": bool(done),
+            "legacy_sources_present": legacy_sources,
+            "legacy_sources_found": legacy_present,
+            "recommended_action": "noop" if done or not legacy_present else "migrate_legacy",
+            "degraded": False,
+        }
