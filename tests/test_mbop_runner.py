@@ -238,6 +238,34 @@ class TestMbopPhase10SatisfactionGate:
         # 1/2 = 50% → passes
         assert result.passed
 
+    def test_structural_route_detection(self):
+        intake = self._make_intake(["GET /api/ping endpoint implemented in FastAPI route"])
+        diff = (
+            "+++ b/igris/web/routes.py\n"
+            "+@router.get('/api/ping')\n"
+            "+def ping():\n"
+            "+    return {'ok': True}\n"
+        )
+        result = mbop_phase10_satisfaction_gate(intake, diff, "")
+        assert result.passed
+        assert intake.acceptance_criteria[0] in result.criteria_covered
+
+    def test_structural_test_detection_via_diff(self):
+        intake = self._make_intake(["add test coverage for ping endpoint"])
+        diff = (
+            "+++ b/tests/test_ping.py\n"
+            "+def test_ping_ok(client):\n"
+            "+    assert client.get('/api/ping').status_code == 200\n"
+        )
+        result = mbop_phase10_satisfaction_gate(intake, diff, "")
+        assert result.passed
+
+    def test_structural_test_detection_via_quality_gate(self):
+        intake = self._make_intake(["pytest coverage updated for endpoint"])
+        qg = MBOPQualityGateResult(passed=True, pytest_ran=True, pytest_passed=True)
+        result = mbop_phase10_satisfaction_gate(intake, "small diff", "", qg)
+        assert result.passed
+
 
 # ---------------------------------------------------------------------------
 # Phase 11 — Post-Task Eval
