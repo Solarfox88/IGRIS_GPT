@@ -200,6 +200,8 @@ class HostConfig:
     health_url: str = ""           # URL for post-deploy health check
     ssh_user: str = ""
     ssh_port: int = 22
+    environment: str = "dev"      # local | dev | staging | production
+    allowed_domains: List[str] = field(default_factory=list)
 
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)
@@ -216,6 +218,8 @@ class HostConfig:
             health_url=data.get("health_url", ""),
             ssh_user=data.get("ssh_user", ""),
             ssh_port=int(data.get("ssh_port", 22) or 22),
+            environment=str(data.get("environment", "dev") or "dev"),
+            allowed_domains=data.get("allowed_domains", []),
         )
 
 
@@ -487,6 +491,7 @@ class DevOpsManager:
     VALID_STRATEGIES = frozenset({
         "git_pull_restart", "systemd_app", "docker_compose", "static_nginx", "dry_run",
     })
+    VALID_ENVIRONMENTS = frozenset({"local", "dev", "staging", "production"})
 
     def run_deploy(
         self,
@@ -524,15 +529,25 @@ class DevOpsManager:
 
         host_cfg = self._hosts.get(hostname) if hostname else None
         if host_cfg is not None:
+            env = str(host_cfg.environment or "dev").strip().lower()
+            if env not in self.VALID_ENVIRONMENTS:
+                report["deployed"] = False
+                report["abort_reason"] = f"invalid host environment: {host_cfg.environment!r}"
+                return report
             policy = check_action_allowed(host_cfg.policy, "deploy")
             report["policy"] = {
                 "hostname": host_cfg.hostname,
                 "allowed": policy["allowed"],
                 "reason": policy["reason"],
+                "environment": env,
             }
             if not policy["allowed"]:
                 report["deployed"] = False
                 report["abort_reason"] = policy["reason"]
+                return report
+            if health_url and not self._domain_allowed(host_cfg, health_url):
+                report["deployed"] = False
+                report["abort_reason"] = f"health_url domain is not allowed by host policy: {health_url}"
                 return report
         runner = self._effective_runner(host_cfg)
 
@@ -718,6 +733,7 @@ class DevOpsManager:
         pre_deploy_sha: str = "",
         service_name: str = "igris",
         compose_file: str = "docker-compose.yml",
+        dry_run: bool = False,
         runner: Optional[CommandRunner] = None,
         host_cfg: Optional[HostConfig] = None,
     ) -> Dict[str, Any]:
@@ -730,6 +746,7 @@ class DevOpsManager:
             "strategy": strategy,
             "pre_deploy_sha": pre_deploy_sha,
             "timestamp": time.time(),
+            "dry_run": dry_run,
         }
         cwd = str(self.project_root)
         effective_runner = runner or self._runner
@@ -738,6 +755,19 @@ class DevOpsManager:
         if not pre_deploy_sha:
             result["ok"] = False
             result["error"] = "no pre_deploy_sha provided; cannot rollback"
+            return result
+        if dry_run:
+            result["steps"] = {
+                "plan": {
+                    "ok": True,
+                    "commands": [
+                        f"git reset --hard {pre_deploy_sha}",
+                        f"strategy={strategy}",
+                        f"service={service_name}",
+                    ],
+                }
+            }
+            result["ok"] = True
             return result
 
         # Git reset to pre-deploy SHA
@@ -827,6 +857,72 @@ class DevOpsManager:
         if not allowed:
             return True
         return any(norm.startswith(prefix) for prefix in allowed)
+
+    @staticmethod
+    def _domain_allowed(host_cfg: HostConfig, url: str) -> bool:
+        from urllib.parse import urlparse
+
+        host = (urlparse(str(url or "")).hostname or "").strip().lower()
+        if not host:
+            return False
+        allowed = {str(d).strip().lower() for d in host_cfg.allowed_domains or [] if str(d).strip()}
+        if not allowed:
+            return True
+        return host in allowed
+
+    @staticmethod
+    def _redact_text(text: str) -> str:
+        lower = str(text or "").lower()
+        if any(tok in lower for tok in ("token", "secret", "password", "apikey", "api_key")):
+            return "[REDACTED]"
+        return str(text or "")[:400]
+
+    def run_diagnostics(
+        self,
+        *,
+        runner: Optional[CommandRunner] = None,
+        ssl_target: str = "",
+    ) -> Dict[str, Any]:
+        """Best-effort diagnostics for VPS/operator workflows."""
+        effective_runner = runner or self._runner
+
+        def _cmd(cmd: List[str], timeout: int = 8) -> Dict[str, Any]:
+            res = effective_runner.run(cmd, timeout=timeout)
+            return {
+                "ok": res.ok,
+                "returncode": res.returncode,
+                "stdout": self._redact_text(res.stdout),
+                "stderr": self._redact_text(res.stderr),
+            }
+
+        services = {
+            "igris": _cmd(["systemctl", "is-active", "igris"]),
+            "nginx": _cmd(["systemctl", "is-active", "nginx"]),
+            "docker": _cmd(["systemctl", "is-active", "docker"]),
+        }
+        report: Dict[str, Any] = {
+            "timestamp": time.time(),
+            "systemd": services,
+            "docker": _cmd(["docker", "ps", "--format", "{{.Names}}"]),
+            "nginx": _cmd(["nginx", "-t"]),
+            "ports": _cmd(["ss", "-tln"]),
+            "processes": _cmd(["ps", "-eo", "pid,comm,%cpu,%mem", "--sort=-%cpu"]),
+            "disk": _cmd(["df", "-h", str(self.project_root)]),
+            "logs": {
+                "igris": _cmd(["journalctl", "-u", "igris", "-n", "80", "--no-pager"], timeout=12),
+                "nginx": _cmd(["journalctl", "-u", "nginx", "-n", "80", "--no-pager"], timeout=12),
+            },
+        }
+        if ssl_target:
+            report["ssl"] = _cmd(["openssl", "s_client", "-connect", ssl_target, "-servername", ssl_target], timeout=12)
+        else:
+            report["ssl"] = {"ok": False, "reason": "no ssl_target provided"}
+        report["ok"] = all(
+            isinstance(v, dict) and v.get("ok", False)
+            for k, v in report.items()
+            if k in {"docker", "nginx", "ports", "processes", "disk"}
+        )
+        return report
 
     def _build_dry_run_evidence(
         self,
