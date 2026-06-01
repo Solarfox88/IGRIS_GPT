@@ -1,0 +1,23 @@
+services:
+  igris:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: igris-gpt:dev
+    container_name: igris-gpt
+    ports:
+      - "7778:7778"
+    environment:
+      IGRIS_HOST: "0.0.0.0"
+      IGRIS_PORT: "7778"
+      PROJECT_ROOT: "/workspace"
+      WORKSPACE_ROOT: "/workspace"
+      AUTO_COMMIT: "false"
+      AUTO_PUSH: "false"
+    volumes:
+      - igris_data:/app/.igris
+      - ./:/workspace:rw
+    restart: unless-stopped
+
+volumes:
+  igris_data:
