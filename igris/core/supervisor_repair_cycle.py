@@ -6,14 +6,44 @@ These helpers are intentionally narrow and deterministic.
 
 from __future__ import annotations
 
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Tuple
+
+
+def _event_fields(event: Any) -> Tuple[str, str, str, Dict[str, Any]]:
+    """Normalize event access across SupervisorEvent objects and dict payloads.
+
+    Repair diagnostics are assembled from a mix of in-memory event objects and
+    serialized event dicts loaded from persisted runs.  Normalizing the fields in
+    one place keeps the repair-cycle context stable across resume/cancel paths.
+    """
+
+    if isinstance(event, dict):
+        data = event.get("data") or {}
+        return (
+            str(event.get("phase", "") or ""),
+            str(event.get("status", "") or ""),
+            str(event.get("detail", "") or ""),
+            data if isinstance(data, dict) else {},
+        )
+
+    data = getattr(event, "data", {}) or {}
+    return (
+        str(getattr(event, "phase", "") or ""),
+        str(getattr(event, "status", "") or ""),
+        str(getattr(event, "detail", "") or ""),
+        data if isinstance(data, dict) else {},
+    )
 
 
 def _event_data(event: Any) -> Dict[str, Any]:
-    if hasattr(event, "data"):
-        return getattr(event, "data") or {}
     if isinstance(event, dict):
+        data = event.get("data")
+        if isinstance(data, dict):
+            return data
         return event
+    if hasattr(event, "data"):
+        data = getattr(event, "data") or {}
+        return data if isinstance(data, dict) else {}
     return {}
 
 
@@ -29,9 +59,8 @@ def collect_repair_diagnostics(run: Any) -> Dict[str, Any]:
         return diag
 
     for ev in reversed(events):
-        phase = getattr(ev, "phase", "")
+        phase, _, detail, _ = _event_fields(ev)
         if phase in ("rank_reasoning", "repair_reasoning"):
-            detail = getattr(ev, "detail", "") or ""
             stop = _event_data(ev).get("stop_reason", "")
             if stop or detail:
                 diag["previous_stop_reason"] = str(stop)[:200] if stop else ""
@@ -39,10 +68,9 @@ def collect_repair_diagnostics(run: Any) -> Dict[str, Any]:
                 break
 
     for ev in reversed(events):
-        phase = getattr(ev, "phase", "")
-        status = getattr(ev, "status", "")
+        phase, status, detail, _ = _event_fields(ev)
         if phase in ("full_pytest", "targeted_tests", "baseline_tests") and status == "failure":
-            diag["previous_pytest_failure"] = str(getattr(ev, "detail", "") or "")[:500]
+            diag["previous_pytest_failure"] = str(detail or "")[:500]
             break
 
     modified_files: List[str] = []
@@ -55,7 +83,8 @@ def collect_repair_diagnostics(run: Any) -> Dict[str, Any]:
         diag["previous_files_modified"] = modified_files
 
     for ev in reversed(events):
-        if getattr(ev, "phase", "") == "repair_strategy_decision":
+        phase, _, _, _ = _event_fields(ev)
+        if phase == "repair_strategy_decision":
             ev_data = _event_data(ev)
             diag["previous_repair_strategy"] = {
                 "task_type": ev_data.get("task_type", ""),
@@ -65,15 +94,17 @@ def collect_repair_diagnostics(run: Any) -> Dict[str, Any]:
             break
 
     for ev in reversed(events):
-        if getattr(ev, "phase", "") == "mbop_phase9_quality_gate":
+        phase, status, detail, _ = _event_fields(ev)
+        if phase == "mbop_phase9_quality_gate":
             ev_data = _event_data(ev)
-            diag["previous_quality_gate_status"] = str(getattr(ev, "status", ""))[:50]
-            diag["previous_quality_gate_reason"] = str(getattr(ev, "detail", ""))[:200]
+            diag["previous_quality_gate_status"] = str(status)[:50]
+            diag["previous_quality_gate_reason"] = str(detail)[:200]
             diag["previous_quality_gate_failed_checks"] = ev_data.get("stub_patterns", [])[:5]
             break
 
     for ev in reversed(events):
-        if getattr(ev, "phase", "") == "mbop_phase10_satisfaction_gate":
+        phase, _, _, _ = _event_fields(ev)
+        if phase == "mbop_phase10_satisfaction_gate":
             ev_data = _event_data(ev)
             missing = ev_data.get("criteria_missing", [])
             covered = ev_data.get("criteria_covered", [])
@@ -84,7 +115,8 @@ def collect_repair_diagnostics(run: Any) -> Dict[str, Any]:
             break
 
     for ev in reversed(events):
-        if getattr(ev, "phase", "") == "mbop_phase11_post_task_eval":
+        phase, _, _, _ = _event_fields(ev)
+        if phase == "mbop_phase11_post_task_eval":
             ev_data = _event_data(ev)
             lessons = ev_data.get("lessons", [])
             diag["mbop_lessons"] = [str(item)[:150] for item in lessons[:5]]
@@ -92,7 +124,8 @@ def collect_repair_diagnostics(run: Any) -> Dict[str, Any]:
             break
 
     for ev in reversed(events):
-        if getattr(ev, "phase", "") == "mbop_phase12_next_step":
+        phase, _, _, _ = _event_fields(ev)
+        if phase == "mbop_phase12_next_step":
             ev_data = _event_data(ev)
             suggestions = ev_data.get("suggestions", [])
             diag["mbop_next_step"] = [str(item)[:150] for item in suggestions[:3]]
