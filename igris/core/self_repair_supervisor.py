@@ -33,6 +33,10 @@ from igris.core.supervisor_lifecycle import (
     configure_run_tracking as _lifecycle_configure_run_tracking,
     transition_run_status as _lifecycle_transition_run_status,
 )
+from igris.core.supervisor_repair_cycle import (
+    collect_repair_diagnostics as _collect_repair_diagnostics_helper,
+    update_same_failure_tracking as _update_same_failure_tracking_helper,
+)
 
 # AssignmentRouter — lazy import to avoid circular deps at module load
 _assignment_router_available = False
@@ -2730,114 +2734,8 @@ class SelfRepairSupervisor:
         * how many repair cycles have been used
         * prior repair strategy decisions (for strategy awareness)
         """
-        diag: Dict[str, Any] = {}
-
-        # --- Repair cycle summary (always present) ---
-        diag["repair_cycles_used"] = int(getattr(run, "repair_cycles_used", 0) or 0)
-        diag["same_failure_count"] = int(getattr(run, "same_failure_count", 0) or 0)
-
-        events = getattr(run, "events", [])
-        if not events:
-            return diag
-
-        # --- Previous reasoning stop reason ---
-        for ev in reversed(events):
-            phase = getattr(ev, "phase", "")
-            if phase in ("rank_reasoning", "repair_reasoning"):
-                detail = getattr(ev, "detail", "") or ""
-                ev_data = ev.data if hasattr(ev, "data") else (ev if isinstance(ev, dict) else {})
-                stop = ev_data.get("stop_reason", "")
-                if stop or detail:
-                    diag["previous_stop_reason"] = str(stop)[:200] if stop else ""
-                    diag["previous_reasoning_summary"] = str(detail)[:300]
-                    break
-
-        # --- Previous pytest failures ---
-        for ev in reversed(events):
-            phase = getattr(ev, "phase", "")
-            status = getattr(ev, "status", "")
-            if phase in ("full_pytest", "targeted_tests", "baseline_tests") and status == "failure":
-                detail = getattr(ev, "detail", "") or ""
-                diag["previous_pytest_failure"] = str(detail)[:500]
-                break
-
-        # --- Files modified in prior attempts ---
-        modified_files: list = []
-        for ev in reversed(events):
-            ev_data = ev.data if hasattr(ev, "data") else (ev if isinstance(ev, dict) else {})
-            fm = ev_data.get("files_modified")
-            if fm:
-                modified_files = list(fm)[:10]
-                break
-        if modified_files:
-            diag["previous_files_modified"] = modified_files
-
-        # --- Previous repair strategy (for strategy awareness) ---
-        for ev in reversed(events):
-            phase = getattr(ev, "phase", "")
-            if phase == "repair_strategy_decision":
-                ev_data = ev.data if hasattr(ev, "data") else (ev if isinstance(ev, dict) else {})
-                diag["previous_repair_strategy"] = {
-                    "task_type": ev_data.get("task_type", ""),
-                    "profile": ev_data.get("profile", ""),
-                    "notes": str(ev_data.get("notes", ""))[:200],
-                }
-                break
-
-        # --- MBOP Phase 9: Quality Gate (#1103 hardening) ---
-        for ev in reversed(events):
-            phase = getattr(ev, "phase", "")
-            if phase == "mbop_phase9_quality_gate":
-                status = getattr(ev, "status", "")
-                ev_data = ev.data if hasattr(ev, "data") else (ev if isinstance(ev, dict) else {})
-                diag["previous_quality_gate_status"] = str(status)[:50]
-                diag["previous_quality_gate_reason"] = str(getattr(ev, "detail", ""))[:200]
-                diag["previous_quality_gate_failed_checks"] = (
-                    ev_data.get("stub_patterns", [])[:5]
-                )
-                break
-
-        # --- MBOP Phase 10: Satisfaction Gate (#1103 hardening) ---
-        for ev in reversed(events):
-            phase = getattr(ev, "phase", "")
-            if phase == "mbop_phase10_satisfaction_gate":
-                ev_data = ev.data if hasattr(ev, "data") else (ev if isinstance(ev, dict) else {})
-                missing = ev_data.get("criteria_missing", [])
-                covered = ev_data.get("criteria_covered", [])
-                checked = ev_data.get("criteria_checked", [])
-                diag["previous_satisfaction_score"] = (
-                    f"{len(covered)}/{len(checked)}" if checked else "unknown"
-                )
-                diag["previous_satisfaction_missing_acs"] = [
-                    str(ac)[:100] for ac in missing[:5]
-                ]
-                diag["previous_satisfaction_covered_acs"] = [
-                    str(ac)[:100] for ac in covered[:5]
-                ]
-                break
-
-        # --- MBOP Phase 11: Lessons (#1103 hardening) ---
-        for ev in reversed(events):
-            phase = getattr(ev, "phase", "")
-            if phase == "mbop_phase11_post_task_eval":
-                ev_data = ev.data if hasattr(ev, "data") else (ev if isinstance(ev, dict) else {})
-                lessons = ev_data.get("lessons", [])
-                diag["mbop_lessons"] = [str(l)[:150] for l in lessons[:5]]
-                diag["mbop_recommended_strategy"] = str(
-                    ev_data.get("failure_class", "")
-                )[:100]
-                break
-
-        # --- MBOP Phase 12: Next-Step (#1103 hardening) ---
-        for ev in reversed(events):
-            phase = getattr(ev, "phase", "")
-            if phase == "mbop_phase12_next_step":
-                ev_data = ev.data if hasattr(ev, "data") else (ev if isinstance(ev, dict) else {})
-                suggestions = ev_data.get("suggestions", [])
-                diag["mbop_next_step"] = [str(s)[:150] for s in suggestions[:3]]
-                break
-
-        return diag
+        _ = (failure, cycle)  # preserve call signature and behavior contract
+        return _collect_repair_diagnostics_helper(run)
 
     @staticmethod
     def _strategy_for_repair(
@@ -5707,11 +5605,7 @@ class SelfRepairSupervisor:
                 "tests for them; if they are missing, add the endpoint implementation first."
             )
         # Track same-failure count: increment when the same failure class recurs.
-        if failure and failure == run.last_repair_failure:
-            run.same_failure_count += 1
-        else:
-            run.same_failure_count = 0
-        run.last_repair_failure = failure
+        _update_same_failure_tracking_helper(run, failure)
 
         # Issue #715 — adaptive retry ladder: when the same failure recurs, emit a
         # strategy_switch event so that the reasoning worker can use a different approach.
