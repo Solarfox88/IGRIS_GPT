@@ -43,6 +43,7 @@ import uuid
 from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, List, Optional
 
+from igris.core.micro_step_planner import MicroStepPlanner
 from igris.core.safety import redact_secrets
 from igris.core.tool_result_budget import apply_tool_result_budget, DEFAULT_BUDGET_BYTES
 
@@ -268,6 +269,8 @@ class AgentReasoningLoop:
         # Anti-repeat guard: tracks (action_type, params_key) -> count
         self._action_history: List[Dict[str, Any]] = []
         self._repeat_threshold = 2  # block after 2 identical successes without consumption
+        self._micro_planner = MicroStepPlanner()
+        self._micro_step_state: Any = None
 
     def run(
         self,
@@ -309,6 +312,7 @@ class AgentReasoningLoop:
                 self._world_state["note"] = initial_context
             else:
                 self._world_state["note"] = str(initial_context)
+        self._ensure_micro_step_state(goal)
 
         for step_num in range(1, self.max_steps + 1):
             # Check stop conditions before each step
@@ -676,6 +680,59 @@ class AgentReasoningLoop:
         except Exception:
             pass  # fleet errors must never break reasoning
 
+    def _ensure_micro_step_state(self, goal: str) -> None:
+        if self._micro_step_state is None:
+            self._micro_step_state = self._micro_planner.initialize(goal, self._world_state)
+        self._refresh_micro_step_context()
+
+    def _refresh_micro_step_context(self) -> None:
+        if self._micro_step_state is None:
+            return
+        directive = self._micro_planner.next_directive(self._micro_step_state, self._world_state)
+        self._world_state["micro_step_state"] = self._micro_step_state.to_dict()
+        self._world_state.update(self._micro_planner.to_context(self._micro_step_state, directive))
+
+    def _maybe_redirect_micro_step_action(self, step_num: int, action: Any) -> Any:
+        if self._micro_step_state is None:
+            return action
+        should_redirect, reason = self._micro_planner.should_redirect_action(
+            self._micro_step_state,
+            {
+                "action_type": action.action_type,
+                "reason": action.reason,
+                "parameters": action.parameters,
+            },
+        )
+        if not should_redirect:
+            return action
+        targets = list(getattr(self._micro_step_state, "discovered_files", []) or [])
+        if not targets:
+            return action
+        from igris.core.agent_action_schema import AgentAction
+
+        redirected = AgentAction(
+            mode=action.mode,
+            action_type="read_file_range",
+            reason=f"MicroStep redirect: {reason}",
+            parameters={"path": targets[0], "start": 1, "end": 220},
+            expected_effect=action.expected_effect,
+            risk_hint=action.risk_hint,
+            confidence=action.confidence,
+            required_preconditions=action.required_preconditions,
+            success_check=action.success_check,
+            fallback_if_blocked=action.fallback_if_blocked,
+        )
+        self._world_state.setdefault("micro_step_redirects", []).append(
+            {
+                "step": step_num,
+                "from_action": action.action_type,
+                "to_action": "read_file_range",
+                "reason": reason,
+            }
+        )
+        self._world_state["micro_step_redirect_reason"] = reason
+        return redirected
+
     def _execute_step(
         self,
         step_num: int,
@@ -687,6 +744,7 @@ class AgentReasoningLoop:
         step = LoopStep(step_number=step_num, role=self.role)
 
         try:
+            self._ensure_micro_step_state(goal)
             # 1. Build context
             context_packet = self._build_context(goal, mission_id)
 
@@ -706,6 +764,7 @@ class AgentReasoningLoop:
                 return step
 
             action = self._redirect_repeated_test_discovery(action, goal)
+            action = self._maybe_redirect_micro_step_action(step_num, action)
 
             step.action_type = action.action_type
             step.reason = action.reason
@@ -860,6 +919,16 @@ class AgentReasoningLoop:
                 file_path = action.parameters.get("path", "")
                 if file_path:
                     self._world_state.setdefault("proposed_patches", []).append(file_path)
+
+            _obs: Dict[str, Any] = {"success": bool(exec_result.get("success", False))}
+            if action.action_type in {"find_files", "search_code"} and isinstance(result_data, list):
+                _obs["discovered_files"] = [p for p in result_data if isinstance(p, str)]
+            self._micro_step_state = self._micro_planner.update_after_action(
+                self._micro_step_state,
+                {"action_type": action.action_type, "parameters": action.parameters},
+                _obs,
+            )
+            self._refresh_micro_step_context()
 
         except Exception as e:
             step.outcome = "error"
