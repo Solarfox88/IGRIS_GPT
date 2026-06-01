@@ -6913,6 +6913,7 @@ class SelfRepairSupervisor:
                     {"code": i.code, "message": i.message, "index": i.index}
                     for i in _val_report.issues
                 ]
+                decomposition["_validation_summary"] = _val_report.to_diagnostics()
             except Exception as _val_exc:
                 run.add(
                     "decomposition_quality",
