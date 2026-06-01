@@ -88,6 +88,18 @@ class ValidationIssue:
         }
         return _alias.get(self.field, self.field.upper().replace("_", ""))
 
+    def to_dict(self) -> Dict[str, Any]:
+        """Return a JSON-safe diagnostic record for audit/evidence payloads."""
+        return {
+            "index": self.index,
+            "field": self.field,
+            "code": self.code,
+            "severity": self.severity,
+            "message": self.message,
+            "original": self.original,
+            "fixed": self.fixed,
+        }
+
 
 @dataclass
 class SubMission:
@@ -170,6 +182,38 @@ class ValidationReport:
             f"errors={self.error_count}, warnings={self.warning_count}, "
             f"fixed={self.fixed_count}, capped={self.capped}"
         )
+
+    def to_diagnostics(self) -> Dict[str, Any]:
+        """Return a compact, serialisable evidence payload for supervisor logs."""
+        issue_breakdown: Dict[str, int] = {}
+        for issue in self.issues:
+            issue_breakdown[issue.code] = issue_breakdown.get(issue.code, 0) + 1
+
+        return {
+            "summary": self.summary(),
+            "ok": self.ok,
+            "valid": self.valid,
+            "quality_score": round(self.quality_score, 3),
+            "counts": {
+                "accepted": len(self.accepted),
+                "rejected": len(self.rejected),
+                "issues": len(self.issues),
+                "errors": self.error_count,
+                "warnings": self.warning_count,
+                "fixed": self.fixed_count,
+                "capped": self.capped,
+                "original_count": self.original_count,
+            },
+            "accepted_titles": [sm.title for sm in self.accepted],
+            "rejected_count": len(self.rejected),
+            "issue_codes": [issue.code for issue in self.issues],
+            "issue_details": [issue.to_dict() for issue in self.issues[:10]],
+            "issue_breakdown": dict(sorted(issue_breakdown.items())),
+            "handoff": {
+                "normalized_fields": list(FULL_SCHEMA_FIELDS),
+                "accepted_items": [sm.to_dict() for sm in self.accepted],
+            },
+        }
 
 
 # ---------------------------------------------------------------------------
