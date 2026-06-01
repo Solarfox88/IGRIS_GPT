@@ -63,6 +63,28 @@ def test_transition_run_status_preserves_valid_transition(tmp_path):
     assert run.status == "cancelling"
 
 
+def test_transition_run_status_keeps_terminal_state_on_invalid_reopen(tmp_path):
+    run = _Run(status="blocked")
+    store = SupervisorRunStore(project_root=str(tmp_path), strict_transitions=True)
+    store.register(run)
+
+    transition_run_status(run=run, new_status="running", reason="reopen", run_store=store)
+
+    assert run.status == "blocked"
+
+
+def test_transition_run_status_falls_back_when_store_raises(tmp_path):
+    run = _Run()
+
+    class _BrokenStore:
+        def transition(self, *_args, **_kwargs):
+            raise RuntimeError("store unavailable")
+
+    transition_run_status(run=run, new_status="blocked", reason="tests failed", run_store=_BrokenStore())
+
+    assert run.status == "blocked"
+
+
 def test_is_terminal_status():
     assert is_terminal_status("completed") is True
     assert is_terminal_status("blocked") is True

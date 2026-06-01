@@ -49,3 +49,45 @@ def test_update_same_failure_tracking_is_behavior_preserving() -> None:
     assert count == 0
     assert run.same_failure_count == 0
     assert run.last_repair_failure == "wrong_file_edit"
+
+
+def test_collect_repair_diagnostics_normalizes_dict_events() -> None:
+    events = [
+        {
+            "phase": "rank_reasoning",
+            "status": "failure",
+            "detail": "reasoning blocked",
+            "data": {"stop_reason": "reasoning_timeout"},
+        },
+        {
+            "phase": "full_pytest",
+            "status": "failure",
+            "detail": "2 failed",
+            "data": {},
+        },
+        {
+            "phase": "repair_strategy_decision",
+            "status": "proceed",
+            "detail": "",
+            "data": {"task_type": "semantic_repair", "profile": "mini", "notes": "retry"},
+        },
+        {
+            "phase": "mbop_phase10_satisfaction_gate",
+            "status": "failure",
+            "detail": "",
+            "data": {
+                "criteria_missing": ["ac1", "ac2"],
+                "criteria_covered": ["ac3"],
+                "criteria_checked": ["ac1", "ac2", "ac3"],
+            },
+        },
+    ]
+    run = SimpleNamespace(repair_cycles_used=0, same_failure_count=0, events=events)
+
+    diag = collect_repair_diagnostics(run)
+
+    assert diag["previous_stop_reason"] == "reasoning_timeout"
+    assert diag["previous_pytest_failure"] == "2 failed"
+    assert diag["previous_repair_strategy"]["task_type"] == "semantic_repair"
+    assert diag["previous_satisfaction_score"] == "1/3"
+    assert diag["previous_satisfaction_missing_acs"] == ["ac1", "ac2"]
