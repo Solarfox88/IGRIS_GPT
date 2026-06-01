@@ -9,17 +9,24 @@ Each operation:
 - Logs access with resource type, identifier, timestamp (audit trail)
 - Supports dry-run mode (simulated access without real execution)
 - Returns normalized data (not raw API)
+
+Hardening (#1127):
+- Secret-path denylist blocks reads of sensitive files.
+- Persistent audit log (JSONL file on disk).
+- Content redaction via redact_secrets.
 """
 
+import base64
 import json
 import logging
 import subprocess
-import base64
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from igris.core.authorization_gate import AuthorizationGate
 from igris.core.identity_resolver import InterlocutorProfile
+from igris.core.safety import redact_secrets
 
 logger = logging.getLogger(__name__)
 
@@ -38,6 +45,54 @@ _SUPERVISOR_READ_PROFILE = InterlocutorProfile(
 )
 
 
+# ---------------------------------------------------------------------------
+# Secret-path denylist (#1127)
+# ---------------------------------------------------------------------------
+
+_SECRET_PATH_PATTERNS: List[str] = [
+    ".env",
+    ".env.",           # .env.local, .env.production, etc.
+    "id_rsa",
+    "id_ed25519",
+    "id_ecdsa",
+    "id_dsa",
+    ".pem",
+    "credentials",
+    "secrets",
+    "private_key",
+    "service_account",
+    ".p12",
+    ".pfx",
+    ".key",
+    "token",
+    ".htpasswd",
+]
+
+_SECRET_EXACT_NAMES = {
+    ".env",
+    ".npmrc",
+    ".pypirc",
+    ".netrc",
+    ".docker/config.json",
+    ".kube/config",
+    ".ssh/config",
+    ".ssh/authorized_keys",
+    ".git-credentials",
+}
+
+
+def _is_secret_path(path: str) -> bool:
+    """Check if a file path looks like a secret/credential file."""
+    p = path.strip().lower()
+    basename = p.rsplit("/", 1)[-1] if "/" in p else p
+    if basename in _SECRET_EXACT_NAMES or p in _SECRET_EXACT_NAMES:
+        return True
+    for pattern in _SECRET_PATH_PATTERNS:
+        if pattern in basename:
+            return True
+    return False
+
+
 class GitHubReadGateway:
     """Gated reader for GitHub resources."""
 
@@ -47,12 +102,18 @@ class GitHubReadGateway:
         repo: str = ".",
         profile: Optional[InterlocutorProfile] = None,
         protected_branches: Optional[List[str]] = None,
+        audit_dir: Optional[str] = None,
     ):
         self._auth = auth_gate
         self._repo = repo
         self._profile = profile or _SUPERVISOR_READ_PROFILE
         self._protected_branches = {b.lower() for b in (protected_branches or [])}
         self._audit_log: List[Dict[str, Any]] = []
+        # Persistent audit (#1127)
+        self._audit_dir: Optional[Path] = None
+        if audit_dir:
+            self._audit_dir = Path(audit_dir)
+            self._audit_dir.mkdir(parents=True, exist_ok=True)
 
     # ------------------------------------------------------------------
     # Public methods
@@ -134,7 +195,19 @@ class GitHubReadGateway:
         mission_id: Optional[str] = None,
         run_id: Optional[str] = None,
     ) -> Dict[str, Any]:
-        """Read a file from a remote branch."""
+        """Read a file from a remote branch.
+
+        Hardening (#1127): blocks reads of secret-path files.
+        """
+        # Secret-path denylist (#1127)
+        if _is_secret_path(path):
+            self._log_audit(
+                "file", f"{branch}:{path}", dry_run=dry_run,
+                mission_id=mission_id, run_id=run_id, blocked=True,
+                blocked_reason="secret_path_denied",
+            )
+            raise PermissionError(f"Secret-path read blocked: {path}")
+
         branch_norm = (branch or "main").strip().lower()
         scope = "github_read_file_protected" if branch_norm in self._protected_branches else "github_read_file"
         self._ensure_authorized(scope, f"file/{branch}:{path}")
@@ -225,6 +298,8 @@ class GitHubReadGateway:
         dry_run: bool = False,
         mission_id: Optional[str] = None,
         run_id: Optional[str] = None,
+        blocked: bool = False,
+        blocked_reason: str = "",
     ) -> None:
         entry = {
             "timestamp": datetime.now(timezone.utc).isoformat(),
@@ -234,8 +309,22 @@ class GitHubReadGateway:
             "mission_id": mission_id,
             "run_id": run_id,
         }
+        if blocked:
+            entry["blocked"] = True
+            entry["blocked_reason"] = blocked_reason
         self._audit_log.append(entry)
         logger.info("GitHubReadGateway audit: %s", entry)
+        if self._audit_dir:
+            self._persist_audit(entry)
+
+    def _persist_audit(self, entry: Dict[str, Any]) -> None:
+        """Append audit entry as JSONL to persistent file (#1127)."""
+        try:
+            audit_file = self._audit_dir / "github_read_audit.jsonl"  # type: ignore[union-attr]
+            with open(audit_file, "a") as f:
+                f.write(json.dumps(entry, default=str) + "\n")
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Failed to persist read audit: %s", exc)
 
     # ------------------------------------------------------------------
     # Normalizers
@@ -247,7 +336,7 @@ class GitHubReadGateway:
             "number": raw.get("number"),
             "title": raw.get("title"),
             "state": raw.get("state"),
-            "body": (raw.get("body") or "")[:5000],
+            "body": redact_secrets((raw.get("body") or "")[:5000]),
             "labels": [lbl["name"] if isinstance(lbl, dict) else lbl
                        for lbl in raw.get("labels", [])],
             "assignees": [a["login"] if isinstance(a, dict) else a
@@ -271,7 +360,7 @@ class GitHubReadGateway:
             "number": raw.get("number"),
             "title": raw.get("title"),
             "state": raw.get("state"),
-            "body": (raw.get("body") or "")[:5000],
+            "body": redact_secrets((raw.get("body") or "")[:5000]),
             "head": raw.get("headRefName"),
             "base": raw.get("baseRefName"),
             "commits": len(commits),
@@ -286,12 +375,16 @@ class GitHubReadGateway:
             decoded = base64.b64decode(content).decode("utf-8")
         except Exception:
             decoded = "[binary or undecodable content]"
+        # Size limit post-decode
+        truncated = decoded[:10000]
+        # Redact any secret-like content in file body
+        safe_content = redact_secrets(truncated)
         return {
             "path": raw.get("path"),
             "sha": raw.get("sha"),
             "size": raw.get("size", 0),
             "encoding": "utf-8",
-            "content": decoded[:10000],
+            "content": safe_content,
         }
 
     @staticmethod
