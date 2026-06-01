@@ -491,6 +491,36 @@ class ContextManager:
             prev_files = world_state.get("previous_files_modified")
             if prev_files and isinstance(prev_files, list):
                 repair_parts.append(f"  FILES MODIFIED: {', '.join(str(f) for f in prev_files[:10])}")
+
+            # MBOP Phase 9-12 feedback (#1103 hardening)
+            qg_status = str(world_state.get("previous_quality_gate_status", "") or "").strip()
+            if qg_status:
+                qg_reason = str(world_state.get("previous_quality_gate_reason", "") or "")[:200]
+                repair_parts.append(f"  QUALITY GATE: {qg_status} — {qg_reason}")
+                qg_fails = world_state.get("previous_quality_gate_failed_checks")
+                if qg_fails and isinstance(qg_fails, list):
+                    repair_parts.append(f"  QUALITY GATE ISSUES: {', '.join(str(c) for c in qg_fails[:5])}")
+
+            sat_score = str(world_state.get("previous_satisfaction_score", "") or "").strip()
+            if sat_score:
+                repair_parts.append(f"  SATISFACTION SCORE: {sat_score}")
+                missing_acs = world_state.get("previous_satisfaction_missing_acs")
+                if missing_acs and isinstance(missing_acs, list):
+                    for ac in missing_acs[:3]:
+                        repair_parts.append(f"    MISSING AC: {str(ac)[:100]}")
+
+            mbop_lessons = world_state.get("mbop_lessons")
+            if mbop_lessons and isinstance(mbop_lessons, list):
+                repair_parts.append("  LESSONS FROM PREVIOUS RUN:")
+                for lesson in mbop_lessons[:3]:
+                    repair_parts.append(f"    - {str(lesson)[:150]}")
+
+            mbop_next = world_state.get("mbop_next_step")
+            if mbop_next and isinstance(mbop_next, list):
+                repair_parts.append("  SUGGESTED NEXT STEPS:")
+                for step in mbop_next[:3]:
+                    repair_parts.append(f"    - {str(step)[:150]}")
+
             sections.append(
                 "## PREVIOUS ATTEMPT DIAGNOSTICS\n" + "\n".join(repair_parts)
                 + "\n→ Address the issues above. Do NOT repeat the same approach."
@@ -504,6 +534,12 @@ class ContextManager:
             "previous_stop_reason", "previous_reasoning_summary",
             "previous_pytest_failure", "previous_files_modified",
             "previous_repair_strategy",
+            # MBOP Phase 9-12 feedback keys (#1103 hardening)
+            "previous_quality_gate_status", "previous_quality_gate_reason",
+            "previous_quality_gate_failed_checks",
+            "previous_satisfaction_score", "previous_satisfaction_missing_acs",
+            "previous_satisfaction_covered_acs",
+            "mbop_lessons", "mbop_recommended_strategy", "mbop_next_step",
         }
         # Also skip tool_result_history when at budget risk (keep max 2 recent)
         _tool_history = world_state.get("tool_result_history")

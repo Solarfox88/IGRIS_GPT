@@ -2784,6 +2784,59 @@ class SelfRepairSupervisor:
                 }
                 break
 
+        # --- MBOP Phase 9: Quality Gate (#1103 hardening) ---
+        for ev in reversed(events):
+            phase = getattr(ev, "phase", "")
+            if phase == "mbop_phase9_quality_gate":
+                status = getattr(ev, "status", "")
+                ev_data = ev.data if hasattr(ev, "data") else (ev if isinstance(ev, dict) else {})
+                diag["previous_quality_gate_status"] = str(status)[:50]
+                diag["previous_quality_gate_reason"] = str(getattr(ev, "detail", ""))[:200]
+                diag["previous_quality_gate_failed_checks"] = (
+                    ev_data.get("stub_patterns", [])[:5]
+                )
+                break
+
+        # --- MBOP Phase 10: Satisfaction Gate (#1103 hardening) ---
+        for ev in reversed(events):
+            phase = getattr(ev, "phase", "")
+            if phase == "mbop_phase10_satisfaction_gate":
+                ev_data = ev.data if hasattr(ev, "data") else (ev if isinstance(ev, dict) else {})
+                missing = ev_data.get("criteria_missing", [])
+                covered = ev_data.get("criteria_covered", [])
+                checked = ev_data.get("criteria_checked", [])
+                diag["previous_satisfaction_score"] = (
+                    f"{len(covered)}/{len(checked)}" if checked else "unknown"
+                )
+                diag["previous_satisfaction_missing_acs"] = [
+                    str(ac)[:100] for ac in missing[:5]
+                ]
+                diag["previous_satisfaction_covered_acs"] = [
+                    str(ac)[:100] for ac in covered[:5]
+                ]
+                break
+
+        # --- MBOP Phase 11: Lessons (#1103 hardening) ---
+        for ev in reversed(events):
+            phase = getattr(ev, "phase", "")
+            if phase == "mbop_phase11_post_task_eval":
+                ev_data = ev.data if hasattr(ev, "data") else (ev if isinstance(ev, dict) else {})
+                lessons = ev_data.get("lessons", [])
+                diag["mbop_lessons"] = [str(l)[:150] for l in lessons[:5]]
+                diag["mbop_recommended_strategy"] = str(
+                    ev_data.get("failure_class", "")
+                )[:100]
+                break
+
+        # --- MBOP Phase 12: Next-Step (#1103 hardening) ---
+        for ev in reversed(events):
+            phase = getattr(ev, "phase", "")
+            if phase == "mbop_phase12_next_step":
+                ev_data = ev.data if hasattr(ev, "data") else (ev if isinstance(ev, dict) else {})
+                suggestions = ev_data.get("suggestions", [])
+                diag["mbop_next_step"] = [str(s)[:150] for s in suggestions[:3]]
+                break
+
         return diag
 
     @staticmethod
