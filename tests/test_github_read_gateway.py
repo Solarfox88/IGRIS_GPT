@@ -11,11 +11,13 @@ NOTE on mock targets:
 """
 
 import pytest
-import logging
 from fastapi.testclient import TestClient
 from unittest.mock import patch, MagicMock
 
 from igris.web.server import create_app
+from igris.core.github_read_gateway import GitHubReadGateway
+from igris.core.authorization_gate import AuthResult
+from igris.core.identity_resolver import InterlocutorProfile
 
 
 @pytest.fixture
@@ -184,3 +186,58 @@ class TestGateTokenValidation:
         assert data["number"] == 1
         assert data["title"] == "Test Issue"
         assert data["state"] == "open"
+
+
+class TestGitHubReadGatewayCore:
+    def test_core_denies_when_scope_missing(self):
+        auth = MagicMock()
+        auth.check.return_value = AuthResult(allowed=False, reason="scope_denied")
+        gw = GitHubReadGateway(auth_gate=auth)
+        with pytest.raises(PermissionError):
+            gw.read_issue(1, dry_run=True)
+
+    def test_core_read_issue_dry_run_logs_context(self):
+        auth = MagicMock()
+        auth.check.return_value = AuthResult(allowed=True, reason="ok")
+        gw = GitHubReadGateway(auth_gate=auth)
+        resp = gw.read_issue(12, dry_run=True, mission_id="m1", run_id="r1")
+        assert resp["dry_run"] is True
+        assert gw._audit_log[-1]["mission_id"] == "m1"
+        assert gw._audit_log[-1]["run_id"] == "r1"
+        assert gw._audit_log[-1]["resource"] == "issue/12"
+
+    def test_protected_branch_requires_extra_scope(self):
+        profile = InterlocutorProfile(
+            profile_id="p1",
+            display_name="p1",
+            trust_level="trusted",
+            authorized_scopes=["github_read", "github_read_file"],
+        )
+        auth = MagicMock()
+
+        def _check(profile, action_type, target_resource, **kwargs):
+            allowed = target_resource in profile.authorized_scopes
+            return AuthResult(allowed=allowed, reason="ok" if allowed else "scope_denied")
+
+        auth.check.side_effect = _check
+        gw = GitHubReadGateway(auth_gate=auth, profile=profile, protected_branches=["release"])
+        with pytest.raises(PermissionError):
+            gw.read_file("README.md", branch="release", dry_run=True)
+
+    def test_protected_branch_allowed_with_explicit_scope(self):
+        profile = InterlocutorProfile(
+            profile_id="p2",
+            display_name="p2",
+            trust_level="trusted",
+            authorized_scopes=["github_read", "github_read_file_protected"],
+        )
+        auth = MagicMock()
+
+        def _check(profile, action_type, target_resource, **kwargs):
+            allowed = target_resource in profile.authorized_scopes
+            return AuthResult(allowed=allowed, reason="ok" if allowed else "scope_denied")
+
+        auth.check.side_effect = _check
+        gw = GitHubReadGateway(auth_gate=auth, profile=profile, protected_branches=["release"])
+        resp = gw.read_file("README.md", branch="release", dry_run=True)
+        assert resp["dry_run"] is True

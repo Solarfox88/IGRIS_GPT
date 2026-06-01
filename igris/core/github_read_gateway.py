@@ -19,16 +19,39 @@ from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 from igris.core.authorization_gate import AuthorizationGate
+from igris.core.identity_resolver import InterlocutorProfile
 
 logger = logging.getLogger(__name__)
+
+_SUPERVISOR_READ_PROFILE = InterlocutorProfile(
+    profile_id="igris-supervisor-read",
+    display_name="IGRIS Supervisor Read",
+    trust_level="trusted",
+    authorized_scopes=[
+        "github_read",
+        "github_read_issue",
+        "github_read_pr",
+        "github_read_issues",
+        "github_read_file",
+        "github_read_actions",
+    ],
+)
 
 
 class GitHubReadGateway:
     """Gated reader for GitHub resources."""
 
-    def __init__(self, auth_gate: AuthorizationGate, repo: str = "."):
+    def __init__(
+        self,
+        auth_gate: AuthorizationGate,
+        repo: str = ".",
+        profile: Optional[InterlocutorProfile] = None,
+        protected_branches: Optional[List[str]] = None,
+    ):
         self._auth = auth_gate
         self._repo = repo
+        self._profile = profile or _SUPERVISOR_READ_PROFILE
+        self._protected_branches = {b.lower() for b in (protected_branches or [])}
         self._audit_log: List[Dict[str, Any]] = []
 
     # ------------------------------------------------------------------
@@ -36,10 +59,15 @@ class GitHubReadGateway:
     # ------------------------------------------------------------------
 
     def read_issue(
-        self, issue_number: int, dry_run: bool = False
+        self,
+        issue_number: int,
+        dry_run: bool = False,
+        mission_id: Optional[str] = None,
+        run_id: Optional[str] = None,
     ) -> Dict[str, Any]:
         """Read a single issue by number."""
-        self._log_audit("issue", str(issue_number))
+        self._ensure_authorized("github_read_issue", f"issue/{issue_number}")
+        self._log_audit("issue", str(issue_number), dry_run=dry_run, mission_id=mission_id, run_id=run_id)
         if dry_run:
             return self._dry_run_response("issue", issue_number)
 
@@ -50,10 +78,15 @@ class GitHubReadGateway:
         return self._normalize_issue(json.loads(result))
 
     def read_pr(
-        self, pr_number: int, dry_run: bool = False
+        self,
+        pr_number: int,
+        dry_run: bool = False,
+        mission_id: Optional[str] = None,
+        run_id: Optional[str] = None,
     ) -> Dict[str, Any]:
         """Read a pull request by number."""
-        self._log_audit("pr", str(pr_number))
+        self._ensure_authorized("github_read_pr", f"pr/{pr_number}")
+        self._log_audit("pr", str(pr_number), dry_run=dry_run, mission_id=mission_id, run_id=run_id)
         if dry_run:
             return self._dry_run_response("pr", pr_number)
 
@@ -70,9 +103,12 @@ class GitHubReadGateway:
         assignee: Optional[str] = None,
         limit: int = 30,
         dry_run: bool = False,
+        mission_id: Optional[str] = None,
+        run_id: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         """List issues with optional filters."""
-        self._log_audit("issues", "list")
+        self._ensure_authorized("github_read_issues", "issues/list")
+        self._log_audit("issues", "list", dry_run=dry_run, mission_id=mission_id, run_id=run_id)
         if dry_run:
             return [{"dry_run": True, "resource": "issues",
                      "filters": {"state": state, "label": label, "limit": limit}}]
@@ -91,10 +127,18 @@ class GitHubReadGateway:
         return [self._normalize_issue(item) for item in issues]
 
     def read_file(
-        self, path: str, branch: str = "main", dry_run: bool = False
+        self,
+        path: str,
+        branch: str = "main",
+        dry_run: bool = False,
+        mission_id: Optional[str] = None,
+        run_id: Optional[str] = None,
     ) -> Dict[str, Any]:
         """Read a file from a remote branch."""
-        self._log_audit("file", f"{branch}:{path}")
+        branch_norm = (branch or "main").strip().lower()
+        scope = "github_read_file_protected" if branch_norm in self._protected_branches else "github_read_file"
+        self._ensure_authorized(scope, f"file/{branch}:{path}")
+        self._log_audit("file", f"{branch}:{path}", dry_run=dry_run, mission_id=mission_id, run_id=run_id)
         if dry_run:
             return self._dry_run_response("file", f"{branch}:{path}")
 
@@ -106,10 +150,13 @@ class GitHubReadGateway:
     def read_actions(
         self, workflow_name: Optional[str] = None,
         status: Optional[str] = None,
-        dry_run: bool = False
+        dry_run: bool = False,
+        mission_id: Optional[str] = None,
+        run_id: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         """Read latest Actions workflow run(s)."""
-        self._log_audit("actions", workflow_name or "all")
+        self._ensure_authorized("github_read_actions", f"actions/{workflow_name or 'all'}")
+        self._log_audit("actions", workflow_name or "all", dry_run=dry_run, mission_id=mission_id, run_id=run_id)
         if dry_run:
             return [self._dry_run_response("actions", workflow_name or "all")]
 
@@ -127,6 +174,22 @@ class GitHubReadGateway:
     # ------------------------------------------------------------------
     # Helpers
     # ------------------------------------------------------------------
+    def _ensure_authorized(self, scope: str, target: str) -> None:
+        base = self._auth.check(
+            profile=self._profile,
+            action_type="github_read",
+            target_resource="github_read",
+        )
+        if not base.allowed:
+            raise PermissionError(f"Scope violation: {base.reason} for github_read")
+        op = self._auth.check(
+            profile=self._profile,
+            action_type="github_read",
+            target_resource=scope,
+        )
+        if not op.allowed:
+            raise PermissionError(f"Scope violation: {op.reason} for {scope} on {target}")
+
 
     def _gh(self, *args: str) -> str:
         """Run a gh CLI command and return stdout."""
@@ -160,12 +223,16 @@ class GitHubReadGateway:
         identifier: str,
         authorized: bool = True,
         dry_run: bool = False,
+        mission_id: Optional[str] = None,
+        run_id: Optional[str] = None,
     ) -> None:
         entry = {
             "timestamp": datetime.now(timezone.utc).isoformat(),
             "resource": f"{resource_type}/{identifier}",
             "authorized": authorized,
             "dry_run": dry_run,
+            "mission_id": mission_id,
+            "run_id": run_id,
         }
         self._audit_log.append(entry)
         logger.info("GitHubReadGateway audit: %s", entry)
