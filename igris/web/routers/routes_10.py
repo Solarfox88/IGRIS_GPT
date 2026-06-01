@@ -409,6 +409,117 @@ def create_router(deps) -> APIRouter:
         }
 
     # ------------------------------------------------------------------
+    # #1130 — Control Room UX hardening: interpreted evidence cards
+    # ------------------------------------------------------------------
+
+    @router.get("/api/rank/runs/{run_id}/evidence/interpreted")
+    async def api_rank_run_evidence_interpreted(run_id: str) -> Dict[str, object]:
+        """Return interpreted evidence cards for a run (#1130).
+
+        Unlike /evidence (raw), this returns structured, human-readable
+        evidence cards with status, summary, and actionable details.
+
+        Cards: diff_summary, test_result, ci_result, browser_evidence,
+               devops_health, memory_influence.
+
+        Also includes: next_actions (operator workflow recommendations).
+        """
+        from igris.core.self_repair_supervisor import get_supervised_run
+        from igris.web.evidence_interpreter import (
+            interpret_all_evidence,
+            compute_next_actions,
+        )
+        import subprocess as _sp
+        run = get_supervised_run(run_id)
+        if run is None:
+            raise HTTPException(status_code=404, detail="rank run not found")
+
+        # Gather raw evidence (reuse logic from /evidence endpoint)
+        diff_summary: Dict[str, object] = {"available": False}
+        try:
+            diff_stat = _sp.run(
+                ["git", "diff", "--stat", "HEAD"],
+                cwd=str(CONFIG.project_root),
+                capture_output=True, text=True, timeout=10,
+            )
+            if diff_stat.returncode == 0 and diff_stat.stdout.strip():
+                lines = diff_stat.stdout.strip().splitlines()
+                summary_line = lines[-1] if lines else ""
+                diff_summary = {
+                    "available": True,
+                    "files_changed": [l.split("|")[0].strip() for l in lines[:-1]],
+                    "summary": summary_line,
+                }
+            else:
+                diff_summary = {"available": True, "files_changed": [], "summary": "no changes"}
+        except Exception as exc:
+            diff_summary = {"available": False, "error": str(exc)[:200]}
+
+        test_results: Dict[str, object] = {"available": False}
+        for evt in reversed(run.events or []):
+            phase = evt.phase if hasattr(evt, "phase") else evt.get("phase", "")
+            if phase in ("targeted_tests", "full_tests", "run_tests"):
+                detail = evt.detail if hasattr(evt, "detail") else str(evt.get("detail", ""))
+                status = evt.status if hasattr(evt, "status") else str(evt.get("status", ""))
+                test_results = {"available": True, "phase": phase, "status": status, "detail": detail[:500]}
+                break
+
+        evidence_events = []
+        run_events_raw = []
+        for ev in (run.events or []):
+            phase = getattr(ev, "phase", None) or (ev.get("phase", "") if isinstance(ev, dict) else "")
+            status_ev = getattr(ev, "status", None) or (ev.get("status", "") if isinstance(ev, dict) else "")
+            detail = getattr(ev, "detail", None) or (ev.get("detail", "") if isinstance(ev, dict) else "")
+            ts = getattr(ev, "ts", 0) or (ev.get("ts", 0) if isinstance(ev, dict) else 0)
+            data = getattr(ev, "data", {}) if hasattr(ev, "data") else {}
+            run_events_raw.append({"phase": phase, "status": status_ev, "detail": str(detail), "ts": ts, "data": data})
+            if phase in ("acceptance_gate", "semantic_gate", "evidence_collection", "quality_gate"):
+                evidence_events.append({
+                    "phase": phase,
+                    "status": status_ev,
+                    "detail": _safe_redact(str(detail))[:300],
+                    "ts": ts,
+                })
+
+        # Determine outcome
+        status = run.status or "unknown"
+        if status in ("success", "completed", "noop"):
+            outcome = "success"
+        elif status in ("cancelled", "cancelling"):
+            outcome = "cancelled"
+        elif status == "running":
+            outcome = "in_progress"
+        elif getattr(run, "failure_class", "") == "decomposition_required":
+            outcome = "decomposition_required"
+        else:
+            outcome = "blocked"
+
+        # Build interpreted cards
+        cards = interpret_all_evidence(
+            diff_summary=diff_summary,
+            test_results=test_results,
+            evidence_events=evidence_events,
+            run_events=run_events_raw,
+        )
+
+        # Compute next actions
+        next_actions = compute_next_actions(
+            outcome=outcome,
+            failure_class=getattr(run, "failure_class", "") or "",
+            evidence_cards=cards,
+        )
+
+        return {
+            "run_id": run_id,
+            "outcome": outcome,
+            "evidence_cards": cards,
+            "next_actions": next_actions,
+            "card_count": len(cards),
+            "error_count": sum(1 for c in cards if c.get("status") == "error"),
+            "empty_count": sum(1 for c in cards if c.get("status") == "empty"),
+        }
+
+    # ------------------------------------------------------------------
     # Epic #1077 — Control Room: timeline, risk-detail, final report
     # ------------------------------------------------------------------
 
