@@ -361,6 +361,52 @@ def create_router(deps) -> APIRouter:
         results = _get_graph().query_by_intent(q, node_type=node_type, limit=limit)
         return {"results": results, "count": len(results)}
 
+    @router.get("/api/memory/long-term/search")
+    async def api_long_term_memory_search(
+        q: str,
+        domain: Optional[str] = None,
+        limit: int = 20,
+    ) -> Dict[str, object]:
+        """Search long-term memory entries by query and optional domain."""
+        from igris.core.long_term_memory import LongTermMemory
+
+        ltm = LongTermMemory(storage_dir=str(Path(CONFIG.project_root) / ".igris" / "memory" / "long_term"))
+        domains = [domain] if domain else None
+        entries = ltm.search(query=q, domains=domains, limit=limit)
+        return {
+            "query": q,
+            "domain": domain,
+            "count": len(entries),
+            "results": [
+                {
+                    "id": e.id,
+                    "domain": e.domain,
+                    "content": str(e.content),
+                    "timestamp": e.timestamp,
+                    "source": e.source,
+                    "tags": e.tags,
+                    "importance": e.importance,
+                }
+                for e in entries
+            ],
+        }
+
+    @router.get("/api/memory/long-term/summarize")
+    async def api_long_term_memory_summarize(
+        domain: str,
+        force: bool = False,
+    ) -> Dict[str, object]:
+        """Generate/retrieve rolling summary for a long-term memory domain."""
+        from igris.core.long_term_memory import LongTermMemory
+
+        ltm = LongTermMemory(storage_dir=str(Path(CONFIG.project_root) / ".igris" / "memory" / "long_term"))
+        summary = ltm.generate_summary(domain=domain, force=force)
+        return {
+            "domain": domain,
+            "summary": summary,
+            "force": force,
+        }
+
     @router.post("/api/memory/record")
     async def api_memory_record(request: Request) -> Dict[str, object]:
         body = await request.json()
