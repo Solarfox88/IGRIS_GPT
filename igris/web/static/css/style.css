@@ -13,8 +13,8 @@ header h1{margin:0;font-size:1.2rem;font-weight:700;letter-spacing:.5px}
 .layout{display:flex;height:calc(100vh - 52px);overflow:hidden}
 
 /* Chat Panel */
-.chat-panel{width:40vw;min-width:420px;max-width:50vw;display:flex;flex-direction:column;border-right:1px solid #30363d;background:#0d1117}
-.chat-messages{flex:1;overflow-y:auto;padding:1rem 1.2rem;font-size:.92rem;line-height:1.68;scroll-behavior:smooth}
+.chat-panel{width:480px;width:40vw;min-width:420px;max-width:50vw;display:flex;flex-direction:column;border-right:1px solid #30363d;background:#0d1117}
+.chat-messages{flex:1;overflow-y:auto;padding:1rem 1.2rem;font-size:.92rem;line-height:1.6;scroll-behavior:smooth}
 .chat-messages .msg{margin-bottom:.75rem;padding:.75rem 1rem;border-radius:8px;max-width:100%;overflow-wrap:break-word;word-wrap:break-word}
 .chat-messages .msg-user{background:#1c2333;text-align:right}
 .chat-messages .msg-assistant{background:#161b22;text-align:left}
@@ -182,6 +182,8 @@ header h1{margin:0;font-size:1.2rem;font-weight:700;letter-spacing:.5px}
 .next-action-banner{display:flex;justify-content:space-between;align-items:center;gap:.6rem;background:#0d1117;border:1px solid #30363d;border-radius:6px;padding:.45rem .55rem}
 .next-action-banner .title{font-weight:600;color:#e6edf3}
 .next-action-banner .sub{font-size:.74rem;color:#8b949e}
+.panel-line{font-size:.78rem;padding:.2rem 0;border-bottom:1px solid #21262d}
+.panel-line:last-child{border-bottom:none}
 
 /* Sub-tabs */
 .sub-tab-bar{display:flex;gap:0;border-bottom:1px solid #30363d;margin-bottom:.6rem}

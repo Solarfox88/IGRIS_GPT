@@ -139,6 +139,15 @@ class TestDashboardStructure:
         assert 'id="mission-list"' in html
         assert 'id="mission-form"' in html
 
+    def test_dashboard_panels_present(self):
+        import pathlib
+        html = pathlib.Path("igris/web/templates/index.html").read_text()
+        assert 'id="dash-evidence-summary"' in html
+        assert 'id="dash-github-summary"' in html
+        assert 'id="dash-memory-summary"' in html
+        assert 'id="dash-devops-summary"' in html
+        assert 'id="dash-browser-summary"' in html
+
 
 class TestOriginalElementsPreserved:
     """All original element IDs still exist for backward compatibility."""
@@ -253,6 +262,18 @@ class TestDashboardJS:
         import pathlib
         js = pathlib.Path("igris/web/static/js/app.js").read_text()
         assert "dash-reports" in js
+
+    def test_js_populates_new_panels(self):
+        import pathlib
+        js = pathlib.Path("igris/web/static/js/app.js").read_text()
+        for marker in [
+            "dash-evidence-summary",
+            "dash-github-summary",
+            "dash-memory-summary",
+            "dash-devops-summary",
+            "dash-browser-summary",
+        ]:
+            assert marker in js
 
     def test_js_auto_refresh_uses_dashboard(self):
         import pathlib

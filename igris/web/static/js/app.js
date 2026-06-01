@@ -310,6 +310,75 @@
       }
     }
 
+    // Evidence panel (read-only)
+    var evEl = $("#dash-evidence-summary");
+    if (evEl) {
+      var activeRuns = await api("GET", "/api/rank/runs/active");
+      if (activeRuns.ok && activeRuns.data && activeRuns.data.runs && activeRuns.data.runs.length > 0) {
+        var run = activeRuns.data.runs[0];
+        var runId = run.run_id || run.id || "";
+        var ev = runId ? await api("GET", "/api/rank/runs/" + encodeURIComponent(runId) + "/evidence") : { ok: false };
+        if (ev.ok) {
+          var text = esc(JSON.stringify(ev.data)).slice(0, 600);
+          evEl.innerHTML = '<div class="panel-line"><strong>Active run:</strong> ' + esc(runId) + '</div>' +
+                           '<div class="panel-line">' + text + (text.length >= 600 ? " ...[truncated]" : "") + '</div>';
+        } else {
+          evEl.innerHTML = '<div class="panel-line">Evidence not available for active run</div>';
+        }
+      } else {
+        evEl.innerHTML = '<div class="panel-line">No active run evidence</div>';
+      }
+    }
+
+    // GitHub PR/CI panel (read-only)
+    var ghEl = $("#dash-github-summary");
+    if (ghEl) {
+      var gh = await api("GET", "/api/github/pr/status");
+      if (gh.ok) {
+        var gd = gh.data || {};
+        ghEl.innerHTML = '<div class="panel-line"><strong>Enabled:</strong> ' + esc(String(!!gd.enabled)) + '</div>' +
+                         '<div class="panel-line"><strong>Last PR:</strong> ' + esc(gd.pr_url || "none") + '</div>' +
+                         '<div class="panel-line"><strong>CI:</strong> ' + esc(gd.ci_status || "unknown") + '</div>';
+      } else {
+        ghEl.innerHTML = '<div class="panel-line">GitHub status unavailable</div>';
+      }
+    }
+
+    // Memory panel (read-only)
+    var memEl = $("#dash-memory-summary");
+    if (memEl) {
+      var mem = await api("GET", "/api/memory/summary");
+      if (mem.ok) {
+        var md = mem.data || {};
+        memEl.innerHTML = '<div class="panel-line"><strong>Nodes:</strong> ' + esc(String(md.node_count || 0)) + '</div>' +
+                          '<div class="panel-line"><strong>Edges:</strong> ' + esc(String(md.edge_count || 0)) + '</div>' +
+                          '<div class="panel-line"><strong>DB KB:</strong> ' + esc(String(md.db_size_kb || 0)) + '</div>';
+      } else {
+        memEl.innerHTML = '<div class="panel-line">Memory snapshot unavailable</div>';
+      }
+    }
+
+    // DevOps panel (read-only)
+    var devEl = $("#dash-devops-summary");
+    if (devEl) {
+      var dv = await api("GET", "/api/devops/health");
+      if (dv.ok) {
+        var dvo = dv.data || {};
+        devEl.innerHTML = '<div class="panel-line"><strong>Status:</strong> ' + esc(dvo.status || "unknown") + '</div>' +
+                          '<div class="panel-line"><strong>Disk:</strong> ' + esc(JSON.stringify(dvo.disk || {})) + '</div>' +
+                          '<div class="panel-line"><strong>Memory:</strong> ' + esc(JSON.stringify(dvo.memory || {})) + '</div>';
+      } else {
+        devEl.innerHTML = '<div class="panel-line">DevOps health unavailable</div>';
+      }
+    }
+
+    // Browser evidence placeholder/base
+    var brEl = $("#dash-browser-summary");
+    if (brEl) {
+      brEl.innerHTML = '<div class="panel-line">Browser evidence integration: base placeholder active</div>' +
+                       '<div class="panel-line">No executable browser action exposed from dashboard.</div>';
+    }
+
     await loadSupervisorMonitor();
   }
 
