@@ -9,8 +9,6 @@ from __future__ import annotations
 
 import json
 import logging
-import random
-import string
 import time
 import uuid
 from dataclasses import asdict, dataclass, field
@@ -21,6 +19,58 @@ _log = logging.getLogger("igris.memory.long_term")
 
 from igris.core.safety import redact_secrets
 from igris.models.config import CONFIG
+
+
+# ---------------------------------------------------------------------------
+# Nested redaction helper (#1129)
+# ---------------------------------------------------------------------------
+
+def _redact_nested(value: Any) -> Any:
+    """Recursively redact secrets in str/dict/list structures."""
+    if isinstance(value, str):
+        return redact_secrets(value)
+    if isinstance(value, dict):
+        return {k: _redact_nested(v) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_redact_nested(item) for item in value]
+    return value
+
+
+# ---------------------------------------------------------------------------
+# Ranking helper (#1129)
+# ---------------------------------------------------------------------------
+
+def _rank_score(
+    entry: "MemoryEntry",
+    query_tags: Optional[List[str]] = None,
+    now: Optional[float] = None,
+) -> float:
+    """Compute composite rank score for a memory entry.
+
+    Factors: recency (decay), importance, source confidence,
+    tag match bonus, stale penalty, contradiction penalty.
+    """
+    _now = now or time.time()
+    age_hours = max(0, (_now - entry.timestamp) / 3600)
+    recency = max(0.0, 1.0 - (age_hours / (24 * 30)))  # decay over 30 days
+
+    tag_bonus = 0.0
+    if query_tags:
+        overlap = len(set(entry.tags) & set(query_tags))
+        tag_bonus = min(0.3, overlap * 0.1)
+
+    stale_penalty = -0.4 if entry.stale else 0.0
+    contradiction_penalty = -0.3 if entry.contradiction else 0.0
+
+    score = (
+        recency * 0.3
+        + entry.importance * 0.3
+        + entry.source_confidence * 0.2
+        + tag_bonus
+        + stale_penalty
+        + contradiction_penalty
+    )
+    return round(score, 4)
 
 
 # ---------------------------------------------------------------------------
@@ -37,20 +87,9 @@ class MemoryEntry:
     source: str = ""
     tags: List[str] = field(default_factory=list)
     importance: float = 1.0  # 0.0 (low) to 1.0 (high)
-
-
-@dataclass
-class OTPRecord:
-    """A one-time password record for gate override."""
-    code: str = ""
-    user: str = ""
-    created_at: float = field(default_factory=time.time)
-    ttl: float = 300.0
-    used: bool = False
-    physically_approved: bool = False
-
-    def is_expired(self) -> bool:
-        return (time.time() - self.created_at) > self.ttl
+    source_confidence: float = 1.0  # 0.0 (untrusted) to 1.0 (verified)
+    stale: bool = False  # marked stale by staleness check
+    contradiction: bool = False  # marked as contradicting another entry
 
 
 @dataclass
@@ -137,14 +176,13 @@ class LongTermMemory:
 
     def _save(self) -> None:
         """Save state to disk."""
-        # Convert dataclasses to dicts, redact content
+        # Convert dataclasses to dicts, redact content (nested)
         entries_dict = {
             eid: asdict(entry)
             for eid, entry in self._entries.items()
         }
         for e in entries_dict.values():
-            raw_content = e["content"]
-            e["content"] = redact_secrets(str(raw_content)) if isinstance(raw_content, str) else raw_content
+            e["content"] = _redact_nested(e["content"])
 
         index_dict = {k: asdict(v) for k, v in self._index.items()}
         summary_dict = {k: asdict(v) for k, v in self._summaries.items()}
@@ -245,7 +283,7 @@ class LongTermMemory:
                 continue
             if query_lower in str(entry.content).lower():
                 results.append(entry)
-        results.sort(key=lambda e: e.timestamp, reverse=True)
+        results.sort(key=lambda e: _rank_score(e), reverse=True)
         return results[:limit]
 
     def search_entries(self, query: str,
@@ -254,11 +292,66 @@ class LongTermMemory:
         """Alias for search() for backwards compatibility."""
         return self.search(query, domains=domains, limit=limit)
 
+    def mark_stale(self, entry_id: str) -> bool:
+        """Mark an entry as stale (outdated)."""
+        entry = self._entries.get(entry_id)
+        if entry is None:
+            return False
+        entry.stale = True
+        self._save()
+        return True
+
+    def mark_contradiction(self, entry_id: str) -> bool:
+        """Mark an entry as contradicting another entry."""
+        entry = self._entries.get(entry_id)
+        if entry is None:
+            return False
+        entry.contradiction = True
+        self._save()
+        return True
+
+    def get_ranked(self, domain: str, limit: int = 20,
+                   query_tags: Optional[List[str]] = None) -> List[MemoryEntry]:
+        """Return entries ranked by composite score (#1129).
+
+        Ranking factors: recency, importance, source confidence,
+        tag/domain match, stale penalty, contradiction penalty.
+        """
+        if domain not in self._index:
+            return []
+        entry_ids = self._index[domain].entries
+        candidates = [self._entries[eid] for eid in entry_ids if eid in self._entries]
+        candidates.sort(key=lambda e: _rank_score(e, query_tags=query_tags), reverse=True)
+        return candidates[:limit]
+
+    def memory_influence_report(
+        self, used_ids: List[str], reason_map: Optional[Dict[str, str]] = None,
+    ) -> List[Dict[str, Any]]:
+        """Generate a structured influence report for used memories (#1129)."""
+        reason_map = reason_map or {}
+        report: List[Dict[str, Any]] = []
+        for eid in used_ids:
+            entry = self._entries.get(eid)
+            if entry is None:
+                continue
+            report.append({
+                "id": entry.id,
+                "domain": entry.domain,
+                "importance": entry.importance,
+                "source_confidence": entry.source_confidence,
+                "stale": entry.stale,
+                "contradiction": entry.contradiction,
+                "rank_score": round(_rank_score(entry), 3),
+                "why_selected": reason_map.get(eid, "relevance"),
+                "tags": entry.tags[:5],
+            })
+        return report
+
     def generate_summary(self, domain: str, force: bool = False) -> str:
         """Generate or retrieve a rolling summary for a domain.
 
-        In a production system this would use an LLM; here we produce a
-        simple concatenation of recent unique tags and a count of entries.
+        #1129: improved summary includes source distribution, importance
+        stats, stale/contradiction counts, and top sources alongside tags.
         """
         if domain not in self._index:
             return ""
@@ -271,7 +364,7 @@ class LongTermMemory:
         if not entries:
             return ""
 
-        # Build a naive summary: most common tags, date range, entry count
+        # Tag distribution
         tag_counts: Dict[str, int] = {}
         for e in entries:
             for t in e.tags:
@@ -279,12 +372,27 @@ class LongTermMemory:
         top_tags = sorted(tag_counts.items(), key=lambda x: -x[1])[:5]
         tag_str = ", ".join(f"{tag}({cnt})" for tag, cnt in top_tags)
 
+        # Source distribution
+        source_counts: Dict[str, int] = {}
+        for e in entries:
+            src = e.source or "unknown"
+            source_counts[src] = source_counts.get(src, 0) + 1
+        top_sources = sorted(source_counts.items(), key=lambda x: -x[1])[:3]
+        source_str = ", ".join(f"{s}({c})" for s, c in top_sources)
+
+        # Importance and quality stats
+        avg_importance = sum(e.importance for e in entries) / len(entries)
+        stale_count = sum(1 for e in entries if e.stale)
+        contradiction_count = sum(1 for e in entries if e.contradiction)
+
         start_ts = min(e.timestamp for e in entries)
         end_ts = max(e.timestamp for e in entries)
         summary_text = (
             f"Domain: {domain} | Entries: {len(entries)} | "
             f"From: {start_ts:.2f} To: {end_ts:.2f} | "
-            f"Top tags: {tag_str}"
+            f"Top tags: {tag_str} | Sources: {source_str} | "
+            f"Avg importance: {avg_importance:.2f} | "
+            f"Stale: {stale_count} | Contradictions: {contradiction_count}"
         )
 
         new_summary = RollingSummary(
@@ -442,56 +550,7 @@ class MemoryRetriever:
 
 
 # ---------------------------------------------------------------------------
-# GateOverride — OTP-based physical approval gate
+# Backward-compat imports — OTPRecord/GateOverride moved to gate_override.py (#1129)
 # ---------------------------------------------------------------------------
 
-class GateOverride:
-    """OTP-based gate override with audit trail and physical approval support."""
-
-    def __init__(self) -> None:
-        self._records: Dict[str, OTPRecord] = {}
-        self._audit: List[Dict[str, Any]] = []
-
-    def generate_otp(self, user: str, ttl: float = 300.0) -> str:
-        """Generate a 6-digit OTP for *user* with a given TTL in seconds."""
-        code = "".join(random.choices(string.digits, k=6))
-        record = OTPRecord(code=code, user=user, ttl=ttl)
-        self._records[code] = record
-        self._audit.append({
-            "action": "generate",
-            "user": user,
-            "code": code,
-            "ts": time.time(),
-        })
-        return code
-
-    def validate_otp(self, code: str) -> bool:
-        """Return True if *code* exists and has not expired."""
-        record = self._records.get(code)
-        if record is None:
-            return False
-        return not record.is_expired()
-
-    def get_audit_logs(self) -> List[Dict[str, Any]]:
-        """Return the full audit trail."""
-        return list(self._audit)
-
-    def request_physical_approval(self, code: str) -> Optional[OTPRecord]:
-        """Mark a code as pending physical approval and return its record."""
-        record = self._records.get(code)
-        if record is None:
-            return None
-        self._audit.append({"action": "physical_approval_requested", "code": code, "ts": time.time()})
-        return record
-
-    def approve_physically(self, code: str) -> None:
-        """Mark a code as physically approved."""
-        record = self._records.get(code)
-        if record is not None:
-            record.physically_approved = True
-            self._audit.append({"action": "physically_approved", "code": code, "ts": time.time()})
-
-    def is_physically_approved(self, code: str) -> bool:
-        """Return True if *code* has been physically approved."""
-        record = self._records.get(code)
-        return record is not None and record.physically_approved
+from igris.core.gate_override import GateOverride, OTPRecord  # noqa: F401,E402
