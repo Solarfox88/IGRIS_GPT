@@ -66,6 +66,7 @@ from igris.core import decision_report as decision_report_mod
 from igris.core import autonomous_loop
 from igris.models.task import TaskStatus
 from igris.layers.validation import validator as task_validator
+from igris.web.router_registry import include_core_routers, include_optional_api_routers
 
 MODULE_DIR = Path(__file__).resolve().parent
 TEMPLATES_DIR = MODULE_DIR / "templates"
@@ -620,34 +621,10 @@ def create_app() -> FastAPI:
     )
 
     # ---- Register route modules ----
-    from igris.web.routers import (
-        routes_01, routes_02, routes_03, routes_04, routes_05,
-        routes_06, routes_07, routes_08, routes_09, routes_10,
-    )
-    for _mod in (
-        routes_01, routes_02, routes_03, routes_04, routes_05,
-        routes_06, routes_07, routes_08, routes_09, routes_10,
-    ):
-        app.include_router(_mod.create_router(deps))
+    include_core_routers(app, deps)
 
     # ---- Register modular API routers (igris/api/) ----
-    try:
-        from igris.api.routes.github_admin import router as _github_admin_router
-        app.include_router(_github_admin_router)
-    except Exception:
-        pass  # best-effort — never block app startup
-
-    try:
-        from igris.api.routes.github_write import router as _github_write_router
-        app.include_router(_github_write_router)
-    except Exception:
-        pass  # best-effort — never block app startup
-
-    try:
-        from igris.api.routes.github_read import router as _github_read_router
-        app.include_router(_github_read_router)
-    except Exception:
-        pass  # best-effort — never block app startup
+    include_optional_api_routers(app)
 
     return app
 
