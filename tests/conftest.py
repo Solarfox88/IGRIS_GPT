@@ -10,6 +10,7 @@ runs.
 
 from __future__ import annotations
 
+import sys
 import shutil
 from pathlib import Path
 
@@ -17,6 +18,11 @@ import pytest
 
 
 _SHARED_IGRIS_DIR = Path("/tmp/project/.igris")
+_REPO_ROOT = Path(__file__).resolve().parents[1]
+
+# Ensure tests always import code from the active worktree checkout.
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
 
 
 @pytest.fixture(scope="session", autouse=True)
