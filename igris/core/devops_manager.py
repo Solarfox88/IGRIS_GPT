@@ -264,6 +264,7 @@ class DevOpsManager:
 
     #: Relative path inside project root for the host registry JSON.
     _REGISTRY_FILE = ".igris/devops_hosts.json"
+    _AUDIT_FILE = ".igris/devops_operator_audit.jsonl"
 
     def __init__(
         self,
@@ -272,10 +273,30 @@ class DevOpsManager:
     ) -> None:
         self.project_root = Path(project_root)
         self._registry_path = self.project_root / self._REGISTRY_FILE
+        self._audit_path = self.project_root / self._AUDIT_FILE
         self._hosts: Dict[str, HostConfig] = {}
         # PR 3: injectable runner for tests; defaults to real subprocess runner
         self._runner: CommandRunner = runner or LocalCommandRunner()
         self._load_registry()
+
+    def _audit(self, event: str, payload: Dict[str, Any]) -> None:
+        """Persist a redacted audit entry (best-effort)."""
+        try:
+            self._audit_path.parent.mkdir(parents=True, exist_ok=True)
+            row = {
+                "timestamp": time.time(),
+                "event": event,
+                "payload": payload,
+            }
+            self._audit_path.write_text(
+                self._audit_path.read_text(encoding="utf-8") + json.dumps(row, ensure_ascii=False) + "\n"
+                if self._audit_path.exists()
+                else json.dumps(row, ensure_ascii=False) + "\n",
+                encoding="utf-8",
+            )
+        except Exception:
+            # Audit write failures must never break operator flows.
+            pass
 
     # ------------------------------------------------------------------
     # Persistence
@@ -504,6 +525,7 @@ class DevOpsManager:
         compose_file: str = "docker-compose.yml",
         nginx_webroot: str = "/var/www/html",
         auto_rollback: bool = True,
+        production_approval: str = "",
     ) -> Dict[str, Any]:
         """Execute a deploy cycle: preflight → snapshot → action → postcheck → rollback.
 
@@ -549,7 +571,25 @@ class DevOpsManager:
                 report["deployed"] = False
                 report["abort_reason"] = f"health_url domain is not allowed by host policy: {health_url}"
                 return report
+            if env == "production" and not (dry_run or strategy == "dry_run"):
+                if str(production_approval or "").strip().lower() != "approved":
+                    report["deployed"] = False
+                    report["abort_reason"] = "production deploy requires explicit production_approval='approved'"
+                    self._audit("deploy_blocked", {
+                        "hostname": host_cfg.hostname,
+                        "environment": env,
+                        "reason": report["abort_reason"],
+                        "strategy": strategy,
+                        "dry_run": dry_run,
+                    })
+                    return report
         runner = self._effective_runner(host_cfg)
+        self._audit("deploy_start", {
+            "hostname": hostname or "localhost",
+            "strategy": strategy,
+            "dry_run": dry_run,
+            "environment": str((host_cfg.environment if host_cfg else "local")),
+        })
 
         # Preflight
         preflight = self.run_preflight(
@@ -561,6 +601,7 @@ class DevOpsManager:
         if not preflight["ok"]:
             report["deployed"] = False
             report["abort_reason"] = "preflight failed"
+            self._audit("deploy_end", {"ok": False, "abort_reason": report["abort_reason"]})
             return report
 
         if dry_run or strategy == "dry_run":
@@ -573,6 +614,7 @@ class DevOpsManager:
                 host_cfg=host_cfg,
                 runner=runner,
             )
+            self._audit("deploy_end", {"ok": True, "dry_run": True})
             return report
 
         # Snapshot pre-deploy git SHA for rollback
@@ -622,6 +664,11 @@ class DevOpsManager:
             report["postcheck"] = None
             report["postcheck_ok"] = False
 
+        self._audit("deploy_end", {
+            "ok": bool(report.get("deployed", False)),
+            "postcheck_ok": bool(report.get("postcheck_ok", False)),
+            "abort_reason": str(report.get("abort_reason", "")),
+        })
         return report
 
     def _run_deploy_strategy(

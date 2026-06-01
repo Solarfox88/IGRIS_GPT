@@ -18,6 +18,70 @@ def test_run_deploy_rejects_invalid_environment(tmp_path) -> None:
     assert "invalid host environment" in result["abort_reason"]
 
 
+def test_run_deploy_blocks_production_without_approval(tmp_path) -> None:
+    runner = FakeCommandRunner()
+    runner.set_result(
+        "df -P",
+        CommandResult(
+            returncode=0,
+            stdout="Filesystem 1024-blocks Used Available Capacity Mounted on\n/dev/root 1000 400 600 40% /\n",
+        ),
+    )
+    mgr = DevOpsManager(str(tmp_path), runner=runner)
+    mgr.register_host(
+        HostConfig(
+            hostname="localhost",
+            policy="operator",
+            environment="production",
+            allowed_domains=["prod.example.com"],
+        )
+    )
+    blocked = mgr.run_deploy(
+        hostname="localhost",
+        health_url="https://prod.example.com/health",
+        dry_run=False,
+        strategy="git_pull_restart",
+    )
+    assert blocked["deployed"] is False
+    assert "production_approval" in blocked["abort_reason"]
+
+
+def test_run_deploy_allows_production_with_explicit_approval(tmp_path) -> None:
+    runner = FakeCommandRunner()
+    runner.set_result(
+        "df -P",
+        CommandResult(
+            returncode=0,
+            stdout="Filesystem 1024-blocks Used Available Capacity Mounted on\n/dev/root 1000 400 600 40% /\n",
+        ),
+    )
+    mgr = DevOpsManager(str(tmp_path), runner=runner)
+    mgr.register_host(
+        HostConfig(
+            hostname="localhost",
+            policy="operator",
+            environment="production",
+            allowed_domains=["prod.example.com"],
+        )
+    )
+    allowed = mgr.run_deploy(
+        hostname="localhost",
+        health_url="https://prod.example.com/health",
+        dry_run=True,
+        strategy="dry_run",
+        production_approval="approved",
+    )
+    assert "dry_run_evidence" in allowed
+
+
+def test_devops_audit_file_created(tmp_path) -> None:
+    mgr = DevOpsManager(str(tmp_path), runner=FakeCommandRunner())
+    mgr.run_deploy(dry_run=True, strategy="dry_run")
+    audit_file = tmp_path / ".igris" / "devops_operator_audit.jsonl"
+    assert audit_file.exists()
+    assert audit_file.read_text(encoding="utf-8").strip()
+
+
 def test_run_deploy_enforces_allowed_domains(tmp_path) -> None:
     runner = FakeCommandRunner()
     runner.set_result(
