@@ -253,6 +253,7 @@ class AgentReasoningLoop:
         self._recent_errors: List[Dict[str, Any]] = []
         self._files_modified: List[str] = []
         self._memory_items: List[Dict[str, Any]] = []
+        self._ltm_context_items: List[Dict[str, Any]] = []
         self._world_state: Dict[str, Any] = {}
         self._consecutive_errors = 0
         self._steps_without_write: int = 0  # no_diff_repair guard
@@ -271,6 +272,8 @@ class AgentReasoningLoop:
         self._repeat_threshold = 2  # block after 2 identical successes without consumption
         self._micro_planner = MicroStepPlanner()
         self._micro_step_state: Any = None
+        self._ltm = None
+        self._ltm_retriever = None
 
     def run(
         self,
@@ -312,6 +315,8 @@ class AgentReasoningLoop:
                 self._world_state["note"] = initial_context
             else:
                 self._world_state["note"] = str(initial_context)
+        self._init_long_term_memory()
+        self._hydrate_long_term_memory_context(goal)
         self._ensure_micro_step_state(goal)
 
         for step_num in range(1, self.max_steps + 1):
@@ -454,6 +459,7 @@ class AgentReasoningLoop:
         result.local_model_available = self._local_model_available()
         result.estimated_cost_usd = self._total_cost_usd
         self._run_mission_brain_shadow(goal=goal, result=result)
+        self._persist_long_term_memory_outcome(goal=goal, result=result)
 
         return result
 
@@ -986,8 +992,69 @@ class AgentReasoningLoop:
             world_state=self._world_state,
             recent_actions=[s.to_dict() for s in self._steps[-10:]],
             recent_errors=self._recent_errors[-5:],
-            memory_items=self._memory_items,
+            memory_items=self._memory_items + self._ltm_context_items,
         )
+
+    def _init_long_term_memory(self) -> None:
+        """Best-effort LongTermMemory bootstrap; never breaks loop execution."""
+        if self._ltm is not None and self._ltm_retriever is not None:
+            return
+        try:
+            from igris.core.long_term_memory import LongTermMemory, MemoryRetriever
+            storage_dir = os.path.join(self.project_root, ".igris", "memory", "long_term")
+            self._ltm = LongTermMemory(storage_dir=storage_dir)
+            self._ltm_retriever = MemoryRetriever(self._ltm)
+        except Exception:
+            self._ltm = None
+            self._ltm_retriever = None
+
+    def _hydrate_long_term_memory_context(self, goal: str) -> None:
+        """Inject contextual long-term memory snippets into context memory_items."""
+        if self._ltm_retriever is None:
+            return
+        if self._world_state.get("ltm_hydrated"):
+            return
+        try:
+            domain = self.task_type or "general"
+            hits = self._ltm_retriever.retrieve_contextual(domain=domain, query=goal, limit=5)
+            if not hits:
+                hits = self._ltm_retriever.retrieve_recent(domain=domain, limit=3)
+            for hit in hits:
+                self._ltm_context_items.append({
+                    "event_type": "long_term_memory",
+                    "content": str(getattr(hit, "content", ""))[:500],
+                    "domain": getattr(hit, "domain", domain),
+                    "timestamp": getattr(hit, "timestamp", time.time()),
+                })
+            self._world_state["ltm_hydrated"] = True
+            self._world_state["ltm_items_loaded"] = len(hits)
+        except Exception:
+            pass
+
+    def _persist_long_term_memory_outcome(self, goal: str, result: LoopResult) -> None:
+        """Persist compact post-run lesson into long-term memory (best-effort)."""
+        if self._ltm is None:
+            return
+        try:
+            domain = self.task_type or "general"
+            payload = {
+                "goal": goal,
+                "status": result.status,
+                "stop_reason": result.stop_reason,
+                "steps": result.total_steps,
+                "successful_steps": result.successful_steps,
+                "failed_steps": result.failed_steps,
+                "files_modified": result.files_modified[:10],
+            }
+            self._ltm.store(
+                domain=domain,
+                content=payload,
+                metadata={"source": "agent_reasoning_loop"},
+                tags=["reasoning_loop", result.status or "unknown"],
+                importance=0.7 if result.status == "finished" else 0.5,
+            )
+        except Exception:
+            pass
 
     # Token budget thresholds for local profiles (#1044)
     _LOCAL_TOKEN_WARN = 3000    # ~12 000 chars — warn and log
