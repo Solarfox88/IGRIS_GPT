@@ -98,6 +98,12 @@ class TestDashboardStructure:
         assert "dashboard-grid" in html
         assert "dash-card" in html
 
+    def test_dashboard_control_room_overview_card(self):
+        import pathlib
+        html = pathlib.Path("igris/web/templates/index.html").read_text()
+        assert 'id="dash-control-room-overview"' in html
+        assert 'id="dash-control-room-status"' in html
+
     def test_dashboard_health_card(self):
         import pathlib
         html = pathlib.Path("igris/web/templates/index.html").read_text()
@@ -205,6 +211,13 @@ class TestDashboardCSS:
         css = pathlib.Path("igris/web/static/css/style.css").read_text()
         assert ".dashboard-grid{grid-template-columns:1fr}" in css
 
+    def test_control_room_css_present(self):
+        import pathlib
+        css = pathlib.Path("igris/web/static/css/style.css").read_text()
+        assert ".cr-kpi-row" in css
+        assert ".risk-chip" in css
+        assert ".next-action-banner" in css
+
 
 # ---------------------------------------------------------------------------
 # JS tests
@@ -223,6 +236,8 @@ class TestDashboardJS:
         import pathlib
         js = pathlib.Path("igris/web/static/js/app.js").read_text()
         assert "loadDashboardExtras" in js
+        assert '"/api/dashboard/summary"' in js
+        assert "dash-control-room-status" in js
 
     def test_js_populates_diagnostics(self):
         import pathlib

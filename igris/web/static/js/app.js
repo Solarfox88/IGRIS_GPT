@@ -221,6 +221,42 @@
   }
 
   async function loadDashboardExtras() {
+    // Dashboard summary (control room backend payload from #1120)
+    var summary = await api("GET", "/api/dashboard/summary");
+    var crEl = $("#dash-control-room-status");
+    if (crEl) {
+      if (summary.ok && summary.data && summary.data.control_room) {
+        var cr = summary.data.control_room;
+        var mo = cr.mission_overview || {};
+        var rs = cr.risk_snapshot || {};
+        var na = cr.next_action || {};
+        var warnings = cr.warnings || [];
+        var riskLevel = String(rs.level || "low").toLowerCase();
+        if (["low", "medium", "high"].indexOf(riskLevel) === -1) riskLevel = "low";
+        var html = '';
+        html += '<div class="cr-kpi-row">';
+        html += '<div class="cr-kpi"><div class="cr-kpi-label">Active Tasks</div><div class="cr-kpi-value">' + esc(String(mo.active_task_count || 0)) + '</div></div>';
+        html += '<div class="cr-kpi"><div class="cr-kpi-label">Pending</div><div class="cr-kpi-value">' + esc(String(mo.pending_task_count || 0)) + '</div></div>';
+        html += '<div class="cr-kpi"><div class="cr-kpi-label">Running Task</div><div class="cr-kpi-value">' + esc(String(mo.running_task_id || "none")) + '</div></div>';
+        html += '<div class="cr-kpi"><div class="cr-kpi-label">Risk</div><div class="cr-kpi-value"><span class="risk-chip ' + esc(riskLevel) + '">' + esc(riskLevel.toUpperCase()) + '</span></div></div>';
+        html += '</div>';
+        html += '<div class="next-action-banner">';
+        html += '<div><div class="title">Next Action: ' + esc(na.label || "Open Mission") + '</div><div class="sub">' + esc(na.reason || "default_control_room_hint") + '</div></div>';
+        html += '<div class="sub">id=' + esc(na.id || "open_mission") + (na.approval_required ? " | approval required" : "") + '</div>';
+        html += '</div>';
+        if (warnings.length > 0) {
+          html += '<ul class="warning-list">';
+          for (var wi = 0; wi < warnings.length; wi++) {
+            html += '<li>' + esc(String(warnings[wi])) + '</li>';
+          }
+          html += '</ul>';
+        }
+        crEl.innerHTML = html;
+      } else {
+        crEl.innerHTML = '<span class="dim">Control-room payload unavailable</span>';
+      }
+    }
+
     // Diagnostics summary
     var diag = await api("GET", "/api/diagnostics/summary");
     var diagEl = $("#dash-diagnostics-summary");
