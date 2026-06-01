@@ -270,8 +270,23 @@ class TestDashboardAPI:
         assert "health" in data
         assert "diagnostics" in data
         assert "loop" in data
+        assert "control_room" in data
         assert "tab_layout" in data
         assert data["health"]["status"] == "ok"
+
+    def test_control_room_payload_shape(self, client):
+        r = client.get("/api/dashboard/summary")
+        cr = r.json()["control_room"]
+        assert "mission_overview" in cr
+        assert "risk_snapshot" in cr
+        assert "next_action" in cr
+        assert "warnings" in cr
+
+    def test_control_room_next_action_has_required_fields(self, client):
+        r = client.get("/api/dashboard/summary")
+        nxt = r.json()["control_room"]["next_action"]
+        for key in ("id", "label", "reason", "approval_required"):
+            assert key in nxt
 
     def test_dashboard_tab_layout(self, client):
         r = client.get("/api/dashboard/summary")

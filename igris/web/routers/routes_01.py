@@ -282,10 +282,75 @@ def create_router(deps) -> APIRouter:
         except Exception:
             pass
 
+        mission_overview = {
+            "active_task_count": 0,
+            "pending_task_count": 0,
+            "running_task_id": "",
+            "running_task_title": "",
+        }
+        try:
+            mission_overview["active_task_count"] = len(tasks)
+            pending = [t for t in tasks if str(t.get("status", "")).lower() == "pending"]
+            running = [t for t in tasks if str(t.get("status", "")).lower() in {"in_progress", "running"}]
+            mission_overview["pending_task_count"] = len(pending)
+            if running:
+                mission_overview["running_task_id"] = str(running[0].get("task_id", "") or "")
+                mission_overview["running_task_title"] = str(running[0].get("description", "") or "")
+        except Exception:
+            pass
+
+        risk_snapshot = {
+            "level": "low",
+            "reason": "",
+        }
+        try:
+            loop_state = str(loop_info.get("status", "")).lower()
+            if loop_state in {"error", "failed", "blocked"}:
+                risk_snapshot["level"] = "high"
+                risk_snapshot["reason"] = f"loop_status={loop_state}"
+            elif mission_overview["pending_task_count"] > 15:
+                risk_snapshot["level"] = "medium"
+                risk_snapshot["reason"] = "task_backlog_high"
+        except Exception:
+            pass
+
+        warnings = []
+        if risk_snapshot["level"] in {"medium", "high"}:
+            warnings.append(f"risk:{risk_snapshot['level']}")
+        if mission_overview["pending_task_count"] > 0 and not mission_overview["running_task_id"]:
+            warnings.append("no_task_running")
+
+        next_action = {
+            "id": "open_mission",
+            "label": "Open Mission",
+            "reason": "default_control_room_hint",
+            "approval_required": False,
+        }
+        if mission_overview["running_task_id"]:
+            next_action = {
+                "id": "open_loop_status",
+                "label": "Open Loop Status",
+                "reason": "task_running_detected",
+                "approval_required": False,
+            }
+        elif mission_overview["pending_task_count"] > 0:
+            next_action = {
+                "id": "start_next_task",
+                "label": "Start Next Task",
+                "reason": "pending_tasks_available",
+                "approval_required": False,
+            }
+
         return {
             "health": {"status": "ok"},
             "diagnostics": diag,
             "loop": loop_info,
+            "control_room": {
+                "mission_overview": mission_overview,
+                "risk_snapshot": risk_snapshot,
+                "next_action": next_action,
+                "warnings": warnings,
+            },
             "tab_layout": {
                 "primary": ["dashboard", "code", "tasks", "terminal", "memory", "safety", "advanced"],
                 "grouped": {
