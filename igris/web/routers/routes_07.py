@@ -261,6 +261,70 @@ def create_router(deps) -> APIRouter:
         decision = guard_secret_access(content.get("path", ""), content.get("action", "read"))
         return decision.to_dict()
 
+    @router.post("/api/safety/override/request")
+    async def api_override_request(request: Request) -> Dict[str, object]:
+        """Request a scoped override token with TTL and audit trail."""
+        from igris.core.gate_override import _SHARED_GATE_OVERRIDE
+
+        content = await request.json()
+        code = _SHARED_GATE_OVERRIDE.request_override(
+            user=content.get("user", ""),
+            scope=content.get("scope", "global"),
+            ttl=float(content.get("ttl", 300.0)),
+            reason=content.get("reason", ""),
+            mission_id=content.get("mission_id", ""),
+        )
+        record = _SHARED_GATE_OVERRIDE.request_physical_approval(code)
+        return {
+            "code": code,
+            "scope": record.scope if record else content.get("scope", "global"),
+            "mission_id": record.mission_id if record else content.get("mission_id", ""),
+            "ttl": record.ttl if record else float(content.get("ttl", 300.0)),
+            "approved": False,
+            "active_overrides": len(_SHARED_GATE_OVERRIDE.active_overrides()),
+        }
+
+    @router.post("/api/safety/override/confirm")
+    async def api_override_confirm(request: Request) -> Dict[str, object]:
+        """Confirm and consume a scoped override token."""
+        from igris.core.gate_override import _SHARED_GATE_OVERRIDE
+
+        content = await request.json()
+        approval_token = content.get("approval_token", "") or content.get("code", "")
+        if not approval_token:
+            raise HTTPException(status_code=403, detail="approval token required")
+        _SHARED_GATE_OVERRIDE.approve_physically(
+            approval_token,
+            approved_by=content.get("approved_by", "operator"),
+        )
+        confirmed = _SHARED_GATE_OVERRIDE.confirm_override(
+            code=approval_token,
+            approved_by=content.get("approved_by", "operator"),
+            scope=content.get("scope", ""),
+            mission_id=content.get("mission_id", ""),
+        )
+        if not confirmed:
+            raise HTTPException(status_code=403, detail="override confirmation failed")
+        return {
+            "confirmed": True,
+            "code": approval_token,
+            "scope": content.get("scope", ""),
+            "mission_id": content.get("mission_id", ""),
+            "active_overrides": len(_SHARED_GATE_OVERRIDE.active_overrides()),
+        }
+
+    @router.get("/api/safety/override/status")
+    async def api_override_status() -> Dict[str, object]:
+        """Return a safe view of active override tokens."""
+        from igris.core.gate_override import _SHARED_GATE_OVERRIDE
+
+        active = _SHARED_GATE_OVERRIDE.active_overrides()
+        return {
+            "active_count": len(active),
+            "active_overrides": active,
+            "audit_count": len(_SHARED_GATE_OVERRIDE.get_audit_logs()),
+        }
+
     @router.post("/api/rollback/backup-file")
     async def api_rollback_backup_file(request: Request) -> Dict[str, object]:
         """Create a file backup for rollback."""
