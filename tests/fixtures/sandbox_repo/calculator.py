@@ -21,4 +21,6 @@ def divide(a, b):
 
 def percentage(value, total):
     """Calculate percentage of value relative to total."""
+    if total == 0:
+        raise ValueError("Cannot calculate percentage with total=0")
     return (value / total) * 100

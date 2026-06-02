@@ -30,3 +30,12 @@ def test_divide_by_zero():
 
 def test_percentage():
     assert percentage(25, 100) == 25.0
+
+
+def test_percentage_by_zero():
+    """Percentage over zero total should raise a clear ValueError."""
+    try:
+        percentage(25, 0)
+        assert False, "Should have raised ValueError"
+    except ValueError:
+        pass
