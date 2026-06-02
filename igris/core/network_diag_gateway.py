@@ -14,7 +14,9 @@ import logging
 import socket
 import subprocess
 import time
+import json
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Protocol, runtime_checkable
 from urllib.parse import urlparse, urlunparse
 from urllib.request import Request, urlopen
@@ -95,6 +97,7 @@ class NetworkDiagGateway:
     default_allowed_hosts: List[str] = field(default_factory=lambda: ["127.0.0.1", "localhost", "::1"])
     default_allowed_domains: List[str] = field(default_factory=list)
     audit_log: List[Dict[str, Any]] = field(default_factory=list)
+    audit_path: str = ".igris/network_diag_audit.jsonl"
 
     def _runner(self) -> NetworkDiagRunner:
         return self.runner or LocalNetworkDiagRunner()
@@ -146,6 +149,13 @@ class NetworkDiagGateway:
             "dry_run": self.dry_run,
         }
         self.audit_log.append(entry)
+        try:
+            path = Path(self.audit_path)
+            path.parent.mkdir(parents=True, exist_ok=True)
+            with path.open("a", encoding="utf-8") as fh:
+                fh.write(json.dumps(entry, ensure_ascii=False) + "\n")
+        except Exception:  # noqa: BLE001
+            logger.warning("NetworkDiagGateway audit write failed for %s", action)
         logger.info("NetworkDiagGateway audit: %s", entry)
         return entry
 
@@ -303,6 +313,73 @@ class NetworkDiagGateway:
         report["status"] = "dry_run" if self.dry_run else "ok"
         self._audit("diagnose", host, report["status"], report)
         return report
+
+    def inventory(
+        self,
+        host: str,
+        *,
+        port: Optional[int] = None,
+        url: Optional[str] = None,
+        allowed_hosts: Optional[Iterable[str]] = None,
+        allowed_domains: Optional[Iterable[str]] = None,
+    ) -> Dict[str, Any]:
+        """Return a scoped inventory of safe diagnostics available for the target."""
+        allowed = self._target_allowed(host or url or "", allowed_hosts=allowed_hosts, allowed_domains=allowed_domains)
+        inventory = {
+            "target": self._redact(host or url or ""),
+            "allowed": allowed,
+            "allowed_hosts": self._normalize_list(allowed_hosts, self.default_allowed_hosts),
+            "allowed_domains": self._normalize_list(allowed_domains, self.default_allowed_domains),
+            "checks": {
+                "dns": bool(allowed),
+                "tcp": bool(allowed and port is not None),
+                "http_latency": bool(allowed and url is not None),
+                "port_check": bool(allowed and port is not None),
+                "traceroute": bool(allowed),
+            },
+            "provisioning_hooks": {
+                "status": "dry_run",
+                "available": False,
+                "reason": "explicit approval required; backend not configured",
+            },
+        }
+        self._audit("inventory", host or url or "", "OK" if allowed else "BLOCKED", inventory)
+        return inventory
+
+    def propose_provisioning_hook(
+        self,
+        target: str,
+        hook: str,
+        *,
+        approval: bool = False,
+        dry_run: bool = True,
+        allowed_hosts: Optional[Iterable[str]] = None,
+        allowed_domains: Optional[Iterable[str]] = None,
+    ) -> Dict[str, Any]:
+        """Plan a controlled provisioning hook without executing provisioning."""
+        action = "provisioning.hook.propose"
+        if not self._target_allowed(target, allowed_hosts=allowed_hosts, allowed_domains=allowed_domains):
+            return self._blocked(action, target, "host_not_allowed")
+        proposal = {
+            "target": self._redact(target),
+            "hook": self._redact(hook),
+            "dry_run": dry_run,
+            "approval_required": True,
+            "approved": bool(approval),
+            "status": "dry_run" if dry_run or not approval else "blocked",
+        }
+        if dry_run or not approval:
+            self._audit(action, target, "DRY_RUN", proposal)
+            return {"success": True, "dry_run": True, "status": "dry_run", "proposal": proposal}
+        self._audit(action, target, "BLOCKED", {"reason": "provisioning backend not configured", "proposal": proposal})
+        return {
+            "success": False,
+            "dry_run": False,
+            "status": "blocked",
+            "reason": "provisioning backend not configured",
+            "approval_required": True,
+            "proposal": proposal,
+        }
 
     def get_audit_log(self) -> List[Dict[str, Any]]:
         return list(self.audit_log)
