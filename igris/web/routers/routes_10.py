@@ -74,6 +74,42 @@ def create_router(deps) -> APIRouter:
     task_engine = deps.task_engine
     nonlocal_test_running = deps.nonlocal_test_running
     nonlocal_cmd_running = deps.nonlocal_cmd_running
+    review_log_path = Path(str(getattr(CONFIG, "project_root", "."))) / ".igris" / "control_room_reviews.jsonl"
+
+    def _persist_control_room_review(payload: Dict[str, object]) -> Dict[str, object]:
+        review_log_path.parent.mkdir(parents=True, exist_ok=True)
+        record = {
+            "run_id": str(payload.get("run_id") or ""),
+            "action_id": _safe_redact(payload.get("action_id") or ""),
+            "summary": _safe_redact(payload.get("summary") or ""),
+            "notes": _safe_redact(payload.get("notes") or ""),
+            "evidence_ref": _safe_redact(payload.get("evidence_ref") or ""),
+            "reviewed_by": _safe_redact(payload.get("reviewed_by") or "operator"),
+            "timestamp": time.time(),
+        }
+        with review_log_path.open("a", encoding="utf-8") as fh:
+            fh.write(json.dumps(record, sort_keys=True) + "\n")
+        return record
+
+    def _load_control_room_reviews(run_id: str) -> List[Dict[str, object]]:
+        if not review_log_path.exists():
+            return []
+        records: List[Dict[str, object]] = []
+        try:
+            with review_log_path.open("r", encoding="utf-8") as fh:
+                for line in fh:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        record = json.loads(line)
+                    except Exception:
+                        continue
+                    if str(record.get("run_id") or "") == str(run_id):
+                        records.append(record)
+        except Exception:
+            return []
+        return records
 
     @router.post("/api/reasoning/step")
     async def api_reasoning_step(request: Request) -> Dict[str, object]:
@@ -752,7 +788,40 @@ def create_router(deps) -> APIRouter:
             "recommendations": recommendations,
             # PR 10 — advisory card (None when disabled or not applicable)
             "advisory_card": advisory_card,
+            "operator_reviews": _load_control_room_reviews(run_id),
         }
+
+    @router.post("/api/rank/runs/{run_id}/review")
+    async def api_rank_run_review(run_id: str, request: Request) -> Dict[str, object]:
+        """Persist an operator review action for a run."""
+        from igris.core.self_repair_supervisor import get_supervised_run
+
+        run = get_supervised_run(run_id)
+        if run is None:
+            raise HTTPException(status_code=404, detail="rank run not found")
+
+        payload = await request.json()
+        record = _persist_control_room_review({
+            "run_id": run_id,
+            "action_id": payload.get("action_id") or payload.get("id") or "review_evidence",
+            "summary": payload.get("summary") or payload.get("label") or "operator review",
+            "notes": payload.get("notes") or payload.get("comment") or "",
+            "evidence_ref": payload.get("evidence_ref") or payload.get("run_report_url") or "",
+            "reviewed_by": payload.get("reviewed_by") or "operator",
+        })
+        return {
+            "ok": True,
+            "review": record,
+            "review_count": len(_load_control_room_reviews(run_id)),
+        }
+
+    @router.get("/api/rank/runs/{run_id}/final-export")
+    async def api_rank_run_final_export(run_id: str) -> Dict[str, object]:
+        """Export the final run report together with persisted operator reviews."""
+        report = await api_rank_run_report(run_id)
+        report["exported_at"] = time.time()
+        report["operator_reviews"] = _load_control_room_reviews(run_id)
+        return report
 
     @router.get("/api/rank/runs/{run_id}/advisory")
     async def api_rank_run_advisory(run_id: str) -> Dict[str, object]:
