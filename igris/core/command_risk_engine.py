@@ -34,6 +34,31 @@ from igris.core.safety import redact_secrets
 RISK_LEVELS = ("low", "medium", "high", "critical", "unknown")
 
 
+# Structured tool registry: explicit, auditable, and extensible.
+STRUCTURED_TOOL_REGISTRY: Dict[str, Dict[str, str]] = {
+    "service_control": {
+        "tool": "structured_service_control",
+        "operation": "service_restart",
+        "fallback_rationale": "structured service control exists, so raw shell is blocked",
+    },
+    "service_observability": {
+        "tool": "structured_service_observability",
+        "operation": "service_logs",
+        "fallback_rationale": "structured service observability exists, so raw shell is blocked",
+    },
+    "container_control": {
+        "tool": "structured_container_control",
+        "operation": "container_management",
+        "fallback_rationale": "structured container control exists, so raw shell is blocked",
+    },
+    "webserver_control": {
+        "tool": "structured_webserver_control",
+        "operation": "webserver_management",
+        "fallback_rationale": "structured webserver control exists, so raw shell is blocked",
+    },
+}
+
+
 # ---------------------------------------------------------------------------
 # Shell parser — recognize command structure and dangerous patterns
 # ---------------------------------------------------------------------------
@@ -547,6 +572,23 @@ class CommandRiskEngine:
     @staticmethod
     def _extract_host_service(parsed: ParsedCommand) -> str:
         """Best-effort service name for host policy checks."""
+        if parsed.has_inline_exec:
+            raw = parsed.raw or ""
+            if "journalctl" in raw:
+                match = re.search(r"journalctl\s+-u\s+([^\s'\"`]+)", raw)
+                if match:
+                    return match.group(1)
+                return "journalctl"
+            if "systemctl" in raw or "service " in raw:
+                match = re.search(
+                    r"(?:systemctl|service)\s+(?:restart|start|stop|reload|status)\s+([^\s'\"`]+)",
+                    raw,
+                )
+                if match:
+                    return match.group(1)
+                return "service"
+            if "docker compose" in raw or "docker-compose" in raw or " docker " in raw:
+                return "docker"
         if parsed.has_systemctl:
             skip = {
                 "restart",
@@ -596,34 +638,53 @@ class CommandRiskEngine:
         if not host_context.get("structured_tool_available"):
             return None
 
-        if parsed.has_systemctl:
-            service = CommandRiskEngine._extract_host_service(parsed) or "service"
-            return {
-                "tool": "structured_service_control",
-                "operation": "service_restart",
-                "target": service,
-                "reason": f"use structured service control for {service!r} instead of systemctl",
-                "fallback_rationale": "structured service control exists, so raw shell is blocked",
-            }
+        family = CommandRiskEngine._structured_tool_family(parsed)
+        if not family:
+            return None
+        registry_entry = STRUCTURED_TOOL_REGISTRY.get(family)
+        if not registry_entry:
+            return None
+        target = parsed.executable or family
+        if family == "service_control":
+            target = CommandRiskEngine._extract_host_service(parsed) or "service"
+        elif family == "service_observability":
+            target = parsed.executable or "journalctl"
+        elif family == "container_control":
+            target = "docker"
+        elif family == "webserver_control":
+            target = "nginx"
+        return {
+            "tool": registry_entry["tool"],
+            "operation": registry_entry["operation"],
+            "target": target,
+            "reason": f"use structured {registry_entry['tool']} instead of raw shelling",
+            "fallback_rationale": registry_entry["fallback_rationale"],
+        }
 
-        if parsed.has_docker:
-            return {
-                "tool": "structured_container_control",
-                "operation": "container_management",
-                "target": "docker",
-                "reason": "use structured container control instead of raw docker shelling",
-                "fallback_rationale": "structured container control exists, so raw shell is blocked",
-            }
+        return None
 
-        if parsed.has_nginx:
-            return {
-                "tool": "structured_webserver_control",
-                "operation": "webserver_management",
-                "target": "nginx",
-                "reason": "use structured webserver control instead of raw nginx shelling",
-                "fallback_rationale": "structured webserver control exists, so raw shell is blocked",
-            }
-
+    @staticmethod
+    def _structured_tool_family(parsed: ParsedCommand) -> Optional[str]:
+        """Map a parsed command to a structured-tool family when available."""
+        executable = (parsed.executable or "").lower()
+        raw = (parsed.raw or "").lower()
+        if parsed.has_inline_exec:
+            if "journalctl" in raw:
+                return "service_observability"
+            if "systemctl" in raw or "service " in raw:
+                return "service_control"
+            if "docker compose" in raw or "docker-compose" in raw or " docker " in raw:
+                return "container_control"
+            if "nginx" in raw:
+                return "webserver_control"
+        if executable in {"systemctl", "service"}:
+            return "service_control"
+        if executable == "journalctl":
+            return "service_observability"
+        if executable in {"docker", "docker-compose"} or "docker compose" in raw:
+            return "container_control"
+        if executable == "nginx" or "nginx " in raw or raw.startswith("nginx\t"):
+            return "webserver_control"
         return None
 
     @staticmethod
@@ -710,6 +771,7 @@ class CommandRiskEngine:
             "structured_tool_available": host.get("structured_tool_available", False),
             "tool_first_recommended": tool_first_recommended,
             "structured_tool_recommendation": structured_tool_recommendation,
+            "structured_tool_registry": list(STRUCTURED_TOOL_REGISTRY.keys()),
             "fallback_rationale": fallback_rationale,
             "host_context": {
                 k: host.get(k)
@@ -718,6 +780,11 @@ class CommandRiskEngine:
             },
         }
         return explanation
+
+    @staticmethod
+    def structured_tool_registry() -> Dict[str, Dict[str, str]]:
+        """Return a copy of the structured tool registry for audit/tests."""
+        return {key: dict(value) for key, value in STRUCTURED_TOOL_REGISTRY.items()}
 
     def register_precheck(self, fn: Any) -> None:
         """Register a precheck hook called before command evaluation.

@@ -470,6 +470,33 @@ class TestHostAwareCommandPolicy:
         assert event.decision_explanation["tool_first_recommended"] is False
         assert "structured tool unavailable" in event.decision_explanation["fallback_rationale"]
 
+    def test_structured_tool_registry_is_explicit_and_extensible(self):
+        engine = _engine("operator")
+        registry = engine.structured_tool_registry()
+        assert "service_control" in registry
+        assert "service_observability" in registry
+        assert "container_control" in registry
+        assert "webserver_control" in registry
+        assert registry["service_control"]["tool"] == "structured_service_control"
+        assert registry["service_observability"]["operation"] == "service_logs"
+
+    def test_obfuscated_shell_forms_still_prefer_structured_tools(self):
+        engine = _engine("operator")
+        event, _ = engine.evaluate_command(
+            "bash -lc \"journalctl -u nginx -n 20\"",
+            host_context={
+                "hostname": "vps-01",
+                "policy": "operator",
+                "allowed_services": ["nginx"],
+                "allowed_paths": ["/home", "/opt/app"],
+                "structured_tool_available": True,
+            },
+        )
+        assert event.decision == "blocked"
+        assert event.decision_explanation["tool_first_recommended"] is True
+        assert event.decision_explanation["structured_tool_recommendation"]["tool"] == "structured_service_observability"
+        assert "structured service observability" in event.decision_explanation["fallback_rationale"]
+
     def test_outside_allowed_path_is_blocked(self):
         engine = _engine("operator")
         event, _ = engine.evaluate_command(
