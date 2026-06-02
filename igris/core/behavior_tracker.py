@@ -78,6 +78,22 @@ class BehaviorRecord:
 
 
 @dataclass
+class ExternalInterventionRecord:
+    """Audit entry for a supervised external intervention."""
+    actor: str                  # e.g. "external_api_helper", "codex", "claude"
+    source: str                 # e.g. "api_escalation"
+    detail: str                 # human-readable description
+    severity: str = "medium"    # low | medium | high | critical
+    escalated: bool = True
+    stage_id: str = ""
+    evidence: str = ""
+    timestamp: str = field(
+        default_factory=lambda: datetime.now(timezone.utc).isoformat()
+    )
+    issue_url: str = ""
+
+
+@dataclass
 class SelfAuditResult:
     """Result of the supervisor self-audit at end of run."""
     missed_behaviors: List[str] = field(default_factory=list)
@@ -100,6 +116,7 @@ class BehaviorTracker:
         self.run_id = run_id
         self.issue_number = issue_number
         self.records: List[BehaviorRecord] = []
+        self.external_interventions: List[ExternalInterventionRecord] = []
         self._auto_open = os.getenv("IGRIS_AUTO_OPEN_DEFECT_ISSUES", "false").lower() == "true"
 
     # ------------------------------------------------------------------
@@ -144,6 +161,38 @@ class BehaviorTracker:
 
     def by_severity(self, severity: str) -> List[BehaviorRecord]:
         return [r for r in self.records if r.severity == severity]
+
+    def record_external_intervention(
+        self,
+        *,
+        actor: str,
+        source: str,
+        detail: str,
+        severity: str = "medium",
+        escalated: bool = True,
+        stage_id: str = "",
+        evidence: str = "",
+        issue_url: str = "",
+    ) -> ExternalInterventionRecord:
+        """Record an external intervention for post-run audit."""
+        rec = ExternalInterventionRecord(
+            actor=actor,
+            source=source,
+            detail=detail,
+            severity=severity,
+            escalated=escalated,
+            stage_id=stage_id,
+            evidence=evidence[:500],
+            issue_url=issue_url,
+        )
+        self.external_interventions.append(rec)
+        logger.debug(
+            "BehaviorTracker external intervention [%s] %s: %s",
+            rec.actor,
+            rec.source,
+            detail[:100],
+        )
+        return rec
 
     # ------------------------------------------------------------------
     # Self-audit
@@ -215,21 +264,33 @@ class BehaviorTracker:
             result.missed_behaviors.append(r.name)
             result.notes.append("Review diff carefully — reasoning did not converge")
 
-        # E011: non-blocking defects observed but no issue was opened
-        non_blocking_high = [
-            r for r in self.non_blocking()
+        # E011: high-severity defects observed but no issue was opened
+        high_severity_untracked = [
+            r for r in self.records
             if r.severity in ("high", "critical") and not r.issue_url
         ]
-        if non_blocking_high and not self._auto_open:
+        auto_open = self._auto_open or os.getenv("IGRIS_AUTO_OPEN_DEFECT_ISSUES", "false").lower() == "true"
+        if high_severity_untracked and not auto_open:
             result.notes.append(
-                f"{len(non_blocking_high)} high-severity non-blocking defects not tracked in issues. "
+                f"{len(high_severity_untracked)} high-severity defects not tracked in issues. "
                 "Set IGRIS_AUTO_OPEN_DEFECT_ISSUES=true to auto-open."
             )
 
         # Auto-open issues for non-blocking defects if configured
-        if self._auto_open and project_root and self.non_blocking():
+        if auto_open and project_root and high_severity_untracked:
             opened = self._open_defect_issues(project_root)
             result.opened_issues.extend(opened)
+
+        # Record external intervention presence so the audit trail shows when
+        # Codex/Claude or another helper actually intervened on the run.
+        if escalation_was_called and not any(r.escalated for r in self.external_interventions):
+            self.record_external_intervention(
+                actor="external_api_helper",
+                source="api_escalation",
+                detail="External escalation was used during the run.",
+                severity="medium",
+                escalated=True,
+            )
 
         return result
 
@@ -238,9 +299,9 @@ class BehaviorTracker:
     # ------------------------------------------------------------------
 
     def _open_defect_issues(self, project_root: str) -> List[str]:
-        """Open a GitHub issue for each high-severity non-blocking defect not yet tracked."""
+        """Open a GitHub issue for each high-severity defect not yet tracked."""
         opened: List[str] = []
-        for rec in self.non_blocking():
+        for rec in self.records:
             if rec.severity not in ("high", "critical"):
                 continue
             if rec.issue_url:
@@ -288,6 +349,7 @@ class BehaviorTracker:
             "total": len(self.records),
             "blocking_count": len(self.blocking()),
             "non_blocking_count": len(self.non_blocking()),
+            "external_intervention_count": len(self.external_interventions),
             "records": [
                 {
                     "code": r.code, "name": r.name, "detail": r.detail,
@@ -297,13 +359,31 @@ class BehaviorTracker:
                 }
                 for r in self.records
             ],
+            "external_interventions": [
+                {
+                    "actor": r.actor,
+                    "source": r.source,
+                    "detail": r.detail,
+                    "severity": r.severity,
+                    "escalated": r.escalated,
+                    "stage_id": r.stage_id,
+                    "timestamp": r.timestamp,
+                    "evidence": r.evidence,
+                    "issue_url": r.issue_url,
+                }
+                for r in self.external_interventions
+            ],
         }
 
     def summary(self) -> str:
         if not self.records:
-            return "no behaviors recorded"
+            if not self.external_interventions:
+                return "no behaviors recorded"
+            return f"no behaviors recorded; external_interventions×{len(self.external_interventions)}"
         counts: Dict[str, int] = {}
         for r in self.records:
             counts[r.name] = counts.get(r.name, 0) + 1
         parts = [f"{name}×{n}" for name, n in sorted(counts.items())]
+        if self.external_interventions:
+            parts.append(f"external_interventions×{len(self.external_interventions)}")
         return f"{len(self.records)} behaviors: {', '.join(parts)}"
