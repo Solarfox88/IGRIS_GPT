@@ -65,8 +65,8 @@ _ENV_RE = re.compile(r"(\.env|\.secrets|\.pem|\.key|id_rsa|credentials|token|pas
 _SECRET_ACCESS_RE = re.compile(r"\b(cat|less|more|head|tail|grep|awk|sed)\b.*\.(env|secret|pem|key)", re.IGNORECASE)
 
 # PR 2 additions — patterns previously missing
-# Inline code execution: bash -c "...", sh -c "...", python -c "..."
-_INLINE_EXEC_RE = re.compile(r"\b(bash|sh|zsh|fish|dash|python[23]?|py)\s+-c\b")
+# Inline code execution: bash -c "...", bash -lc "...", sh -c "...", python -c "..."
+_INLINE_EXEC_RE = re.compile(r"\b(bash|sh|zsh|fish|dash|python[23]?|py)\s+-[a-z]*c[a-z]*\b")
 # xargs feeding rm (equivalent to rm but bypasses _RM_RE)
 _XARGS_RM_RE = re.compile(r"\bxargs\b.*\brm\b|\brm\b.*\bxargs\b")
 # find with -delete flag or -exec rm
@@ -584,6 +584,49 @@ class CommandRiskEngine:
         return paths
 
     @staticmethod
+    def _structured_tool_recommendation(
+        parsed: ParsedCommand,
+        host_context: Dict[str, Any],
+    ) -> Optional[Dict[str, Any]]:
+        """Return a structured-tool recommendation when the host supports it.
+
+        This is intentionally conservative: only command families with a clear
+        structured operator replacement are flagged here.
+        """
+        if not host_context.get("structured_tool_available"):
+            return None
+
+        if parsed.has_systemctl:
+            service = CommandRiskEngine._extract_host_service(parsed) or "service"
+            return {
+                "tool": "structured_service_control",
+                "operation": "service_restart",
+                "target": service,
+                "reason": f"use structured service control for {service!r} instead of systemctl",
+                "fallback_rationale": "structured service control exists, so raw shell is blocked",
+            }
+
+        if parsed.has_docker:
+            return {
+                "tool": "structured_container_control",
+                "operation": "container_management",
+                "target": "docker",
+                "reason": "use structured container control instead of raw docker shelling",
+                "fallback_rationale": "structured container control exists, so raw shell is blocked",
+            }
+
+        if parsed.has_nginx:
+            return {
+                "tool": "structured_webserver_control",
+                "operation": "webserver_management",
+                "target": "nginx",
+                "reason": "use structured webserver control instead of raw nginx shelling",
+                "fallback_rationale": "structured webserver control exists, so raw shell is blocked",
+            }
+
+        return None
+
+    @staticmethod
     def _path_allowed(target: str, allowed_paths: List[str]) -> bool:
         """Return True if target is under one of the allowed paths."""
         target_path = Path(target)
@@ -639,9 +682,20 @@ class CommandRiskEngine:
         host_context: Optional[Any] = None,
         contextual_reasons: Optional[List[str]] = None,
         rollback_plan: Optional[RollbackPlan] = None,
+        structured_tool_recommendation: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         """Build the structured decision explanation for audit/reporting."""
         host = self._normalize_host_context(host_context)
+        tool_first_recommended = bool(structured_tool_recommendation)
+        if structured_tool_recommendation:
+            fallback_rationale = structured_tool_recommendation.get(
+                "fallback_rationale",
+                "use the structured tool instead of shelling out",
+            )
+        elif host.get("structured_tool_available"):
+            fallback_rationale = "structured tool available; raw shell should remain an exception"
+        else:
+            fallback_rationale = "structured tool unavailable; raw shell policy applies"
         explanation = {
             "decision": event.decision,
             "final_risk": event.final_risk,
@@ -654,6 +708,9 @@ class CommandRiskEngine:
             "rollback_plan": rollback_plan.to_dict() if rollback_plan else None,
             "safer_alternative": review.safer_alternative,
             "structured_tool_available": host.get("structured_tool_available", False),
+            "tool_first_recommended": tool_first_recommended,
+            "structured_tool_recommendation": structured_tool_recommendation,
+            "fallback_rationale": fallback_rationale,
             "host_context": {
                 k: host.get(k)
                 for k in ("hostname", "policy", "allowed_paths", "allowed_services")
@@ -928,6 +985,28 @@ class CommandRiskEngine:
             self._event_log.append(event)
             return event, RiskReviewResult()
 
+        structured_tool_recommendation = self._structured_tool_recommendation(parsed, host)
+        if structured_tool_recommendation:
+            event.decision = "blocked"
+            event.reason = f"tool-first policy: {structured_tool_recommendation['reason']}"
+            event.final_risk = det_risk if det_risk != "unknown" else "high"
+            event.deterministic_risk = event.final_risk
+            rollback_plan = (
+                self.build_rollback_plan(command, event)
+                if event.final_risk in ("high", "critical")
+                else None
+            )
+            event.decision_explanation = self._build_decision_explanation(
+                event,
+                RiskReviewResult(),
+                host_context=host,
+                contextual_reasons=[structured_tool_recommendation["reason"]],
+                rollback_plan=rollback_plan,
+                structured_tool_recommendation=structured_tool_recommendation,
+            )
+            self._event_log.append(event)
+            return event, RiskReviewResult()
+
         # Epic #1072 — Destructive pre-check: escalate in production
         if self.is_destructive(command):
             if self.environment == "production":
@@ -995,6 +1074,7 @@ class CommandRiskEngine:
             host_context=host,
             contextual_reasons=[reason for reason in [event.reason] if reason],
             rollback_plan=rollback_plan,
+            structured_tool_recommendation=None,
         )
 
         # 6. Log event

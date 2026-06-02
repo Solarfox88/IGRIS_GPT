@@ -47,6 +47,10 @@ class TestInlineExecDetection:
         p = parse_command('bash -c "echo hello"')
         assert p.has_inline_exec is True
 
+    def test_bash_lc_is_parsed(self):
+        p = parse_command('bash -lc "echo hello"')
+        assert p.has_inline_exec is True
+
     def test_sh_c_is_parsed(self):
         p = parse_command("sh -c 'rm -rf /tmp/test'")
         assert p.has_inline_exec is True
@@ -65,6 +69,9 @@ class TestInlineExecDetection:
 
     def test_bash_c_classifies_as_critical(self):
         assert _classify('bash -c "echo hello"') == "critical"
+
+    def test_bash_lc_classifies_as_critical(self):
+        assert _classify('bash -lc "echo hello"') == "critical"
 
     def test_sh_c_classifies_as_critical(self):
         assert _classify("sh -c 'whoami'") == "critical"
@@ -438,10 +445,30 @@ class TestHostAwareCommandPolicy:
                 "structured_tool_available": True,
             },
         )
-        assert event.decision in ("needs_approval", "allowed")
+        assert event.decision == "blocked"
         assert event.decision_explanation["host_context"]["hostname"] == "vps-01"
         assert event.decision_explanation["structured_tool_available"] is True
+        assert event.decision_explanation["tool_first_recommended"] is True
+        assert event.decision_explanation["structured_tool_recommendation"]["tool"] == "structured_service_control"
+        assert "structured service control" in event.decision_explanation["fallback_rationale"]
         assert event.decision_explanation["rollback_plan"] is not None
+
+    def test_allowed_service_without_structured_tool_remains_policy_driven(self):
+        engine = _engine("operator")
+        event, _ = engine.evaluate_command(
+            "systemctl restart nginx",
+            host_context={
+                "hostname": "vps-01",
+                "policy": "operator",
+                "allowed_services": ["nginx"],
+                "allowed_paths": ["/home", "/opt/app"],
+                "structured_tool_available": False,
+            },
+        )
+        assert event.decision in ("needs_approval", "allowed")
+        assert event.decision_explanation["structured_tool_available"] is False
+        assert event.decision_explanation["tool_first_recommended"] is False
+        assert "structured tool unavailable" in event.decision_explanation["fallback_rationale"]
 
     def test_outside_allowed_path_is_blocked(self):
         engine = _engine("operator")
