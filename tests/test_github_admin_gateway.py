@@ -1,6 +1,7 @@
 """Tests for the GitHub admin gateway baseline (#949)."""
 
 import pytest
+from pathlib import Path
 
 from igris.core.github_admin_gateway import GitHubAdminApproval, GitHubAdminGateway
 
@@ -101,3 +102,29 @@ def test_mutation_allowed_with_explicit_approval_and_backend_redaction():
     audit = gateway.get_audit_log()[-1]
     assert audit["status"] == "EXECUTED"
     assert "super-secret" not in str(audit)
+
+
+def test_backend_backed_section_inspection_and_persistent_audit(tmp_path):
+    gateway = GitHubAdminGateway(
+        dry_run=False,
+        backend=FakeGitHubAdminBackend(),
+        audit_path=str(tmp_path / "github_admin_audit.jsonl"),
+    )
+    settings = gateway.inspect_repo_settings("owner/repo")
+    branch = gateway.inspect_branch_protection("owner/repo", "main")
+    collaborators = gateway.inspect_collaborators("owner/repo")
+    actions = gateway.inspect_actions_metadata("owner/repo")
+    secrets = gateway.inspect_secret_variable_metadata("owner/repo")
+
+    assert settings["success"] is True
+    assert branch["success"] is True
+    assert collaborators["success"] is True
+    assert actions["success"] is True
+    assert secrets["success"] is True
+    assert "super-secret" not in str((settings, branch, collaborators, actions, secrets))
+
+    audit_path = Path(tmp_path / "github_admin_audit.jsonl")
+    assert audit_path.exists()
+    audit_text = audit_path.read_text(encoding="utf-8")
+    assert "super-secret" not in audit_text
+    assert "owner/repo" in audit_text

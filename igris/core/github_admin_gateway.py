@@ -1,6 +1,8 @@
 import logging
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
+import json
+from pathlib import Path
 from typing import Optional, Dict, Any, Protocol, runtime_checkable
 from uuid import uuid4
 
@@ -64,10 +66,16 @@ class GitHubAdminGateway:
     Dry-run is the default mode.
     """
 
-    def __init__(self, dry_run: bool = True, backend: Optional[GitHubAdminBackend] = None):
+    def __init__(
+        self,
+        dry_run: bool = True,
+        backend: Optional[GitHubAdminBackend] = None,
+        audit_path: str = ".igris/github_admin_audit.jsonl",
+    ):
         self.dry_run = dry_run
         self.backend = backend
         self.audit_log: list[dict] = []
+        self.audit_path = Path(audit_path)
 
     def _log(self, action: str, target: str, status: str, details: dict = None):
         """Record an audit entry for every attempt."""
@@ -81,6 +89,12 @@ class GitHubAdminGateway:
             "dry_run": self.dry_run,
         }
         self.audit_log.append(entry)
+        try:
+            self.audit_path.parent.mkdir(parents=True, exist_ok=True)
+            with self.audit_path.open("a", encoding="utf-8") as fh:
+                fh.write(json.dumps(entry, ensure_ascii=False) + "\n")
+        except Exception:  # noqa: BLE001
+            logger.warning("GitHubAdminGateway audit write failed for %s", action)
         logger.info(f"AUDIT: {entry}")
         return entry
 
@@ -180,6 +194,66 @@ class GitHubAdminGateway:
             "actions_metadata": self._redact(self._backend_call("inspect_actions_metadata", repo, fallback={"status": "unavailable"})),
             "secrets_variables_metadata": self._redact(self._backend_call("inspect_secret_variable_metadata", repo, fallback={"status": "unavailable"})),
         }
+        self._log(action, repo, "INSPECTED", report)
+        return {"success": True, "dry_run": False, "report": report}
+
+    def inspect_repo_settings(self, repo: str) -> dict:
+        action = "repo.settings.inspect"
+        if not self._triple_gate(action, repo):
+            return {"success": False, "reason": "Gate denied"}
+        if self.dry_run:
+            payload = {"repo": repo, "status": "dry_run", "reason": "dry_run"}
+            self._log(action, repo, "DRY_RUN", payload)
+            return {"success": True, "dry_run": True, "report": payload}
+        report = self._redact(self._backend_call("inspect_repo_settings", repo, fallback={"status": "unavailable"}))
+        self._log(action, repo, "INSPECTED", report)
+        return {"success": True, "dry_run": False, "report": report}
+
+    def inspect_branch_protection(self, repo: str, branch: str = "main") -> dict:
+        action = "branch.protection.inspect"
+        if not self._triple_gate(action, repo):
+            return {"success": False, "reason": "Gate denied"}
+        if self.dry_run:
+            payload = {"repo": repo, "branch": branch, "status": "dry_run", "reason": "dry_run"}
+            self._log(action, repo, "DRY_RUN", payload)
+            return {"success": True, "dry_run": True, "report": payload}
+        report = self._redact(self._backend_call("inspect_branch_protection", repo, branch, fallback={"branch": branch, "status": "unavailable"}))
+        self._log(action, repo, "INSPECTED", report)
+        return {"success": True, "dry_run": False, "report": report}
+
+    def inspect_collaborators(self, repo: str) -> dict:
+        action = "collaborators.inspect"
+        if not self._triple_gate(action, repo):
+            return {"success": False, "reason": "Gate denied"}
+        if self.dry_run:
+            payload = {"repo": repo, "status": "dry_run", "reason": "dry_run"}
+            self._log(action, repo, "DRY_RUN", payload)
+            return {"success": True, "dry_run": True, "report": payload}
+        report = self._redact(self._backend_call("list_collaborators", repo, fallback={"status": "unavailable"}))
+        self._log(action, repo, "INSPECTED", report)
+        return {"success": True, "dry_run": False, "report": report}
+
+    def inspect_actions_metadata(self, repo: str) -> dict:
+        action = "actions.metadata.inspect"
+        if not self._triple_gate(action, repo):
+            return {"success": False, "reason": "Gate denied"}
+        if self.dry_run:
+            payload = {"repo": repo, "status": "dry_run", "reason": "dry_run"}
+            self._log(action, repo, "DRY_RUN", payload)
+            return {"success": True, "dry_run": True, "report": payload}
+        report = self._redact(self._backend_call("inspect_actions_metadata", repo, fallback={"status": "unavailable"}))
+        self._log(action, repo, "INSPECTED", report)
+        return {"success": True, "dry_run": False, "report": report}
+
+    def inspect_secret_variable_metadata(self, repo: str) -> dict:
+        action = "secrets.variables.inspect"
+        if not self._triple_gate(action, repo):
+            return {"success": False, "reason": "Gate denied"}
+        if self.dry_run:
+            payload = {"repo": repo, "status": "dry_run", "reason": "dry_run"}
+            self._log(action, repo, "DRY_RUN", payload)
+            return {"success": True, "dry_run": True, "report": payload}
+        report = self._redact(self._backend_call("inspect_secret_variable_metadata", repo, fallback={"status": "unavailable"}))
         self._log(action, repo, "INSPECTED", report)
         return {"success": True, "dry_run": False, "report": report}
 
