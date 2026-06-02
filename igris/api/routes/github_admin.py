@@ -200,7 +200,7 @@ async def get_repo_settings(
     user: Dict[str, Any] = Depends(get_current_user),
     _: None = Depends(require_scope("admin")),
 ) -> Dict[str, Any]:
-    return gateway.inspect_repo(repo)
+    return gateway.inspect_repo_settings(repo)
 
 
 @router.get("/branch-protection")
@@ -210,7 +210,7 @@ async def get_branch_protection(
     user: Dict[str, Any] = Depends(get_current_user),
     _: None = Depends(require_scope("admin")),
 ) -> Dict[str, Any]:
-    return gateway.inspect_repo(repo, branch=branch)
+    return gateway.inspect_branch_protection(repo, branch=branch)
 
 
 @router.get("/collaborators")
@@ -219,7 +219,7 @@ async def get_collaborators(
     user: Dict[str, Any] = Depends(get_current_user),
     _: None = Depends(require_scope("admin")),
 ) -> Dict[str, Any]:
-    return gateway.inspect_repo(repo)
+    return gateway.inspect_collaborators(repo)
 
 
 @router.get("/actions-metadata")
@@ -228,7 +228,16 @@ async def get_actions_metadata(
     user: Dict[str, Any] = Depends(get_current_user),
     _: None = Depends(require_scope("admin")),
 ) -> Dict[str, Any]:
-    return gateway.inspect_repo(repo)
+    return gateway.inspect_actions_metadata(repo)
+
+
+@router.get("/secret-variable-metadata")
+async def get_secret_variable_metadata(
+    repo: str,
+    user: Dict[str, Any] = Depends(get_current_user),
+    _: None = Depends(require_scope("admin")),
+) -> Dict[str, Any]:
+    return gateway.inspect_secret_variable_metadata(repo)
 
 
 @router.post("/proposals/branch-protection")
