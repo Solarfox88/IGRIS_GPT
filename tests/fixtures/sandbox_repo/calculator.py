@@ -14,10 +14,13 @@ def multiply(a, b):
 
 
 def divide(a, b):
-    # BUG: no zero division check
+    if b == 0:
+        raise ValueError("Cannot divide by zero")
     return a / b
 
 
 def percentage(value, total):
     """Calculate percentage of value relative to total."""
+    if total == 0:
+        raise ValueError("Cannot calculate percentage with total=0")
     return (value / total) * 100
