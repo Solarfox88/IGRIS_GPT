@@ -72,7 +72,8 @@ class FileLock:
                     os.close(self._fd)
                     self._fd = None
                     raise TimeoutError(
-                        f"Could not acquire file lock on {self._path!r} within {self._timeout}s"
+                        f"lock_timeout reason_code=parallel_file_lock path={self._path!r} "
+                        f"timeout_seconds={self._timeout:g}"
                     )
                 time.sleep(0.1)
 
@@ -148,6 +149,13 @@ def merge_results(results: List[ParallelResult]) -> Dict[str, Any]:
     failed = [r for r in results if not r.success and not r.skipped]
     skipped = [r for r in results if r.skipped]
 
+    def _status_for(result: ParallelResult) -> str:
+        if result.skipped:
+            return "skipped"
+        if result.success:
+            return "succeeded"
+        return "failed"
+
     all_merged_files: List[str] = []
     seen_files: Set[str] = set()
     for r in succeeded:
@@ -155,6 +163,22 @@ def merge_results(results: List[ParallelResult]) -> Dict[str, Any]:
             if f not in seen_files:
                 all_merged_files.append(f)
                 seen_files.add(f)
+
+    task_reports = sorted(
+        [
+            {
+                "task_id": r.task_id,
+                "status": _status_for(r),
+                "success": bool(r.success),
+                "skipped": bool(r.skipped),
+                "skip_reason": r.skip_reason,
+                "error": r.error,
+                "merged_files": list(r.merged_files),
+            }
+            for r in results
+        ],
+        key=lambda item: item["task_id"],
+    )
 
     return {
         "total": len(results),
@@ -166,6 +190,8 @@ def merge_results(results: List[ParallelResult]) -> Dict[str, Any]:
         "skipped_task_ids": [r.task_id for r in skipped],
         "merged_files": all_merged_files,
         "all_success": len(failed) == 0 and len(results) > 0,
+        "partial_success": len(succeeded) > 0 and (len(failed) + len(skipped) > 0),
+        "task_reports": task_reports,
     }
 
 
@@ -201,7 +227,7 @@ def detect_file_conflicts(tasks: List[ParallelTask]) -> Dict[str, List[str]]:
             serialised_pairs.add((task.task_id, dep_id))
 
     conflicts: Dict[str, List[str]] = {}
-    for path, task_ids in file_to_tasks.items():
+    for path, task_ids in sorted(file_to_tasks.items()):
         if len(task_ids) < 2:
             continue
         # Check if all pairs of tasks are serialised (then no real conflict)
@@ -212,7 +238,7 @@ def detect_file_conflicts(tasks: List[ParallelTask]) -> Dict[str, List[str]]:
             if (a, b) not in serialised_pairs
         ]
         if conflict_pairs:
-            conflicts[path] = task_ids
+            conflicts[path] = sorted(set(task_ids))
 
     return conflicts
 

@@ -18,6 +18,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from igris.core.parallel_task_runner import (
+    FileLock,
     ParallelResult,
     ParallelTask,
     ParallelTaskRunner,
@@ -185,6 +186,20 @@ class TestFileLocking:
         for lock in locks:
             assert not lock.locked()
 
+    def test_lock_timeout_reports_reason_code(self, tmp_path):
+        path = str(tmp_path / "shared.py")
+        lock1 = FileLock(path, timeout_seconds=0.3)
+        lock1.acquire()
+        try:
+            lock2 = FileLock(path, timeout_seconds=0.2)
+            with pytest.raises(TimeoutError) as excinfo:
+                lock2.acquire()
+            msg = str(excinfo.value)
+            assert "lock_timeout reason_code=parallel_file_lock" in msg
+            assert path in msg
+        finally:
+            lock1.release()
+
     @pytest.mark.asyncio
     async def test_empty_scopes_returns_empty(self):
         runner = _runner()
@@ -322,6 +337,20 @@ class TestMergeResultsWithSkip:
         assert summary["total"] == 2
         assert summary["skipped"] == 0
 
+    def test_task_reports_and_partial_success(self):
+        results = [
+            ParallelResult(task_id="a", result=_success_result(), merged_files=["x.py"]),
+            ParallelResult(task_id="b", result=None, error="boom"),
+            ParallelResult(task_id="c", result=None, skipped=True, skip_reason="dependency failed: ['b']"),
+        ]
+        summary = merge_results(results)
+        assert summary["partial_success"] is True
+        assert [item["task_id"] for item in summary["task_reports"]] == ["a", "b", "c"]
+        assert summary["task_reports"][0]["status"] == "succeeded"
+        assert summary["task_reports"][1]["status"] == "failed"
+        assert summary["task_reports"][2]["status"] == "skipped"
+        assert summary["task_reports"][2]["skip_reason"].startswith("dependency failed")
+
 
 # ---------------------------------------------------------------------------
 # 4. detect_file_conflicts
@@ -359,6 +388,16 @@ class TestDetectFileConflicts:
         tasks = [_task("task_a", file_scopes=["igris/core/foo.py"])]
         conflicts = detect_file_conflicts(tasks)
         assert len(conflicts) == 0
+
+    def test_conflicts_are_deterministic_and_sorted(self):
+        tasks = [
+            _task("z_task", file_scopes=["b.py", "a.py"]),
+            _task("a_task", file_scopes=["a.py"]),
+            _task("m_task", file_scopes=["a.py"]),
+        ]
+        conflicts = detect_file_conflicts(tasks)
+        assert list(conflicts.keys()) == ["a.py"]
+        assert conflicts["a.py"] == ["a_task", "m_task", "z_task"]
 
 
 # ---------------------------------------------------------------------------
