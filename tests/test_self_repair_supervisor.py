@@ -6,6 +6,7 @@ import threading
 import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any, Dict
 
 import pytest
@@ -4138,6 +4139,69 @@ def test_api_escalation_respects_call_and_budget_limits():
         event.phase == "api_escalation" and event.status == "skipped" and event.data.get("budget_type") == "usd"
         for event in run.events
     )
+
+
+def test_api_escalation_records_external_intervention_audit(monkeypatch, tmp_path):
+    supervisor = SelfRepairSupervisor(str(tmp_path))
+    tracker = pytest.importorskip("igris.core.behavior_tracker").BehaviorTracker(
+        run_id="audit-run",
+        issue_number=147,
+    )
+    run = SupervisorRun(run_id="audit-run", rank_id="S")
+    run.behavior_tracker = tracker
+    config = RankSupervisorConfig.from_dict({
+        "goal": "rank",
+        "allow_api_escalation": True,
+        "max_api_escalations_per_run": 2,
+        "max_api_budget_usd": 1.0,
+        "max_tokens_per_escalation": 256,
+    })
+
+    monkeypatch.setattr(supervisor.backend, "api_helper_is_configured", lambda: True)
+
+    def fake_call_api_helper(packet, model, max_tokens, timeout=45, mode="auto"):
+        assert packet["failure_class"] == "pytest_failure"
+        payload = {
+            "diagnosis": "helper diagnosis",
+            "likely_supervisor_gap": "gap",
+            "suggested_repair_strategy": "retry",
+            "suggested_tests": ["tests/test_a.py"],
+            "risk": "medium",
+            "confidence": 0.8,
+            "requires_human_or_codex_audit": True,
+            "must_not_complete_product_manually": False,
+            "execution_plan": "plan",
+            "file_targets": ["igris/core/foo.py"],
+            "operations": ["read_file"],
+            "acceptance_matrix": ["matrix"],
+            "required_tests": ["tests/test_a.py"],
+            "do_not_do": ["skip"],
+            "retry_focus": "focus",
+            "estimated_cost_usd": 0.25,
+            "api_helper_model_resolved": "helper-model",
+            "api_helper_provider": "external_api_helper",
+        }
+        return SimpleNamespace(
+            success=True,
+            output=json.dumps(payload),
+            helper_model="helper-model",
+            helper_ab_alt_model="helper-alt",
+            helper_ab_active=False,
+            helper_ab_shadow_mode=False,
+            helper_primary_score=0.0,
+            helper_alt_score=0.0,
+            helper_switch_recommendation="",
+        )
+
+    monkeypatch.setattr(supervisor.backend, "call_api_helper", fake_call_api_helper)
+
+    advice = supervisor._maybe_api_escalate(run, config, failure="pytest_failure", cycle=1)
+    assert advice is not None
+    assert run.behavior_tracker.external_interventions
+    ext = run.behavior_tracker.external_interventions[0]
+    assert ext.source == "api_escalation"
+    assert ext.escalated is True
+    assert "external escalation" in ext.detail.lower()
 
 
 def test_api_helper_response_is_recorded_and_used_as_advice_only():

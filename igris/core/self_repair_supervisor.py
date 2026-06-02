@@ -2672,6 +2672,20 @@ class SelfRepairSupervisor:
             helper_switch_recommendation=result.helper_switch_recommendation,
             codex_only=is_codex_only,
         )
+        if getattr(run, "behavior_tracker", None) is not None:
+            try:
+                tracker = run.behavior_tracker
+                tracker.record_external_intervention(
+                    actor=str(helper_provider or model_resolved or "external_api_helper"),
+                    source="api_escalation",
+                    detail=f"External escalation used for failure={failure} cycle={cycle}.",
+                    severity="medium",
+                    escalated=True,
+                    stage_id="api_escalation",
+                    evidence=json.dumps(self._sanitize_escalation_value(advice), sort_keys=True),
+                )
+            except Exception:  # noqa: BLE001
+                pass
         return advice
 
     # ------------------------------------------------------------------
