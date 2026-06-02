@@ -853,6 +853,19 @@ CREATE INDEX IF NOT EXISTS idx_edges_dst  ON memory_edges(dst_node);
         project_facts = self.query_by_intent(goal, node_type="project_fact", limit=fact_limit)
         topic_hits = topic_tree.search_topics(goal, limit=top_k)
         global_today = digest.get_today(store)
+        global_latest = global_today
+        if global_latest is None:
+            try:
+                global_candidates = store.read_all("global_digest")
+            except Exception:
+                global_candidates = []
+            if global_candidates:
+                def _digest_sort_key(item: Dict[str, Any]) -> tuple[str, str]:
+                    day = str(item.get("day", "") or "")
+                    generated_at = str(item.get("generated_at", "") or "")
+                    return (day, generated_at)
+
+                global_latest = max(global_candidates, key=_digest_sort_key)
         retrieved = retriever.search(goal, top_k=top_k)
 
         penalty_tags: Dict[str, int] = {"stale": 0, "contradiction": 0}
@@ -873,7 +886,7 @@ CREATE INDEX IF NOT EXISTS idx_edges_dst  ON memory_edges(dst_node);
             degraded_reasons.append("no_source_event_matches")
         if not topic_hits:
             degraded_reasons.append("topic_digest_missing")
-        if not global_today:
+        if not global_latest:
             degraded_reasons.append("global_digest_missing")
         if not retrieved:
             degraded_reasons.append("retrieval_empty")
@@ -904,9 +917,10 @@ CREATE INDEX IF NOT EXISTS idx_edges_dst  ON memory_edges(dst_node);
                 },
                 {
                     "name": "global_digest",
-                    "status": "ok" if global_today else "degraded",
-                    "day": (global_today or {}).get("day", ""),
-                    "issues_worked": len((global_today or {}).get("issues_worked", [])),
+                    "status": "ok" if global_latest else "degraded",
+                    "day": (global_latest or {}).get("day", ""),
+                    "issues_worked": len((global_latest or {}).get("issues_worked", [])),
+                    "source": "today" if global_today else ("latest" if global_latest else "missing"),
                 },
                 {
                     "name": "retrieval_multilevel",
@@ -933,7 +947,7 @@ CREATE INDEX IF NOT EXISTS idx_edges_dst  ON memory_edges(dst_node);
             },
             "retrieved": retrieved,
             "topic_hits": topic_hits,
-            "global_digest": global_today,
+            "global_digest": global_latest,
         }
 
     def get_memory_reindex_report(self) -> Dict[str, Any]:
