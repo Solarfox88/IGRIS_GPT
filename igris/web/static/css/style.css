@@ -184,6 +184,11 @@ header h1{margin:0;font-size:1.2rem;font-weight:700;letter-spacing:.5px}
 .next-action-banner .sub{font-size:.74rem;color:#8b949e}
 .panel-line{font-size:.78rem;padding:.2rem 0;border-bottom:1px solid #21262d}
 .panel-line:last-child{border-bottom:none}
+.panel-card-list{display:grid;grid-template-columns:1fr;gap:.45rem;margin-top:.45rem}
+.panel-card{background:#0d1117;border:1px solid #30363d;border-radius:6px;padding:.45rem .55rem}
+.panel-card-title{font-size:.74rem;font-weight:700;color:#e6edf3;margin-bottom:.2rem}
+.panel-card-summary{font-size:.76rem;color:#c9d1d9}
+.panel-card-detail{font-size:.72rem;color:#8b949e;margin-top:.2rem;white-space:pre-wrap;word-break:break-word}
 
 /* Sub-tabs */
 .sub-tab-bar{display:flex;gap:0;border-bottom:1px solid #30363d;margin-bottom:.6rem}
