@@ -86,6 +86,35 @@ def test_traceroute_degrades_when_unavailable():
     assert result["status"] == "degraded"
 
 
+def test_inventory_and_provisioning_are_scoped_and_audited(tmp_path):
+    gateway = NetworkDiagGateway(runner=FakeNetworkRunner(), audit_path=str(tmp_path / "network_diag_audit.jsonl"))
+    inventory = gateway.inventory(
+        "github.com",
+        port=443,
+        url="https://github.com",
+        allowed_hosts=["github.com"],
+        allowed_domains=["github.com"],
+    )
+    proposal = gateway.propose_provisioning_hook(
+        "github.com",
+        "dns->tcp->http smoke",
+        approval=False,
+        dry_run=True,
+        allowed_hosts=["github.com"],
+        allowed_domains=["github.com"],
+    )
+
+    assert inventory["allowed"] is True
+    assert inventory["checks"]["dns"] is True
+    assert inventory["checks"]["tcp"] is True
+    assert inventory["checks"]["http_latency"] is True
+    assert proposal["success"] is True
+    assert proposal["dry_run"] is True
+    audit_text = (tmp_path / "network_diag_audit.jsonl").read_text(encoding="utf-8")
+    assert "github.com" in audit_text
+    assert "super-secret" not in audit_text
+
+
 def test_api_routes_use_gateway_and_fake_runner(monkeypatch):
     from igris.api.routes import network as network_routes
 
@@ -106,3 +135,11 @@ def test_api_routes_use_gateway_and_fake_runner(monkeypatch):
     r = client.get("/api/network/audit-log")
     assert r.status_code == 200
     assert isinstance(r.json()["audit_log"], list)
+
+    r = client.get("/api/network/inventory?host=localhost&port=7778&url=http://localhost&allowed_hosts=localhost")
+    assert r.status_code == 200
+    assert r.json()["allowed"] is True
+
+    r = client.post("/api/network/proposals/provisioning", json={"target": "localhost", "hook": "smoke", "dry_run": True, "approval": False, "allowed_hosts": "localhost"})
+    assert r.status_code == 200
+    assert r.json()["dry_run"] is True
