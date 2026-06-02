@@ -6,7 +6,9 @@ truncation, secret redaction, interpreted evidence endpoint.
 
 from __future__ import annotations
 
+import json
 import time
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 from unittest.mock import MagicMock, patch
 
@@ -428,3 +430,41 @@ class TestInterpretedEvidenceEndpoint:
             assert card["status"] in ("ok", "warning", "error", "empty")
             assert "summary" in card
             assert "details" in card
+
+
+class TestControlRoomReviewPersistence:
+    def test_review_persistence_and_final_export(self, tmp_path, monkeypatch):
+        from igris.web.routers import routes_10
+
+        monkeypatch.setattr(routes_10.CONFIG, "project_root", Path(tmp_path))
+        client = _client()
+        run = _make_run(status="success")
+        with patch("igris.core.self_repair_supervisor.get_supervised_run", return_value=run):
+            save_resp = client.post(
+                "/api/rank/runs/test-run/review",
+                json={
+                    "action_id": "review_evidence",
+                    "summary": "dashboard review saved",
+                    "notes": "manual review complete",
+                    "evidence_ref": "/api/rank/runs/test-run/report",
+                    "reviewed_by": "operator",
+                },
+            )
+            assert save_resp.status_code == 200
+            body = save_resp.json()
+            assert body["ok"] is True
+            assert body["review_count"] == 1
+            export_resp = client.get("/api/rank/runs/test-run/final-export")
+            assert export_resp.status_code == 200
+            export = export_resp.json()
+            assert export["run_id"] == "test-run"
+            assert len(export["operator_reviews"]) == 1
+            assert export["operator_reviews"][0]["action_id"] == "review_evidence"
+            assert export["operator_reviews"][0]["summary"] == "dashboard review saved"
+        review_log = Path(tmp_path) / ".igris" / "control_room_reviews.jsonl"
+        assert review_log.exists()
+        raw = review_log.read_text(encoding="utf-8").strip().splitlines()
+        assert len(raw) == 1
+        parsed = json.loads(raw[0])
+        assert parsed["run_id"] == "test-run"
+        assert parsed["action_id"] == "review_evidence"

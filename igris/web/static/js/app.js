@@ -428,6 +428,45 @@
       }
     }
 
+    var reviewStatusEl = $("#dash-review-status");
+    var saveReviewBtn = $("#btn-save-control-room-review");
+    var exportReportBtn = $("#btn-export-final-report");
+    if (saveReviewBtn) {
+      saveReviewBtn.onclick = async function () {
+        if (!activeRunId) {
+          if (reviewStatusEl) reviewStatusEl.textContent = "No active run to review.";
+          return;
+        }
+        var reviewPayload = {
+          action_id: "review_evidence",
+          summary: "Persisted review saved from dashboard",
+          notes: "Operator reviewed evidence cards and next actions.",
+          evidence_ref: "/api/rank/runs/" + encodeURIComponent(activeRunId) + "/report",
+          reviewed_by: "dashboard-operator",
+        };
+        var resp = await api("POST", "/api/rank/runs/" + encodeURIComponent(activeRunId) + "/review", reviewPayload);
+        if (reviewStatusEl) {
+          reviewStatusEl.textContent = resp.ok
+            ? "Review persisted (" + String(((resp.data || {}).review_count) || 0) + " total)."
+            : "Review persistence failed: " + String((resp.data || {}).detail || "unknown");
+        }
+      };
+    }
+    if (exportReportBtn) {
+      exportReportBtn.onclick = async function () {
+        if (!activeRunId) {
+          if (reviewStatusEl) reviewStatusEl.textContent = "No active run to export.";
+          return;
+        }
+        var resp = await api("GET", "/api/rank/runs/" + encodeURIComponent(activeRunId) + "/final-export");
+        if (reviewStatusEl) {
+          reviewStatusEl.textContent = resp.ok
+            ? "Final export ready with " + String(((resp.data || {}).operator_reviews || []).length || 0) + " persisted reviews."
+            : "Final export failed: " + String((resp.data || {}).detail || "unknown");
+        }
+      };
+    }
+
     await loadSupervisorMonitor();
   }
 
