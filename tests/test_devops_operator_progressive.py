@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from igris.core.browser_evidence import FakeBrowserRunner
 from igris.core.devops_manager import CommandResult, DevOpsManager, FakeCommandRunner, HostConfig
 
 
@@ -90,20 +91,13 @@ def test_run_deploy_allows_staging_with_explicit_approval(tmp_path) -> None:
     runner.set_result("systemctl restart igris", CommandResult(returncode=0, stderr="restarted"))
     runner.set_result("git rev-parse HEAD", CommandResult(returncode=0, stdout="abc123\n"))
     runner.set_result("nc -z -w 3 localhost 7778", CommandResult(returncode=0))
-    mgr = DevOpsManager(str(tmp_path), runner=runner)
+    mgr = DevOpsManager(str(tmp_path), runner=runner, browser_runner=FakeBrowserRunner(selector_found=True))
     mgr.run_smoke_test = lambda url="": {  # type: ignore[assignment]
         "ok": True,
         "status_code": 200,
         "response_time_ms": 12,
         "url": url,
         "body_preview": "ok",
-    }
-    mgr.run_browser_smoke = lambda url="", selector="body", runner=None: {  # type: ignore[assignment]
-        "ok": True,
-        "url": url,
-        "selector": selector,
-        "status": "passed",
-        "evidence": "browser smoke ok",
     }
     mgr.register_host(
         HostConfig(
@@ -129,6 +123,22 @@ def test_run_deploy_allows_staging_with_explicit_approval(tmp_path) -> None:
     assert allowed["context"] == {"mission_id": "mission-7", "run_id": "run-9"}
     assert allowed["postcheck"]["checks"]["http_health"]["url"] == "https://staging.example.com/health"
     assert "browser" in allowed["postcheck"]["checks"]
+    assert allowed["postcheck"]["checks"]["browser"]["artifact"]["context"]["run_id"] == "run-9"
+    assert allowed["evidence"]["browser_postcheck"]["context"]["run_id"] == "run-9"
+
+
+def test_run_browser_smoke_persists_artifact_and_context(tmp_path) -> None:
+    mgr = DevOpsManager(
+        str(tmp_path),
+        runner=FakeCommandRunner(),
+        browser_runner=FakeBrowserRunner(selector_found=True),
+    )
+    result = mgr.run_browser_smoke(url="https://safe.example.com/health", mission_id="mission-z", run_id="run-z")
+    assert result["ok"] is True
+    assert result["artifact"]["context"] == {"mission_id": "mission-z", "run_id": "run-z", "url": "https://safe.example.com/health"}
+    audit_index = tmp_path / ".igris" / "browser" / "artifacts" / "index.json"
+    assert audit_index.exists()
+    assert "run-z" in audit_index.read_text(encoding="utf-8")
 
 
 def test_run_deploy_allows_production_with_explicit_approval(tmp_path) -> None:
@@ -221,7 +231,7 @@ def test_run_diagnostics_returns_structured_sections_and_redacts(tmp_path) -> No
     runner.set_result("journalctl -u igris", CommandResult(returncode=0, stdout="token=abc123"))
     runner.set_result("journalctl -u nginx", CommandResult(returncode=0, stdout="password=abc123"))
     runner.set_result("openssl s_client", CommandResult(returncode=0, stdout="CONNECTED"))
-    mgr = DevOpsManager(str(tmp_path), runner=runner)
+    mgr = DevOpsManager(str(tmp_path), runner=runner, browser_runner=FakeBrowserRunner(selector_found=True))
     report = mgr.run_diagnostics(ssl_target="example.com:443", mission_id="mission-x", run_id="run-y")
     assert "systemd" in report
     assert "docker" in report
@@ -234,15 +244,26 @@ def test_run_diagnostics_returns_structured_sections_and_redacts(tmp_path) -> No
     assert report["logs"]["nginx"]["stdout"] == "[REDACTED]"
     assert report["context"] == {"mission_id": "mission-x", "run_id": "run-y"}
     assert "browser" in report
+    assert report["browser"]["artifact"]["context"]["run_id"] == "run-y"
+    assert report["evidence"]["browser_artifact"]["context"]["run_id"] == "run-y"
 
 
 def test_run_rollback_returns_evidence_and_context(tmp_path) -> None:
     runner = FakeCommandRunner()
     runner.set_result("git reset --hard", CommandResult(returncode=0, stdout="reset\n"))
     runner.set_result("systemctl restart igris", CommandResult(returncode=0, stderr="restarted"))
-    mgr = DevOpsManager(str(tmp_path), runner=runner)
+    runner.set_result("nc -z -w 3 localhost 7778", CommandResult(returncode=0))
+    mgr = DevOpsManager(str(tmp_path), runner=runner, browser_runner=FakeBrowserRunner(selector_found=True))
+    mgr.run_smoke_test = lambda url="": {  # type: ignore[assignment]
+        "ok": True,
+        "status_code": 200,
+        "response_time_ms": 11,
+        "url": url,
+        "body_preview": "ok",
+    }
     result = mgr.run_rollback(
         pre_deploy_sha="abc123",
+        health_url="https://rollback.example.com/health",
         mission_id="mission-r",
         run_id="run-r",
     )
@@ -250,3 +271,5 @@ def test_run_rollback_returns_evidence_and_context(tmp_path) -> None:
     assert result["context"] == {"mission_id": "mission-r", "run_id": "run-r"}
     assert result["evidence"]["mode"] == "apply"
     assert result["evidence"]["verified"] is True
+    assert "verification" in result
+    assert result["verification"]["checks"]["browser"]["artifact"]["context"]["run_id"] == "run-r"

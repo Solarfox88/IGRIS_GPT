@@ -22,7 +22,7 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from igris.core.browser_evidence import BrowserRunner, run_browser_smoke_with_fallback
+from igris.core.browser_evidence import BrowserArtifactStore, BrowserRunner, run_browser_smoke_with_fallback
 
 
 # ---------------------------------------------------------------------------
@@ -270,6 +270,8 @@ class DevOpsManager:
         self,
         project_root: str,
         runner: Optional[CommandRunner] = None,
+        browser_runner: Optional[BrowserRunner] = None,
+        browser_artifact_store: Optional[BrowserArtifactStore] = None,
     ) -> None:
         self.project_root = Path(project_root)
         self._registry_path = self.project_root / self._REGISTRY_FILE
@@ -277,6 +279,10 @@ class DevOpsManager:
         self._hosts: Dict[str, HostConfig] = {}
         # PR 3: injectable runner for tests; defaults to real subprocess runner
         self._runner: CommandRunner = runner or LocalCommandRunner()
+        self._browser_runner: Optional[BrowserRunner] = browser_runner
+        self._browser_artifact_store = browser_artifact_store or BrowserArtifactStore(
+            base_dir=str(self.project_root / ".igris" / "browser" / "artifacts")
+        )
         self._load_registry()
 
     def _audit(self, event: str, payload: Dict[str, Any]) -> None:
@@ -484,6 +490,8 @@ class DevOpsManager:
         hostname: Optional[str] = None,
         health_url: str = "",
         runner: Optional[CommandRunner] = None,
+        mission_id: str = "",
+        run_id: str = "",
     ) -> Dict[str, Any]:
         """Post-deploy verification.
 
@@ -519,7 +527,11 @@ class DevOpsManager:
                 "status_code": smoke.get("status_code"),
                 "response_time_ms": smoke.get("response_time_ms"),
             }
-            checks["browser"] = self.run_browser_smoke(url=health_url)
+            checks["browser"] = self.run_browser_smoke(
+                url=health_url,
+                mission_id=mission_id,
+                run_id=run_id,
+            )
 
         overall_ok = all(c.get("ok", False) for c in checks.values())
         return {
@@ -572,6 +584,11 @@ class DevOpsManager:
             "context": {
                 "mission_id": mission_id,
                 "run_id": run_id,
+            },
+            "evidence": {
+                "mission_id": mission_id,
+                "run_id": run_id,
+                "browser_artifacts": [],
             },
         }
 
@@ -665,6 +682,8 @@ class DevOpsManager:
                 host_cfg=host_cfg,
                 runner=runner,
             )
+            if report["dry_run_evidence"].get("browser"):
+                report["evidence"]["browser"] = report["dry_run_evidence"]["browser"]
             self._audit("deploy_end", {"ok": True, "dry_run": True})
             return report
 
@@ -696,21 +715,30 @@ class DevOpsManager:
                 hostname=hostname,
                 health_url=health_url,
                 runner=runner,
+                mission_id=mission_id,
+                run_id=run_id,
             )
             report["postcheck"] = postcheck
             report["postcheck_ok"] = postcheck["ok"]
+            browser_check = postcheck.get("checks", {}).get("browser")
+            if isinstance(browser_check, dict):
+                report["evidence"]["browser_postcheck"] = browser_check.get("artifact") or browser_check
             # PR 3: auto-rollback if postcheck fails
             if not postcheck["ok"] and auto_rollback and pre_deploy_sha:
                 rollback = self.run_rollback(
                     strategy=strategy,
                     pre_deploy_sha=pre_deploy_sha,
                     service_name=service_name,
+                    health_url=health_url,
                     runner=runner,
                     host_cfg=host_cfg,
                     mission_id=mission_id,
                     run_id=run_id,
                 )
                 report["rollback"] = rollback
+                report["evidence"]["rollback"] = rollback.get("evidence", rollback)
+                if isinstance(rollback.get("verification"), dict):
+                    report["evidence"]["rollback_verification"] = rollback["verification"]
                 report["deployed"] = False
                 report["abort_reason"] = "postcheck failed; auto-rollback executed"
         else:
@@ -835,6 +863,7 @@ class DevOpsManager:
         pre_deploy_sha: str = "",
         service_name: str = "igris",
         compose_file: str = "docker-compose.yml",
+        health_url: str = "",
         dry_run: bool = False,
         runner: Optional[CommandRunner] = None,
         host_cfg: Optional[HostConfig] = None,
@@ -879,6 +908,7 @@ class DevOpsManager:
                 "mode": "dry_run",
                 "plan": list(result["steps"]["plan"]["commands"]),
                 "verified": False,
+                "browser_artifacts": [],
             }
             result["ok"] = True
             return result
@@ -940,6 +970,22 @@ class DevOpsManager:
 
         result["steps"] = steps
         result["ok"] = all(v.get("ok", False) for v in steps.values())
+        verification: Dict[str, Any] = {"ok": result["ok"], "browser_artifacts": []}
+        if health_url:
+            verification = self.run_postcheck(
+                hostname=host_cfg.hostname if host_cfg else None,
+                health_url=health_url,
+                runner=runner,
+                mission_id=mission_id,
+                run_id=run_id,
+            )
+            result["verification"] = verification
+            result["ok"] = result["ok"] and verification.get("ok", False)
+            result["steps"]["verification"] = {
+                "ok": verification.get("ok", False),
+                "output": "post-rollback verification executed",
+            }
+        browser_artifact = verification.get("checks", {}).get("browser", {}).get("artifact")
         result["evidence"] = {
             "mode": "apply",
             "commands": {
@@ -947,6 +993,7 @@ class DevOpsManager:
                 "restart": steps.get("restart") or steps.get("docker_compose_up") or steps.get("nginx_reload"),
             },
             "verified": result["ok"],
+            "browser_artifacts": [browser_artifact] if browser_artifact else [],
         }
         return result
 
@@ -1044,7 +1091,20 @@ class DevOpsManager:
             report["ssl"] = _cmd(["openssl", "s_client", "-connect", ssl_target, "-servername", ssl_target], timeout=12)
         else:
             report["ssl"] = {"ok": False, "reason": "no ssl_target provided"}
-        report["browser"] = self.run_browser_smoke(url=f"https://{ssl_target}" if ssl_target and not ssl_target.startswith("http") else ssl_target)
+        report["browser"] = self.run_browser_smoke(
+            url=f"https://{ssl_target}" if ssl_target and not ssl_target.startswith("http") else ssl_target,
+            mission_id=mission_id,
+            run_id=run_id,
+        )
+        report["evidence"] = {
+            "mission_id": mission_id,
+            "run_id": run_id,
+            "browser_artifact": report["browser"].get("artifact") if isinstance(report.get("browser"), dict) else None,
+            "logs": {
+                "igris": report["logs"]["igris"],
+                "nginx": report["logs"]["nginx"],
+            },
+        }
         report["ok"] = all(
             isinstance(v, dict) and v.get("ok", False)
             for k, v in report.items()
@@ -1148,6 +1208,8 @@ class DevOpsManager:
         url: str = "",
         selector: str = "body",
         runner: Optional[BrowserRunner] = None,
+        mission_id: str = "",
+        run_id: str = "",
     ) -> Dict[str, Any]:
         """Browser/UI smoke with optional Playwright and graceful degradation."""
         target = url.strip() or "http://localhost:7778/"
@@ -1155,6 +1217,14 @@ class DevOpsManager:
             url=target,
             selector=selector,
             artifact_dir=str(self.project_root / ".igris" / "browser"),
-            runner=runner,
+            runner=runner or self._browser_runner,
         )
-        return result.to_dict()
+        payload = result.to_dict()
+        if self._browser_artifact_store is not None:
+            artifact = self._browser_artifact_store.store_result(
+                result,
+                run_id=run_id or mission_id,
+                context={"mission_id": mission_id, "run_id": run_id, "url": target},
+            )
+            payload["artifact"] = artifact
+        return payload
