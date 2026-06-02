@@ -199,11 +199,13 @@ def test_record_external_intervention_and_summary():
         source="api_escalation",
         detail="external helper reviewed the blocked run",
         evidence="helper packet",
+        related_issue_urls=["https://example.test/issue-1"],
     )
     d = bt.to_dict()
     assert d["external_intervention_count"] == 1
     assert d["external_interventions"][0]["actor"] == "external_api_helper"
     assert d["external_interventions"][0]["evidence"] == "helper packet"
+    assert d["external_interventions"][0]["related_issue_urls"] == ["https://example.test/issue-1"]
     assert "external_interventions×1" in bt.summary()
 
 
@@ -237,6 +239,33 @@ def test_auto_open_high_severity_blocking_and_non_blocking_defects(monkeypatch):
     ]
     assert bt.records[0].issue_url == "https://example.test/E001"
     assert bt.records[1].issue_url == "https://example.test/E002"
+
+
+def test_self_audit_links_external_intervention_back_to_opened_issue(monkeypatch):
+    monkeypatch.setenv("IGRIS_AUTO_OPEN_DEFECT_ISSUES", "true")
+    bt = make_tracker()
+    bt.record("E001", "high severity defect", severity="high", blocking=False)
+    monkeypatch.setattr(
+        BehaviorTracker,
+        "_open_single_issue",
+        lambda self, rec, project_root: f"https://example.test/{rec.code}",
+    )
+    audit = bt.self_audit(
+        run_status="blocked",
+        failure_class="pytest_failure",
+        repair_cycles_used=0,
+        smoke_ran=False,
+        pytest_ran=False,
+        workspace_dirty=False,
+        escalation_budget_exhausted=False,
+        escalation_was_called=True,
+        project_root="/tmp/project",
+    )
+    assert audit.opened_issues == ["https://example.test/E001"]
+    assert bt.external_interventions
+    ext = bt.external_interventions[0]
+    assert ext.issue_url == "https://example.test/E001"
+    assert ext.related_issue_urls == ["https://example.test/E001"]
 
 
 # ---------------------------------------------------------------------------

@@ -87,6 +87,7 @@ class ExternalInterventionRecord:
     escalated: bool = True
     stage_id: str = ""
     evidence: str = ""
+    related_issue_urls: List[str] = field(default_factory=list)
     timestamp: str = field(
         default_factory=lambda: datetime.now(timezone.utc).isoformat()
     )
@@ -173,6 +174,7 @@ class BehaviorTracker:
         stage_id: str = "",
         evidence: str = "",
         issue_url: str = "",
+        related_issue_urls: Optional[List[str]] = None,
     ) -> ExternalInterventionRecord:
         """Record an external intervention for post-run audit."""
         rec = ExternalInterventionRecord(
@@ -183,6 +185,7 @@ class BehaviorTracker:
             escalated=escalated,
             stage_id=stage_id,
             evidence=evidence[:500],
+            related_issue_urls=list(related_issue_urls or []),
             issue_url=issue_url,
         )
         self.external_interventions.append(rec)
@@ -290,6 +293,8 @@ class BehaviorTracker:
                 detail="External escalation was used during the run.",
                 severity="medium",
                 escalated=True,
+                issue_url=result.opened_issues[0] if result.opened_issues else "",
+                related_issue_urls=list(result.opened_issues),
             )
 
         return result
@@ -369,6 +374,7 @@ class BehaviorTracker:
                     "stage_id": r.stage_id,
                     "timestamp": r.timestamp,
                     "evidence": r.evidence,
+                    "related_issue_urls": list(r.related_issue_urls),
                     "issue_url": r.issue_url,
                 }
                 for r in self.external_interventions
