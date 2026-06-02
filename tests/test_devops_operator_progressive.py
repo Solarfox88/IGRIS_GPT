@@ -46,6 +46,91 @@ def test_run_deploy_blocks_production_without_approval(tmp_path) -> None:
     assert "production_approval" in blocked["abort_reason"]
 
 
+def test_run_deploy_blocks_staging_without_explicit_approval(tmp_path) -> None:
+    runner = FakeCommandRunner()
+    runner.set_result(
+        "df -P",
+        CommandResult(
+            returncode=0,
+            stdout="Filesystem 1024-blocks Used Available Capacity Mounted on\n/dev/root 1000 400 600 40% /\n",
+        ),
+    )
+    mgr = DevOpsManager(str(tmp_path), runner=runner)
+    mgr.register_host(
+        HostConfig(
+            hostname="localhost",
+            policy="operator",
+            environment="staging",
+            allowed_paths=[str(tmp_path)],
+            allowed_services=["igris"],
+            allowed_domains=["staging.example.com"],
+        )
+    )
+    blocked = mgr.run_deploy(
+        hostname="localhost",
+        health_url="https://staging.example.com/health",
+        dry_run=False,
+        strategy="git_pull_restart",
+    )
+    assert blocked["deployed"] is False
+    assert "staging deploy requires explicit deployment_approval" in blocked["abort_reason"]
+    assert blocked["approval"]["required"] is True
+
+
+def test_run_deploy_allows_staging_with_explicit_approval(tmp_path) -> None:
+    runner = FakeCommandRunner()
+    runner.set_result(
+        "df -P",
+        CommandResult(
+            returncode=0,
+            stdout="Filesystem 1024-blocks Used Available Capacity Mounted on\n/dev/root 1000 400 600 40% /\n",
+        ),
+    )
+    runner.set_result("git pull --ff-only", CommandResult(returncode=0, stdout="Already up to date.\n"))
+    runner.set_result("systemctl restart igris", CommandResult(returncode=0, stderr="restarted"))
+    runner.set_result("git rev-parse HEAD", CommandResult(returncode=0, stdout="abc123\n"))
+    runner.set_result("nc -z -w 3 localhost 7778", CommandResult(returncode=0))
+    mgr = DevOpsManager(str(tmp_path), runner=runner)
+    mgr.run_smoke_test = lambda url="": {  # type: ignore[assignment]
+        "ok": True,
+        "status_code": 200,
+        "response_time_ms": 12,
+        "url": url,
+        "body_preview": "ok",
+    }
+    mgr.run_browser_smoke = lambda url="", selector="body", runner=None: {  # type: ignore[assignment]
+        "ok": True,
+        "url": url,
+        "selector": selector,
+        "status": "passed",
+        "evidence": "browser smoke ok",
+    }
+    mgr.register_host(
+        HostConfig(
+            hostname="localhost",
+            policy="operator",
+            environment="staging",
+            allowed_paths=[str(tmp_path)],
+            allowed_services=["igris"],
+            allowed_domains=["staging.example.com"],
+        )
+    )
+    allowed = mgr.run_deploy(
+        hostname="localhost",
+        health_url="https://staging.example.com/health",
+        dry_run=False,
+        strategy="git_pull_restart",
+        deploy_approval="approved",
+        mission_id="mission-7",
+        run_id="run-9",
+    )
+    assert allowed["deployed"] is True
+    assert allowed["approval"]["granted"] is True
+    assert allowed["context"] == {"mission_id": "mission-7", "run_id": "run-9"}
+    assert allowed["postcheck"]["checks"]["http_health"]["url"] == "https://staging.example.com/health"
+    assert "browser" in allowed["postcheck"]["checks"]
+
+
 def test_run_deploy_allows_production_with_explicit_approval(tmp_path) -> None:
     runner = FakeCommandRunner()
     runner.set_result(
@@ -76,10 +161,15 @@ def test_run_deploy_allows_production_with_explicit_approval(tmp_path) -> None:
 
 def test_devops_audit_file_created(tmp_path) -> None:
     mgr = DevOpsManager(str(tmp_path), runner=FakeCommandRunner())
-    mgr.run_deploy(dry_run=True, strategy="dry_run")
+    mgr.run_deploy(dry_run=True, strategy="dry_run", mission_id="mission-a", run_id="run-b", health_url="https://safe.example.com/health?token=abc123")
     audit_file = tmp_path / ".igris" / "devops_operator_audit.jsonl"
     assert audit_file.exists()
-    assert audit_file.read_text(encoding="utf-8").strip()
+    content = audit_file.read_text(encoding="utf-8").strip()
+    assert content
+    assert "mission-a" in content
+    assert "run-b" in content
+    assert "abc123" not in content
+    assert "[REDACTED]" in content
 
 
 def test_run_deploy_enforces_allowed_domains(tmp_path) -> None:
@@ -132,7 +222,7 @@ def test_run_diagnostics_returns_structured_sections_and_redacts(tmp_path) -> No
     runner.set_result("journalctl -u nginx", CommandResult(returncode=0, stdout="password=abc123"))
     runner.set_result("openssl s_client", CommandResult(returncode=0, stdout="CONNECTED"))
     mgr = DevOpsManager(str(tmp_path), runner=runner)
-    report = mgr.run_diagnostics(ssl_target="example.com:443")
+    report = mgr.run_diagnostics(ssl_target="example.com:443", mission_id="mission-x", run_id="run-y")
     assert "systemd" in report
     assert "docker" in report
     assert "nginx" in report
@@ -142,3 +232,21 @@ def test_run_diagnostics_returns_structured_sections_and_redacts(tmp_path) -> No
     assert "logs" in report
     assert report["logs"]["igris"]["stdout"] == "[REDACTED]"
     assert report["logs"]["nginx"]["stdout"] == "[REDACTED]"
+    assert report["context"] == {"mission_id": "mission-x", "run_id": "run-y"}
+    assert "browser" in report
+
+
+def test_run_rollback_returns_evidence_and_context(tmp_path) -> None:
+    runner = FakeCommandRunner()
+    runner.set_result("git reset --hard", CommandResult(returncode=0, stdout="reset\n"))
+    runner.set_result("systemctl restart igris", CommandResult(returncode=0, stderr="restarted"))
+    mgr = DevOpsManager(str(tmp_path), runner=runner)
+    result = mgr.run_rollback(
+        pre_deploy_sha="abc123",
+        mission_id="mission-r",
+        run_id="run-r",
+    )
+    assert result["ok"] is True
+    assert result["context"] == {"mission_id": "mission-r", "run_id": "run-r"}
+    assert result["evidence"]["mode"] == "apply"
+    assert result["evidence"]["verified"] is True

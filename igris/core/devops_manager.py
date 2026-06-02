@@ -286,7 +286,7 @@ class DevOpsManager:
             row = {
                 "timestamp": time.time(),
                 "event": event,
-                "payload": payload,
+                "payload": self._redact_payload(payload),
             }
             self._audit_path.write_text(
                 self._audit_path.read_text(encoding="utf-8") + json.dumps(row, ensure_ascii=False) + "\n"
@@ -297,6 +297,29 @@ class DevOpsManager:
         except Exception:
             # Audit write failures must never break operator flows.
             pass
+
+    @classmethod
+    def _redact_payload(cls, value: Any) -> Any:
+        """Recursively redact secrets from audit payloads."""
+        if isinstance(value, dict):
+            redacted: Dict[str, Any] = {}
+            for key, item in value.items():
+                key_str = str(key).lower()
+                if any(tok in key_str for tok in ("token", "secret", "password", "apikey", "api_key")):
+                    redacted[key] = "[REDACTED]"
+                else:
+                    redacted[key] = cls._redact_payload(item)
+            return redacted
+        if isinstance(value, list):
+            return [cls._redact_payload(item) for item in value]
+        if isinstance(value, tuple):
+            return tuple(cls._redact_payload(item) for item in value)
+        if isinstance(value, str):
+            lower = value.lower()
+            if any(tok in lower for tok in ("token", "secret", "password", "apikey", "api_key")):
+                return "[REDACTED]"
+            return value
+        return value
 
     # ------------------------------------------------------------------
     # Persistence
@@ -496,6 +519,7 @@ class DevOpsManager:
                 "status_code": smoke.get("status_code"),
                 "response_time_ms": smoke.get("response_time_ms"),
             }
+            checks["browser"] = self.run_browser_smoke(url=health_url)
 
         overall_ok = all(c.get("ok", False) for c in checks.values())
         return {
@@ -525,7 +549,10 @@ class DevOpsManager:
         compose_file: str = "docker-compose.yml",
         nginx_webroot: str = "/var/www/html",
         auto_rollback: bool = True,
+        deploy_approval: str = "",
         production_approval: str = "",
+        mission_id: str = "",
+        run_id: str = "",
     ) -> Dict[str, Any]:
         """Execute a deploy cycle: preflight → snapshot → action → postcheck → rollback.
 
@@ -542,6 +569,10 @@ class DevOpsManager:
             "dry_run": dry_run,
             "timestamp": time.time(),
             "auto_rollback": auto_rollback,
+            "context": {
+                "mission_id": mission_id,
+                "run_id": run_id,
+            },
         }
 
         if strategy not in self.VALID_STRATEGIES:
@@ -571,24 +602,44 @@ class DevOpsManager:
                 report["deployed"] = False
                 report["abort_reason"] = f"health_url domain is not allowed by host policy: {health_url}"
                 return report
-            if env == "production" and not (dry_run or strategy == "dry_run"):
-                if str(production_approval or "").strip().lower() != "approved":
-                    report["deployed"] = False
-                    report["abort_reason"] = "production deploy requires explicit production_approval='approved'"
-                    self._audit("deploy_blocked", {
-                        "hostname": host_cfg.hostname,
-                        "environment": env,
-                        "reason": report["abort_reason"],
-                        "strategy": strategy,
-                        "dry_run": dry_run,
-                    })
-                    return report
+            approval_value = str(deploy_approval or production_approval or "").strip().lower()
+            approval_required = env in {"staging", "production"} and not (dry_run or strategy == "dry_run")
+            report["approval"] = {
+                "required": approval_required,
+                "granted": approval_value == "approved",
+                "environment": env,
+            }
+            if approval_required and approval_value != "approved":
+                report["deployed"] = False
+                if env == "production":
+                    report["abort_reason"] = (
+                        "production deploy requires explicit production_approval='approved' "
+                        "or deploy_approval='approved'"
+                    )
+                else:
+                    report["abort_reason"] = (
+                        "staging deploy requires explicit deployment_approval='approved' "
+                        "or deploy_approval='approved'"
+                    )
+                self._audit("deploy_blocked", {
+                    "hostname": host_cfg.hostname,
+                    "environment": env,
+                    "reason": report["abort_reason"],
+                    "strategy": strategy,
+                    "dry_run": dry_run,
+                    "mission_id": mission_id,
+                    "run_id": run_id,
+                })
+                return report
         runner = self._effective_runner(host_cfg)
         self._audit("deploy_start", {
             "hostname": hostname or "localhost",
             "strategy": strategy,
             "dry_run": dry_run,
             "environment": str((host_cfg.environment if host_cfg else "local")),
+            "mission_id": mission_id,
+            "run_id": run_id,
+            "health_url": health_url,
         })
 
         # Preflight
@@ -656,6 +707,8 @@ class DevOpsManager:
                     service_name=service_name,
                     runner=runner,
                     host_cfg=host_cfg,
+                    mission_id=mission_id,
+                    run_id=run_id,
                 )
                 report["rollback"] = rollback
                 report["deployed"] = False
@@ -668,6 +721,8 @@ class DevOpsManager:
             "ok": bool(report.get("deployed", False)),
             "postcheck_ok": bool(report.get("postcheck_ok", False)),
             "abort_reason": str(report.get("abort_reason", "")),
+            "mission_id": mission_id,
+            "run_id": run_id,
         })
         return report
 
@@ -783,6 +838,8 @@ class DevOpsManager:
         dry_run: bool = False,
         runner: Optional[CommandRunner] = None,
         host_cfg: Optional[HostConfig] = None,
+        mission_id: str = "",
+        run_id: str = "",
     ) -> Dict[str, Any]:
         """Roll back a deploy by resetting to pre_deploy_sha and restarting.
 
@@ -794,6 +851,10 @@ class DevOpsManager:
             "pre_deploy_sha": pre_deploy_sha,
             "timestamp": time.time(),
             "dry_run": dry_run,
+            "context": {
+                "mission_id": mission_id,
+                "run_id": run_id,
+            },
         }
         cwd = str(self.project_root)
         effective_runner = runner or self._runner
@@ -813,6 +874,11 @@ class DevOpsManager:
                         f"service={service_name}",
                     ],
                 }
+            }
+            result["evidence"] = {
+                "mode": "dry_run",
+                "plan": list(result["steps"]["plan"]["commands"]),
+                "verified": False,
             }
             result["ok"] = True
             return result
@@ -874,6 +940,14 @@ class DevOpsManager:
 
         result["steps"] = steps
         result["ok"] = all(v.get("ok", False) for v in steps.values())
+        result["evidence"] = {
+            "mode": "apply",
+            "commands": {
+                "git_reset": steps.get("git_reset", {}),
+                "restart": steps.get("restart") or steps.get("docker_compose_up") or steps.get("nginx_reload"),
+            },
+            "verified": result["ok"],
+        }
         return result
 
     def _effective_runner(self, host_cfg: Optional[HostConfig]) -> CommandRunner:
@@ -929,6 +1003,8 @@ class DevOpsManager:
         *,
         runner: Optional[CommandRunner] = None,
         ssl_target: str = "",
+        mission_id: str = "",
+        run_id: str = "",
     ) -> Dict[str, Any]:
         """Best-effort diagnostics for VPS/operator workflows."""
         effective_runner = runner or self._runner
@@ -949,6 +1025,10 @@ class DevOpsManager:
         }
         report: Dict[str, Any] = {
             "timestamp": time.time(),
+            "context": {
+                "mission_id": mission_id,
+                "run_id": run_id,
+            },
             "systemd": services,
             "docker": _cmd(["docker", "ps", "--format", "{{.Names}}"]),
             "nginx": _cmd(["nginx", "-t"]),
@@ -964,6 +1044,7 @@ class DevOpsManager:
             report["ssl"] = _cmd(["openssl", "s_client", "-connect", ssl_target, "-servername", ssl_target], timeout=12)
         else:
             report["ssl"] = {"ok": False, "reason": "no ssl_target provided"}
+        report["browser"] = self.run_browser_smoke(url=f"https://{ssl_target}" if ssl_target and not ssl_target.startswith("http") else ssl_target)
         report["ok"] = all(
             isinstance(v, dict) and v.get("ok", False)
             for k, v in report.items()
