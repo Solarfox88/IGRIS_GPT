@@ -311,19 +311,41 @@
     }
 
     // Evidence panel (read-only)
+    var interpretedEvidence = null;
+    var activeRunId = "";
     var evEl = $("#dash-evidence-summary");
     if (evEl) {
       var activeRuns = await api("GET", "/api/rank/runs/active");
       if (activeRuns.ok && activeRuns.data && activeRuns.data.runs && activeRuns.data.runs.length > 0) {
         var run = activeRuns.data.runs[0];
-        var runId = run.run_id || run.id || "";
-        var ev = runId ? await api("GET", "/api/rank/runs/" + encodeURIComponent(runId) + "/evidence") : { ok: false };
-        if (ev.ok) {
-          var text = esc(JSON.stringify(ev.data)).slice(0, 600);
-          evEl.innerHTML = '<div class="panel-line"><strong>Active run:</strong> ' + esc(runId) + '</div>' +
-                           '<div class="panel-line">' + text + (text.length >= 600 ? " ...[truncated]" : "") + '</div>';
+        activeRunId = run.run_id || run.id || "";
+        interpretedEvidence = activeRunId ? await api("GET", "/api/rank/runs/" + encodeURIComponent(activeRunId) + "/evidence/interpreted") : { ok: false };
+        if (interpretedEvidence.ok && interpretedEvidence.data) {
+          var ed = interpretedEvidence.data;
+          var cards = ed.evidence_cards || [];
+          var nextActions = ed.next_actions || [];
+          var html = '<div class="panel-line"><strong>Active run:</strong> ' + esc(activeRunId) + '</div>';
+          html += '<div class="panel-line"><strong>Interpreted cards:</strong> ' + esc(String(ed.card_count || cards.length || 0)) + '</div>';
+          html += '<div class="panel-line"><strong>Next actions:</strong> ' + esc(String(nextActions.length || 0)) + '</div>';
+          if (cards.length > 0) {
+            html += '<div class="panel-card-list">';
+            for (var ci = 0; ci < Math.min(cards.length, 3); ci++) {
+              var card = cards[ci] || {};
+              html += '<div class="panel-card evidence-card">';
+              html += '<div class="panel-card-title">' + esc(card.type || "evidence") + ' <span class="dim">' + esc(card.status || "unknown") + '</span></div>';
+              html += '<div class="panel-card-summary">' + esc(card.summary || "No summary") + '</div>';
+              if (card.details) {
+                html += '<div class="panel-card-detail">' + esc(typeof card.details === "string" ? card.details : JSON.stringify(card.details)).slice(0, 240) + '</div>';
+              }
+              html += '</div>';
+            }
+            html += '</div>';
+          } else {
+            html += '<div class="panel-line dim">No evidence cards available for active run</div>';
+          }
+          evEl.innerHTML = html;
         } else {
-          evEl.innerHTML = '<div class="panel-line">Evidence not available for active run</div>';
+          evEl.innerHTML = '<div class="panel-line">Interpreted evidence not available for active run</div>';
         }
       } else {
         evEl.innerHTML = '<div class="panel-line">No active run evidence</div>';
@@ -375,8 +397,35 @@
     // Browser evidence placeholder/base
     var brEl = $("#dash-browser-summary");
     if (brEl) {
-      brEl.innerHTML = '<div class="panel-line">Browser evidence integration: base placeholder active</div>' +
-                       '<div class="panel-line">No executable browser action exposed from dashboard.</div>';
+      if (interpretedEvidence && interpretedEvidence.ok && interpretedEvidence.data) {
+        var cards2 = interpretedEvidence.data.evidence_cards || [];
+        var browserCard = null;
+        for (var bi = 0; bi < cards2.length; bi++) {
+          if (String(cards2[bi].type || "").toLowerCase() === "browser_evidence") {
+            browserCard = cards2[bi];
+            break;
+          }
+        }
+        var browserActions = interpretedEvidence.data.next_actions || [];
+        var browserAction = browserActions.length > 0 ? browserActions[0] : null;
+        if (browserCard) {
+          var html = '<div class="panel-line"><strong>Status:</strong> ' + esc(browserCard.status || "unknown") + '</div>';
+          html += '<div class="panel-line"><strong>Summary:</strong> ' + esc(browserCard.summary || "No summary") + '</div>';
+          if (browserCard.details) {
+            html += '<div class="panel-line"><strong>Details:</strong> ' + esc(typeof browserCard.details === "string" ? browserCard.details : JSON.stringify(browserCard.details)).slice(0, 320) + '</div>';
+          }
+          if (browserAction) {
+            html += '<div class="panel-line"><strong>Next:</strong> ' + esc(browserAction.summary || browserAction.label || "review browser evidence") + '</div>';
+          }
+          brEl.innerHTML = html;
+        } else {
+          brEl.innerHTML = '<div class="panel-line">Browser evidence card not present yet</div>' +
+                           '<div class="panel-line">Run a browser-backed mission to surface actionable evidence here.</div>';
+        }
+      } else {
+        brEl.innerHTML = '<div class="panel-line">Browser evidence integration: base placeholder active</div>' +
+                         '<div class="panel-line">No executable browser action exposed from dashboard.</div>';
+      }
     }
 
     await loadSupervisorMonitor();

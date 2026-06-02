@@ -275,6 +275,15 @@ class TestDashboardJS:
         ]:
             assert marker in js
 
+    def test_js_uses_interpreted_evidence_endpoint(self):
+        import pathlib
+        js = pathlib.Path("igris/web/static/js/app.js").read_text()
+        assert "/evidence/interpreted" in js
+        assert "evidence_cards" in js
+        assert "next_actions" in js
+        assert "browser_evidence" in js
+        assert "panel-card" in js
+
     def test_js_auto_refresh_uses_dashboard(self):
         import pathlib
         js = pathlib.Path("igris/web/static/js/app.js").read_text()
