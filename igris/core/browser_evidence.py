@@ -14,7 +14,7 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from igris.core.safety import redact_secrets
+from igris.core.safety import redact_secrets, safe_json_response
 
 _log = logging.getLogger("igris.browser_evidence")
 
@@ -286,21 +286,37 @@ class BrowserArtifactStore:
         except OSError as exc:
             _log.warning("failed to save browser artifact index: %s", exc)
 
-    def store_result(self, result: BrowserSmokeResult, run_id: str = "") -> Dict[str, Any]:
+    def store_result(
+        self,
+        result: BrowserSmokeResult | Dict[str, Any],
+        run_id: str = "",
+        context: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
         """Persist a smoke result as an artifact entry."""
+        payload = result.to_dict() if isinstance(result, BrowserSmokeResult) else dict(result)
+        console_events = list((payload.get("console_events", []) or [])[:50]) if isinstance(payload.get("console_events", []), list) else list(payload.get("console_events", []) or [])[:50]
+        network_events = list((payload.get("network_events", []) or [])[:50]) if isinstance(payload.get("network_events", []), list) else list(payload.get("network_events", []) or [])[:50]
+        console_errors = payload.get("console_errors", []) or []
+        network_errors = payload.get("network_errors", []) or []
         entry = {
             "run_id": run_id,
-            "url": result.url,
-            "ok": result.ok,
-            "degraded": result.degraded,
-            "screenshot_path": redact_secrets(result.screenshot_path),
-            "screenshot_meta": result.screenshot_meta,
-            "console_events": result.console_events[:50],
-            "network_events": result.network_events[:50],
-            "console_error_count": len(result.console_errors),
-            "network_error_count": len(result.network_errors),
-            "error": redact_secrets(result.error) if result.error else "",
-            "timestamp": result.timestamp,
+            "context": safe_json_response(context or {}),
+            "url": payload.get("url", ""),
+            "ok": bool(payload.get("ok", False)),
+            "degraded": bool(payload.get("degraded", False)),
+            "screenshot_path": redact_secrets(str(payload.get("screenshot_path", ""))),
+            "screenshot_meta": payload.get("screenshot_meta"),
+            "console_events": console_events,
+            "network_events": network_events,
+            "console_error_count": len(console_errors),
+            "network_error_count": len(network_errors),
+            "error": redact_secrets(str(payload.get("error", ""))) if payload.get("error") else "",
+            "timestamp": payload.get("timestamp", time.time()),
+            "summary": {
+                "selector": payload.get("selector", ""),
+                "selector_found": payload.get("selector_found"),
+                "artifact": payload.get("screenshot_meta"),
+            },
         }
         self._entries.append(entry)
         self._save()
