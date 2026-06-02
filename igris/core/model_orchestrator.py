@@ -647,6 +647,11 @@ class ModelOrchestrator:
         # Ollama protocol: local instance OR remote Vast.ai Ollama instance
         if provider.name in ("ollama", "vastai_ollama"):
             return self._call_ollama(provider, messages, system_prompt, timeout)
+        if provider.name == "anthropic":
+            return self._call_anthropic(
+                provider, messages, system_prompt,
+                max_tokens, temperature, json_mode, timeout,
+            )
         else:
             return self._call_openai_compatible(
                 provider, messages, system_prompt,
@@ -777,6 +782,85 @@ class ModelOrchestrator:
                     provider=provider.name,
                     model=provider.model,
                     success=bool(content),
+                    input_tokens=input_tokens,
+                    output_tokens=output_tokens,
+                    estimated_cost=round(cost, 6),
+                )
+        except (urllib.error.URLError, urllib.error.HTTPError, OSError,
+                ValueError, TimeoutError, ConnectionError) as e:
+            raise RuntimeError(f"{provider.name} call failed: {e}") from e
+
+    def _call_anthropic(
+        self,
+        provider: ProviderConfig,
+        messages: List[Dict[str, str]],
+        system_prompt: Optional[str],
+        max_tokens: int,
+        temperature: float,
+        json_mode: bool,
+        timeout: float,
+    ) -> OrchestratorResult:
+        """Call Anthropic's messages API with provider-specific payload mapping."""
+        import os
+        import urllib.request
+        import urllib.error
+
+        api_key = os.environ.get(provider.api_key_env, "")
+        if not api_key:
+            raise RuntimeError(f"No API key for {provider.name}")
+
+        full_messages = []
+        for msg in messages:
+            role = msg.get("role", "user")
+            if role == "system":
+                continue
+            full_messages.append({"role": role, "content": msg.get("content", "")})
+
+        url = f"{provider.base_url.rstrip('/')}/messages"
+        body: Dict[str, Any] = {
+            "model": provider.model,
+            "max_tokens": max_tokens,
+            "temperature": temperature,
+            "messages": full_messages,
+        }
+        if system_prompt:
+            body["system"] = system_prompt
+        if json_mode:
+            body["metadata"] = {"response_format": "json_object"}
+
+        payload = json.dumps(body).encode("utf-8")
+        req = urllib.request.Request(
+            url,
+            data=payload,
+            headers={
+                "Content-Type": "application/json",
+                "x-api-key": api_key,
+                "anthropic-version": "2023-06-01",
+            },
+            method="POST",
+        )
+
+        try:
+            with urllib.request.urlopen(req, timeout=timeout) as resp:
+                data = json.loads(resp.read().decode("utf-8"))
+                content = data.get("content", [])
+                text_parts = [
+                    block.get("text", "")
+                    for block in content
+                    if isinstance(block, dict) and block.get("type") == "text"
+                ]
+                usage = data.get("usage", {})
+                input_tokens = usage.get("input_tokens", 0)
+                output_tokens = usage.get("output_tokens", 0)
+                cost = (
+                    (input_tokens / 1_000_000) * provider.input_cost_per_1m_tokens +
+                    (output_tokens / 1_000_000) * provider.output_cost_per_1m_tokens
+                )
+                return OrchestratorResult(
+                    text="".join(text_parts),
+                    provider=provider.name,
+                    model=provider.model,
+                    success=bool(text_parts),
                     input_tokens=input_tokens,
                     output_tokens=output_tokens,
                     estimated_cost=round(cost, 6),

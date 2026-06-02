@@ -4,6 +4,7 @@ Validates that all LLM access goes through the orchestrator,
 provider-agnostic design, fallback behavior, and cost tracking.
 """
 
+import json
 import pytest
 
 from igris.core.model_orchestrator import (
@@ -13,6 +14,20 @@ from igris.core.model_orchestrator import (
     OrchestratorResult,
     ModelOrchestrator,
 )
+
+
+class _FakeHTTPResponse:
+    def __init__(self, payload: dict):
+        self._payload = payload
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc, tb):
+        return False
+
+    def read(self) -> bytes:
+        return json.dumps(self._payload).encode("utf-8")
 
 
 # ---------------------------------------------------------------------------
@@ -285,6 +300,86 @@ class TestExecutionRouting:
 
 
 class TestProviderErrorClassificationIntegration:
+    def test_openai_payload_includes_response_format_and_chat_endpoint(self, monkeypatch):
+        providers = {
+            "openai": ProviderConfig(
+                name="openai",
+                base_url="https://api.openai.com/v1",
+                model="gpt-4o-mini",
+                api_key_env="OPENAI_API_KEY",
+                supports_json_mode=True,
+            )
+        }
+        monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
+        orch = ModelOrchestrator(providers=providers, retry_max_attempts=0)
+        captured = {}
+
+        def _fake_urlopen(request, timeout=0):
+            captured["url"] = request.full_url
+            captured["headers"] = dict(request.header_items())
+            captured["body"] = json.loads(request.data.decode("utf-8"))
+            return _FakeHTTPResponse(
+                {
+                    "choices": [{"message": {"content": "ok"}}],
+                    "usage": {"prompt_tokens": 3, "completion_tokens": 2},
+                }
+            )
+
+        monkeypatch.setattr("urllib.request.urlopen", _fake_urlopen)
+        result = orch.complete(
+            task_type="cheap_cloud_reasoning",
+            messages=[{"role": "user", "content": "hi"}],
+            system_prompt="sys",
+            json_mode=True,
+        )
+        assert result.success is True
+        assert result.provider == "openai"
+        assert captured["url"].endswith("/chat/completions")
+        assert captured["body"]["response_format"] == {"type": "json_object"}
+        assert captured["body"]["messages"][0]["role"] == "system"
+        assert captured["body"]["messages"][0]["content"] == "sys"
+
+    def test_anthropic_payload_uses_messages_endpoint_and_system_field(self, monkeypatch):
+        providers = {
+            "anthropic": ProviderConfig(
+                name="anthropic",
+                base_url="https://api.anthropic.com/v1",
+                model="claude-sonnet-4-20250514",
+                api_key_env="ANTHROPIC_API_KEY",
+                supports_json_mode=True,
+            )
+        }
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test")
+        orch = ModelOrchestrator(providers=providers, retry_max_attempts=0)
+        captured = {}
+
+        def _fake_urlopen(request, timeout=0):
+            captured["url"] = request.full_url
+            captured["headers"] = dict(request.header_items())
+            captured["body"] = json.loads(request.data.decode("utf-8"))
+            return _FakeHTTPResponse(
+                {
+                    "content": [{"type": "text", "text": "anthropic-ok"}],
+                    "usage": {"input_tokens": 4, "output_tokens": 1},
+                }
+            )
+
+        monkeypatch.setattr("urllib.request.urlopen", _fake_urlopen)
+        result = orch.complete(
+            task_type="strong_cloud_reasoning",
+            messages=[{"role": "user", "content": "hi"}],
+            system_prompt="sys",
+            json_mode=True,
+            preferred_profile="strong_cloud_reasoning",
+        )
+        assert result.success is True
+        assert result.provider == "anthropic"
+        assert result.text == "anthropic-ok"
+        assert captured["url"].endswith("/messages")
+        assert captured["body"]["system"] == "sys"
+        assert captured["body"]["messages"][0]["role"] == "user"
+        assert captured["body"]["metadata"]["response_format"] == "json_object"
+
     def test_fallback_provider_selected_when_allowed(self, monkeypatch):
         providers = {
             "deepseek": ProviderConfig(name="deepseek", base_url="http://x", model="m1"),
@@ -323,6 +418,9 @@ class TestProviderErrorClassificationIntegration:
         assert result.error_category == "auth_error"
         assert result.error_retryable is False
         assert "sk-test-super-secret" not in result.fallback_reason
+        history = orch.get_history(limit=1)[0]
+        assert history["error_category"] == "auth_error"
+        assert history["error_retryable"] is False
 
     def test_retry_policy_respected_for_timeout(self, monkeypatch):
         providers = {
