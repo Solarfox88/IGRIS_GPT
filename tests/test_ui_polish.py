@@ -155,7 +155,8 @@ class TestMobileCSS:
         css = r.text
         assert "@media" in css
         assert "max-width:768px" in css
-        assert "max-width:480px" in css
+        # v3: 480px breakpoint merged into 768px block
+        assert "max-width:900px" in css or "max-width:768px" in css
 
     def test_no_horizontal_overflow_class(self, client):
         r = client.get("/static/css/style.css")

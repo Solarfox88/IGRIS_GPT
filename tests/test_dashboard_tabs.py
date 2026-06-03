@@ -30,9 +30,10 @@ class TestTabReduction:
         import pathlib
         html = pathlib.Path("igris/web/templates/index.html").read_text()
         tabs = re.findall(r'data-tab="([^"]+)"', html)
-        assert len(tabs) == 7
+        # v3 UI has sidebar + tab-bar both using data-tab → check unique set, not raw count
+        unique_tabs = set(tabs)
         expected = {"dashboard", "code", "tasks", "terminal", "memory", "safety", "advanced"}
-        assert set(tabs) == expected
+        assert unique_tabs == expected
 
     def test_no_old_standalone_tabs(self):
         import pathlib

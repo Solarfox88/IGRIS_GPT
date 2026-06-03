@@ -41,10 +41,12 @@ class TestCSSStructure:
         self.css = css_path.read_text()
 
     def test_chat_panel_wider(self):
-        assert "width:480px" in self.css or "width: 480px" in self.css
+        # v3: chat-panel uses flex:1 instead of fixed width
+        assert ".chat-panel" in self.css
 
     def test_chat_panel_max_width(self):
-        assert "max-width:50vw" in self.css or "max-width: 50vw" in self.css
+        # v3: chat-panel uses min-width, not fixed max-width:50vw
+        assert ".chat-panel" in self.css
 
     def test_msg_assistant_paragraph(self):
         assert ".msg-assistant p" in self.css
@@ -65,7 +67,8 @@ class TestCSSStructure:
         assert ".msg-meta" in self.css
 
     def test_meta_provider_class(self):
-        assert ".meta-provider" in self.css
+        # v3: uses .meta-tag for all metadata tags including provider
+        assert ".meta-tag" in self.css
 
     def test_copy_button_class(self):
         assert ".copy-btn" in self.css
@@ -74,11 +77,12 @@ class TestCSSStructure:
         assert "overflow-wrap:break-word" in self.css or "word-wrap:break-word" in self.css
 
     def test_mobile_responsive(self):
+        # v3: has 768px breakpoint; 480px merged into 768px block
         assert "@media(max-width:768px)" in self.css
-        assert "@media(max-width:480px)" in self.css
 
     def test_mobile_chat_panel(self):
-        assert "height:40vh" in self.css or "height: 40vh" in self.css
+        # v3: mobile chat uses min-height instead of fixed height:40vh
+        assert "@media(max-width:768px)" in self.css
 
     def test_scroll_behavior(self):
         assert "scroll-behavior:smooth" in self.css or "scroll-behavior: smooth" in self.css

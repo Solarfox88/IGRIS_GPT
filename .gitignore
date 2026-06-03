@@ -38,4 +38,4 @@ wordpress_backup_*
 wordpress_db_backup_*
 
 # Python build metadata
-*.egg-info/
+*.egg-info/.claude/
