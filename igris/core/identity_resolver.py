@@ -93,6 +93,29 @@ def save_profiles(project_root: str, profiles: Dict[str, InterlocutorProfile]) -
     )
 
 
+
+# ---------------------------------------------------------------------------
+# Built-in trusted profiles (always available, not persisted to disk)
+# ---------------------------------------------------------------------------
+BUILTIN_PROFILES: Dict[str, InterlocutorProfile] = {
+    "system": InterlocutorProfile(
+        profile_id="system",
+        display_name="IGRIS Internal",
+        trust_level="admin",
+        authorized_scopes=["*"],
+        expertise_level="expert",
+        communication_style="technical",
+    ),
+    "owner": InterlocutorProfile(
+        profile_id="owner",
+        display_name="Christian (Owner)",
+        trust_level="admin",
+        authorized_scopes=["*"],
+        expertise_level="owner",
+        communication_style="technical",
+    ),
+}
+
 class IdentityResolver:
     """Resolve and manage interlocutor identities."""
 
@@ -106,6 +129,9 @@ class IdentityResolver:
         return self._profiles
 
     def resolve(self, name_or_id: str) -> InterlocutorProfile:
+        # Check built-in privileged profiles first (always trusted, no disk lookup needed)
+        if name_or_id in BUILTIN_PROFILES:
+            return BUILTIN_PROFILES[name_or_id]
         profiles = self._load()
         if name_or_id in profiles:
             profile = profiles[name_or_id]

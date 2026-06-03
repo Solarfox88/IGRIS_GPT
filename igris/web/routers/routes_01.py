@@ -341,10 +341,23 @@ def create_router(deps) -> APIRouter:
                 "approval_required": False,
             }
 
+        # ---- Interlocutor section (issue #526) ----
+        interlocutor_section: dict = {"profiles": [], "recent_audit": [], "error": None}
+        try:
+            from igris.core.identity_resolver import IdentityResolver
+            from igris.core.interlocutor_audit import InterlocutorAudit
+            _ir = IdentityResolver(str(CONFIG.project_root))
+            interlocutor_section["profiles"] = [p.to_dict() for p in _ir.get_all()]
+            _ia = InterlocutorAudit()
+            interlocutor_section["recent_audit"] = _ia.recent(10)
+        except Exception as _e:
+            interlocutor_section["error"] = str(_e)
+
         return {
             "health": {"status": "ok"},
             "diagnostics": diag,
             "loop": loop_info,
+            "interlocutor": interlocutor_section,
             "control_room": {
                 "mission_overview": mission_overview,
                 "risk_snapshot": risk_snapshot,
