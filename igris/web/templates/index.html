@@ -7,19 +7,77 @@
     <link rel="stylesheet" href="/static/css/style.css" />
   </head>
   <body>
-    <div class="layout">
+
+    <!-- TOP BAR (v3) -->
+    <div class="topbar">
+      <div class="topbar-brand">
+        <span class="bolt">⚡</span>
+        IGRIS
+        <span class="ver">v3</span>
+      </div>
+      <div class="topbar-identity" id="topbar-identity">
+        <div class="avatar" id="tb-avatar">?</div>
+        <div class="name" id="tb-name">—</div>
+        <span class="trust" id="tb-trust">—</span>
+        <span class="mode" id="tb-mode"></span>
+      </div>
+      <div class="topbar-spacer"></div>
+      <div class="topbar-status">
+        <div class="status-pill" id="tb-tests">
+          <div class="dot" id="tb-tests-dot"></div>
+          <span id="tb-tests-label">tests</span>
+        </div>
+        <div class="status-pill" id="tb-ci">
+          <div class="dot" id="tb-ci-dot"></div>
+          <span id="tb-ci-label">CI</span>
+        </div>
+        <div class="rank-badge" id="tb-rank">Rank —</div>
+      </div>
+    </div>
+
+    <div class="app">
+
+      <!-- SIDEBAR (v3 sectioned) -->
       <aside class="sidebar" id="sidebar">
         <button type="button" class="toggle-btn" id="sidebar-toggle" aria-label="Collassa sidebar">☰</button>
-        <h1 class="brand-title"><span class="icon">⚡</span><span class="label">IGRIS v2</span></h1>
-        <nav class="sidebar-nav" role="tablist" aria-label="Sezioni principali">
-          <button type="button" class="tab active" data-tab="dashboard" role="tab" aria-label="Dashboard"><span class="icon">📊</span><span class="label">Dashboard</span></button>
-          <button type="button" class="tab" data-tab="code" role="tab" aria-label="Code"><span class="icon">📁</span><span class="label">Code</span></button>
-          <button type="button" class="tab" data-tab="tasks" role="tab" aria-label="Tasks"><span class="icon">📋</span><span class="label">Tasks</span></button>
-          <button type="button" class="tab" data-tab="terminal" role="tab" aria-label="Terminal"><span class="icon">💻</span><span class="label">Terminal</span></button>
-          <button type="button" class="tab" data-tab="memory" role="tab" aria-label="Memory"><span class="icon">🧠</span><span class="label">Memory</span></button>
-          <button type="button" class="tab" data-tab="safety" role="tab" aria-label="Safety"><span class="icon">🛡️</span><span class="label">Safety</span></button>
-          <button type="button" class="tab" data-tab="advanced" role="tab" aria-label="Advanced"><span class="icon">⚙️</span><span class="label">Advanced</span></button>
-        </nav>
+        <h1 class="brand-title"><span class="icon">⚡</span><span class="label">IGRIS v3</span></h1>
+
+        <div class="sidebar-section">
+          <div class="sidebar-label">Workspace</div>
+          <nav class="sidebar-nav" role="tablist" aria-label="Workspace">
+            <button type="button" class="tab active" data-tab="dashboard" role="tab" aria-label="Dashboard">
+              <span class="icon">📊</span><span class="label">Dashboard</span>
+            </button>
+            <button type="button" class="tab" data-tab="code" role="tab" aria-label="Code">
+              <span class="icon">📁</span><span class="label">Code</span>
+            </button>
+            <button type="button" class="tab" data-tab="tasks" role="tab" aria-label="Tasks">
+              <span class="icon">📋</span><span class="label">Tasks</span>
+              <span class="badge-count" id="nav-tasks-count" style="display:none"></span>
+            </button>
+            <button type="button" class="tab" data-tab="terminal" role="tab" aria-label="Terminal">
+              <span class="icon">💻</span><span class="label">Terminal</span>
+            </button>
+          </nav>
+        </div>
+
+        <div class="sidebar-divider"></div>
+
+        <div class="sidebar-section">
+          <div class="sidebar-label">Capabilities</div>
+          <nav class="sidebar-nav" role="tablist" aria-label="Capabilities">
+            <button type="button" class="tab" data-tab="memory" role="tab" aria-label="Memory">
+              <span class="icon">🧠</span><span class="label">Memory</span>
+            </button>
+            <button type="button" class="tab" data-tab="safety" role="tab" aria-label="Safety">
+              <span class="icon">🛡️</span><span class="label">Safety</span>
+            </button>
+            <button type="button" class="tab" data-tab="advanced" role="tab" aria-label="Advanced">
+              <span class="icon">⚙️</span><span class="label">Advanced</span>
+            </button>
+          </nav>
+        </div>
+
         <div class="status-badge">
           <div class="status-line">
             <span class="dot" id="sidebar-status-dot"></span>
@@ -29,25 +87,45 @@
         </div>
       </aside>
 
+      <!-- CHAT PANEL -->
       <section class="chat-panel" aria-label="Chat">
         <div class="chat-header">
           <span>💬 IGRIS Chat</span>
-          <span class="chat-header-meta">connesso</span>
+          <span class="chat-header-meta" id="chat-interlocutor-meta">connesso</span>
         </div>
         <div id="chat-messages" class="chat-messages"></div>
-        <form id="chat-form" class="chat-form">
-          <input type="text" id="chat-input" placeholder="Ask IGRIS..." autocomplete="off" aria-label="Chat input" />
-          <button type="submit" aria-label="Send message">Send</button>
-        </form>
+        <div class="chat-input-area">
+          <form id="chat-form" class="chat-form-v3">
+            <textarea id="chat-input" class="chat-input-box" placeholder="Scrivi a IGRIS... (Invio per inviare, Shift+Invio per nuova riga)" rows="1" aria-label="Chat input"></textarea>
+            <button type="submit" class="chat-send-btn" aria-label="Send message">▶</button>
+          </form>
+          <div class="chat-hints" id="chat-hints">
+            <span class="hint-chip" data-msg="stato missioni attive">🔁 missioni</span>
+            <span class="hint-chip" data-msg="prossimo task da fare">📋 next task</span>
+            <span class="hint-chip" data-msg="PR aperte su GitHub">🐙 PR</span>
+            <span class="hint-chip" data-msg="status CI e test">✅ CI status</span>
+            <span class="hint-chip" data-msg="memory summary">🧠 memoria</span>
+          </div>
+        </div>
       </section>
 
+      <!-- CONSOLE PANEL (unchanged content) -->
       <section class="console-panel" id="right-panel" aria-label="Agentic Console">
         <div class="panel-header">
           <button type="button" class="toggle-btn" id="panel-toggle" aria-label="Collassa pannello">◀</button>
           <h2 id="section-title">Dashboard</h2>
         </div>
+        <div class="tab-bar">
+          <button type="button" class="tab active" data-tab="dashboard">Dashboard</button>
+          <button type="button" class="tab" data-tab="code">Code</button>
+          <button type="button" class="tab" data-tab="tasks">Tasks</button>
+          <button type="button" class="tab" data-tab="terminal">Terminal</button>
+          <button type="button" class="tab" data-tab="memory">Memory</button>
+          <button type="button" class="tab" data-tab="safety">Safety</button>
+          <button type="button" class="tab" data-tab="advanced">Advanced</button>
+        </div>
         <div class="tab-content">
-          <!-- Dashboard: connected mission control, no static fake counters. -->
+          <!-- Dashboard -->
           <div id="tab-dashboard" class="tab-pane active" role="tabpanel">
             <h3>Dashboard</h3>
             <div class="dashboard-grid">
@@ -138,7 +216,6 @@
                 <div class="info-block">Rank S dashboard endpoint visibility is available through the connected backend console.</div>
               </div>
             </div>
-
             <div id="mission-context" class="info-block"></div>
             <h4>Missions</h4>
             <button type="button" id="btn-refresh-missions" class="action-btn">Refresh</button>
@@ -157,7 +234,7 @@
             <div id="dash-reports" class="info-block"></div>
           </div>
 
-          <!-- Code: file browser, Git, and patch proposals connected through app.js endpoints. -->
+          <!-- Code -->
           <div id="tab-code" class="tab-pane" role="tabpanel">
             <div class="sub-tab-bar">
               <button type="button" class="sub-tab active" data-subtab="code-files">Files</button>
@@ -220,7 +297,7 @@
             </div>
           </div>
 
-          <!-- Tasks: task list, teacher remediation, and autonomous loop controls. -->
+          <!-- Tasks -->
           <div id="tab-tasks" class="tab-pane" role="tabpanel">
             <div class="sub-tab-bar">
               <button type="button" class="sub-tab active" data-subtab="tasks-list">Tasks</button>
@@ -253,7 +330,7 @@
             </div>
           </div>
 
-          <!-- Terminal: safe commands and tests. -->
+          <!-- Terminal -->
           <div id="tab-terminal" class="tab-pane" role="tabpanel">
             <div class="sub-tab-bar">
               <button type="button" class="sub-tab active" data-subtab="terminal-cmd">Commands</button>
@@ -273,7 +350,7 @@
             </div>
           </div>
 
-          <!-- Memory: decisions, failures, saturation, remediation, and timeline. -->
+          <!-- Memory -->
           <div id="tab-memory" class="tab-pane" role="tabpanel">
             <div class="sub-tab-bar">
               <button type="button" class="sub-tab active" data-subtab="memory-data">Memory</button>
@@ -309,7 +386,7 @@
             </div>
           </div>
 
-          <!-- Safety: policies, reports, cost, and routing. -->
+          <!-- Safety -->
           <div id="tab-safety" class="tab-pane" role="tabpanel">
             <div class="sub-tab-bar">
               <button type="button" class="sub-tab active" data-subtab="safety-status">Safety</button>
@@ -341,7 +418,7 @@
             </div>
           </div>
 
-          <!-- Advanced: A2A protocol and logs. -->
+          <!-- Advanced -->
           <div id="tab-advanced" class="tab-pane" role="tabpanel">
             <div class="sub-tab-bar">
               <button type="button" class="sub-tab active" data-subtab="adv-a2a">A2A</button>
@@ -365,7 +442,37 @@
           </div>
         </div>
       </section>
-    </div>
+
+      <!-- STATUS PANEL (v3 new) -->
+      <aside class="status-panel" id="status-panel">
+        <div class="status-header">
+          Live Status
+          <span class="sp-live" id="sp-live-dot">● live</span>
+        </div>
+
+        <div class="status-section" id="sp-ci">
+          <div class="status-section-title">CI / Tests</div>
+          <div id="sp-ci-content"><span class="loading">loading...</span></div>
+        </div>
+
+        <div class="status-section" id="sp-interlocutor">
+          <div class="status-section-title">Interlocutore</div>
+          <div id="sp-interlocutor-content"><span class="loading">loading...</span></div>
+        </div>
+
+        <div class="status-section" id="sp-audit">
+          <div class="status-section-title">Audit recente</div>
+          <div id="sp-audit-content"><span class="loading">loading...</span></div>
+        </div>
+
+        <div class="status-section" id="sp-rank">
+          <div class="status-section-title">Rank</div>
+          <div id="sp-rank-content"><span class="loading">loading...</span></div>
+        </div>
+      </aside>
+
+    </div><!-- /.app -->
+
     <script>
       (function () {
         var sidebar = document.getElementById("sidebar");
@@ -394,8 +501,17 @@
           if (active && sectionTitle) sectionTitle.textContent = active.textContent.trim();
         }
 
-        Array.prototype.forEach.call(document.querySelectorAll(".sidebar-nav .tab"), function (tab) {
+        // Sync sidebar + console panel tabs together
+        document.querySelectorAll(".tab[data-tab]").forEach(function (tab) {
           tab.addEventListener("click", function () {
+            var targetTab = tab.dataset.tab;
+            // Update all tab buttons
+            document.querySelectorAll(".tab[data-tab]").forEach(function (b) { b.classList.remove("active"); });
+            document.querySelectorAll(".tab[data-tab='" + targetTab + "']").forEach(function (b) { b.classList.add("active"); });
+            // Update tab panes
+            document.querySelectorAll(".tab-pane").forEach(function (p) { p.classList.remove("active"); });
+            var pane = document.getElementById("tab-" + targetTab);
+            if (pane) pane.classList.add("active");
             window.requestAnimationFrame(syncTitleFromActiveTab);
           });
         });

@@ -1934,3 +1934,228 @@ console.log('Rank S dashboard is now visible');
 // Visibility for Rank S dashboard endpoint added.
 // Note: Added visibility for Rank S dashboard endpoint.
 // Added visibility for Rank S dashboard endpoint
+
+// =====================================================================
+// IGRIS UI v3 — Status Panel, Hint Chips, Textarea, Advisory Rendering
+// =====================================================================
+(function () {
+  "use strict";
+
+  function $(sel) { return document.querySelector(sel); }
+  function esc(s) { var d = document.createElement("div"); d.textContent = String(s || ""); return d.innerHTML; }
+
+  // ---- STATUS PANEL ----
+  function loadStatusPanel() {
+    // Load interlocutor/audit from diagnostics summary
+    fetch("/api/diagnostics/summary").then(function(r) { return r.json(); }).then(function(d) {
+      // Sidebar status dot
+      var dot = $("#sidebar-status-dot");
+      if (dot) {
+        var ok = d.health && d.health.status === "ok";
+        dot.style.background = ok ? "#22c55e" : "#ef4444";
+      }
+
+      var il = d.interlocutor;
+      if (!il) return;
+
+      var profiles = il.profiles || [];
+      var lastChat = il.last_chat || {};
+
+      // Top bar identity
+      var tbName = $("#tb-name");
+      var tbTrust = $("#tb-trust");
+      var tbAvatar = $("#tb-avatar");
+      var tbMode = $("#tb-mode");
+
+      if (lastChat.interlocutor_id) {
+        if (tbName) tbName.textContent = lastChat.interlocutor_id;
+        if (tbTrust) tbTrust.textContent = lastChat.trust_level || "—";
+        if (tbAvatar) tbAvatar.textContent = (lastChat.interlocutor_id || "?")[0].toUpperCase();
+        if (tbMode) tbMode.textContent = lastChat.response_mode ? "· " + lastChat.response_mode : "";
+      } else if (profiles.length > 0) {
+        var p0 = profiles[0];
+        if (tbName) tbName.textContent = p0.display_name || p0.profile_id || "—";
+        if (tbTrust) tbTrust.textContent = p0.trust_level || "—";
+        if (tbAvatar) tbAvatar.textContent = ((p0.display_name || p0.profile_id || "?")[0] || "?").toUpperCase();
+      }
+
+      // Chat header meta
+      var chatMeta = $("#chat-interlocutor-meta");
+      if (chatMeta && (lastChat.interlocutor_id || profiles.length > 0)) {
+        var iname = lastChat.interlocutor_id || (profiles[0] && (profiles[0].display_name || profiles[0].profile_id)) || "";
+        var itrust = lastChat.trust_level || (profiles[0] && profiles[0].trust_level) || "";
+        chatMeta.textContent = iname ? (iname + (itrust ? " / " + itrust : "")) : "connesso";
+      }
+
+      // Status panel interlocutor
+      var spIC = $("#sp-interlocutor-content");
+      if (spIC) {
+        if (profiles.length > 0) {
+          var p = profiles[0];
+          var name = p.display_name || p.profile_id || "—";
+          spIC.innerHTML = '<div class="interlocutor-card">' +
+            '<div class="ic-header">' +
+            '<div class="ic-avatar">' + esc(name[0].toUpperCase()) + '</div>' +
+            '<div><div class="ic-name">' + esc(name) + '</div>' +
+            '<div class="ic-sub">' + esc(p.trust_level || "—") + '</div></div>' +
+            '</div>' +
+            '<div class="ic-badges"><span class="ic-badge trusted">' + esc(p.trust_level || "") + '</span></div>' +
+            '</div>';
+          if (lastChat.last_intent) {
+            spIC.innerHTML += '<div class="kv-row"><span class="kv-key">intent</span><span class="kv-val blue">' + esc(lastChat.last_intent) + '</span></div>';
+          }
+          if (lastChat.response_mode) {
+            spIC.innerHTML += '<div class="kv-row"><span class="kv-key">mode</span><span class="kv-val">' + esc(lastChat.response_mode) + '</span></div>';
+          }
+        } else {
+          spIC.innerHTML = '<span class="loading">no profile data</span>';
+        }
+      }
+
+      // Audit trail
+      var spAudit = $("#sp-audit-content");
+      if (spAudit && il.recent_audit) {
+        var html = "";
+        var events = il.recent_audit.slice(-5);
+        events.forEach(function(e) {
+          var dotClass = (e.decision === "denied" || (e.event_type || "").indexOf("denied") >= 0) ? "deny" :
+                         ((e.event_type || "").indexOf("advisory") >= 0 || (e.event_type || "").indexOf("warn") >= 0) ? "warn" : "ok";
+          html += '<div class="audit-item">' +
+            '<div class="audit-dot ' + dotClass + '"></div>' +
+            '<div class="audit-text">' + esc((e.event_type || "") + (e.action_type ? ": " + e.action_type : "")) + '</div>' +
+            '<div class="audit-time">' + esc((String(e.ts || "")).slice(11, 16)) + '</div>' +
+            '</div>';
+        });
+        spAudit.innerHTML = html || '<span class="loading">nessun evento</span>';
+      } else if (spAudit) {
+        spAudit.innerHTML = '<span class="loading">no audit data</span>';
+      }
+    }).catch(function() {
+      // silently ignore — endpoint may not be available
+    });
+
+    // Rank
+    fetch("/api/rank/gauntlet").then(function(r) { return r.json(); }).then(function(d) {
+      var spRank = $("#sp-rank-content");
+      var tbRank = $("#tb-rank");
+      if (!spRank) return;
+      var rank = d.rank || "—";
+      var score = Math.round((d.score || 0) * 100);
+      if (tbRank) tbRank.textContent = "Rank " + rank;
+      var checks = d.checks || [];
+      var passed = checks.filter(function(c) { return c.passed; }).length;
+      spRank.innerHTML = '<div class="rank-card">' +
+        '<div class="rank-card-top">' +
+        '<div><div class="rank-letter">' + esc(rank) + '</div>' +
+        '<div class="rank-label">' + esc(d.passed ? "passed" : "reserve") + '</div></div>' +
+        '<div style="text-align:right"><div style="font-size:18px;font-weight:700;color:#a78bfa">' + score + '%</div>' +
+        '<div style="font-size:9px;color:var(--text3)">runtime-wired</div></div>' +
+        '</div>' +
+        '<div class="rank-score-bar"><div class="rank-score-fill" style="width:' + score + '%"></div></div>' +
+        '<div class="rank-score-label">' + esc(passed + "/" + checks.length + " checks") + '</div>' +
+        '</div>';
+    }).catch(function() {});
+
+    // CI/Tests from rank status
+    fetch("/api/rank/status").then(function(r) { return r.json(); }).then(function(d) {
+      var spCI = $("#sp-ci-content");
+      if (!spCI) return;
+      var rankId = d.rank_id || d.rank || "—";
+      var isOk = d.status === "ok" || d.status === "green";
+      spCI.innerHTML = '<div class="ci-bar">' +
+        '<div class="ci-bar-top"><span class="ci-bar-label">System</span>' +
+        '<span class="ci-bar-status" style="color:' + (isOk ? 'var(--green)' : 'var(--yellow)') + '">' +
+        esc(d.status || "—") + '</span></div>' +
+        '<div class="ci-progress"><div class="ci-progress-fill"></div></div>' +
+        '<div class="ci-detail">rank_id: ' + esc(rankId) + '</div>' +
+        '</div>';
+      // Update topbar CI dot
+      var ciDot = $("#tb-ci-dot");
+      if (ciDot) ciDot.style.background = isOk ? "#22c55e" : "#f59e0b";
+    }).catch(function() {});
+  }
+
+  // ---- HINT CHIPS ----
+  document.querySelectorAll(".hint-chip").forEach(function(chip) {
+    chip.addEventListener("click", function() {
+      var inp = $("#chat-input");
+      if (inp) { inp.value = chip.dataset.msg || ""; inp.focus(); }
+    });
+  });
+
+  // ---- TEXTAREA AUTO-RESIZE + ENTER TO SEND ----
+  (function() {
+    var inp = $("#chat-input");
+    if (!inp || inp.tagName !== "TEXTAREA") return;
+    inp.addEventListener("input", function() {
+      inp.style.height = "auto";
+      inp.style.height = Math.min(inp.scrollHeight, 120) + "px";
+    });
+    inp.addEventListener("keydown", function(e) {
+      if (e.key === "Enter" && !e.shiftKey) {
+        e.preventDefault();
+        var form = $("#chat-form");
+        if (form) form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+      }
+    });
+  })();
+
+  // ---- ADVISORY / AUTH RENDERING (extend existing addMsg) ----
+  // Patch the chat response handler to annotate blocked/advisory messages
+  var _origChatHandler = null;
+  (function() {
+    var form = $("#chat-form");
+    if (!form) return;
+    // We listen for response and patch class on the last assistant message
+    var originalSubmit = form.onsubmit;
+    // The existing handler is an event listener — we wrap by intercepting
+    // fetch responses via MutationObserver on chat-messages
+    var chatMessages = $("#chat-messages");
+    if (!chatMessages) return;
+    var observer = new MutationObserver(function(mutations) {
+      mutations.forEach(function(mut) {
+        mut.addedNodes.forEach(function(node) {
+          if (node.nodeType !== 1) return;
+          // Check if it's an assistant message that should be advisory
+          if (node.classList && node.classList.contains("msg-assistant") && !node.classList.contains("typing")) {
+            var text = node.textContent || "";
+            // Auto-detect advisory patterns
+            if (text.indexOf("JudgmentLayer") >= 0 || text.indexOf("Advisory") >= 0 || text.indexOf("advisory") >= 0) {
+              node.classList.add("advisory");
+              if (!node.querySelector(".advisory-label")) {
+                var label = document.createElement("div");
+                label.className = "advisory-label";
+                label.textContent = "⚠️ Advisory";
+                node.insertBefore(label, node.firstChild);
+              }
+            }
+            // Auto-detect blocked patterns
+            if (text.indexOf("bloccata") >= 0 || text.indexOf("denied") >= 0 || text.indexOf("blocked") >= 0) {
+              var metaDiv = node.querySelector(".msg-meta");
+              if (metaDiv && !metaDiv.querySelector(".meta-tag.blocked")) {
+                var tag = document.createElement("span");
+                tag.className = "meta-tag blocked";
+                tag.textContent = "auth: denied";
+                metaDiv.insertBefore(tag, metaDiv.firstChild);
+              }
+            }
+          }
+        });
+      });
+    });
+    observer.observe(chatMessages, { childList: true });
+  })();
+
+  // ---- INIT ----
+  document.addEventListener("DOMContentLoaded", function() {
+    loadStatusPanel();
+    setInterval(loadStatusPanel, 30000);
+  });
+
+  // Fire immediately if DOM already ready (script loaded after DOMContentLoaded)
+  if (document.readyState === "complete" || document.readyState === "interactive") {
+    loadStatusPanel();
+    setInterval(loadStatusPanel, 30000);
+  }
+
+})();
