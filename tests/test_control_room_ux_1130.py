@@ -461,6 +461,10 @@ class TestControlRoomReviewPersistence:
             assert len(export["operator_reviews"]) == 1
             assert export["operator_reviews"][0]["action_id"] == "review_evidence"
             assert export["operator_reviews"][0]["summary"] == "dashboard review saved"
+            assert export["review_workflow"]["review_count"] == 1
+            assert export["review_workflow"]["action_counts"]["review_evidence"] == 1
+            assert export["operator_review_actions"][0]["reviewed_by"] == "operator"
+            assert set(export["evidence_card_edge_states"].keys()) == {"ok", "warning", "error", "empty"}
         review_log = Path(tmp_path) / ".igris" / "control_room_reviews.jsonl"
         assert review_log.exists()
         raw = review_log.read_text(encoding="utf-8").strip().splitlines()
@@ -468,3 +472,26 @@ class TestControlRoomReviewPersistence:
         parsed = json.loads(raw[0])
         assert parsed["run_id"] == "test-run"
         assert parsed["action_id"] == "review_evidence"
+
+
+class TestControlRoomReviewEdgeStates:
+    def test_review_response_exposes_review_state(self, tmp_path, monkeypatch):
+        from igris.web.routers import routes_10
+
+        monkeypatch.setattr(routes_10.CONFIG, "project_root", Path(tmp_path))
+        client = _client()
+        run = _make_run(status="blocked")
+        with patch("igris.core.self_repair_supervisor.get_supervised_run", return_value=run):
+            resp = client.post(
+                "/api/rank/runs/test-run/review",
+                json={
+                    "action_id": "review_blocked",
+                    "summary": "blocked review saved",
+                    "notes": "operator reviewed blocked run",
+                    "evidence_ref": "/api/rank/runs/test-run/final-export",
+                    "reviewed_by": "qa-operator",
+                },
+            )
+        body = resp.json()
+        assert body["review_state"]["latest_review"]["action_id"] == "review_blocked"
+        assert body["review_state"]["has_reviews"] is True

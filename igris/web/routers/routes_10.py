@@ -111,6 +111,20 @@ def create_router(deps) -> APIRouter:
             return []
         return records
 
+    def _control_room_review_summary(run_id: str) -> Dict[str, object]:
+        reviews = _load_control_room_reviews(run_id)
+        latest = reviews[-1] if reviews else None
+        action_counts: Dict[str, int] = {}
+        for review in reviews:
+            action = str(review.get("action_id") or "unknown")
+            action_counts[action] = action_counts.get(action, 0) + 1
+        return {
+            "review_count": len(reviews),
+            "action_counts": action_counts,
+            "latest_review": latest,
+            "has_reviews": bool(reviews),
+        }
+
     @router.post("/api/reasoning/step")
     async def api_reasoning_step(request: Request) -> Dict[str, object]:
         """Execute a single reasoning loop step (for testing/debugging)."""
@@ -813,6 +827,7 @@ def create_router(deps) -> APIRouter:
             "ok": True,
             "review": record,
             "review_count": len(_load_control_room_reviews(run_id)),
+            "review_state": _control_room_review_summary(run_id),
         }
 
     @router.get("/api/rank/runs/{run_id}/final-export")
@@ -820,7 +835,28 @@ def create_router(deps) -> APIRouter:
         """Export the final run report together with persisted operator reviews."""
         report = await api_rank_run_report(run_id)
         report["exported_at"] = time.time()
-        report["operator_reviews"] = _load_control_room_reviews(run_id)
+        reviews = _load_control_room_reviews(run_id)
+        report["operator_reviews"] = reviews
+        report["review_workflow"] = _control_room_review_summary(run_id)
+        try:
+            interpreted = await api_rank_run_evidence_interpreted(run_id)
+            cards = interpreted.get("evidence_cards", []) if isinstance(interpreted, dict) else []
+            report["evidence_card_edge_states"] = {
+                status: sum(1 for card in cards if card.get("status") == status)
+                for status in ("ok", "warning", "error", "empty")
+            }
+            report["operator_review_actions"] = [
+                {
+                    "action_id": review.get("action_id"),
+                    "summary": review.get("summary"),
+                    "reviewed_by": review.get("reviewed_by"),
+                    "evidence_ref": review.get("evidence_ref"),
+                }
+                for review in reviews
+            ]
+        except Exception:
+            report["evidence_card_edge_states"] = {"ok": 0, "warning": 0, "error": 0, "empty": 0}
+            report["operator_review_actions"] = []
         return report
 
     @router.get("/api/rank/runs/{run_id}/advisory")
