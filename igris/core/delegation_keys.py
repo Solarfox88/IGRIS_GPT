@@ -135,7 +135,11 @@ def create_key(
     expires_in_seconds: Optional[float] = None,
     single_use: bool = False,
 ) -> DelegationKey:
-    invalid_scopes = [s for s in authorized_scopes if s not in grantor_scopes]
+    # "*" in grantor_scopes means the grantor has unrestricted scope (admin)
+    if "*" not in grantor_scopes:
+        invalid_scopes = [s for s in authorized_scopes if s not in grantor_scopes]
+    else:
+        invalid_scopes = []
     if invalid_scopes:
         raise ValueError(
             f"Scope inheritance violation: grantor '{granted_by}' does not possess "

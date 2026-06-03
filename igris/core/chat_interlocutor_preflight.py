@@ -121,6 +121,46 @@ def run_preflight(
             "Proceeding with authorization."
         )
 
+    # 4b. Judgment Layer advisory (Layer 5) — only for authorized non-blocked actions
+    if not blocked and is_sensitive and not is_untrusted:
+        try:
+            from igris.core.judgment_layer import JudgmentLayer, OperationalContext
+            _jl = JudgmentLayer()
+            _ctx = OperationalContext()
+            _adv = _jl.advise(
+                action_type=intent_action,
+                target_resource="chat",
+                context=_ctx,
+                trust_level=trust_level,
+            )
+            if _adv and not _adv.should_proceed:
+                advisory = _adv.message
+            elif _adv and _adv.message:
+                advisory = _adv.message
+        except Exception:
+            pass
+
+    # 4c. Proactive Engine scan (Layer 7) — appended to advisory if events found
+    if not blocked and not is_untrusted:
+        try:
+            from igris.core.proactive_engine import ProactiveEngine
+            from pathlib import Path as _Path
+            _pe = ProactiveEngine(project_root or str(_Path.home()))
+            _scopes = list(getattr(profile, "authorized_scopes", []) or []) if profile else []
+            _events = _pe.scan(
+                state_snapshot={},
+                authorized_scopes=_scopes or None,
+                trust_level=trust_level,
+            )
+            if _events:
+                _event_summary = "; ".join(
+                    f"{e.event_type}:{e.resource}" for e in _events[:3]
+                )
+                proactive_hint = f"[Proactive] {_event_summary}"
+                advisory = f"{advisory}\n{proactive_hint}" if advisory else proactive_hint
+        except Exception:
+            pass
+
     # 5. Build system prompt enrichment — behavioral instructions, not just context
     profile_summary = ""
     display = getattr(profile, "display_name", _id) if profile else _id
@@ -178,6 +218,14 @@ def run_preflight(
             f"- Verbosità: {response_mode.get('verbosity', 'normal')} | "
             f"Lead with action: {response_mode.get('lead_with_action', False)}.\n"
             f"- Usa il nome '{display}' quando appropriato.\n"
+        )
+
+    # Append advisory to system prompt if present (Layer 5 Judgment output)
+    if advisory and not blocked:
+        profile_summary += (
+            f"\n[ADVISORY IGRIS]\n"
+            f"{advisory}\n"
+            f"Se il tuo giudizio lo richiede, comunica questo advisory all'utente.\n"
         )
 
     # 6. Audit
