@@ -68,6 +68,17 @@ def test_inspect_repo_redacts_secret_values():
     serialized = str(payload)
     assert "super-secret" not in serialized
     assert "staging" not in serialized
+    assert payload["permission_summary"] == {
+        "collaborator_count": 1,
+        "permissions": {"push": 1},
+        "usernames": ["alice"],
+    }
+    assert payload["secret_metadata_summary"] == {
+        "secret_count": 1,
+        "variable_count": 1,
+        "secret_names": ["API_KEY"],
+        "variable_names": ["ENV"],
+    }
     assert gateway.get_audit_log()
 
 
@@ -128,3 +139,21 @@ def test_backend_backed_section_inspection_and_persistent_audit(tmp_path):
     audit_text = audit_path.read_text(encoding="utf-8")
     assert "super-secret" not in audit_text
     assert "owner/repo" in audit_text
+
+
+def test_dry_run_inspect_repo_includes_empty_summaries():
+    gateway = GitHubAdminGateway(dry_run=True, backend=FakeGitHubAdminBackend())
+    report = gateway.inspect_repo("owner/repo")
+    assert report["success"] is True
+    payload = report["report"]
+    assert payload["permission_summary"] == {
+        "collaborator_count": 0,
+        "permissions": {},
+        "usernames": [],
+    }
+    assert payload["secret_metadata_summary"] == {
+        "secret_count": 0,
+        "variable_count": 0,
+        "secret_names": [],
+        "variable_names": [],
+    }

@@ -113,6 +113,45 @@ class GitHubAdminGateway:
             return [GitHubAdminGateway._redact(item) for item in value]
         return value
 
+    @staticmethod
+    def _permission_summary(collaborators: Any) -> Dict[str, Any]:
+        rows = collaborators if isinstance(collaborators, list) else []
+        summary: Dict[str, int] = {}
+        usernames: list[str] = []
+        for row in rows:
+            if not isinstance(row, dict):
+                continue
+            username = str(row.get("username", "")).strip()
+            permission = str(row.get("permission", "")).strip() or "unknown"
+            if username:
+                usernames.append(username)
+            summary[permission] = summary.get(permission, 0) + 1
+        return {
+            "collaborator_count": len(usernames),
+            "permissions": summary,
+            "usernames": usernames,
+        }
+
+    @staticmethod
+    def _secret_metadata_summary(metadata: Any) -> Dict[str, Any]:
+        payload = metadata if isinstance(metadata, dict) else {}
+        secrets = payload.get("secrets", []) if isinstance(payload, dict) else []
+        variables = payload.get("variables", []) if isinstance(payload, dict) else []
+        return {
+            "secret_count": len(secrets) if isinstance(secrets, list) else 0,
+            "variable_count": len(variables) if isinstance(variables, list) else 0,
+            "secret_names": [
+                str(item.get("name", "")).strip()
+                for item in secrets
+                if isinstance(item, dict) and str(item.get("name", "")).strip()
+            ] if isinstance(secrets, list) else [],
+            "variable_names": [
+                str(item.get("name", "")).strip()
+                for item in variables
+                if isinstance(item, dict) and str(item.get("name", "")).strip()
+            ] if isinstance(variables, list) else [],
+        }
+
     def _approval_is_valid(self, approval: Optional[GitHubAdminApproval]) -> bool:
         return bool(approval and approval.is_valid())
 
@@ -183,17 +222,26 @@ class GitHubAdminGateway:
                 "collaborators": {"status": "unavailable", "reason": "dry_run"},
                 "actions_metadata": {"status": "unavailable", "reason": "dry_run"},
                 "secrets_variables_metadata": {"status": "unavailable", "reason": "dry_run"},
+                "permission_summary": {"collaborator_count": 0, "permissions": {}, "usernames": []},
+                "secret_metadata_summary": {"secret_count": 0, "variable_count": 0, "secret_names": [], "variable_names": []},
             }
             self._log(action, repo, "DRY_RUN", payload)
             return {"success": True, "dry_run": True, "report": payload}
+        repo_settings_raw = self._backend_call("inspect_repo_settings", repo, fallback={"status": "unavailable"})
+        branch_protection_raw = self._backend_call("inspect_branch_protection", repo, branch, fallback={"branch": branch, "status": "unavailable"})
+        collaborators_raw = self._backend_call("list_collaborators", repo, fallback={"status": "unavailable"})
+        actions_metadata_raw = self._backend_call("inspect_actions_metadata", repo, fallback={"status": "unavailable"})
+        secrets_metadata_raw = self._backend_call("inspect_secret_variable_metadata", repo, fallback={"status": "unavailable"})
         report = {
             "repo": repo,
-            "repo_settings": self._redact(self._backend_call("inspect_repo_settings", repo, fallback={"status": "unavailable"})),
-            "branch_protection": self._redact(self._backend_call("inspect_branch_protection", repo, branch, fallback={"branch": branch, "status": "unavailable"})),
-            "collaborators": self._redact(self._backend_call("list_collaborators", repo, fallback={"status": "unavailable"})),
-            "actions_metadata": self._redact(self._backend_call("inspect_actions_metadata", repo, fallback={"status": "unavailable"})),
-            "secrets_variables_metadata": self._redact(self._backend_call("inspect_secret_variable_metadata", repo, fallback={"status": "unavailable"})),
+            "repo_settings": self._redact(repo_settings_raw),
+            "branch_protection": self._redact(branch_protection_raw),
+            "collaborators": self._redact(collaborators_raw),
+            "actions_metadata": self._redact(actions_metadata_raw),
+            "secrets_variables_metadata": self._redact(secrets_metadata_raw),
         }
+        report["permission_summary"] = self._permission_summary(collaborators_raw)
+        report["secret_metadata_summary"] = self._secret_metadata_summary(secrets_metadata_raw)
         self._log(action, repo, "INSPECTED", report)
         return {"success": True, "dry_run": False, "report": report}
 
@@ -202,7 +250,13 @@ class GitHubAdminGateway:
         if not self._triple_gate(action, repo):
             return {"success": False, "reason": "Gate denied"}
         if self.dry_run:
-            payload = {"repo": repo, "status": "dry_run", "reason": "dry_run"}
+            payload = {
+                "repo": repo,
+                "status": "dry_run",
+                "reason": "dry_run",
+                "permission_summary": {"collaborator_count": 0, "permissions": {}, "usernames": []},
+                "secret_metadata_summary": {"secret_count": 0, "variable_count": 0, "secret_names": [], "variable_names": []},
+            }
             self._log(action, repo, "DRY_RUN", payload)
             return {"success": True, "dry_run": True, "report": payload}
         report = self._redact(self._backend_call("inspect_repo_settings", repo, fallback={"status": "unavailable"}))
