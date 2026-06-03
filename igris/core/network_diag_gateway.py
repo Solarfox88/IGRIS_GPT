@@ -384,7 +384,7 @@ class NetworkDiagGateway:
                 "reason": "backend-backed planning available" if self.provisioning_backend is not None else "explicit approval required; backend not configured",
             },
         }
-        if self.provisioning_backend and hasattr(self.provisioning_backend, "inspect_inventory"):
+        if allowed and self.provisioning_backend and hasattr(self.provisioning_backend, "inspect_inventory"):
             try:
                 inventory["backend_inventory"] = self._redact(
                     self.provisioning_backend.inspect_inventory(
