@@ -26,6 +26,7 @@ OPTIONAL_API_ROUTERS: Sequence[tuple[str, str]] = (
     ("igris.api.routes.github_read", "router"),
     ("igris.api.routes.network", "router"),
     ("igris.api.routes.interlocutor", "router"),
+    ("igris.api.routes.tts", "router"),
 )
 
 
