@@ -171,7 +171,7 @@
       supRefresh.addEventListener("click", function () { loadSupervisorMonitor(); });
     }
 
-    // Auto-refresh active tab every 15s (lightweight)
+    // Auto-refresh active tab every 30s (reduced to avoid rate limit)
     setInterval(function () {
       var activeTab = $(".tab.active");
       if (!activeTab) return;
@@ -180,7 +180,7 @@
       else if (tab === "memory") loadTimeline();
       else if (tab === "tasks") { if (typeof loadLoopStatus === "function") loadLoopStatus(); }
       else if (tab === "safety") loadCost();
-    }, 15000);
+    }, 30000);
   });
 
   // Status header
@@ -2036,7 +2036,9 @@ console.log('Rank S dashboard is now visible');
       // silently ignore — endpoint may not be available
     });
 
-    // Rank
+    // Rank — only reload every 5 minutes (rarely changes)
+    if (!window._lastRankLoad || Date.now() - window._lastRankLoad > 300000) {
+      window._lastRankLoad = Date.now();
     fetch("/api/rank/gauntlet").then(function(r) { return r.json(); }).then(function(d) {
       var spRank = $("#sp-rank-content");
       var tbRank = $("#tb-rank");
@@ -2057,8 +2059,11 @@ console.log('Rank S dashboard is now visible');
         '<div class="rank-score-label">' + esc(passed + "/" + checks.length + " checks") + '</div>' +
         '</div>';
     }).catch(function() {});
+    } // end rank throttle
 
-    // CI/Tests from rank status
+    // CI/Tests from rank status — throttled to every 2 minutes
+    if (!window._lastCILoad || Date.now() - window._lastCILoad > 120000) {
+      window._lastCILoad = Date.now();
     fetch("/api/rank/status").then(function(r) { return r.json(); }).then(function(d) {
       var spCI = $("#sp-ci-content");
       if (!spCI) return;
@@ -2075,6 +2080,7 @@ console.log('Rank S dashboard is now visible');
       var ciDot = $("#tb-ci-dot");
       if (ciDot) ciDot.style.background = isOk ? "#22c55e" : "#f59e0b";
     }).catch(function() {});
+    } // end CI throttle
   }
 
   // ---- HINT CHIPS ----
@@ -2148,16 +2154,18 @@ console.log('Rank S dashboard is now visible');
     observer.observe(chatMessages, { childList: true });
   })();
 
-  // ---- INIT ----
-  document.addEventListener("DOMContentLoaded", function() {
+  // ---- INIT STATUS PANEL (single registration, 60s interval) ----
+  var _statusPanelStarted = false;
+  function _initStatusPanel() {
+    if (_statusPanelStarted) return;
+    _statusPanelStarted = true;
     loadStatusPanel();
-    setInterval(loadStatusPanel, 30000);
-  });
-
-  // Fire immediately if DOM already ready (script loaded after DOMContentLoaded)
+    setInterval(loadStatusPanel, 60000); // 60s — avoids rate limit
+  }
   if (document.readyState === "complete" || document.readyState === "interactive") {
-    loadStatusPanel();
-    setInterval(loadStatusPanel, 30000);
+    _initStatusPanel();
+  } else {
+    document.addEventListener("DOMContentLoaded", _initStatusPanel);
   }
 
 })();
