@@ -5119,8 +5119,7 @@ class SelfRepairSupervisor:
             return snapshot
         return snapshot
 
-    @staticmethod
-    def _preapply_quality_gate(goal: str, diff_text: str, files_modified: List[str]) -> Tuple[bool, List[str]]:
+    def _preapply_quality_gate(self, goal: str, diff_text: str, files_modified: List[str]) -> Tuple[bool, List[str]]:
         reasons: List[str] = []
         lowered_goal = (goal or "").lower()
         lowered_diff = (diff_text or "").lower()
@@ -5128,6 +5127,24 @@ class SelfRepairSupervisor:
             reasons.append("goal_mentions_tests_but_no_test_file_touched")
         if any(marker in lowered_diff for marker in ("# placeholder", "# todo", "# fixme", "\n+pass\n", "+    pass", "+        pass")):
             reasons.append("stub_pattern_detected_in_diff")
+
+        # Self-modification gate — blocks patches that touch core files without approval (#523)
+        try:
+            from igris.core.self_modification_gate import SelfModificationGate
+            gate = SelfModificationGate(str(self.project_root))
+            gate_result = gate.check(diff=diff_text or "", run_smoke=False)
+            if not gate_result.approved:
+                import logging as _logging
+                _logging.getLogger(__name__).warning(
+                    "SelfModificationGate blocked patch (touched_core=%s): %s",
+                    gate_result.touched_core,
+                    gate_result.reason,
+                )
+                reasons.append(f"self_modification_gate_blocked:{gate_result.reason}")
+        except Exception as _exc:
+            import logging as _logging
+            _logging.getLogger(__name__).debug("SelfModificationGate unavailable: %s", _exc)
+
         return (len(reasons) == 0), reasons
 
     def _rank_ui_card_contract_satisfied(self) -> bool:
