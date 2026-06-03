@@ -543,6 +543,25 @@ async def _lifespan(app: FastAPI):
     from igris.core.meta_watchdog import start_smw
     smw_task = start_smw(project_root)
     logging.getLogger("igris.smw").info("SMW started (poll=%ds)", 120)
+
+    # Nav hierarchy invariant check at startup (#954)
+    try:
+        from pathlib import Path as _Path
+        from igris.web.nav_invariants import check_nav_hierarchy as _check_nav
+        _template = _Path(__file__).parent / "templates" / "index.html"
+        _nav_logger = logging.getLogger("igris.nav_invariants")
+        if _template.exists():
+            _report = _check_nav(_template.read_text(encoding="utf-8"))
+            if not _report.passed:
+                _nav_logger.warning(
+                    "Nav hierarchy violation detected at startup: %s", _report.violations
+                )
+            else:
+                _nav_logger.info(
+                    "Nav hierarchy invariant: OK (%d top-level tabs)", len(_report.top_level_tabs)
+                )
+    except Exception:
+        pass
     try:
         yield
     finally:
