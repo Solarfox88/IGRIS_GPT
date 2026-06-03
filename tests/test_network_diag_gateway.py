@@ -40,6 +40,51 @@ class FakeNetworkRunner:
         return {"available": True, "hops": [{"hop": 1, "host": "router"}], "host": host}
 
 
+@dataclass
+class FakeProvisioningBackend:
+    inventory_calls: list[dict] = None
+    proposal_calls: list[dict] = None
+
+    def __post_init__(self) -> None:
+        self.inventory_calls = []
+        self.proposal_calls = []
+
+    def inspect_inventory(self, target: str, *, host: str, port: int | None, url: str | None, allowed_hosts: list[str], allowed_domains: list[str]):
+        self.inventory_calls.append({
+            "target": target,
+            "host": host,
+            "port": port,
+            "url": url,
+            "allowed_hosts": allowed_hosts,
+            "allowed_domains": allowed_domains,
+        })
+        return {
+            "target": target,
+            "host": host,
+            "port": port,
+            "url": url,
+            "stages": ["dns", "tcp", "http_latency", "traceroute", "provisioning_hook"],
+            "provisioning_backend": "fake",
+        }
+
+    def propose_provisioning_hook(self, target: str, hook: str, *, approval: bool, dry_run: bool, allowed_hosts: list[str], allowed_domains: list[str]):
+        self.proposal_calls.append({
+            "target": target,
+            "hook": hook,
+            "approval": approval,
+            "dry_run": dry_run,
+            "allowed_hosts": allowed_hosts,
+            "allowed_domains": allowed_domains,
+        })
+        return {
+            "target": target,
+            "hook": hook,
+            "approval": approval,
+            "dry_run": dry_run,
+            "status": "backend_planned",
+        }
+
+
 def test_read_only_inspection_blocks_unscoped_host():
     gateway = NetworkDiagGateway(runner=FakeNetworkRunner())
     result = gateway.dns_lookup("example.com")
@@ -87,7 +132,12 @@ def test_traceroute_degrades_when_unavailable():
 
 
 def test_inventory_and_provisioning_are_scoped_and_audited(tmp_path):
-    gateway = NetworkDiagGateway(runner=FakeNetworkRunner(), audit_path=str(tmp_path / "network_diag_audit.jsonl"))
+    backend = FakeProvisioningBackend()
+    gateway = NetworkDiagGateway(
+        runner=FakeNetworkRunner(),
+        provisioning_backend=backend,
+        audit_path=str(tmp_path / "network_diag_audit.jsonl"),
+    )
     inventory = gateway.inventory(
         "github.com",
         port=443,
@@ -108,11 +158,31 @@ def test_inventory_and_provisioning_are_scoped_and_audited(tmp_path):
     assert inventory["checks"]["dns"] is True
     assert inventory["checks"]["tcp"] is True
     assert inventory["checks"]["http_latency"] is True
+    assert inventory["endpoint_inventory"]["provisioning_hook"]["mode"] == "backend_planned"
+    assert inventory["backend_inventory"]["provisioning_backend"] == "fake"
     assert proposal["success"] is True
     assert proposal["dry_run"] is True
+    assert backend.inventory_calls
+    assert not backend.proposal_calls
     audit_text = (tmp_path / "network_diag_audit.jsonl").read_text(encoding="utf-8")
     assert "github.com" in audit_text
     assert "super-secret" not in audit_text
+
+
+def test_provisioning_backend_is_used_when_approval_is_granted():
+    backend = FakeProvisioningBackend()
+    gateway = NetworkDiagGateway(runner=FakeNetworkRunner(), provisioning_backend=backend)
+    result = gateway.propose_provisioning_hook(
+        "localhost",
+        "smoke",
+        approval=True,
+        dry_run=False,
+        allowed_hosts=["localhost"],
+    )
+    assert result["success"] is True
+    assert result["status"] == "backend_planned"
+    assert backend.proposal_calls[0]["approval"] is True
+    assert backend.proposal_calls[0]["dry_run"] is False
 
 
 def test_api_routes_use_gateway_and_fake_runner(monkeypatch):

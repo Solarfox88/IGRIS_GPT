@@ -32,6 +32,31 @@ class NetworkDiagRunner(Protocol):
     def traceroute(self, host: str, max_hops: int, timeout: float) -> Dict[str, Any]: ...
 
 
+@runtime_checkable
+class NetworkProvisioningBackend(Protocol):
+    def inspect_inventory(
+        self,
+        target: str,
+        *,
+        host: str,
+        port: Optional[int],
+        url: Optional[str],
+        allowed_hosts: List[str],
+        allowed_domains: List[str],
+    ) -> Dict[str, Any]: ...
+
+    def propose_provisioning_hook(
+        self,
+        target: str,
+        hook: str,
+        *,
+        approval: bool,
+        dry_run: bool,
+        allowed_hosts: List[str],
+        allowed_domains: List[str],
+    ) -> Dict[str, Any]: ...
+
+
 class LocalNetworkDiagRunner:
     """Best-effort local runner using stdlib only."""
 
@@ -94,6 +119,7 @@ class NetworkDiagGateway:
 
     dry_run: bool = False
     runner: Optional[NetworkDiagRunner] = None
+    provisioning_backend: Optional[NetworkProvisioningBackend] = None
     default_allowed_hosts: List[str] = field(default_factory=lambda: ["127.0.0.1", "localhost", "::1"])
     default_allowed_domains: List[str] = field(default_factory=list)
     audit_log: List[Dict[str, Any]] = field(default_factory=list)
@@ -325,24 +351,55 @@ class NetworkDiagGateway:
     ) -> Dict[str, Any]:
         """Return a scoped inventory of safe diagnostics available for the target."""
         allowed = self._target_allowed(host or url or "", allowed_hosts=allowed_hosts, allowed_domains=allowed_domains)
+        allowed_hosts_list = self._normalize_list(allowed_hosts, self.default_allowed_hosts)
+        allowed_domains_list = self._normalize_list(allowed_domains, self.default_allowed_domains)
+        endpoint_inventory = {
+            "dns": {"available": bool(allowed), "mode": "read_only"},
+            "tcp": {"available": bool(allowed and port is not None), "mode": "read_only"},
+            "http_latency": {"available": bool(allowed and url is not None), "mode": "read_only"},
+            "port_check": {"available": bool(allowed and port is not None), "mode": "read_only"},
+            "traceroute": {"available": bool(allowed), "mode": "degraded" if self.dry_run else "read_only"},
+            "provisioning_hook": {
+                "available": bool(allowed),
+                "mode": "backend_planned" if self.provisioning_backend is not None else "dry_run",
+                "approval_required": True,
+            },
+        }
         inventory = {
             "target": self._redact(host or url or ""),
             "allowed": allowed,
-            "allowed_hosts": self._normalize_list(allowed_hosts, self.default_allowed_hosts),
-            "allowed_domains": self._normalize_list(allowed_domains, self.default_allowed_domains),
+            "allowed_hosts": allowed_hosts_list,
+            "allowed_domains": allowed_domains_list,
+            "endpoint_inventory": endpoint_inventory,
             "checks": {
-                "dns": bool(allowed),
-                "tcp": bool(allowed and port is not None),
-                "http_latency": bool(allowed and url is not None),
-                "port_check": bool(allowed and port is not None),
-                "traceroute": bool(allowed),
+                "dns": endpoint_inventory["dns"]["available"],
+                "tcp": endpoint_inventory["tcp"]["available"],
+                "http_latency": endpoint_inventory["http_latency"]["available"],
+                "port_check": endpoint_inventory["port_check"]["available"],
+                "traceroute": endpoint_inventory["traceroute"]["available"],
             },
             "provisioning_hooks": {
-                "status": "dry_run",
-                "available": False,
-                "reason": "explicit approval required; backend not configured",
+                "status": "backend_planned" if self.provisioning_backend is not None else "dry_run",
+                "available": bool(allowed),
+                "reason": "backend-backed planning available" if self.provisioning_backend is not None else "explicit approval required; backend not configured",
             },
         }
+        if self.provisioning_backend and hasattr(self.provisioning_backend, "inspect_inventory"):
+            try:
+                inventory["backend_inventory"] = self._redact(
+                    self.provisioning_backend.inspect_inventory(
+                        self._redact(host or url or ""),
+                        host=host,
+                        port=port,
+                        url=url,
+                        allowed_hosts=allowed_hosts_list,
+                        allowed_domains=allowed_domains_list,
+                    )
+                )
+            except Exception as exc:  # noqa: BLE001
+                inventory["backend_inventory"] = {"status": "degraded", "reason": str(exc)}
+        else:
+            inventory["backend_inventory"] = {"status": "dry_run", "reason": "backend not configured"}
         self._audit("inventory", host or url or "", "OK" if allowed else "BLOCKED", inventory)
         return inventory
 
@@ -366,11 +423,26 @@ class NetworkDiagGateway:
             "dry_run": dry_run,
             "approval_required": True,
             "approved": bool(approval),
-            "status": "dry_run" if dry_run or not approval else "blocked",
+            "status": "dry_run" if dry_run or not approval else ("backend_planned" if self.provisioning_backend is not None else "blocked"),
         }
         if dry_run or not approval:
             self._audit(action, target, "DRY_RUN", proposal)
             return {"success": True, "dry_run": True, "status": "dry_run", "proposal": proposal}
+        if self.provisioning_backend and hasattr(self.provisioning_backend, "propose_provisioning_hook"):
+            try:
+                result = self.provisioning_backend.propose_provisioning_hook(
+                    target,
+                    hook,
+                    approval=approval,
+                    dry_run=dry_run,
+                    allowed_hosts=self._normalize_list(allowed_hosts, self.default_allowed_hosts),
+                    allowed_domains=self._normalize_list(allowed_domains, self.default_allowed_domains),
+                )
+                self._audit(action, target, "BACKEND_PLANNED", result)
+                return {"success": True, "dry_run": False, "status": "backend_planned", "result": self._redact(result)}
+            except Exception as exc:  # noqa: BLE001
+                self._audit(action, target, "FAILED", {"reason": str(exc), "proposal": proposal})
+                return {"success": False, "dry_run": False, "status": "failed", "reason": str(exc)}
         self._audit(action, target, "BLOCKED", {"reason": "provisioning backend not configured", "proposal": proposal})
         return {
             "success": False,
