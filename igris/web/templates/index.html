@@ -19,7 +19,9 @@
         <div class="avatar" id="tb-avatar">?</div>
         <div class="name" id="tb-name">—</div>
         <span class="trust" id="tb-trust">—</span>
+        <span id="tb-identity-state" class="identity-state-badge"></span>
         <span class="mode" id="tb-mode"></span>
+        <span class="identity-safety-note" id="tb-safety-note"></span>
       </div>
       <div class="topbar-spacer"></div>
       <div class="topbar-status">
@@ -105,6 +107,15 @@
             <span class="hint-chip" data-msg="PR aperte su GitHub">🐙 PR</span>
             <span class="hint-chip" data-msg="status CI e test">✅ CI status</span>
             <span class="hint-chip" data-msg="memory summary">🧠 memoria</span>
+          </div>
+          <!-- Intent strip — collapsible (v4) -->
+          <div class="intent-strip" id="intent-strip" style="display:none">
+            <button class="intent-toggle" id="intent-toggle" title="Toggle intent" type="button">⟨⟩</button>
+            <span class="intent-content" id="intent-content">
+              🔍 intent: <span class="ib" id="intent-action">—</span>
+              · risk: <span class="risk" id="intent-risk">—</span>
+              · target: <span id="intent-target">—</span>
+            </span>
           </div>
         </div>
       </section>
