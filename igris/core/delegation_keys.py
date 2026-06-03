@@ -1,17 +1,42 @@
 """
 Delegation Key system for IGRIS authorization model (issue #526).
+Hardened: salted PBKDF2 hash, backward compat with plain SHA256,
+to_public_dict(), single-use, expiry, bearer-mismatch, scope inheritance.
 """
 from __future__ import annotations
 
 import hashlib
 import json
+import os
 import secrets
 import time
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 _KEYS_FILE = ".igris/delegation_keys.json"
+_PBKDF2_ITERATIONS = 100_000
+_SALT_BYTES = 16
+
+
+def _hash_passphrase(raw: str, salt: Optional[str] = None) -> Tuple[str, str]:
+    """Return (hash_hex, salt_hex). Always uses PBKDF2."""
+    if salt is None:
+        salt = secrets.token_hex(_SALT_BYTES)
+    dk = hashlib.pbkdf2_hmac(
+        "sha256", raw.encode("utf-8"), salt.encode("utf-8"), _PBKDF2_ITERATIONS
+    )
+    return dk.hex(), salt
+
+
+def _verify_passphrase(raw: str, stored_hash: str, salt: Optional[str]) -> bool:
+    """Verify passphrase; supports legacy plain SHA256 (no salt) for compat."""
+    if salt:
+        computed, _ = _hash_passphrase(raw, salt)
+        return computed == stored_hash
+    # Legacy: plain sha256
+    legacy = hashlib.sha256(raw.encode("utf-8")).hexdigest()
+    return legacy == stored_hash
 
 
 @dataclass
@@ -25,6 +50,7 @@ class DelegationKey:
     created_at: float
     single_use: bool = False
     used: bool = False
+    salt: Optional[str] = None  # None = legacy (plain SHA256)
 
     def is_expired(self) -> bool:
         if self.expires_at is None:
@@ -39,10 +65,25 @@ class DelegationKey:
         return True
 
     def verify_passphrase(self, raw: str) -> bool:
-        return _hash_passphrase(raw) == self.passphrase_hash
+        return _verify_passphrase(raw, self.passphrase_hash, self.salt)
 
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)
+
+    def to_public_dict(self) -> Dict[str, Any]:
+        """Safe dict for API responses — never exposes hash or salt."""
+        return {
+            "key_id": self.key_id,
+            "granted_by": self.granted_by,
+            "granted_to": self.granted_to,
+            "authorized_scopes": self.authorized_scopes,
+            "expires_at": self.expires_at,
+            "created_at": self.created_at,
+            "single_use": self.single_use,
+            "used": self.used,
+            "is_expired": self.is_expired(),
+            "is_valid": self.is_valid(),
+        }
 
     @classmethod
     def from_dict(cls, d: Dict[str, Any]) -> "DelegationKey":
@@ -56,11 +97,8 @@ class DelegationKey:
             created_at=float(d.get("created_at", 0.0)),
             single_use=bool(d.get("single_use", False)),
             used=bool(d.get("used", False)),
+            salt=d.get("salt"),
         )
-
-
-def _hash_passphrase(raw: str) -> str:
-    return hashlib.sha256(raw.encode("utf-8")).hexdigest()
 
 
 def _keys_path(project_root: str) -> Path:
@@ -105,9 +143,10 @@ def create_key(
         )
     key_id = secrets.token_hex(16)
     expires_at = (time.time() + expires_in_seconds) if expires_in_seconds else None
+    passphrase_hash, salt = _hash_passphrase(raw_passphrase)
     key = DelegationKey(
         key_id=key_id,
-        passphrase_hash=_hash_passphrase(raw_passphrase),
+        passphrase_hash=passphrase_hash,
         granted_by=granted_by,
         granted_to=granted_to,
         authorized_scopes=list(authorized_scopes),
@@ -115,6 +154,7 @@ def create_key(
         created_at=time.time(),
         single_use=single_use,
         used=False,
+        salt=salt,
     )
     keys = load_keys(project_root)
     keys[key_id] = key
@@ -128,7 +168,7 @@ def verify_key(
     raw_passphrase: str,
     requested_scopes: List[str],
     bearer: Optional[str] = None,
-) -> tuple:
+) -> Tuple[bool, str]:
     keys = load_keys(project_root)
     key = keys.get(key_id)
     if key is None:
