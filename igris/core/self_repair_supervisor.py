@@ -3751,7 +3751,7 @@ class SelfRepairSupervisor:
                     dep_result.warning_missing,
                 )
                 run.add(
-                    "dependency_check",
+                    "runtime_deps_check",  # distinct phase — not issue dependency_check
                     "warning",
                     f"Non-blocking runtime deps missing: {dep_result.warning_missing}",
                     missing=dep_result.warning_missing,
