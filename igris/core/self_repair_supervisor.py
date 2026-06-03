@@ -3726,6 +3726,38 @@ class SelfRepairSupervisor:
         run = run or SupervisorRun(run_id=uuid.uuid4().hex[:12], rank_id=config.rank_id)
         self._configure_run_tracking(run, config)
         run.add("start", "running", "Supervisor started", dry_run=config.dry_run)
+
+        # Hard dependency gate — fail fast if critical runtime deps missing (#525)
+        try:
+            from igris.core.dependency_checker import check_runtime_deps
+            dep_result = check_runtime_deps()
+            if dep_result.blocking_missing:
+                run.add(
+                    "dependency_skip",
+                    "blocked",
+                    f"Critical runtime dependencies missing — mission aborted: {dep_result.blocking_missing}",
+                    missing=dep_result.blocking_missing,
+                    reason="critical dependencies missing — mission aborted",
+                )
+                return self._blocked(
+                    run,
+                    "dependency_skip",
+                    f"Missing critical runtime deps: {dep_result.blocking_missing}",
+                ), None
+            if dep_result.warning_missing:
+                import logging as _logging
+                _logging.getLogger(__name__).warning(
+                    "Non-blocking runtime deps missing (run continues): %s",
+                    dep_result.warning_missing,
+                )
+                run.add(
+                    "dependency_check",
+                    "warning",
+                    f"Non-blocking runtime deps missing: {dep_result.warning_missing}",
+                    missing=dep_result.warning_missing,
+                )
+        except Exception:
+            pass  # non-blocking if checker fails
         # Validate API escalation helper config at run start so problems are
         # visible immediately rather than discovered mid-repair-cycle.
         if config.allow_api_escalation and config.max_api_escalations_per_run > 0:
