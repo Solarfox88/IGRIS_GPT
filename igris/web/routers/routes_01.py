@@ -150,6 +150,7 @@ def create_router(deps) -> APIRouter:
                 message,
                 interlocutor_id=interlocutor_id,
                 project_root=str(CONFIG.project_root),
+                is_new_session=len(sessions.get(session_id, [])) == 0,
             )
             if preflight.blocked:
                 return {
@@ -227,6 +228,7 @@ def create_router(deps) -> APIRouter:
                 message,
                 interlocutor_id=interlocutor_id,
                 project_root=str(CONFIG.project_root),
+                is_new_session=False,  # stream — session already initialized
             )
             if preflight.blocked:
                 preflight_block = preflight.block_reason

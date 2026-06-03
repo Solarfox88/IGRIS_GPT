@@ -40,6 +40,7 @@ def run_preflight(
     message: str,
     interlocutor_id: str | None = None,
     project_root: str | None = None,
+    is_new_session: bool = False,
 ) -> PreflightResult:
     """Full interlocutor-aware preflight for a chat message."""
     from pathlib import Path
@@ -120,17 +121,63 @@ def run_preflight(
             "Proceeding with authorization."
         )
 
-    # 5. Build system prompt enrichment (no secrets)
+    # 5. Build system prompt enrichment — behavioral instructions, not just context
     profile_summary = ""
-    if profile:
-        expertise = getattr(profile, "expertise_level", "unknown")
-        style = getattr(profile, "communication_style", "neutral")
+    display = getattr(profile, "display_name", _id) if profile else _id
+    expertise = getattr(profile, "expertise_level", "unknown") if profile else "unknown"
+    style = getattr(profile, "communication_style", "neutral") if profile else "neutral"
+
+    if _id in ("unknown", "") or profile is None or trust_level in ("untrusted", "unknown", ""):
+        # Unknown interlocutor — IGRIS must actively try to identify them
+        new_session_hint = (
+            "- IMPORTANTE: È la PRIMA interazione di questa sessione. "
+            "Presentati come IGRIS e chiedi SUBITO chi è l'utente prima di fare altro. "
+            "Esempio: 'Ciao! Sono IGRIS, il tuo agente operativo personale. "
+            "Non ho ancora un profilo per te — potresti dirmi chi sei?'\n"
+        ) if is_new_session else (
+            "- Stai continuando una sessione con utente non identificato. "
+            "Ricordagli che non lo hai ancora riconosciuto se fa richieste sensibili.\n"
+        )
         profile_summary = (
-            f"\n[INTERLOCUTOR CONTEXT]\n"
-            f"Identity: {_id} | Trust: {trust_level} | Expertise: {expertise} | Style: {style}\n"
-            f"Response mode: verbosity={response_mode.get('verbosity', 'normal')}, "
-            f"tone={response_mode.get('tone', 'professional')}, "
-            f"simplify={response_mode.get('simplify_language', False)}\n"
+            "\n[PROTOCOLLO IDENTITÀ]\n"
+            "Stai ricevendo un messaggio da un utente NON IDENTIFICATO (untrusted).\n"
+            "COMPORTAMENTO RICHIESTO:\n"
+            f"{new_session_hint}"
+            "- Non eseguire azioni sensibili (deploy, delete, comandi di sistema) finché l'identità non è verificata.\n"
+            "- Per richieste innocue (informazioni, stato, domande generali) puoi rispondere normalmente.\n"
+            "- Tono: neutro e accogliente, non tecnico.\n"
+        )
+    else:
+        # Known interlocutor — greet by name if session start, calibrate response
+        is_admin = trust_level in ("admin", "trusted")
+        greeting_hint = (
+            f"- IMPORTANTE: È la PRIMA interazione di questa sessione. "
+            f"Saluta {display} per nome nella tua risposta.\n"
+        ) if is_new_session and is_admin else (
+            f"- Se appropriato, puoi usare il nome '{display}'.\n"
+        )
+        style_hint = {
+            "technical": "diretto e tecnico, preferisci bullet points e codice",
+            "casual": "informale e conversazionale",
+            "formal": "formale e preciso",
+        }.get(style, "professionale")
+        expertise_hint = {
+            "owner": "esperto del progetto, massima fiducia, nessun filtro inutile",
+            "expert": "esperto tecnico, salta le spiegazioni base",
+            "intermediate": "discretamente tecnico, spiega le scelte",
+            "novice": "semplifica il linguaggio, evita tecnicismi",
+        }.get(expertise, "livello intermedio")
+        profile_summary = (
+            f"\n[PROTOCOLLO IDENTITÀ]\n"
+            f"Stai parlando con: {display}\n"
+            f"Trust: {trust_level} | Expertise: {expertise} | Stile: {style}\n"
+            f"{greeting_hint}"
+            f"COMPORTAMENTO RICHIESTO:\n"
+            f"- Stile risposta: {style_hint}.\n"
+            f"- Livello dettaglio: {expertise_hint}.\n"
+            f"- Verbosità: {response_mode.get('verbosity', 'normal')} | "
+            f"Lead with action: {response_mode.get('lead_with_action', False)}.\n"
+            f"- Usa il nome '{display}' quando appropriato.\n"
         )
 
     # 6. Audit
