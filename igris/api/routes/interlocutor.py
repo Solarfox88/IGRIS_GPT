@@ -71,7 +71,7 @@ class ScanRequest(BaseModel):
 @router.get("/identity/profiles")
 def list_profiles() -> List[Dict[str, Any]]:
     r = _resolver()
-    return [p.to_dict() for p in r.get_all()]
+    return [p.to_dict() for p in r.get_all_including_builtins()]
 
 
 @router.get("/identity/profiles/{profile_id}")

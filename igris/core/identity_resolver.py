@@ -209,7 +209,15 @@ class IdentityResolver:
         return True
 
     def get_all(self) -> List[InterlocutorProfile]:
+        """Return all persisted profiles (disk only, not built-in defaults)."""
         return list(self._load().values())
+
+    def get_all_including_builtins(self) -> List[InterlocutorProfile]:
+        """Return all profiles: built-ins merged with persisted disk profiles."""
+        persisted = self._load()
+        merged: Dict[str, InterlocutorProfile] = dict(BUILTIN_PROFILES)
+        merged.update(persisted)
+        return list(merged.values())
 
     def persist_to_memory_graph(self, profile: InterlocutorProfile) -> None:
         try:

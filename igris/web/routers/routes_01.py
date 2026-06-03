@@ -447,7 +447,7 @@ def create_router(deps) -> APIRouter:
             from igris.core.identity_resolver import IdentityResolver
             from igris.core.interlocutor_audit import InterlocutorAudit
             _ir = IdentityResolver(str(CONFIG.project_root))
-            interlocutor_section["profiles"] = [p.to_dict() for p in _ir.get_all()]
+            interlocutor_section["profiles"] = [p.to_dict() for p in _ir.get_all_including_builtins()]
             _ia = InterlocutorAudit()
             interlocutor_section["recent_audit"] = _ia.recent(10)
             # last_chat: most recent chat-level audit event

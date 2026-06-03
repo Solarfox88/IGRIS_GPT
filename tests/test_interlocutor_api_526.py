@@ -22,7 +22,12 @@ def client():
 def test_list_profiles_empty(client):
     r = client.get("/api/identity/profiles")
     assert r.status_code == 200
-    assert r.json() == []
+    # Built-in profiles (system, owner) are always included even with no persisted profiles
+    data = r.json()
+    assert isinstance(data, list)
+    builtin_ids = {p["profile_id"] for p in data}
+    assert "owner" in builtin_ids  # owner is always present
+    assert "system" in builtin_ids  # system is always present
 
 
 def test_create_and_get_profile(client):

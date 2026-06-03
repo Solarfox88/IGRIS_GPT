@@ -57,6 +57,13 @@ def run_preflight(
         trust_level = str(getattr(profile, "trust_level", "untrusted")).lower()
         if hasattr(profile, "touch"):
             profile.touch()
+        # Persist interaction (best-effort): update disk for non-builtin profiles
+        from igris.core.identity_resolver import BUILTIN_PROFILES as _BUILTIN
+        if profile.profile_id not in _BUILTIN:
+            try:
+                ir.update(profile)
+            except Exception:
+                pass
     except Exception:
         pass
 
