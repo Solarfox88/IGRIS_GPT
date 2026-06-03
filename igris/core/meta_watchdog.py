@@ -87,6 +87,12 @@ async def _smw_loop(project_root: str) -> None:
                             _health_report.issues_skipped,
                             len(_health_report.errors),
                         )
+                    # Update API cache so GET /api/code-health/summary returns latest result
+                    try:
+                        from igris.api.routes.code_health import update_code_health_cache
+                        update_code_health_cache(_health_report)
+                    except Exception as _cache_exc:
+                        logger.debug("code health cache update skipped: %s", _cache_exc)
                 except Exception as _chm_exc:
                     logger.warning("SMW code health monitor error (non-fatal): %s", _chm_exc)
 
