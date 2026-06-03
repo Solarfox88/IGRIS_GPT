@@ -1957,9 +1957,7 @@ console.log('Rank S dashboard is now visible');
         dot.style.background = ok ? "#22c55e" : "#ef4444";
       }
 
-      var il = d.interlocutor;
-      if (!il) return;
-
+      var il = d.interlocutor || {};
       var profiles = il.profiles || [];
       var lastChat = il.last_chat || {};
 
@@ -2010,7 +2008,10 @@ console.log('Rank S dashboard is now visible');
             spIC.innerHTML += '<div class="kv-row"><span class="kv-key">mode</span><span class="kv-val">' + esc(lastChat.response_mode) + '</span></div>';
           }
         } else {
-          spIC.innerHTML = '<span class="loading">no profile data</span>';
+          // No profiles available — show fallback, never leave as loading
+          var fallbackName = (lastChat && lastChat.interlocutor_id) ? lastChat.interlocutor_id : "unknown";
+          var fallbackTrust = (lastChat && lastChat.trust_level) ? lastChat.trust_level : "untrusted";
+          spIC.innerHTML = '<div class="kv-row"><span class="kv-key">interlocutore</span><span class="kv-val">' + esc(fallbackName) + ' · ' + esc(fallbackTrust) + '</span></div>';
         }
       }
 
@@ -2028,12 +2029,20 @@ console.log('Rank S dashboard is now visible');
             '<div class="audit-time">' + esc((String(e.ts || "")).slice(11, 16)) + '</div>' +
             '</div>';
         });
-        spAudit.innerHTML = html || '<span class="loading">nessun evento</span>';
+        spAudit.innerHTML = html || '<span class="sp-empty">Nessun audit recente</span>';
       } else if (spAudit) {
-        spAudit.innerHTML = '<span class="loading">no audit data</span>';
+        spAudit.innerHTML = '<span class="sp-empty">Nessun audit recente</span>';
       }
     }).catch(function() {
-      // silently ignore — endpoint may not be available
+      // API unavailable — replace loading states with error fallback
+      var spIC2 = $("#sp-interlocutor-content");
+      if (spIC2 && spIC2.querySelector && spIC2.querySelector(".loading")) {
+        spIC2.innerHTML = '<span class="sp-error">Errore caricamento</span>';
+      }
+      var spAudit2 = $("#sp-audit-content");
+      if (spAudit2 && spAudit2.querySelector && spAudit2.querySelector(".loading")) {
+        spAudit2.innerHTML = '<span class="sp-error">Errore caricamento</span>';
+      }
     });
 
     // Rank — only reload every 5 minutes (rarely changes)
