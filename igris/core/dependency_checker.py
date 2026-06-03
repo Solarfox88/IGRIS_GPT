@@ -234,3 +234,81 @@ class DependencyChecker:
             if self._has_cycle(dep, visited):
                 return True
         return False
+
+
+# ---------------------------------------------------------------------------
+# Runtime dependency check — hard pre-run gate (#525)
+# ---------------------------------------------------------------------------
+
+# Critical Python packages that must be importable before a supervisor run starts.
+# Non-blocking packages produce a warning but do not abort the run.
+_CRITICAL_RUNTIME_DEPS: List[str] = [
+    "fastapi",
+    "pydantic",
+    "httpx",
+]
+_NON_BLOCKING_RUNTIME_DEPS: List[str] = [
+    "transformers",
+    "torch",
+    "soundfile",
+]
+
+
+class RuntimeDepResult:
+    """Result of a runtime dependency check."""
+
+    def __init__(
+        self,
+        blocking_missing: List[str],
+        warning_missing: List[str],
+    ) -> None:
+        self.blocking_missing = blocking_missing
+        self.warning_missing = warning_missing
+        self.passed = len(blocking_missing) == 0
+
+    def __repr__(self) -> str:
+        return (
+            f"RuntimeDepResult(passed={self.passed}, "
+            f"blocking_missing={self.blocking_missing}, "
+            f"warning_missing={self.warning_missing})"
+        )
+
+
+def check_runtime_deps(
+    critical: Optional[List[str]] = None,
+    non_blocking: Optional[List[str]] = None,
+) -> RuntimeDepResult:
+    """Check that critical Python packages are importable.
+
+    Args:
+        critical: List of package names that must be importable (default: _CRITICAL_RUNTIME_DEPS).
+        non_blocking: Packages to check with warning only (default: _NON_BLOCKING_RUNTIME_DEPS).
+
+    Returns:
+        RuntimeDepResult with blocking_missing and warning_missing lists.
+    """
+    import importlib
+    if critical is None:
+        critical = _CRITICAL_RUNTIME_DEPS
+    if non_blocking is None:
+        non_blocking = _NON_BLOCKING_RUNTIME_DEPS
+
+    blocking_missing: List[str] = []
+    warning_missing: List[str] = []
+
+    for pkg in critical:
+        try:
+            importlib.import_module(pkg)
+        except ImportError:
+            blocking_missing.append(pkg)
+
+    for pkg in non_blocking:
+        try:
+            importlib.import_module(pkg)
+        except ImportError:
+            warning_missing.append(pkg)
+
+    return RuntimeDepResult(
+        blocking_missing=blocking_missing,
+        warning_missing=warning_missing,
+    )
