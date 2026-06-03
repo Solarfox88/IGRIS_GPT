@@ -248,6 +248,103 @@ def test_run_diagnostics_returns_structured_sections_and_redacts(tmp_path) -> No
     assert report["evidence"]["browser_artifact"]["context"]["run_id"] == "run-y"
 
 
+def test_remote_diagnostics_are_ssh_backed_but_test_safe(tmp_path) -> None:
+    runner = FakeCommandRunner()
+    mgr = DevOpsManager(
+        str(tmp_path),
+        runner=runner,
+        browser_runner=FakeBrowserRunner(selector_found=True),
+    )
+    host = HostConfig(
+        hostname="vps.example",
+        policy="operator",
+        ssh_user="deploy",
+        ssh_port=2222,
+        environment="production",
+        allowed_paths=[str(tmp_path)],
+        allowed_services=["igris", "nginx", "docker"],
+        allowed_domains=["prod.example.com"],
+    )
+    mgr.register_host(host)
+
+    report = mgr.run_diagnostics(
+        host_cfg=host,
+        dry_run=True,
+        ssl_target="prod.example.com:443",
+        mission_id="mission-x",
+        run_id="run-y",
+    )
+
+    assert report["runner_mode"] == "ssh"
+    assert report["target_host"] == "vps.example"
+    assert report["context"] == {"mission_id": "mission-x", "run_id": "run-y"}
+    assert "planned_commands" in report
+    assert "systemd" in report["planned_commands"]
+    assert runner.calls == []
+
+
+def test_run_deploy_and_rollback_attach_remote_diagnostics_evidence(tmp_path) -> None:
+    runner = FakeCommandRunner()
+    runner.set_result(
+        "df -P",
+        CommandResult(
+            returncode=0,
+            stdout="Filesystem 1024-blocks Used Available Capacity Mounted on\n/dev/root 1000 400 600 40% /\n",
+        ),
+    )
+    runner.set_result("git pull --ff-only", CommandResult(returncode=0, stdout="Already up to date.\n"))
+    runner.set_result("systemctl restart igris", CommandResult(returncode=0, stderr="restarted"))
+    runner.set_result("git rev-parse HEAD", CommandResult(returncode=0, stdout="abc123\n"))
+    runner.set_result("nc -z -w 3 localhost 7778", CommandResult(returncode=0))
+
+    browser = FakeBrowserRunner(selector_found=True)
+    mgr = DevOpsManager(str(tmp_path), runner=runner, browser_runner=browser)
+    mgr.run_smoke_test = lambda url="": {  # type: ignore[assignment]
+        "ok": True,
+        "status_code": 200,
+        "response_time_ms": 12,
+        "url": url,
+        "body_preview": "ok",
+    }
+    host = HostConfig(
+        hostname="vps.example",
+        policy="operator",
+        environment="staging",
+        allowed_paths=[str(tmp_path)],
+        allowed_services=["igris"],
+        allowed_domains=["staging.example.com"],
+    )
+    mgr.register_host(host)
+
+    deploy = mgr.run_deploy(
+        hostname="vps.example",
+        health_url="https://staging.example.com/health",
+        dry_run=True,
+        strategy="dry_run",
+        runner=runner,
+        mission_id="mission-77",
+        run_id="run-88",
+    )
+    assert deploy["runner_mode"] == "ssh"
+    assert deploy["context"] == {"mission_id": "mission-77", "run_id": "run-88"}
+    assert deploy["diagnostics"]["runner_mode"] == "ssh"
+    assert deploy["evidence"]["remote_diagnostics"]["context"]["run_id"] == "run-88"
+    assert deploy["evidence"]["browser"]["artifact"]["context"]["run_id"] == "run-88"
+
+    rollback = mgr.run_rollback(
+        pre_deploy_sha="abc123",
+        dry_run=True,
+        runner=runner,
+        host_cfg=host,
+        health_url="https://staging.example.com/health",
+        mission_id="mission-77",
+        run_id="run-88",
+    )
+    assert rollback["context"] == {"mission_id": "mission-77", "run_id": "run-88"}
+    assert rollback["evidence"]["remote_diagnostics"]["context"]["run_id"] == "run-88"
+    assert rollback["evidence"]["browser_artifacts"] == []
+
+
 def test_run_rollback_returns_evidence_and_context(tmp_path) -> None:
     runner = FakeCommandRunner()
     runner.set_result("git reset --hard", CommandResult(returncode=0, stdout="reset\n"))

@@ -556,6 +556,7 @@ class DevOpsManager:
         hostname: Optional[str] = None,
         health_url: str = "",
         dry_run: bool = False,
+        runner: Optional[CommandRunner] = None,
         min_disk_pct_free: int = 10,
         service_name: str = "igris",
         compose_file: str = "docker-compose.yml",
@@ -648,7 +649,8 @@ class DevOpsManager:
                     "run_id": run_id,
                 })
                 return report
-        runner = self._effective_runner(host_cfg)
+        runner = runner or self._effective_runner(host_cfg)
+        report["runner_mode"] = "ssh" if host_cfg and str(host_cfg.hostname or "").strip().lower() not in {"", "localhost", "127.0.0.1"} else "local"
         self._audit("deploy_start", {
             "hostname": hostname or "localhost",
             "strategy": strategy,
@@ -681,7 +683,19 @@ class DevOpsManager:
                 health_url=health_url,
                 host_cfg=host_cfg,
                 runner=runner,
+                mission_id=mission_id,
+                run_id=run_id,
             )
+            if host_cfg is not None:
+                report["diagnostics"] = self.run_diagnostics(
+                    host_cfg=host_cfg,
+                    runner=runner,
+                    dry_run=True,
+                    ssl_target=health_url,
+                    mission_id=mission_id,
+                    run_id=run_id,
+                )
+                report["evidence"]["remote_diagnostics"] = report["diagnostics"].get("evidence") or report["diagnostics"]
             if report["dry_run_evidence"].get("browser"):
                 report["evidence"]["browser"] = report["dry_run_evidence"]["browser"]
             self._audit("deploy_end", {"ok": True, "dry_run": True})
@@ -723,6 +737,16 @@ class DevOpsManager:
             browser_check = postcheck.get("checks", {}).get("browser")
             if isinstance(browser_check, dict):
                 report["evidence"]["browser_postcheck"] = browser_check.get("artifact") or browser_check
+            if host_cfg is not None:
+                report["diagnostics"] = self.run_diagnostics(
+                    host_cfg=host_cfg,
+                    runner=runner,
+                    dry_run=True,
+                    ssl_target=health_url,
+                    mission_id=mission_id,
+                    run_id=run_id,
+                )
+                report["evidence"]["remote_diagnostics"] = report["diagnostics"].get("evidence") or report["diagnostics"]
             # PR 3: auto-rollback if postcheck fails
             if not postcheck["ok"] and auto_rollback and pre_deploy_sha:
                 rollback = self.run_rollback(
@@ -909,6 +933,14 @@ class DevOpsManager:
                 "plan": list(result["steps"]["plan"]["commands"]),
                 "verified": False,
                 "browser_artifacts": [],
+                "remote_diagnostics": self.run_diagnostics(
+                    host_cfg=host_cfg,
+                    runner=runner,
+                    dry_run=True,
+                    ssl_target=health_url,
+                    mission_id=mission_id,
+                    run_id=run_id,
+                ) if host_cfg is not None else None,
             }
             result["ok"] = True
             return result
@@ -994,6 +1026,14 @@ class DevOpsManager:
             },
             "verified": result["ok"],
             "browser_artifacts": [browser_artifact] if browser_artifact else [],
+            "remote_diagnostics": self.run_diagnostics(
+                host_cfg=host_cfg,
+                runner=runner,
+                dry_run=True,
+                ssl_target=health_url,
+                mission_id=mission_id,
+                run_id=run_id,
+            ) if host_cfg is not None else None,
         }
         return result
 
@@ -1049,12 +1089,54 @@ class DevOpsManager:
         self,
         *,
         runner: Optional[CommandRunner] = None,
+        host_cfg: Optional[HostConfig] = None,
+        dry_run: bool = False,
         ssl_target: str = "",
         mission_id: str = "",
         run_id: str = "",
     ) -> Dict[str, Any]:
         """Best-effort diagnostics for VPS/operator workflows."""
-        effective_runner = runner or self._runner
+        effective_runner = runner or self._effective_runner(host_cfg)
+        remote_host = host_cfg is not None and str(host_cfg.hostname or "").strip().lower() not in {"", "localhost", "127.0.0.1"}
+        report: Dict[str, Any] = {
+            "timestamp": time.time(),
+            "context": {
+                "mission_id": mission_id,
+                "run_id": run_id,
+            },
+            "target_host": host_cfg.hostname if host_cfg else "localhost",
+            "host_environment": host_cfg.environment if host_cfg else "local",
+            "runner_mode": "ssh" if remote_host else "local",
+            "dry_run": dry_run,
+        }
+
+        if dry_run:
+            report["planned_commands"] = {
+                "systemd": ["systemctl is-active igris", "systemctl is-active nginx", "systemctl is-active docker"],
+                "docker": ["docker ps --format {{.Names}}"],
+                "nginx": ["nginx -t"],
+                "ports": ["ss -tln"],
+                "processes": ["ps -eo pid,comm,%cpu,%mem --sort=-%cpu"],
+                "disk": [f"df -h {self.project_root}"],
+                "logs": [
+                    "journalctl -u igris -n 80 --no-pager",
+                    "journalctl -u nginx -n 80 --no-pager",
+                ],
+                "ssl": [f"openssl s_client -connect {ssl_target} -servername {ssl_target}"] if ssl_target else [],
+            }
+            report["evidence"] = {
+                "context": {
+                    "mission_id": mission_id,
+                    "run_id": run_id,
+                },
+                "mission_id": mission_id,
+                "run_id": run_id,
+                "mode": "dry_run",
+                "browser_artifact": None,
+                "logs": {},
+            }
+            report["ok"] = True
+            return report
 
         def _cmd(cmd: List[str], timeout: int = 8) -> Dict[str, Any]:
             res = effective_runner.run(cmd, timeout=timeout)
@@ -1070,12 +1152,7 @@ class DevOpsManager:
             "nginx": _cmd(["systemctl", "is-active", "nginx"]),
             "docker": _cmd(["systemctl", "is-active", "docker"]),
         }
-        report: Dict[str, Any] = {
-            "timestamp": time.time(),
-            "context": {
-                "mission_id": mission_id,
-                "run_id": run_id,
-            },
+        report.update({
             "systemd": services,
             "docker": _cmd(["docker", "ps", "--format", "{{.Names}}"]),
             "nginx": _cmd(["nginx", "-t"]),
@@ -1086,7 +1163,7 @@ class DevOpsManager:
                 "igris": _cmd(["journalctl", "-u", "igris", "-n", "80", "--no-pager"], timeout=12),
                 "nginx": _cmd(["journalctl", "-u", "nginx", "-n", "80", "--no-pager"], timeout=12),
             },
-        }
+        })
         if ssl_target:
             report["ssl"] = _cmd(["openssl", "s_client", "-connect", ssl_target, "-servername", ssl_target], timeout=12)
         else:
@@ -1097,6 +1174,10 @@ class DevOpsManager:
             run_id=run_id,
         )
         report["evidence"] = {
+            "context": {
+                "mission_id": mission_id,
+                "run_id": run_id,
+            },
             "mission_id": mission_id,
             "run_id": run_id,
             "browser_artifact": report["browser"].get("artifact") if isinstance(report.get("browser"), dict) else None,
@@ -1120,6 +1201,8 @@ class DevOpsManager:
         health_url: str,
         host_cfg: Optional[HostConfig],
         runner: CommandRunner,
+        mission_id: str = "",
+        run_id: str = "",
     ) -> Dict[str, Any]:
         target = hostname or "localhost"
         planned: List[str] = []
@@ -1137,7 +1220,7 @@ class DevOpsManager:
             ssl_probe["available"] = True
             ssl_probe["target"] = health_url
         browser_url = health_url or "http://localhost:7778/api/ping"
-        browser = self.run_browser_smoke(url=browser_url)
+        browser = self.run_browser_smoke(url=browser_url, mission_id=mission_id, run_id=run_id)
 
         return {
             "target_host": target,
