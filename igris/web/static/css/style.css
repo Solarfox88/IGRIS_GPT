@@ -48,6 +48,15 @@ body{
 .topbar-identity .name{font-weight:600;color:#fff;font-size:12px}
 .topbar-identity .trust{font-size:10px;background:#14532d;color:var(--green);padding:1px 6px;border-radius:8px;font-weight:600}
 .topbar-identity .mode{font-size:10px;color:var(--text3)}
+/* Identity state badge (v4) */
+.identity-state-badge{font-size:9px;padding:1px 7px;border-radius:8px;font-weight:700;letter-spacing:.4px}
+.identity-state-badge.state-recognized{background:rgba(34,197,94,.15);color:var(--green);border:1px solid rgba(34,197,94,.3)}
+.identity-state-badge.state-unknown{background:rgba(245,158,11,.15);color:var(--yellow);border:1px solid rgba(245,158,11,.3)}
+.identity-state-badge.state-delegated{background:rgba(59,130,246,.15);color:var(--accent);border:1px solid rgba(59,130,246,.3)}
+.identity-state-badge.state-system{background:rgba(100,116,139,.15);color:var(--text2);border:1px solid rgba(100,116,139,.3)}
+.identity-state-badge.state-owner{background:rgba(167,139,250,.15);color:#a78bfa;border:1px solid rgba(167,139,250,.3)}
+.identity-safety-note{font-size:9px;color:var(--text3);font-style:italic;display:none}
+.identity-safety-note.visible{display:inline}
 .topbar-spacer{flex:1}
 .topbar-status{display:flex;align-items:center;gap:16px}
 .status-pill{display:flex;align-items:center;gap:5px;font-size:11px;color:var(--text2)}
@@ -146,12 +155,24 @@ body{
 .chat-messages .msg-assistant.advisory{
   border-color:rgba(245,158,11,.3);background:rgba(245,158,11,.06);
 }
+.chat-messages .msg-assistant.warning{
+  border-color:rgba(239,68,68,.25);background:rgba(239,68,68,.04);
+}
+.chat-messages .msg-assistant.blocked{
+  border-color:rgba(239,68,68,.4);background:rgba(239,68,68,.08);
+}
+.chat-messages .msg-assistant.requires-confirmation{
+  border-color:rgba(99,102,241,.3);background:rgba(99,102,241,.06);
+}
 .advisory-label{
   font-size:9px;font-weight:700;color:var(--yellow);
   text-transform:uppercase;letter-spacing:.8px;margin-bottom:4px;
   display:flex;align-items:center;gap:4px;
 }
-.chat-messages .msg-meta{font-size:10px;color:var(--text3);margin-top:4px;display:flex;align-items:center;gap:6px}
+.warning-label{font-size:9px;font-weight:700;color:var(--red);text-transform:uppercase;letter-spacing:.8px;margin-bottom:4px;display:flex;align-items:center;gap:4px}
+.blocked-label{font-size:9px;font-weight:900;color:var(--red);text-transform:uppercase;letter-spacing:.8px;margin-bottom:4px;display:flex;align-items:center;gap:4px}
+.confirm-label{font-size:9px;font-weight:700;color:#a78bfa;text-transform:uppercase;letter-spacing:.8px;margin-bottom:4px;display:flex;align-items:center;gap:4px}
+.chat-messages .msg-meta{font-size:9px;color:var(--text3);margin-top:4px;display:flex;align-items:center;gap:6px;opacity:0.7}
 .meta-tag{background:var(--surface);padding:1px 5px;border-radius:4px;font-size:9px}
 .meta-tag.blocked{background:rgba(239,68,68,.12);color:var(--red);border:1px solid rgba(239,68,68,.2)}
 .meta-tag.allowed{background:rgba(34,197,94,.1);color:var(--green)}
@@ -177,15 +198,22 @@ body{
 .chat-messages .msg-assistant h4,.chat-messages .msg-assistant h5{margin:.6rem 0 .3rem;color:#fff;font-size:.9rem}
 .msg.typing{color:var(--text3);font-style:italic;align-self:flex-start}
 
-/* INTENT STRIP */
+/* INTENT STRIP (v4 collapsible) */
 .intent-strip{
   align-self:flex-start;
   background:rgba(99,102,241,.08);border:1px solid rgba(99,102,241,.2);
-  border-radius:6px;padding:5px 10px;font-size:10px;color:var(--text2);
-  display:flex;align-items:center;gap:8px;
+  border-radius:6px;padding:4px 10px;font-size:10px;color:var(--text2);
+  display:flex;align-items:center;gap:8px;margin-top:4px;
 }
 .intent-strip .ib{font-weight:600;color:var(--accent2)}
 .intent-strip .risk{color:var(--yellow)}
+.intent-toggle{
+  background:none;border:none;color:var(--text3);cursor:pointer;font-size:11px;
+  padding:0 2px;line-height:1;flex-shrink:0;
+}
+.intent-toggle:hover{color:var(--text)}
+.intent-content{transition:opacity .2s}
+.intent-content.collapsed{display:none}
 
 /* COPY BUTTON */
 .copy-btn{
@@ -605,4 +633,10 @@ body{
   .inline-form input,.inline-form button{width:100%}
   .output-box{max-height:250px;font-size:.75rem}
   .chat-messages .msg-assistant pre{overflow-x:auto;max-width:calc(100vw - 3rem)}
+}
+@media(max-width:480px){
+  .status-panel{display:none}
+  .chat-panel{min-width:0}
+  .topbar-identity{max-width:200px}
+  .topbar-status{display:none}
 }

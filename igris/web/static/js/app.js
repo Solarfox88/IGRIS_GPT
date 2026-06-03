@@ -1378,15 +1378,39 @@
       var r = await api("POST", "/api/sessions/" + sessionId + "/messages", { message: msg, interlocutor_id: _iid });
       removeTyping();
       if (r.ok) {
-        var meta = {
-          provider: r.data.provider,
-          model: r.data.model,
-          latency_ms: r.data.latency_ms,
-          fallback_used: r.data.fallback_used,
-          intent: r.data.intent_detected || null,
-          actions: r.data.suggested_actions || [],
-        };
-        addMsg("assistant", r.data.response, null, meta);
+        // Operator-grade block message (v4)
+        if (r.data.blocked) {
+          var blockMsg = [
+            "⛔ **Richiesta bloccata**",
+            "",
+            r.data.response || "Accesso negato.",
+            "",
+            "**Trust level**: " + (r.data.trust_level || "unknown"),
+            "**Per sbloccare**: fornisci una delegation key o identifica il tuo profilo."
+          ].join("\n");
+          addMsg("assistant", blockMsg, "blocked");
+        } else {
+          var meta = {
+            provider: r.data.provider,
+            model: r.data.model,
+            latency_ms: r.data.latency_ms,
+            fallback_used: r.data.fallback_used,
+            intent: r.data.intent_detected || null,
+            actions: r.data.suggested_actions || [],
+          };
+          addMsg("assistant", r.data.response, null, meta);
+          // Show intent strip if intent detected (v4)
+          var intentStrip = $("#intent-strip");
+          if (intentStrip && r.data.intent_detected) {
+            intentStrip.style.display = "flex";
+            var intentAction = $("#intent-action");
+            var intentRisk = $("#intent-risk");
+            var intentTarget = $("#intent-target");
+            if (intentAction) intentAction.textContent = r.data.intent_detected || "—";
+            if (intentRisk) intentRisk.textContent = r.data.risk_level || r.data.risk || "—";
+            if (intentTarget) intentTarget.textContent = r.data.target || "—";
+          }
+        }
       } else {
         addMsg("assistant", "Error: " + (r.data.detail || "unknown"));
       }
@@ -1967,16 +1991,52 @@ console.log('Rank S dashboard is now visible');
       var tbAvatar = $("#tb-avatar");
       var tbMode = $("#tb-mode");
 
+      var tbStateBadge = $("#tb-identity-state");
+      var tbSafetyNote = $("#tb-safety-note");
+
+      function applyIdentityBadge(trustLevel, interlocutorId) {
+        if (!tbStateBadge) return;
+        var state = "unknown";
+        var label = "unknown";
+        var tl = (trustLevel || "").toLowerCase();
+        var iid = (interlocutorId || "").toLowerCase();
+        if (tl === "admin" || tl === "full" || iid === "owner" || iid === "admin") {
+          state = "owner"; label = "🔒 owner/admin";
+        } else if (tl === "trusted" || tl === "recognized") {
+          state = "recognized"; label = "recognized";
+        } else if (tl === "delegated" || iid.indexOf("delegation") >= 0) {
+          state = "delegated"; label = "delegated";
+        } else if (tl === "system" || tl === "internal" || iid === "system") {
+          state = "system"; label = "system";
+        } else if (tl === "untrusted" || tl === "unknown" || !trustLevel) {
+          state = "unknown"; label = "unknown";
+        } else {
+          state = "recognized"; label = tl;
+        }
+        tbStateBadge.className = "identity-state-badge state-" + state;
+        tbStateBadge.textContent = label;
+        if (tbSafetyNote) {
+          if (state === "owner") {
+            tbSafetyNote.textContent = "Destructive actions remain gated";
+            tbSafetyNote.classList.add("visible");
+          } else {
+            tbSafetyNote.classList.remove("visible");
+          }
+        }
+      }
+
       if (lastChat.interlocutor_id) {
         if (tbName) tbName.textContent = lastChat.interlocutor_id;
         if (tbTrust) tbTrust.textContent = lastChat.trust_level || "—";
         if (tbAvatar) tbAvatar.textContent = (lastChat.interlocutor_id || "?")[0].toUpperCase();
         if (tbMode) tbMode.textContent = lastChat.response_mode ? "· " + lastChat.response_mode : "";
+        applyIdentityBadge(lastChat.trust_level, lastChat.interlocutor_id);
       } else if (profiles.length > 0) {
         var p0 = profiles[0];
         if (tbName) tbName.textContent = p0.display_name || p0.profile_id || "—";
         if (tbTrust) tbTrust.textContent = p0.trust_level || "—";
         if (tbAvatar) tbAvatar.textContent = ((p0.display_name || p0.profile_id || "?")[0] || "?").toUpperCase();
+        applyIdentityBadge(p0.trust_level, p0.profile_id);
       }
 
       // Chat header meta
@@ -2100,6 +2160,21 @@ console.log('Rank S dashboard is now visible');
     });
   });
 
+  // ---- INTENT STRIP TOGGLE (v4) ----
+  (function() {
+    var toggle = $("#intent-toggle");
+    var content = $("#intent-content");
+    if (!toggle || !content) return;
+    // Restore localStorage state
+    var collapsed = localStorage.getItem("igris_intent_collapsed") === "1";
+    if (collapsed) content.classList.add("collapsed");
+    toggle.addEventListener("click", function() {
+      collapsed = !collapsed;
+      content.classList.toggle("collapsed", collapsed);
+      localStorage.setItem("igris_intent_collapsed", collapsed ? "1" : "0");
+    });
+  })();
+
   // ---- TEXTAREA AUTO-RESIZE + ENTER TO SEND ----
   (function() {
     var inp = $("#chat-input");
@@ -2136,6 +2211,18 @@ console.log('Rank S dashboard is now visible');
           // Check if it's an assistant message that should be advisory
           if (node.classList && node.classList.contains("msg-assistant") && !node.classList.contains("typing")) {
             var text = node.textContent || "";
+            // Already has explicit class from addMsg (e.g. blocked) — skip auto-detect to avoid double labels
+            var alreadyLabeled = node.classList.contains("blocked") || node.classList.contains("advisory") ||
+                                 node.classList.contains("warning") || node.classList.contains("requires-confirmation");
+            if (alreadyLabeled) {
+              // Add appropriate label prefix if not present
+              if (node.classList.contains("blocked") && !node.querySelector(".blocked-label")) {
+                var bl = document.createElement("div");
+                bl.className = "blocked-label"; bl.textContent = "⛔ Blocked";
+                node.insertBefore(bl, node.firstChild);
+              }
+              return;
+            }
             // Auto-detect advisory patterns
             if (text.indexOf("JudgmentLayer") >= 0 || text.indexOf("Advisory") >= 0 || text.indexOf("advisory") >= 0) {
               node.classList.add("advisory");
@@ -2146,14 +2233,32 @@ console.log('Rank S dashboard is now visible');
                 node.insertBefore(label, node.firstChild);
               }
             }
+            // Auto-detect warning patterns
+            if (text.indexOf("warning") >= 0 || text.indexOf("attenzione") >= 0) {
+              node.classList.add("warning");
+              if (!node.querySelector(".warning-label")) {
+                var wl = document.createElement("div");
+                wl.className = "warning-label"; wl.textContent = "🚫 Warning";
+                node.insertBefore(wl, node.firstChild);
+              }
+            }
             // Auto-detect blocked patterns
-            if (text.indexOf("bloccata") >= 0 || text.indexOf("denied") >= 0 || text.indexOf("blocked") >= 0) {
-              var metaDiv = node.querySelector(".msg-meta");
-              if (metaDiv && !metaDiv.querySelector(".meta-tag.blocked")) {
-                var tag = document.createElement("span");
-                tag.className = "meta-tag blocked";
-                tag.textContent = "auth: denied";
-                metaDiv.insertBefore(tag, metaDiv.firstChild);
+            if (text.indexOf("bloccata") >= 0 || text.indexOf("denied") >= 0 ||
+                (text.indexOf("blocked") >= 0 && !node.classList.contains("advisory"))) {
+              node.classList.add("blocked");
+              if (!node.querySelector(".blocked-label")) {
+                var bll = document.createElement("div");
+                bll.className = "blocked-label"; bll.textContent = "⛔ Blocked";
+                node.insertBefore(bll, node.firstChild);
+              }
+            }
+            // Auto-detect confirmation patterns
+            if (text.indexOf("confirmation") >= 0 || text.indexOf("conferma") >= 0 || text.indexOf("requires_confirmation") >= 0) {
+              node.classList.add("requires-confirmation");
+              if (!node.querySelector(".confirm-label")) {
+                var cl = document.createElement("div");
+                cl.className = "confirm-label"; cl.textContent = "🔐 Confirmation Required";
+                node.insertBefore(cl, node.firstChild);
               }
             }
           }
