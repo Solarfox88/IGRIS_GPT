@@ -209,6 +209,18 @@ def test_record_external_intervention_and_summary():
     assert "external_interventions×1" in bt.summary()
 
 
+def test_deterministic_issue_routing_is_serialized():
+    bt = make_tracker()
+    bt.record("E011", "high severity defect", severity="high", blocking=True, stage_id="repair")
+    data = bt.to_dict()
+    route = data["records"][0]["issue_route"]
+    assert route["kind"] == "supervisor-defect"
+    assert route["label"] == "supervisor-defect,autonomy"
+    assert route["requires_issue"] is True
+    assert route["severity"] == "high"
+    assert route["stage_id"] == "repair"
+
+
 def test_auto_open_high_severity_blocking_and_non_blocking_defects(monkeypatch):
     monkeypatch.setenv("IGRIS_AUTO_OPEN_DEFECT_ISSUES", "true")
     bt = make_tracker()

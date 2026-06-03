@@ -163,6 +163,20 @@ class BehaviorTracker:
     def by_severity(self, severity: str) -> List[BehaviorRecord]:
         return [r for r in self.records if r.severity == severity]
 
+    @staticmethod
+    def _defect_issue_route(rec: BehaviorRecord) -> Dict[str, Any]:
+        """Return a deterministic issue-routing payload for a defect record."""
+        title = f"[supervisor-defect] {rec.name}: {rec.detail[:60]}"
+        return {
+            "kind": "supervisor-defect",
+            "label": "supervisor-defect,autonomy",
+            "title": title,
+            "requires_issue": rec.severity in ("high", "critical"),
+            "severity": rec.severity,
+            "blocking": rec.blocking,
+            "stage_id": rec.stage_id,
+        }
+
     def record_external_intervention(
         self,
         *,
@@ -318,6 +332,7 @@ class BehaviorTracker:
         return opened
 
     def _open_single_issue(self, rec: BehaviorRecord, project_root: str) -> str:
+        route = self._defect_issue_route(rec)
         body = (
             f"## Supervisor-detected non-blocking defect\n\n"
             f"**Code**: `{rec.code}` — `{rec.name}`  \n"
@@ -328,11 +343,11 @@ class BehaviorTracker:
             f"### Evidence\n```\n{rec.evidence or 'none'}\n```\n\n"
             f"*Auto-opened by IGRIS BehaviorTracker — supervisor-first autonomy policy (#147)*"
         )
-        title = f"[supervisor-defect] {rec.name}: {rec.detail[:60]}"
+        title = route["title"]
         try:
             proc = subprocess.run(
                 ["gh", "issue", "create", "--title", title, "--body", body,
-                 "--label", "supervisor-defect,autonomy"],
+                 "--label", route["label"]],
                 capture_output=True, text=True, timeout=30, cwd=project_root,
             )
             if proc.returncode == 0:
@@ -361,6 +376,7 @@ class BehaviorTracker:
                     "severity": r.severity, "blocking": r.blocking,
                     "stage_id": r.stage_id, "timestamp": r.timestamp,
                     "issue_url": r.issue_url,
+                    "issue_route": self._defect_issue_route(r),
                 }
                 for r in self.records
             ],
