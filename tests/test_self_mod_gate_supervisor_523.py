@@ -155,3 +155,98 @@ class TestRegressionQualityGate:
         supervisor = _make_supervisor(str(tmp_path))
         assert hasattr(supervisor, "_preapply_quality_gate")
         assert callable(supervisor._preapply_quality_gate)
+
+
+def _blocking_import(blocked_module):
+    import builtins
+    real_import = builtins.__import__
+
+    def mock_import(name, *args, **kwargs):
+        if name == blocked_module or name.startswith(blocked_module):
+            raise ImportError(f"Simulated import failure: {name}")
+        return real_import(name, *args, **kwargs)
+
+    return mock_import
+
+
+class TestFailClosedForCoreFiles:
+    """_preapply_quality_gate must be fail-closed for core files when gate is unavailable."""
+
+    def test_core_file_gate_import_failure_is_blocked(self, tmp_path, monkeypatch):
+        """Core file + gate import failure → blocked (fail-closed)."""
+        supervisor = _make_supervisor(str(tmp_path))
+        with patch(
+            "igris.core.self_modification_gate.SelfModificationGate",
+            side_effect=ImportError("Simulated import failure"),
+        ):
+            ok, reasons = supervisor._preapply_quality_gate(
+                goal="fix core",
+                diff_text="--- a/igris/core/agent_reasoning_loop.py\n+fix",
+                files_modified=["igris/core/agent_reasoning_loop.py"],
+            )
+        assert not ok
+        assert any(
+            "blocked" in r.lower() or "fail-closed" in r.lower() or "unavailable_core" in r
+            for r in reasons
+        )
+
+    def test_non_core_file_gate_import_failure_is_degraded(self, tmp_path, monkeypatch):
+        """Non-core file + gate import failure → non-blocking (degraded-safe)."""
+        supervisor = _make_supervisor(str(tmp_path))
+        with patch(
+            "igris.core.self_modification_gate.SelfModificationGate",
+            side_effect=ImportError("Simulated import failure"),
+        ):
+            ok, reasons = supervisor._preapply_quality_gate(
+                goal="fix output",
+                diff_text="--- a/reports/output.txt\n+fix",
+                files_modified=["reports/output.txt"],
+            )
+        assert ok
+        assert not any("unavailable_core" in r for r in reasons)
+
+    def test_core_file_gate_ok_blocks_on_gate_denial(self, tmp_path):
+        """Core file + gate ok + gate returns approved=False → blocked."""
+        supervisor = _make_supervisor(str(tmp_path))
+        mock_gate_result = MagicMock()
+        mock_gate_result.approved = False
+        mock_gate_result.touched_core = ["igris/core/agent_reasoning_loop.py"]
+        mock_gate_result.reason = "test failure"
+
+        with patch(
+            "igris.core.self_modification_gate.SelfModificationGate.check",
+            return_value=mock_gate_result,
+        ):
+            ok, reasons = supervisor._preapply_quality_gate(
+                goal="fix core",
+                diff_text="--- a/igris/core/agent_reasoning_loop.py\n+fix",
+                files_modified=["igris/core/agent_reasoning_loop.py"],
+            )
+        assert not ok
+        assert any("self_modification_gate_blocked" in r for r in reasons)
+
+    def test_per_file_gate_core_import_failure_blocked(self, tmp_path):
+        """_preapply_quality_gate_file: core file + ImportError → blocked."""
+        supervisor = _make_supervisor(str(tmp_path))
+        with patch(
+            "igris.core.self_modification_gate.SelfModificationGate",
+            side_effect=ImportError("not available"),
+        ):
+            allowed, reason = supervisor._preapply_quality_gate_file(
+                "igris/core/agent_reasoning_loop.py", "patch"
+            )
+        assert not allowed
+        assert "fail-closed" in reason.lower() or "blocked" in reason.lower()
+
+    def test_per_file_gate_non_core_import_failure_degraded(self, tmp_path):
+        """_preapply_quality_gate_file: non-core file + ImportError → degraded-safe."""
+        supervisor = _make_supervisor(str(tmp_path))
+        with patch(
+            "igris.core.self_modification_gate.SelfModificationGate",
+            side_effect=ImportError("not available"),
+        ):
+            allowed, reason = supervisor._preapply_quality_gate_file(
+                "reports/output.txt", "patch"
+            )
+        assert allowed
+        assert "degraded" in reason.lower() or "non_core" in reason.lower()

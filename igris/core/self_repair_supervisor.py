@@ -2173,6 +2173,25 @@ def _smoke_output_is_valid(endpoint: str, output: str) -> bool:
     return True
 
 
+CORE_FILE_PATTERNS = [
+    "igris/core/",
+    "igris/web/server.py",
+    "igris/web/router_registry.py",
+    "igris/core/agent_reasoning_loop.py",
+    "igris/core/self_repair_supervisor.py",
+    "igris/core/authorization_gate.py",
+    "igris/core/identity_resolver.py",
+    "igris/core/action_guard.py",
+]
+
+
+def _is_core_file(file_path: str) -> bool:
+    """Return True if the file path matches a core file pattern."""
+    from pathlib import Path
+    p = str(Path(file_path))
+    return any(pattern in p for pattern in CORE_FILE_PATTERNS)
+
+
 class SelfRepairSupervisor:
     def __init__(self, project_root: str, backend: Optional[SupervisorBackend] = None):
         self.project_root = project_root
@@ -5129,6 +5148,9 @@ class SelfRepairSupervisor:
             reasons.append("stub_pattern_detected_in_diff")
 
         # Self-modification gate — blocks patches that touch core files without approval (#523)
+        # Fail-closed for core files: if gate is unavailable and a core file is being modified,
+        # block the patch rather than silently allowing it.
+        has_core_file = any(_is_core_file(str(f)) for f in (files_modified or []))
         try:
             from igris.core.self_modification_gate import SelfModificationGate
             gate = SelfModificationGate(str(self.project_root))
@@ -5141,11 +5163,61 @@ class SelfRepairSupervisor:
                     gate_result.reason,
                 )
                 reasons.append(f"self_modification_gate_blocked:{gate_result.reason}")
+        except ImportError as _exc:
+            import logging as _logging
+            if has_core_file:
+                # Fail-closed: cannot verify safety of core file modification
+                _logging.getLogger(__name__).error(
+                    "SelfModificationGate unavailable for core file(s) %s — blocked (fail-closed): %s",
+                    [f for f in (files_modified or []) if _is_core_file(str(f))],
+                    _exc,
+                )
+                reasons.append(f"self_modification_gate_unavailable_core_blocked:{_exc}")
+            else:
+                # Non-core: degraded-safe, allow with warning
+                _logging.getLogger(__name__).warning(
+                    "SelfModificationGate unavailable for non-core file(s) (degraded): %s", _exc
+                )
         except Exception as _exc:
             import logging as _logging
-            _logging.getLogger(__name__).debug("SelfModificationGate unavailable: %s", _exc)
+            if has_core_file:
+                _logging.getLogger(__name__).error(
+                    "SelfModificationGate error for core file(s) — blocked: %s", _exc
+                )
+                reasons.append(f"self_modification_gate_error_core_blocked:{_exc}")
+            else:
+                _logging.getLogger(__name__).warning(
+                    "SelfModificationGate error for non-core file(s) (degraded): %s", _exc
+                )
 
         return (len(reasons) == 0), reasons
+
+    def _preapply_quality_gate_file(self, file_path: str, patch_content: str) -> Tuple[bool, str]:
+        """Per-file quality gate. Fail-closed for core files if gate unavailable."""
+        is_core = _is_core_file(file_path)
+        try:
+            from igris.core.self_modification_gate import SelfModificationGate
+            gate = SelfModificationGate(str(self.project_root))
+            decision = gate.check(diff=patch_content or "", run_smoke=False)
+            if not decision.approved:
+                return False, f"SelfModificationGate blocked: {decision.reason}"
+            return True, "gate_ok"
+        except ImportError as e:
+            if is_core:
+                return False, f"SelfModificationGate unavailable for core file '{file_path}' — blocked (fail-closed): {e}"
+            else:
+                import logging as _logging
+                _logging.getLogger(__name__).warning(
+                    "SelfModificationGate unavailable for non-core file %s (degraded): %s", file_path, e
+                )
+                return True, "gate_degraded_non_core"
+        except Exception as e:
+            if is_core:
+                return False, f"SelfModificationGate error for core file '{file_path}' — blocked: {e}"
+            else:
+                import logging as _logging
+                _logging.getLogger(__name__).warning("SelfModificationGate error for non-core %s: %s", file_path, e)
+                return True, "gate_error_non_core"
 
     def _rank_ui_card_contract_satisfied(self) -> bool:
         server_path = Path(self.project_root) / "igris/web/server.py"
