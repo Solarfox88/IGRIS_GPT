@@ -178,6 +178,20 @@ def create_router(deps) -> APIRouter:
 
         sessions[session_id].append({"role": "assistant", "content": response_text})
 
+        # Non-blocking readability audit (#953)
+        _rdx = None
+        try:
+            from igris.core.response_readability import check_readability
+            _rdx = check_readability(response_text)
+            if not _rdx.passed:
+                import logging as _logging
+                _logging.getLogger(__name__).warning(
+                    "Readability violations in response (words=%d): %s",
+                    _rdx.word_count, _rdx.violations,
+                )
+        except Exception:
+            pass
+
         # Record routing decision
         provider_router.record_chat_routing(
             provider=result["provider"], model=result["model"],
@@ -198,6 +212,7 @@ def create_router(deps) -> APIRouter:
             "latency_ms": result["latency_ms"],
             "intent_detected": result.get("intent_detected"),
             "suggested_actions": result.get("suggested_actions", []),
+            "readability": _rdx.to_dict() if _rdx is not None else None,
         }
 
     # ---- Chat Streaming + Tier ----
