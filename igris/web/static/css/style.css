@@ -16,7 +16,7 @@
   --text2:#94a3b8;
   --text3:#64748b;
   --sidebar-w:220px;
-  --status-w:272px;
+  --status-w:248px;
 }
 
 body{
@@ -239,7 +239,7 @@ body{
 
 /* CONSOLE PANEL */
 .console-panel{
-  flex:1.2;min-width:0;display:flex;flex-direction:column;overflow:hidden;
+  flex:1.2;min-width:280px;display:flex;flex-direction:column;overflow:hidden;
   background:var(--surface2);
 }
 .console-panel.collapsed{width:56px;min-width:56px;flex:none}
@@ -334,15 +334,18 @@ body{
 
 /* TABS (console panel) */
 .tab-bar{
-  display:flex;flex-wrap:wrap;gap:0;
+  display:flex;flex-wrap:nowrap;overflow-x:auto;gap:0;
   border-bottom:1px solid var(--border);
   background:var(--surface);padding:0 .5rem;flex-shrink:0;
+  scrollbar-width:none;
 }
+.tab-bar::-webkit-scrollbar{display:none}
 .tab-bar .tab{
   background:none;border:none;border-bottom:2px solid transparent;
   border-left:none;border-right:none;border-top:none;
   color:var(--text2);padding:.5rem .7rem;cursor:pointer;
   font-size:.78rem;font-weight:500;transition:color .15s,border-color .15s;
+  white-space:nowrap;flex-shrink:0;
 }
 .tab-bar .tab:hover{color:var(--text)}
 .tab-bar .tab.active{color:#58a6ff;border-bottom-color:#58a6ff}
