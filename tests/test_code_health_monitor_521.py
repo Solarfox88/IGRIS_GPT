@@ -56,21 +56,20 @@ def test_code_health_no_github_calls_in_tests(tmp_path):
 # API endpoint
 # ---------------------------------------------------------------------------
 
-def test_code_health_summary_returns_no_data_initially():
+@pytest.mark.asyncio
+async def test_code_health_summary_returns_no_data_initially():
     """GET /api/code-health/summary returns no_data when monitor has not run yet."""
-    import importlib
     import igris.api.routes.code_health as mod
     # Reset the cache
     mod._last_report = None
 
-    import asyncio
-    result = asyncio.get_event_loop().run_until_complete(mod.get_code_health_summary())
+    result = await mod.get_code_health_summary()
     assert result == {"status": "no_data"}
 
 
-def test_code_health_summary_returns_cached_report():
+@pytest.mark.asyncio
+async def test_code_health_summary_returns_cached_report():
     """GET /api/code-health/summary returns the cached report after update."""
-    import asyncio
     import igris.api.routes.code_health as mod
 
     fake_report = MagicMock()
@@ -82,7 +81,7 @@ def test_code_health_summary_returns_cached_report():
 
     mod.update_code_health_cache(fake_report)
 
-    result = asyncio.get_event_loop().run_until_complete(mod.get_code_health_summary())
+    result = await mod.get_code_health_summary()
     assert result["status"] == "ok"
     assert result["issues_opened"] == ["https://github.com/x/y/issues/1"]
     assert result["ran_at"] == 1234567890.0
