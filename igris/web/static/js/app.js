@@ -1373,7 +1373,9 @@
       }
       if (!sessionId) { addMsg("assistant", "Failed to create session"); return; }
       addMsg("assistant", "...", "typing");
-      var r = await api("POST", "/api/sessions/" + sessionId + "/messages", { message: msg });
+      // Pass interlocutor_id so the preflight recognises the UI user as owner
+      var _iid = window._igrisInterlocutorId || "owner";
+      var r = await api("POST", "/api/sessions/" + sessionId + "/messages", { message: msg, interlocutor_id: _iid });
       removeTyping();
       if (r.ok) {
         var meta = {

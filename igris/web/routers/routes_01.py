@@ -171,9 +171,12 @@ def create_router(deps) -> APIRouter:
 
         sessions[session_id].append({"role": "user", "content": message})
 
-        # Use real chat engine
+        # Use real chat engine — always include IGRIS identity prompt,
+        # with interlocutor enrichment appended (never replace core identity)
+        from igris.core.chat_personality import IGRIS_SYSTEM_PROMPT as _IGRIS_SP
+        _full_prompt = (_IGRIS_SP + "\n" + system_enrichment).strip() if system_enrichment else None
         result = chat_llm(message, history=sessions[session_id][:-1],
-                          system_prompt=system_enrichment or None)
+                          system_prompt=_full_prompt)
         response_text = _redact(result["text"])
 
         sessions[session_id].append({"role": "assistant", "content": response_text})
@@ -249,13 +252,15 @@ def create_router(deps) -> APIRouter:
         if session_id and session_id in sessions:
             history = sessions[session_id]
 
-        system_prompt = system_enrichment or None
+        # Always include IGRIS identity — never replace with enrichment alone
+        from igris.core.chat_personality import IGRIS_SYSTEM_PROMPT as _IGRIS_SP
+        system_prompt = (_IGRIS_SP + "\n" + system_enrichment).strip() if system_enrichment else _IGRIS_SP
         if enrich:
             ctx_prompt = chat_context.build_context_system_prompt(
                 task_engine=task_engine,
                 project_root=str(CONFIG.project_root),
             )
-            system_prompt = (system_enrichment + "\n" + ctx_prompt).strip() if system_enrichment else ctx_prompt
+            system_prompt = (system_prompt + "\n" + ctx_prompt).strip()
 
         chunks = chat_streaming.chat_stream_sync(
             message=message, history=history, system_prompt=system_prompt,
