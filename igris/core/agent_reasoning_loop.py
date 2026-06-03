@@ -1522,12 +1522,60 @@ class AgentReasoningLoop:
             return [str(item) for item in target]
         return [str(target)]
 
+    # Mapping from action_type to ActionGuard action category for sensitive ops
+    _SENSITIVE_ACTION_MAP: Dict[str, str] = {
+        "write_file": "write_file",
+        "edit_file": "edit_file",
+        "insert_after": "edit_file",
+        "insert_before": "edit_file",
+        "replace_range": "edit_file",
+        "append_file": "edit_file",
+        "apply_patch": "edit_file",
+        "shell_template": "run_command",
+        "github_write": "github_write",
+        "deploy": "deploy",
+        "rollback": "rollback",
+        "delete": "delete",
+        "network_scan": "network_scan",
+        "browser_operation": "browser_operation",
+        "override": "override",
+    }
+
+    def _guard_action(self, action_type: str) -> tuple:
+        """Check ActionGuard before sensitive tool execution.
+
+        Returns (allowed: bool, reason: str).
+        Falls back to profile_id='system' for internal/legacy runs with no
+        interlocutor context set, so existing tests and internal paths are
+        never blocked.
+        """
+        from igris.core.action_guard import check_action
+        guard_type = self._SENSITIVE_ACTION_MAP.get(action_type)
+        if guard_type is None:
+            return True, "non-sensitive"
+        # Use interlocutor_id if set on the loop, else fall back to 'system' (trusted internal)
+        profile_id = getattr(self, "interlocutor_id", None) or "system"
+        return check_action(guard_type, profile_id=profile_id)
+
     def _execute_tool_runtime(self, action) -> Dict[str, Any]:
         """Execute a tool runtime action using specific ToolRuntime methods.
 
         Dispatches to the correct method (git_status, fs_write, run_tests,
         etc.) rather than a generic .execute() which does not exist.
+
+        ActionGuard is called before any sensitive operation. If the caller's
+        interlocutor profile is not authorized, execution is blocked and an
+        audit entry is written automatically.
         """
+        # --- ActionGuard enforcement (issue #526) ---
+        allowed, guard_reason = self._guard_action(action.action_type)
+        if not allowed:
+            return {
+                "success": False,
+                "error": f"ActionGuard denied '{action.action_type}': {guard_reason}",
+                "summary": f"Blocked by ActionGuard: {guard_reason}",
+            }
+        # --- end ActionGuard ---
         try:
             rt = self._get_tool_runtime()
 
