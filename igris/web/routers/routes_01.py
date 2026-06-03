@@ -89,6 +89,16 @@ def create_router(deps) -> APIRouter:
             }
         }
 
+    @router.get('/api/rank/gauntlet')
+    async def rank_gauntlet_run():
+        """Machine-readable Rank S gauntlet — pass/fail validation gate (#337)."""
+        try:
+            from igris.core.rank_gauntlet import RankGauntlet
+            result = RankGauntlet().run(project_root=str(CONFIG.project_root))
+            return result.to_dict()
+        except Exception as e:
+            return {"passed": False, "blocked": True, "error": str(e)}
+
     @router.get('/api/rank/ui-card')
     async def get_rank_ui_card():
         return {'app': 'IGRIS_GPT', 'rank': 'A++', 'status': 'ok', 'capability': 'ui-visible-supervised'}
