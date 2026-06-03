@@ -133,14 +133,47 @@ def create_router(deps) -> APIRouter:
         return {"id": session_id}
 
     @router.post("/api/sessions/{session_id}/messages")
-    async def post_message(session_id: str, content: Dict[str, str] = Body(...)) -> Dict[str, object]:
+    async def post_message(session_id: str, request: Request, content: Dict[str, str] = Body(...)) -> Dict[str, object]:
         if session_id not in sessions:
             raise HTTPException(status_code=404, detail="Session not found")
         message = content.get("message", "")
+
+        # --- Interlocutor-aware preflight ---
+        system_enrichment = ""
+        try:
+            from igris.core.chat_interlocutor_preflight import run_preflight, extract_interlocutor_id
+            interlocutor_id = extract_interlocutor_id(
+                payload=dict(content),
+                headers=dict(request.headers),
+            )
+            preflight = run_preflight(
+                message,
+                interlocutor_id=interlocutor_id,
+                project_root=str(CONFIG.project_root),
+            )
+            if preflight.blocked:
+                return {
+                    "response": preflight.block_reason,
+                    "blocked": True,
+                    "interlocutor_id": preflight.interlocutor_id,
+                    "trust_level": preflight.trust_level,
+                }
+            if preflight.requires_clarification:
+                return {
+                    "response": preflight.clarification_question or "Please clarify your request.",
+                    "requires_clarification": True,
+                    "interlocutor_id": preflight.interlocutor_id,
+                }
+            system_enrichment = preflight.system_prompt_enrichment
+        except Exception:
+            system_enrichment = ""
+        # --- end preflight ---
+
         sessions[session_id].append({"role": "user", "content": message})
 
         # Use real chat engine
-        result = chat_llm(message, history=sessions[session_id][:-1])
+        result = chat_llm(message, history=sessions[session_id][:-1],
+                          system_prompt=system_enrichment or None)
         response_text = _redact(result["text"])
 
         sessions[session_id].append({"role": "assistant", "content": response_text})
@@ -178,16 +211,51 @@ def create_router(deps) -> APIRouter:
         if not message:
             raise HTTPException(status_code=400, detail="message required")
 
+        # --- Interlocutor-aware preflight ---
+        preflight_block = None
+        system_enrichment = ""
+        try:
+            from igris.core.chat_interlocutor_preflight import run_preflight, extract_interlocutor_id
+            interlocutor_id = extract_interlocutor_id(
+                payload=content,
+                headers=dict(request.headers),
+            )
+            preflight = run_preflight(
+                message,
+                interlocutor_id=interlocutor_id,
+                project_root=str(CONFIG.project_root),
+            )
+            if preflight.blocked:
+                preflight_block = preflight.block_reason
+            elif preflight.requires_clarification:
+                preflight_block = preflight.clarification_question or "Please clarify your request."
+            else:
+                system_enrichment = preflight.system_prompt_enrichment
+        except Exception:
+            pass
+        # --- end preflight ---
+
+        if preflight_block:
+            async def blocked_generator():
+                yield f"data: {json.dumps({'type': 'content', 'text': preflight_block})}\n\n"
+                yield "data: [DONE]\n\n"
+            return StreamingResponse(
+                blocked_generator(),
+                media_type="text/event-stream",
+                headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+            )
+
         history = []
         if session_id and session_id in sessions:
             history = sessions[session_id]
 
-        system_prompt = None
+        system_prompt = system_enrichment or None
         if enrich:
-            system_prompt = chat_context.build_context_system_prompt(
+            ctx_prompt = chat_context.build_context_system_prompt(
                 task_engine=task_engine,
                 project_root=str(CONFIG.project_root),
             )
+            system_prompt = (system_enrichment + "\n" + ctx_prompt).strip() if system_enrichment else ctx_prompt
 
         chunks = chat_streaming.chat_stream_sync(
             message=message, history=history, system_prompt=system_prompt,
@@ -350,6 +418,26 @@ def create_router(deps) -> APIRouter:
             interlocutor_section["profiles"] = [p.to_dict() for p in _ir.get_all()]
             _ia = InterlocutorAudit()
             interlocutor_section["recent_audit"] = _ia.recent(10)
+            # last_chat: most recent chat-level audit event
+            interlocutor_section["last_chat"] = {
+                "interlocutor_id": None,
+                "trust_level": None,
+                "last_intent": None,
+                "decision": None,
+            }
+            try:
+                _recent = _ia.recent(5)
+                _chat_events = [e for e in _recent if e.get("target_resource") == "chat"]
+                if _chat_events:
+                    _last = _chat_events[-1]
+                    interlocutor_section["last_chat"] = {
+                        "interlocutor_id": _last.get("interlocutor_id"),
+                        "trust_level": _last.get("trust_level"),
+                        "last_intent": _last.get("action_type"),
+                        "decision": _last.get("decision"),
+                    }
+            except Exception:
+                pass
         except Exception as _e:
             interlocutor_section["error"] = str(_e)
 
