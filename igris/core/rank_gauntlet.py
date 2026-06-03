@@ -65,6 +65,8 @@ class RankGauntlet:
         checks.append(self._check_module_wired("igris.core.github_read_gateway"))
         # Check: DevOps operator
         checks.append(self._check_module_wired("igris.core.devops_manager"))
+        # Check: CodeHealthMonitor wired in meta_watchdog (#521)
+        checks.append(self._check_module_wired("igris.core.code_health_monitor"))
 
         required_checks = [c for c in checks if c.required]
         failed_required = [c for c in required_checks if not c.passed]
