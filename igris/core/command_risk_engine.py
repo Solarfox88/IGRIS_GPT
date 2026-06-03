@@ -56,6 +56,26 @@ STRUCTURED_TOOL_REGISTRY: Dict[str, Dict[str, str]] = {
         "operation": "webserver_management",
         "fallback_rationale": "structured webserver control exists, so raw shell is blocked",
     },
+    "filesystem_ops": {
+        "tool": "structured_filesystem_ops",
+        "operation": "filesystem_inspection",
+        "fallback_rationale": "structured filesystem ops exist, so raw shell is blocked",
+    },
+    "network_ops": {
+        "tool": "structured_network_ops",
+        "operation": "network_diagnostics",
+        "fallback_rationale": "structured network ops exist, so raw shell is blocked",
+    },
+    "git_ops": {
+        "tool": "structured_git_ops",
+        "operation": "git_inspection",
+        "fallback_rationale": "structured git ops exist, so raw shell is blocked",
+    },
+    "database_ops": {
+        "tool": "structured_database_ops",
+        "operation": "database_maintenance",
+        "fallback_rationale": "structured database ops exist, so raw shell is blocked",
+    },
 }
 
 
@@ -653,6 +673,14 @@ class CommandRiskEngine:
             target = "docker"
         elif family == "webserver_control":
             target = "nginx"
+        elif family == "filesystem_ops":
+            target = (parsed.args[0] if parsed.args else parsed.executable) or "filesystem"
+        elif family == "network_ops":
+            target = parsed.executable or "network"
+        elif family == "git_ops":
+            target = parsed.executable or "git"
+        elif family == "database_ops":
+            target = parsed.executable or "database"
         return {
             "tool": registry_entry["tool"],
             "operation": registry_entry["operation"],
@@ -677,6 +705,14 @@ class CommandRiskEngine:
                 return "container_control"
             if "nginx" in raw:
                 return "webserver_control"
+        if executable in {"cat", "ls", "find", "grep", "head", "tail", "awk", "sed"}:
+            return "filesystem_ops"
+        if executable in {"curl", "wget", "nc", "ncat", "netcat", "ssh", "scp", "rsync", "telnet", "ftp"}:
+            return "network_ops"
+        if executable == "git" or parsed.has_git_danger:
+            return "git_ops"
+        if executable in {"mysql", "psql", "mongo", "redis-cli", "sqlite3"} or parsed.has_db:
+            return "database_ops"
         if executable in {"systemctl", "service"}:
             return "service_control"
         if executable == "journalctl":

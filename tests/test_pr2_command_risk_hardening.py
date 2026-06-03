@@ -477,6 +477,10 @@ class TestHostAwareCommandPolicy:
         assert "service_observability" in registry
         assert "container_control" in registry
         assert "webserver_control" in registry
+        assert "filesystem_ops" in registry
+        assert "network_ops" in registry
+        assert "git_ops" in registry
+        assert "database_ops" in registry
         assert registry["service_control"]["tool"] == "structured_service_control"
         assert registry["service_observability"]["operation"] == "service_logs"
 
@@ -496,6 +500,42 @@ class TestHostAwareCommandPolicy:
         assert event.decision_explanation["tool_first_recommended"] is True
         assert event.decision_explanation["structured_tool_recommendation"]["tool"] == "structured_service_observability"
         assert "structured service observability" in event.decision_explanation["fallback_rationale"]
+
+    def test_structured_git_and_network_families_are_recommended(self):
+        engine = _engine("operator")
+        git_event, _ = engine.evaluate_command(
+            "git reset --hard HEAD~1",
+            host_context={
+                "hostname": "vps-01",
+                "policy": "operator",
+                "allowed_services": ["nginx"],
+                "allowed_paths": ["/home", "/opt/app"],
+                "structured_tool_available": True,
+            },
+        )
+        net_event, _ = engine.evaluate_command(
+            "ssh deploy@vps-01",
+            host_context={
+                "hostname": "vps-01",
+                "policy": "operator",
+                "allowed_services": ["nginx"],
+                "allowed_paths": ["/home", "/opt/app"],
+                "structured_tool_available": True,
+            },
+        )
+        fs_event, _ = engine.evaluate_command(
+            "ls /home",
+            host_context={
+                "hostname": "vps-01",
+                "policy": "operator",
+                "allowed_services": ["nginx"],
+                "allowed_paths": ["/home", "/opt/app"],
+                "structured_tool_available": True,
+            },
+        )
+        assert git_event.decision_explanation["structured_tool_recommendation"]["tool"] == "structured_git_ops"
+        assert net_event.decision_explanation["structured_tool_recommendation"]["tool"] == "structured_network_ops"
+        assert fs_event.decision_explanation["structured_tool_recommendation"]["tool"] == "structured_filesystem_ops"
 
     def test_outside_allowed_path_is_blocked(self):
         engine = _engine("operator")
