@@ -54,17 +54,17 @@ class RankGauntlet:
         # Check: test suite health
         checks.append(self._check_test_results(root))
         # Check: interlocutor wiring
-        checks.append(self._check_module_wired("igris.core.chat_interlocutor_preflight", root))
+        checks.append(self._check_module_wired("igris.core.chat_interlocutor_preflight"))
         # Check: action guard wired
-        checks.append(self._check_module_wired("igris.core.action_guard", root))
+        checks.append(self._check_module_wired("igris.core.action_guard"))
         # Check: long-term memory
-        checks.append(self._check_module_wired("igris.core.long_term_memory", root))
+        checks.append(self._check_module_wired("igris.core.long_term_memory"))
         # Check: audit trail exists
         checks.append(self._check_audit_trail(root))
         # Check: GitHub gateways
-        checks.append(self._check_module_wired("igris.core.github_read_gateway", root))
+        checks.append(self._check_module_wired("igris.core.github_read_gateway"))
         # Check: DevOps operator
-        checks.append(self._check_module_wired("igris.core.devops_manager", root))
+        checks.append(self._check_module_wired("igris.core.devops_manager"))
 
         required_checks = [c for c in checks if c.required]
         failed_required = [c for c in required_checks if not c.passed]
@@ -92,18 +92,24 @@ class RankGauntlet:
             score=score,
         )
 
-    def _check_module_wired(self, module_path: str, root: Path) -> GauntletCheck:
+    def _check_module_wired(self, module_path: str, root: Path | None = None) -> GauntletCheck:
+        """Check that a module exists using importlib (robust, not path-fragile)."""
+        import importlib.util
         try:
-            parts = module_path.split(".")
-            file_path = root / Path(*parts).with_suffix(".py")
-            exists = file_path.exists()
+            spec = importlib.util.find_spec(module_path)
+            exists = spec is not None
+            evidence = spec.origin if (spec and spec.origin) else f"found: {module_path}"
             return GauntletCheck(
-                name=f"module_exists:{parts[-1]}",
+                name=f"module_exists:{module_path.split('.')[-1]}",
                 passed=exists,
-                evidence=str(file_path) if exists else f"NOT FOUND: {file_path}",
+                evidence=evidence if exists else f"NOT FOUND: {module_path}",
             )
-        except Exception as e:
-            return GauntletCheck(name=module_path, passed=False, evidence=str(e))
+        except (ModuleNotFoundError, ValueError) as e:
+            return GauntletCheck(
+                name=f"module_exists:{module_path.split('.')[-1]}",
+                passed=False,
+                evidence=f"import error: {e}",
+            )
 
     def _check_test_results(self, root: Path) -> GauntletCheck:
         report_paths = list(root.glob(".igris/reports/*.json")) + list(root.glob("reports/*.json"))
