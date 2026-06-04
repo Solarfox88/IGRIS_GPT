@@ -206,6 +206,51 @@ def create_router(deps) -> APIRouter:
             system_enrichment = ""
         # --- end preflight ---
 
+        # --- Jarvis Request Router (#1243) ---
+        _route_decision = None
+        try:
+            from igris.core.jarvis_request_router import JarvisRequestRouter
+            _router = JarvisRequestRouter(project_root=str(CONFIG.project_root))
+            _route_decision = _router.route(
+                message,
+                interlocutor_id=preflight.interlocutor_id if 'preflight' in dir() else "unknown",
+                trust_level=preflight.trust_level if 'preflight' in dir() else "untrusted",
+                preflight=preflight if 'preflight' in dir() else None,
+                session_id=session_id,
+                source="chat",
+            )
+            # If router blocks: override response
+            if _route_decision and _route_decision.blocked:
+                return {
+                    "response": _route_decision.reason or "Request blocked by security policy.",
+                    "blocked": True,
+                    "route": _route_decision.to_dict(),
+                }
+            # --- Router approval gate ---
+            if _route_decision and getattr(_route_decision, "requires_approval", False) and not getattr(_route_decision, "blocked", False):
+                return {
+                    "response": (
+                        f"Questa operazione ({_route_decision.route}) richiede approvazione esplicita. "
+                        f"Rischio: {_route_decision.risk}. "
+                        "Usa il gate di approvazione o delega per procedere."
+                    ),
+                    "requires_approval": True,
+                    "route": _route_decision.to_dict() if _route_decision else None,
+                    "provider": "jarvis_router",
+                    "model": "approval_gate",
+                    "fallback_used": False,
+                    "latency_ms": 0,
+                    "intent_detected": None,
+                    "suggested_actions": [],
+                }
+            # --- end approval gate ---
+            # Use memory context from router if available (enriches system prompt)
+            if _route_decision and _route_decision.metadata.get("memory_context"):
+                system_enrichment = (system_enrichment or "") + "\n" + _route_decision.metadata["memory_context"]
+        except Exception as _router_exc:
+            logging.getLogger(__name__).debug("JarvisRequestRouter unavailable (non-blocking): %s", _router_exc)
+        # --- end Jarvis Request Router ---
+
         sessions[session_id].append({"role": "user", "content": message})
 
         # --- Memory retrieval for context injection (best-effort, #1240) ---
@@ -291,6 +336,7 @@ def create_router(deps) -> APIRouter:
             "intent_detected": result.get("intent_detected"),
             "suggested_actions": result.get("suggested_actions", []),
             "readability": _rdx.to_dict() if _rdx is not None else None,
+            "route": _route_decision.to_dict() if _route_decision else None,
         }
 
     # ---- Chat Streaming + Tier ----
@@ -359,6 +405,51 @@ def create_router(deps) -> APIRouter:
                 media_type="text/event-stream",
                 headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
             )
+
+        # --- Jarvis Request Router — stream (#1243) ---
+        _stream_route_decision = None
+        try:
+            from igris.core.jarvis_request_router import JarvisRequestRouter as _JRR
+            _stream_router = _JRR(project_root=str(CONFIG.project_root))
+            _s_pf = preflight if 'preflight' in dir() else None
+            _stream_route_decision = _stream_router.route(
+                message,
+                interlocutor_id=_s_pf.interlocutor_id if _s_pf else "unknown",
+                trust_level=_s_pf.trust_level if _s_pf else "untrusted",
+                preflight=_s_pf,
+                session_id=session_id or "",
+                source="stream",
+            )
+            if _stream_route_decision and _stream_route_decision.blocked:
+                _block_msg = _stream_route_decision.reason or "Request blocked by security policy."
+                async def _router_blocked_generator():
+                    yield f"data: {json.dumps({'type': 'content', 'text': _block_msg})}\n\n"
+                    yield "data: [DONE]\n\n"
+                return StreamingResponse(
+                    _router_blocked_generator(),
+                    media_type="text/event-stream",
+                    headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+                )
+            # --- Stream approval gate ---
+            if _stream_route_decision and getattr(_stream_route_decision, "requires_approval", False) and not getattr(_stream_route_decision, "blocked", False):
+                _approval_msg = (
+                    f"Questa operazione ({_stream_route_decision.route}) richiede approvazione esplicita. "
+                    f"Rischio: {_stream_route_decision.risk}."
+                )
+                async def _approval_generator():
+                    yield f"data: {json.dumps({'type': 'content', 'text': _approval_msg})}\n\n"
+                    yield "data: [DONE]\n\n"
+                return StreamingResponse(
+                    _approval_generator(),
+                    media_type="text/event-stream",
+                    headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+                )
+            # --- end stream approval gate ---
+            if _stream_route_decision and _stream_route_decision.metadata.get("memory_context"):
+                system_enrichment = (system_enrichment or "") + "\n" + _stream_route_decision.metadata["memory_context"]
+        except Exception as _sr_exc:
+            logging.getLogger(__name__).debug("JarvisRequestRouter stream unavailable (non-blocking): %s", _sr_exc)
+        # --- end Jarvis Request Router stream ---
 
         history = []
         if session_id and session_id in sessions:
