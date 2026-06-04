@@ -385,3 +385,238 @@ def test_retrieve_for_chat_uses_default_project(tmp_path):
     # Must work without project param — uses default
     assert isinstance(result.context, str)
     assert isinstance(result.items, list)
+
+
+# ─── store_episode strict tests ───────────────────────────────────────────────
+
+def test_store_episode_ok_true_when_conv_store_persists(tmp_path):
+    """ok=True only when ConversationMemoryStore.persist() returns True."""
+    from igris.core.unified_memory import UnifiedMemory
+    from igris.core.conversation_memory import ConversationEpisode
+
+    mem = UnifiedMemory(project_root=tmp_path)
+    ep = ConversationEpisode(
+        session_id="s_strict", interlocutor_id="owner", trust_level="admin",
+        user_message="test", assistant_response="ok"
+    )
+    r = mem.store_episode(ep)
+
+    if mem._conv_store is not None:
+        if r.ok:
+            assert r.id, "ok=True but id is empty"
+            assert r.backends.get("conversation_store") == "ok"
+        else:
+            assert not r.id, "ok=False but id is non-empty"
+            assert r.backends.get("conversation_store") in ("degraded", "unavailable")
+    else:
+        assert r.ok is False
+        assert r.backends.get("conversation_store") == "unavailable"
+
+
+def test_store_episode_ok_false_when_conv_store_unavailable(tmp_path):
+    """ok=False when ConversationMemoryStore is not available."""
+    from igris.core.unified_memory import UnifiedMemory
+    mem = UnifiedMemory(project_root=tmp_path)
+    mem._conv_store = None  # Force unavailable
+
+    from igris.core.conversation_memory import ConversationEpisode
+    ep = ConversationEpisode(session_id="s1", interlocutor_id="owner")
+    r = mem.store_episode(ep)
+
+    assert r.ok is False, f"Expected ok=False when conv_store unavailable, got {r.ok}"
+    assert r.id == "", f"Expected empty id when ok=False, got {r.id!r}"
+    assert r.backends.get("conversation_store") == "unavailable"
+
+
+def test_store_episode_ok_false_when_persist_returns_false(tmp_path, monkeypatch):
+    """ok=False when ConversationMemoryStore.persist() returns False."""
+    from igris.core.unified_memory import UnifiedMemory
+    from igris.core.conversation_memory import ConversationMemoryStore
+
+    monkeypatch.setattr(ConversationMemoryStore, "persist", lambda self, ep: False)
+
+    mem = UnifiedMemory(project_root=tmp_path)
+    from igris.core.conversation_memory import ConversationEpisode
+    ep = ConversationEpisode(session_id="s1", interlocutor_id="owner")
+    r = mem.store_episode(ep)
+
+    assert r.ok is False, "Expected ok=False when persist() returns False"
+    assert r.id == ""
+    assert r.backends.get("conversation_store") == "degraded"
+    assert len(r.warnings) > 0
+
+
+def test_store_episode_ok_false_when_persist_raises(tmp_path, monkeypatch):
+    """ok=False when ConversationMemoryStore.persist() raises."""
+    from igris.core.unified_memory import UnifiedMemory
+    from igris.core.conversation_memory import ConversationMemoryStore
+
+    def broken_persist(self, ep):
+        raise RuntimeError("disk full")
+    monkeypatch.setattr(ConversationMemoryStore, "persist", broken_persist)
+
+    mem = UnifiedMemory(project_root=tmp_path)
+    from igris.core.conversation_memory import ConversationEpisode
+    ep = ConversationEpisode(session_id="s1", interlocutor_id="owner")
+    r = mem.store_episode(ep)
+
+    assert r.ok is False, "Expected ok=False when persist() raises"
+    assert r.id == ""
+    assert r.backends.get("conversation_store") == "degraded"
+    assert any("disk full" in w or "conv_store" in w for w in r.warnings)
+
+
+# ─── record_feedback strict tests ────────────────────────────────────────────
+
+def test_record_feedback_ok_true_when_ltm_writes(tmp_path):
+    """ok=True when LTM writes successfully."""
+    from igris.core.unified_memory import UnifiedMemory
+    mem = UnifiedMemory(project_root=tmp_path)
+    r = mem.record_feedback("m1", used=True, helpful=True, outcome="success")
+
+    if mem._ltm is not None:
+        assert r.ok is True, f"Expected ok=True when LTM available, got ok={r.ok}, warnings={r.warnings}"
+        assert r.id, "ok=True but id is empty"
+        assert r.backends.get("ltm") == "ok"
+    else:
+        assert r.ok is False
+        assert r.backends.get("ltm") == "unavailable"
+
+
+def test_record_feedback_ok_false_when_ltm_unavailable(tmp_path):
+    """ok=False when LTM is not available."""
+    from igris.core.unified_memory import UnifiedMemory
+    mem = UnifiedMemory(project_root=tmp_path)
+    mem._ltm = None
+    r = mem.record_feedback("m1", used=True)
+
+    assert r.ok is False
+    assert r.id == ""
+    assert r.backends.get("ltm") == "unavailable"
+
+
+def test_record_feedback_ok_false_when_ltm_write_fails(tmp_path, monkeypatch):
+    """ok=False when LTM.add_entry() raises."""
+    from igris.core.unified_memory import UnifiedMemory
+    from igris.core.long_term_memory import LongTermMemory
+
+    def broken_add_entry(self, *a, **kw):
+        raise RuntimeError("write fail")
+    monkeypatch.setattr(LongTermMemory, "add_entry", broken_add_entry)
+
+    mem = UnifiedMemory(project_root=tmp_path)
+    r = mem.record_feedback("m1", used=False)
+
+    assert r.ok is False
+    assert r.id == ""
+    assert r.backends.get("ltm") == "degraded"
+    assert len(r.warnings) > 0
+
+
+def test_record_feedback_redacts_secrets(tmp_path):
+    """Feedback must not store raw secrets in query or notes."""
+    FAKE = "FAKE_SECRET_FEEDBACK_STRICT_NOTREAL"
+    from igris.core.unified_memory import UnifiedMemory
+    mem = UnifiedMemory(project_root=tmp_path)
+    mem.record_feedback("m1", used=True, query=f"token={FAKE}", notes=f"key={FAKE}")
+
+    storage = tmp_path / ".igris"
+    all_text = ""
+    for f in storage.rglob("*.json"):
+        try:
+            all_text += f.read_text()
+        except Exception:
+            pass
+    assert FAKE not in all_text, f"Raw secret '{FAKE}' found in storage after record_feedback"
+
+
+# ─── mark_superseded strict tests ────────────────────────────────────────────
+
+def test_mark_superseded_ok_true_when_ltm_writes(tmp_path):
+    """ok=True when LTM writes successfully."""
+    from igris.core.unified_memory import UnifiedMemory
+    mem = UnifiedMemory(project_root=tmp_path)
+    r = mem.mark_superseded("old_id", "new_id", reason="updated")
+
+    if mem._ltm is not None:
+        assert r.ok is True, f"Expected ok=True when LTM available, got {r.ok}"
+        assert r.id
+        assert r.backends.get("ltm") == "ok"
+    else:
+        assert r.ok is False
+
+
+def test_mark_superseded_ok_false_when_ltm_unavailable(tmp_path):
+    """ok=False when LTM is not available."""
+    from igris.core.unified_memory import UnifiedMemory
+    mem = UnifiedMemory(project_root=tmp_path)
+    mem._ltm = None
+    r = mem.mark_superseded("old_id", "new_id")
+
+    assert r.ok is False
+    assert r.id == ""
+    assert r.backends.get("ltm") == "unavailable"
+
+
+def test_mark_superseded_ok_false_when_ltm_write_fails(tmp_path, monkeypatch):
+    """ok=False when LTM.add_entry() raises."""
+    from igris.core.unified_memory import UnifiedMemory
+    from igris.core.long_term_memory import LongTermMemory
+
+    def broken_add_entry(self, *a, **kw):
+        raise RuntimeError("ltm fail")
+    monkeypatch.setattr(LongTermMemory, "add_entry", broken_add_entry)
+
+    mem = UnifiedMemory(project_root=tmp_path)
+    r = mem.mark_superseded("old_id", "new_id")
+
+    assert r.ok is False
+    assert r.id == ""
+    assert r.backends.get("ltm") == "degraded"
+    assert len(r.warnings) > 0
+
+
+# ─── forget strict tests ──────────────────────────────────────────────────────
+
+def test_forget_ok_true_when_ltm_writes(tmp_path):
+    """ok=True when LTM writes successfully."""
+    from igris.core.unified_memory import UnifiedMemory
+    mem = UnifiedMemory(project_root=tmp_path)
+    r = mem.forget("some_memory_id")
+
+    if mem._ltm is not None:
+        assert r.ok is True, f"Expected ok=True when LTM available, got {r.ok}"
+        assert r.id
+        assert r.backends.get("ltm") == "ok"
+    else:
+        assert r.ok is False
+
+
+def test_forget_ok_false_when_ltm_unavailable(tmp_path):
+    """ok=False when LTM is not available."""
+    from igris.core.unified_memory import UnifiedMemory
+    mem = UnifiedMemory(project_root=tmp_path)
+    mem._ltm = None
+    r = mem.forget("some_memory_id")
+
+    assert r.ok is False
+    assert r.id == ""
+    assert r.backends.get("ltm") == "unavailable"
+
+
+def test_forget_ok_false_when_ltm_write_fails(tmp_path, monkeypatch):
+    """ok=False when LTM.add_entry() raises."""
+    from igris.core.unified_memory import UnifiedMemory
+    from igris.core.long_term_memory import LongTermMemory
+
+    def broken_add_entry(self, *a, **kw):
+        raise RuntimeError("write fail")
+    monkeypatch.setattr(LongTermMemory, "add_entry", broken_add_entry)
+
+    mem = UnifiedMemory(project_root=tmp_path)
+    r = mem.forget("some_memory_id")
+
+    assert r.ok is False
+    assert r.id == ""
+    assert r.backends.get("ltm") == "degraded"
+    assert len(r.warnings) > 0
