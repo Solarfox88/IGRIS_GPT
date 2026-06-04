@@ -30,6 +30,7 @@ OPTIONAL_API_ROUTERS: Sequence[tuple[str, str]] = (
     ("igris.api.routes.nav", "router"),
     ("igris.api.routes.code_health", "router"),
     ("igris.api.routes.conversation_memory_routes", "router"),
+    ("igris.api.routes.context_routes", "router"),
 )
 
 
