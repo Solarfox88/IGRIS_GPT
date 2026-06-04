@@ -200,15 +200,53 @@ def create_router(deps) -> APIRouter:
 
         sessions[session_id].append({"role": "user", "content": message})
 
+        # --- Memory retrieval for context injection (best-effort, #1240) ---
+        _memory_context = ""
+        try:
+            from igris.core.conversation_memory import ConversationRetriever
+            _retriever = ConversationRetriever(project_root=str(CONFIG.project_root))
+            _pid = preflight.interlocutor_id if 'preflight' in dir() else "unknown"
+            _tl = preflight.trust_level if 'preflight' in dir() else "untrusted"
+            _memory_context = _retriever.retrieve_for_context(_pid, _tl)
+        except Exception:
+            pass
+        # --- end memory retrieval ---
+
         # Use real chat engine — always include IGRIS identity prompt,
         # with interlocutor enrichment appended (never replace core identity)
         from igris.core.chat_personality import IGRIS_SYSTEM_PROMPT as _IGRIS_SP
-        _full_prompt = (_IGRIS_SP + "\n" + system_enrichment).strip() if system_enrichment else None
+        _full_prompt = (_IGRIS_SP + "\n" + system_enrichment + "\n" + _memory_context).strip() if (system_enrichment or _memory_context) else None
         result = chat_llm(message, history=sessions[session_id][:-1],
                           system_prompt=_full_prompt)
         response_text = _redact(result["text"])
 
         sessions[session_id].append({"role": "assistant", "content": response_text})
+
+        # --- Conversation memory persistence (best-effort, #1240) ---
+        try:
+            from igris.core.conversation_memory import (
+                ConversationEpisode, ConversationMemoryStore, _get_memory_policy
+            )
+            _pf_obj = preflight if 'preflight' in dir() else None
+            _episode = ConversationEpisode(
+                session_id=session_id,
+                interlocutor_id=_pf_obj.interlocutor_id if _pf_obj else "unknown",
+                trust_level=_pf_obj.trust_level if _pf_obj else "untrusted",
+                user_message=_redact(message),
+                assistant_response=_redact(response_text)[:500],
+                intent_action=_pf_obj.intent_action if _pf_obj else "unknown",
+                intent_risk=_pf_obj.intent_risk if _pf_obj else "low",
+                auth_decision="blocked" if (_pf_obj.blocked if _pf_obj else False) else "allowed",
+                blocked=_pf_obj.blocked if _pf_obj else False,
+                requires_clarification=_pf_obj.requires_clarification if _pf_obj else False,
+                advisory=_pf_obj.advisory if _pf_obj else None,
+                memory_policy=_get_memory_policy(_pf_obj.trust_level if _pf_obj else "untrusted"),
+            )
+            _store = ConversationMemoryStore(project_root=str(CONFIG.project_root))
+            _store.persist(_episode)
+        except Exception as _mem_exc:
+            import logging as _ml; _ml.getLogger(__name__).warning("Memory persistence failed (degraded): %s", _mem_exc)
+        # --- end memory persistence ---
 
         # Non-blocking readability audit (#953)
         _rdx = None
@@ -310,9 +348,21 @@ def create_router(deps) -> APIRouter:
         if session_id and session_id in sessions:
             history = sessions[session_id]
 
+        # --- Memory retrieval for stream context injection (best-effort, #1240) ---
+        _stream_memory_context = ""
+        try:
+            from igris.core.conversation_memory import ConversationRetriever
+            _s_retriever = ConversationRetriever(project_root=str(CONFIG.project_root))
+            _s_pid = preflight.interlocutor_id if 'preflight' in dir() else "unknown"
+            _s_tl = preflight.trust_level if 'preflight' in dir() else "untrusted"
+            _stream_memory_context = _s_retriever.retrieve_for_context(_s_pid, _s_tl)
+        except Exception:
+            pass
+        # --- end memory retrieval ---
+
         # Always include IGRIS identity — never replace with enrichment alone
         from igris.core.chat_personality import IGRIS_SYSTEM_PROMPT as _IGRIS_SP
-        system_prompt = (_IGRIS_SP + "\n" + system_enrichment).strip() if system_enrichment else _IGRIS_SP
+        system_prompt = (_IGRIS_SP + "\n" + system_enrichment + "\n" + _stream_memory_context).strip() if (system_enrichment or _stream_memory_context) else _IGRIS_SP
         if enrich:
             ctx_prompt = chat_context.build_context_system_prompt(
                 task_engine=task_engine,
@@ -336,6 +386,31 @@ def create_router(deps) -> APIRouter:
                 "type": "chat", "title": "Chat stream",
                 "detail": f"User: {message[:80]}",
             })
+
+            # --- Stream: conversation memory persistence (best-effort, #1240) ---
+            try:
+                from igris.core.conversation_memory import (
+                    ConversationEpisode, ConversationMemoryStore, _get_memory_policy
+                )
+                _s_pf = preflight if 'preflight' in dir() else None
+                _s_episode = ConversationEpisode(
+                    session_id=session_id,
+                    interlocutor_id=_s_pf.interlocutor_id if _s_pf else "unknown",
+                    trust_level=_s_pf.trust_level if _s_pf else "untrusted",
+                    user_message=_redact(message),
+                    assistant_response=_redact(full_text)[:500],
+                    intent_action=_s_pf.intent_action if _s_pf else "unknown",
+                    intent_risk=_s_pf.intent_risk if _s_pf else "low",
+                    auth_decision="blocked" if (_s_pf.blocked if _s_pf else False) else "allowed",
+                    blocked=_s_pf.blocked if _s_pf else False,
+                    memory_policy=_get_memory_policy(_s_pf.trust_level if _s_pf else "untrusted"),
+                    source="stream",
+                )
+                _s_store = ConversationMemoryStore(project_root=str(CONFIG.project_root))
+                _s_store.persist(_s_episode)
+            except Exception as _s_mem_exc:
+                import logging as _s_ml; _s_ml.getLogger(__name__).warning("Stream memory persistence failed (degraded): %s", _s_mem_exc)
+            # --- end stream memory persistence ---
 
         async def event_generator():
             for chunk in chunks:
@@ -503,6 +578,14 @@ def create_router(deps) -> APIRouter:
                 pass
         except Exception as _e:
             interlocutor_section["error"] = str(_e)
+
+        # Memory status (#1240)
+        try:
+            from igris.core.conversation_memory import ConversationMemoryStore
+            _ = ConversationMemoryStore
+            interlocutor_section["memory_status"] = {"enabled": True, "last_error": None}
+        except Exception as _ms_exc:
+            interlocutor_section["memory_status"] = {"enabled": False, "last_error": str(_ms_exc)}
 
         return {
             "health": {"status": "ok"},
