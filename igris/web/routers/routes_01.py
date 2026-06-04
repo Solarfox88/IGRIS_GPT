@@ -219,30 +219,61 @@ def create_router(deps) -> APIRouter:
                 session_id=session_id,
                 source="chat",
             )
-            # If router blocks: override response
+            # If router blocks: create blocked mission for audit, then return
             if _route_decision and _route_decision.blocked:
+                _blocked_mission = None
+                try:
+                    from igris.core.mission_first import MissionFirstController as _MFC_BLOCK, MissionPlan, MissionStatus, MissionExecutionMode
+                    import uuid as _uuid
+                    from datetime import datetime as _dt, timezone as _tz
+                    _blocked_mission = MissionPlan(
+                        mission_id=str(_uuid.uuid4()),
+                        title=f"BLOCKED: {_route_decision.route}",
+                        route=str(_route_decision.route),
+                        risk=str(_route_decision.risk),
+                        status=MissionStatus.BLOCKED.value,
+                        execution_mode=MissionExecutionMode.BLOCKED.value,
+                        query=_redact(message),
+                        interlocutor_id=preflight.interlocutor_id if 'preflight' in dir() else "unknown",
+                        trust_level=preflight.trust_level if 'preflight' in dir() else "untrusted",
+                        blocked=True,
+                        reason=_redact(_route_decision.reason or "Route blocked by security policy"),
+                        created_at=_dt.now(_tz.utc).isoformat(),
+                    )
+                    _mfc_block = _MFC_BLOCK(project_root=str(CONFIG.project_root))
+                    _mfc_block.persist_mission_plan(_blocked_mission)
+                except Exception as _bm_exc:
+                    logging.getLogger(__name__).debug("Blocked mission audit failed (non-blocking): %s", _bm_exc)
                 return {
                     "response": _route_decision.reason or "Request blocked by security policy.",
                     "blocked": True,
+                    "mission": _blocked_mission.to_dict() if _blocked_mission else None,
                     "route": _route_decision.to_dict(),
                 }
-            # --- Router approval gate ---
+            # --- Router approval gate (non-mission routes only) ---
             if _route_decision and getattr(_route_decision, "requires_approval", False) and not getattr(_route_decision, "blocked", False):
-                return {
-                    "response": (
-                        f"Questa operazione ({_route_decision.route}) richiede approvazione esplicita. "
-                        f"Rischio: {_route_decision.risk}. "
-                        "Usa il gate di approvazione o delega per procedere."
-                    ),
-                    "requires_approval": True,
-                    "route": _route_decision.to_dict() if _route_decision else None,
-                    "provider": "jarvis_router",
-                    "model": "approval_gate",
-                    "fallback_used": False,
-                    "latency_ms": 0,
-                    "intent_detected": None,
-                    "suggested_actions": [],
-                }
+                # Mission routes are handled by mission-first path below
+                try:
+                    from igris.core.mission_first import MissionFirstController as _MFC_GATE
+                    if not _MFC_GATE(project_root=str(CONFIG.project_root)).should_create_mission(_route_decision):
+                        raise ValueError("not_mission_route")
+                    # mission route — fall through to mission-first block
+                except Exception:
+                    return {
+                        "response": (
+                            f"Questa operazione ({_route_decision.route}) richiede approvazione esplicita. "
+                            f"Rischio: {_route_decision.risk}. "
+                            "Usa il gate di approvazione o delega per procedere."
+                        ),
+                        "requires_approval": True,
+                        "route": _route_decision.to_dict() if _route_decision else None,
+                        "provider": "jarvis_router",
+                        "model": "approval_gate",
+                        "fallback_used": False,
+                        "latency_ms": 0,
+                        "intent_detected": None,
+                        "suggested_actions": [],
+                    }
             # --- end approval gate ---
             # Use memory context from router if available (enriches system prompt)
             if _route_decision and _route_decision.metadata.get("memory_context"):
@@ -250,6 +281,46 @@ def create_router(deps) -> APIRouter:
         except Exception as _router_exc:
             logging.getLogger(__name__).debug("JarvisRequestRouter unavailable (non-blocking): %s", _router_exc)
         # --- end Jarvis Request Router ---
+
+        # --- Mission-first execution path (#1245) ---
+        try:
+            from igris.core.mission_first import MissionFirstController
+            _mfc = MissionFirstController(project_root=str(CONFIG.project_root))
+            if _route_decision and not _route_decision.blocked and not getattr(_route_decision, "requires_approval", False):
+                if _mfc.should_create_mission(_route_decision):
+                    _mission_plan = _mfc.build_plan(
+                        message,
+                        route_decision=_route_decision,
+                        interlocutor_id=preflight.interlocutor_id if 'preflight' in dir() else "unknown",
+                        trust_level=preflight.trust_level if 'preflight' in dir() else "untrusted",
+                        session_id=session_id,
+                        source="chat",
+                        dry_run=True,
+                    )
+                    _persist_result = _mfc.persist_mission_plan(_mission_plan)
+                    # For plan_only/dry_run/read_only: return mission plan — do NOT call chat_llm
+                    if _mission_plan.execution_mode in ("plan_only", "dry_run", "read_only"):
+                        _mp = _mfc.to_response_payload(_mission_plan, _persist_result)
+                        _mp["route"] = _route_decision.to_dict() if _route_decision else None
+                        return _mp
+            elif _route_decision and getattr(_route_decision, "requires_approval", False) and not _route_decision.blocked:
+                if _mfc.should_create_mission(_route_decision):
+                    _mission_plan_appr = _mfc.build_plan(
+                        message,
+                        route_decision=_route_decision,
+                        interlocutor_id=preflight.interlocutor_id if 'preflight' in dir() else "unknown",
+                        trust_level=preflight.trust_level if 'preflight' in dir() else "untrusted",
+                        session_id=session_id,
+                        source="chat",
+                        dry_run=True,
+                    )
+                    _mfc.persist_mission_plan(_mission_plan_appr)
+                    _ap = _mfc.to_response_payload(_mission_plan_appr)
+                    _ap["route"] = _route_decision.to_dict() if _route_decision else None
+                    return _ap
+        except Exception as _mf_exc:
+            logging.getLogger(__name__).debug("MissionFirstController unavailable (non-blocking): %s", _mf_exc)
+        # --- end mission-first execution path ---
 
         sessions[session_id].append({"role": "user", "content": message})
 
@@ -430,26 +501,66 @@ def create_router(deps) -> APIRouter:
                     media_type="text/event-stream",
                     headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
                 )
-            # --- Stream approval gate ---
+            # --- Stream approval gate (non-mission routes only) ---
             if _stream_route_decision and getattr(_stream_route_decision, "requires_approval", False) and not getattr(_stream_route_decision, "blocked", False):
-                _approval_msg = (
-                    f"Questa operazione ({_stream_route_decision.route}) richiede approvazione esplicita. "
-                    f"Rischio: {_stream_route_decision.risk}."
-                )
-                async def _approval_generator():
-                    yield f"data: {json.dumps({'type': 'content', 'text': _approval_msg})}\n\n"
-                    yield "data: [DONE]\n\n"
-                return StreamingResponse(
-                    _approval_generator(),
-                    media_type="text/event-stream",
-                    headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
-                )
+                try:
+                    from igris.core.mission_first import MissionFirstController as _MFC_SGT
+                    if not _MFC_SGT(project_root=str(CONFIG.project_root)).should_create_mission(_stream_route_decision):
+                        raise ValueError("not_mission_route")
+                    # fall through to mission-first stream block
+                except Exception:
+                    _approval_msg = (
+                        f"Questa operazione ({_stream_route_decision.route}) richiede approvazione esplicita. "
+                        f"Rischio: {_stream_route_decision.risk}."
+                    )
+
+                    async def _approval_generator():
+                        yield f"data: {json.dumps({'type': 'content', 'text': _approval_msg})}\n\n"
+                        yield "data: [DONE]\n\n"
+
+                    return StreamingResponse(
+                        _approval_generator(),
+                        media_type="text/event-stream",
+                        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+                    )
             # --- end stream approval gate ---
             if _stream_route_decision and _stream_route_decision.metadata.get("memory_context"):
                 system_enrichment = (system_enrichment or "") + "\n" + _stream_route_decision.metadata["memory_context"]
         except Exception as _sr_exc:
             logging.getLogger(__name__).debug("JarvisRequestRouter stream unavailable (non-blocking): %s", _sr_exc)
         # --- end Jarvis Request Router stream ---
+
+        # --- Mission-first stream path (#1245) ---
+        try:
+            from igris.core.mission_first import MissionFirstController as _MFC_S
+            _mfc_s = _MFC_S(project_root=str(CONFIG.project_root))
+            _s_pf2 = preflight if 'preflight' in dir() else None
+            if _stream_route_decision and not _stream_route_decision.blocked:
+                if _mfc_s.should_create_mission(_stream_route_decision):
+                    _stream_mission = _mfc_s.build_plan(
+                        message,
+                        route_decision=_stream_route_decision,
+                        interlocutor_id=_s_pf2.interlocutor_id if _s_pf2 else "unknown",
+                        trust_level=_s_pf2.trust_level if _s_pf2 else "untrusted",
+                        session_id=session_id or "",
+                        source="stream",
+                        dry_run=True,
+                    )
+                    _mfc_s.persist_mission_plan(_stream_mission)
+                    _mission_text_s = _mfc_s._build_response_text(_stream_mission)
+
+                    async def _mission_stream_generator():
+                        yield f"data: {json.dumps({'type': 'content', 'text': _mission_text_s})}\n\n"
+                        yield "data: [DONE]\n\n"
+
+                    return StreamingResponse(
+                        _mission_stream_generator(),
+                        media_type="text/event-stream",
+                        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+                    )
+        except Exception as _mf_s_exc:
+            logging.getLogger(__name__).debug("MissionFirst stream unavailable (non-blocking): %s", _mf_s_exc)
+        # --- end mission-first stream path ---
 
         history = []
         if session_id and session_id in sessions:
