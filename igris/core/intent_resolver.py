@@ -35,6 +35,11 @@ class IntentResolver:
         (r'\b(fai\s+deploy|esegui\s+deploy|avvia\s+deploy)\b', 'high'),
         (r'\b(fai\s+rollback|esegui\s+rollback)\b', 'high'),
         (r'\b(merge|close.issue|approve.pr)\b', 'medium'),
+        # Italian medium-risk (merge / close-issue / approve)
+        (r'\b(mergia|unisci|fondi)\b.*\b(pr|pull.request|branch|issue|ticket)\b', 'medium'),
+        (r'\b(chiudi|close)\b.*\b(issue|ticket|bug|pr|pull.request)\b', 'medium'),
+        (r'\b(approva|accetta)\b.*\b(pr|pull.request)\b', 'medium'),
+        (r'\b(mergia|unisci|fondi)\b', 'medium'),
     ]
 
     ACTION_PATTERNS = [
