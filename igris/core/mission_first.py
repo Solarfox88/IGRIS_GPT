@@ -261,8 +261,10 @@ class MissionFirstController:
             status = MissionStatus.PLANNED
 
         if dry_run and execution_mode not in (MissionExecutionMode.BLOCKED,
-                                               MissionExecutionMode.READ_ONLY):
+                                               MissionExecutionMode.READ_ONLY,
+                                               MissionExecutionMode.APPROVAL_REQUIRED):
             execution_mode = MissionExecutionMode.DRY_RUN
+        # Note: APPROVAL_REQUIRED stays APPROVAL_REQUIRED even with dry_run=True
 
         # Build mission title
         title = _redact(f"Mission: {route} — {message[:60]}")

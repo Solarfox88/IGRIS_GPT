@@ -219,11 +219,35 @@ def create_router(deps) -> APIRouter:
                 session_id=session_id,
                 source="chat",
             )
-            # If router blocks: override response
+            # If router blocks: create blocked mission for audit, then return
             if _route_decision and _route_decision.blocked:
+                _blocked_mission = None
+                try:
+                    from igris.core.mission_first import MissionFirstController as _MFC_BLOCK, MissionPlan, MissionStatus, MissionExecutionMode
+                    import uuid as _uuid
+                    from datetime import datetime as _dt, timezone as _tz
+                    _blocked_mission = MissionPlan(
+                        mission_id=str(_uuid.uuid4()),
+                        title=f"BLOCKED: {_route_decision.route}",
+                        route=str(_route_decision.route),
+                        risk=str(_route_decision.risk),
+                        status=MissionStatus.BLOCKED.value,
+                        execution_mode=MissionExecutionMode.BLOCKED.value,
+                        query=_redact(message),
+                        interlocutor_id=preflight.interlocutor_id if 'preflight' in dir() else "unknown",
+                        trust_level=preflight.trust_level if 'preflight' in dir() else "untrusted",
+                        blocked=True,
+                        reason=_redact(_route_decision.reason or "Route blocked by security policy"),
+                        created_at=_dt.now(_tz.utc).isoformat(),
+                    )
+                    _mfc_block = _MFC_BLOCK(project_root=str(CONFIG.project_root))
+                    _mfc_block.persist_mission_plan(_blocked_mission)
+                except Exception as _bm_exc:
+                    logging.getLogger(__name__).debug("Blocked mission audit failed (non-blocking): %s", _bm_exc)
                 return {
                     "response": _route_decision.reason or "Request blocked by security policy.",
                     "blocked": True,
+                    "mission": _blocked_mission.to_dict() if _blocked_mission else None,
                     "route": _route_decision.to_dict(),
                 }
             # --- Router approval gate (non-mission routes only) ---

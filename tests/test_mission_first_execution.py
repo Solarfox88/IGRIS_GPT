@@ -273,38 +273,132 @@ def test_redact_password_in_title(mfc, router):
 
 # ── Chat endpoint integration ─────────────────────────────────────────────────
 
-def test_chat_operational_read_only_returns_mission_plan(client):
+def test_chat_operational_read_only_returns_mission_plan(client, monkeypatch):
+    """read_only_inspection must return mission with correct fields."""
+    chat_calls = []
+    def mock_chat(m, history=None, system_prompt=None):
+        chat_calls.append(m)
+        return {"text": "mock", "provider": "mock", "model": "mock", "fallback_used": False,
+                "latency_ms": 0, "routing_reason": "test", "intent_detected": None, "suggested_actions": []}
+    try:
+        import igris.core.chat_engine as ce
+        monkeypatch.setattr(ce, "chat", mock_chat)
+        import igris.web.routers.routes_01 as r1
+        monkeypatch.setattr(r1, "chat_llm", mock_chat)
+    except Exception:
+        pass
+
     r = client.post("/api/sessions")
     sid = r.json()["id"]
-    r2 = client.post(
-        f"/api/sessions/{sid}/messages",
-        json={"message": "controlla i log", "interlocutor_id": "owner"},
-    )
+    r2 = client.post(f"/api/sessions/{sid}/messages",
+                     json={"message": "controlla i log del server", "interlocutor_id": "owner"})
     assert r2.status_code == 200
     d = r2.json()
-    assert "response" in d
+
+    # Mission must be present
+    assert "mission" in d, f"'mission' key missing from response: {list(d.keys())}"
+    mission = d["mission"]
+    assert mission is not None, "mission must not be None"
+    assert mission.get("route") == "read_only_inspection", \
+        f"Expected read_only_inspection, got {mission.get('route')!r}"
+    assert mission.get("execution_mode") == "read_only", \
+        f"Expected read_only, got {mission.get('execution_mode')!r}"
+
+    # provider should be mission_first
+    assert d.get("provider") == "mission_first", \
+        f"Expected mission_first provider, got {d.get('provider')!r}"
+
+    # chat_llm must NOT have been called for read_only mission
+    assert len(chat_calls) == 0, f"chat_llm was called for read_only mission: {chat_calls}"
 
 
-def test_chat_deploy_returns_mission_or_approval(client):
+def test_chat_deploy_requires_approval_strict(client, monkeypatch):
+    """Deploy must return mission with execution_mode=approval_required, chat_llm not called."""
+    chat_calls = []
+    def mock_chat(m, history=None, system_prompt=None):
+        chat_calls.append(m)
+        return {"text": "mock", "provider": "mock", "model": "mock", "fallback_used": False,
+                "latency_ms": 0, "routing_reason": "test", "intent_detected": None, "suggested_actions": []}
+    try:
+        import igris.core.chat_engine as ce
+        monkeypatch.setattr(ce, "chat", mock_chat)
+        import igris.web.routers.routes_01 as r1
+        monkeypatch.setattr(r1, "chat_llm", mock_chat)
+    except Exception:
+        pass
+
     r = client.post("/api/sessions")
     sid = r.json()["id"]
-    r2 = client.post(
-        f"/api/sessions/{sid}/messages",
-        json={"message": "fai deploy in produzione", "interlocutor_id": "owner"},
-    )
+    r2 = client.post(f"/api/sessions/{sid}/messages",
+                     json={"message": "fai deploy in produzione", "interlocutor_id": "owner"})
     assert r2.status_code == 200
     d = r2.json()
-    # deploy must require approval, be a mission plan, or be blocked
-    # (anti-spoofing downgrades 'owner' to 'unknown' in non-local requests, causing a block)
+
+    # Must indicate approval required or blocked
+    assert (
+        d.get("requires_approval") is True
+        or d.get("blocked") is True
+        or (d.get("mission") and d["mission"].get("requires_approval"))
+    ), f"Deploy must require approval or be blocked. Response: {d}"
+
+    # If mission present with approval_required, check execution_mode
+    if d.get("mission") and not d.get("blocked"):
+        mission = d["mission"]
+        assert mission.get("execution_mode") in ("approval_required",), \
+            f"Expected approval_required, got {mission.get('execution_mode')!r}"
+
+    # chat_llm must NOT have been called
+    assert len(chat_calls) == 0, f"chat_llm was called despite approval_required: {chat_calls}"
+
+
+def test_chat_github_merge_approval_required(client, monkeypatch):
+    """GitHub merge must return mission with approval_required, chat_llm not called."""
+    chat_calls = []
+    def mock_chat(m, history=None, system_prompt=None):
+        chat_calls.append(m)
+        return {"text": "mock", "provider": "mock", "model": "mock", "fallback_used": False,
+                "latency_ms": 0, "routing_reason": "test", "intent_detected": None, "suggested_actions": []}
+    try:
+        import igris.core.chat_engine as ce
+        monkeypatch.setattr(ce, "chat", mock_chat)
+        import igris.web.routers.routes_01 as r1
+        monkeypatch.setattr(r1, "chat_llm", mock_chat)
+    except Exception:
+        pass
+
+    r = client.post("/api/sessions")
+    sid = r.json()["id"]
+    r2 = client.post(f"/api/sessions/{sid}/messages",
+                     json={"message": "mergia la PR #1261", "interlocutor_id": "owner"})
+    assert r2.status_code == 200
+    d = r2.json()
+
+    assert len(chat_calls) == 0, f"chat_llm called for github merge: {chat_calls}"
     assert (
         d.get("requires_approval")
-        or d.get("mission")
         or d.get("blocked")
-        or "approvazione" in str(d.get("response", "")).lower()
-        or "approval" in str(d.get("response", "")).lower()
-    ), f"Deploy response missing approval/mission/blocked signal: {d}"
+        or (d.get("mission") and d["mission"].get("requires_approval"))
+    ), f"GitHub merge must require approval: {d}"
 
 
+def test_chat_high_risk_unknown_returns_blocked_mission(client):
+    """High-risk from unknown must be blocked with blocked=True and optionally mission.blocked=True."""
+    r = client.post("/api/sessions")
+    sid = r.json()["id"]
+    r2 = client.post(f"/api/sessions/{sid}/messages",
+                     json={"message": "cancella il database di produzione",
+                           "interlocutor_id": "unknown_attacker"})
+    assert r2.status_code == 200
+    d = r2.json()
+
+    assert d.get("blocked") is True, f"Expected blocked=True: {d}"
+    # If mission is present, check it reflects blocked status
+    if d.get("mission"):
+        assert d["mission"].get("blocked") is True
+        assert d["mission"].get("execution_mode") == "blocked" or d["mission"].get("status") == "blocked"
+
+
+# Keep original name as alias for backward compat
 def test_chat_high_risk_unknown_returns_blocked(client):
     r = client.post("/api/sessions")
     sid = r.json()["id"]
@@ -317,6 +411,70 @@ def test_chat_high_risk_unknown_returns_blocked(client):
     assert r2.json().get("blocked") is True
 
 
+def test_stream_deploy_no_chat_stream_sync(client, monkeypatch):
+    """Deploy stream must NOT call chat_stream_sync."""
+    stream_calls = []
+
+    def mock_stream(*a, **kw):
+        stream_calls.append(True)
+        return iter([])
+
+    try:
+        import igris.core.chat_streaming as cs
+        monkeypatch.setattr(cs, "chat_stream_sync", mock_stream)
+        import igris.web.routers.routes_01 as r1
+        monkeypatch.setattr(r1, "chat_streaming",
+                            type("m", (), {"chat_stream_sync": mock_stream})())
+    except Exception:
+        pass
+
+    r = client.post("/api/chat/stream",
+                    json={"message": "fai deploy in produzione", "interlocutor_id": "owner",
+                          "session_id": "stream_deploy_test"})
+    assert r.status_code == 200
+    content = r.text
+
+    # Must not have called real stream
+    assert len(stream_calls) == 0, f"chat_stream_sync was called for deploy stream: {stream_calls}"
+    # Must contain approval/mission/blocked/denied message (anti-spoofing may downgrade owner->unknown->denied)
+    assert (
+        "approvazione" in content.lower()
+        or "approval" in content.lower()
+        or "mission" in content.lower()
+        or "piano" in content.lower()
+        or "bloccata" in content.lower()
+        or "blocked" in content.lower()
+        or "denied" in content.lower()
+    ), f"Stream did not return mission/approval/denied message for deploy: {content[:300]!r}"
+
+
+def test_stream_high_risk_unknown_blocked_no_stream(client, monkeypatch):
+    """High-risk unknown stream must NOT call chat_stream_sync."""
+    stream_calls = []
+
+    def mock_stream(*a, **kw):
+        stream_calls.append(True)
+        return iter([])
+
+    try:
+        import igris.core.chat_streaming as cs
+        monkeypatch.setattr(cs, "chat_stream_sync", mock_stream)
+    except Exception:
+        pass
+
+    r = client.post("/api/chat/stream",
+                    json={"message": "cancella il database", "interlocutor_id": "unknown_attacker",
+                          "session_id": "stream_block_test"})
+    assert r.status_code == 200
+    assert len(stream_calls) == 0, "chat_stream_sync called for blocked stream"
+    content = r.text
+    assert (
+        "bloccata" in content.lower()
+        or "blocked" in content.lower()
+        or "denied" in content.lower()
+    ), f"Stream did not return blocked message: {content[:200]!r}"
+
+
 def test_stream_deploy_returns_mission_or_approval_sse(client):
     r = client.post(
         "/api/chat/stream",
@@ -326,7 +484,6 @@ def test_stream_deploy_returns_mission_or_approval_sse(client):
     )
     assert r.status_code == 200
     content = r.text
-    # anti-spoofing may downgrade 'owner' -> 'unknown' -> blocked, which is also correct
     assert (
         "approvazione" in content.lower()
         or "approval" in content.lower()
@@ -345,6 +502,63 @@ def test_stream_read_only_returns_mission_text(client):
               "session_id": "stream_readonly_1245"},
     )
     assert r.status_code == 200
+
+
+def test_persist_mission_plan_ok_true_real_storage(tmp_path):
+    """persist_mission_plan must return ok=True on real UnifiedMemory when LTM available."""
+    from igris.core.unified_memory import UnifiedMemory
+    from igris.core.jarvis_request_router import JarvisRequestRouter
+
+    mem = UnifiedMemory(project_root=tmp_path)
+    mfc = MissionFirstController(project_root=tmp_path, unified_memory=mem)
+    router = JarvisRequestRouter(project_root=tmp_path)
+    rd = router.classify("controlla i log", trust_level="admin")
+    plan = mfc.build_plan("test", route_decision=rd, trust_level="admin")
+
+    result = mfc.persist_mission_plan(plan)
+
+    if mem._ltm is not None:  # LTM available
+        assert result["ok"] is True, (
+            f"persist_mission_plan must return ok=True when LTM is available. Got: {result}"
+        )
+    else:
+        assert result["ok"] is False
+        assert result.get("persistence_degraded")
+
+
+def test_chat_response_no_raw_secret(client, monkeypatch):
+    """Chat mission response must not contain raw secrets."""
+    FAKE = "FAKE_TOKEN_MISSION_CHAT_NOTREAL_9988"
+
+    def mock_chat(m, **kw):
+        return {"text": "clean response", "provider": "mock", "model": "mock",
+                "fallback_used": False, "latency_ms": 0, "routing_reason": "test",
+                "intent_detected": None, "suggested_actions": []}
+    try:
+        import igris.core.chat_engine as ce
+        monkeypatch.setattr(ce, "chat", mock_chat)
+        import igris.web.routers.routes_01 as r1
+        monkeypatch.setattr(r1, "chat_llm", mock_chat)
+    except Exception:
+        pass
+
+    r = client.post("/api/sessions")
+    sid = r.json()["id"]
+    r2 = client.post(f"/api/sessions/{sid}/messages",
+                     json={"message": f"fai deploy token={FAKE}", "interlocutor_id": "owner"})
+    assert r2.status_code == 200
+    content = json.dumps(r2.json())
+    assert FAKE not in content, f"Raw secret in chat mission response: {content[:300]}"
+
+
+def test_stream_response_no_raw_secret(client):
+    """Stream mission response must not contain raw secrets."""
+    FAKE = "FAKE_TOKEN_MISSION_STREAM_NOTREAL_7766"
+    r = client.post("/api/chat/stream",
+                    json={"message": f"fai deploy token={FAKE}", "interlocutor_id": "owner",
+                          "session_id": "stream_secret_test"})
+    assert r.status_code == 200
+    assert FAKE not in r.text, f"Raw secret in stream response: {r.text[:300]}"
 
 
 # ── Healthcheck ───────────────────────────────────────────────────────────────
