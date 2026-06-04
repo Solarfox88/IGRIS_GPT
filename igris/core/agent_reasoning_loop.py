@@ -247,6 +247,10 @@ class AgentReasoningLoop:
         self.tool_result_budget = tool_result_budget
         self.issue_number = issue_number
         self.fleet_instance_id = fleet_instance_id
+        # Security (#1239): loops created programmatically (scheduler, tests, supervisor)
+        # are trusted internal. Set _is_internal_supervisor=True by default.
+        # Chat-originated loops must set this to False and supply interlocutor_id.
+        self._is_internal_supervisor: bool = True
 
         # State
         self._steps: List[LoopStep] = []

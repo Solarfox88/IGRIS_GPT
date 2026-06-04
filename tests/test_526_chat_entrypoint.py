@@ -33,13 +33,14 @@ def test_innocuous_message_allowed_for_unknown(tmp_path):
 def test_owner_profile_passes_sensitive_action(tmp_path):
     from igris.core.chat_interlocutor_preflight import run_preflight
     # owner is a builtin trusted profile (trust_level=admin)
-    result = run_preflight("deploy the server", interlocutor_id="owner", project_root=str(tmp_path))
+    # is_local_request=True: privileged IDs only allowed from localhost
+    result = run_preflight("deploy the server", interlocutor_id="owner", project_root=str(tmp_path), is_local_request=True)
     assert not result.blocked
 
 
 def test_system_prompt_enrichment_contains_profile(tmp_path):
     from igris.core.chat_interlocutor_preflight import run_preflight
-    result = run_preflight("hello", interlocutor_id="owner", project_root=str(tmp_path))
+    result = run_preflight("hello", interlocutor_id="owner", project_root=str(tmp_path), is_local_request=True)
     enrichment = result.system_prompt_enrichment
     # Either enrichment contains the id or it's empty (both are acceptable)
     assert isinstance(enrichment, str)
@@ -92,14 +93,14 @@ def test_delete_action_blocked_for_unknown(tmp_path):
 
 def test_no_secret_in_enrichment(tmp_path):
     from igris.core.chat_interlocutor_preflight import run_preflight
-    result = run_preflight("hello", interlocutor_id="owner", project_root=str(tmp_path))
+    result = run_preflight("hello", interlocutor_id="owner", project_root=str(tmp_path), is_local_request=True)
     enrichment = result.system_prompt_enrichment
     assert not re.search(r'passphrase|pbkdf2|sha256=|token=', enrichment, re.IGNORECASE)
 
 
 def test_response_mode_dict_keys(tmp_path):
     from igris.core.chat_interlocutor_preflight import run_preflight
-    result = run_preflight("urgent! deploy now!", interlocutor_id="owner", project_root=str(tmp_path))
+    result = run_preflight("urgent! deploy now!", interlocutor_id="owner", project_root=str(tmp_path), is_local_request=True)
     assert "verbosity" in result.response_mode
     assert "tone" in result.response_mode
 

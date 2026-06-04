@@ -126,7 +126,7 @@ class IntentResolver:
             target_resource == "unknown"
             and action_type not in (
                 "run_tests", "network_diagnostic", "browser_check", "inspect_logs",
-                "deploy", "rollback", "restart_server",
+                "rollback", "restart_server",
             )
         )
 
