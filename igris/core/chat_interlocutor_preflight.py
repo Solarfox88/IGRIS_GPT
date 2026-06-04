@@ -53,15 +53,18 @@ def is_trusted_local_request(
     request_headers: dict | None = None,
     remote_addr: str | None = None,
 ) -> bool:
-    """Returns True if request is from localhost/127.0.0.1."""
+    """Returns True if request is from localhost/127.0.0.1.
+
+    SECURITY: X-Forwarded-For headers are NEVER trusted if remote_addr is None
+    or empty, as a remote attacker behind a proxy could spoof them to claim
+    owner/system identity.
+    """
     LOCAL_ADDRS = {"127.0.0.1", "::1", "localhost"}
-    if remote_addr and remote_addr in LOCAL_ADDRS:
-        return True
-    # Also check forwarded headers — but only trust them if no remote_addr override
-    if remote_addr is None and request_headers:
-        fwd = request_headers.get("x-forwarded-for", "")
-        if fwd.split(",")[0].strip() in LOCAL_ADDRS:
-            return True
+    # Primary: trust only the direct connection address
+    if remote_addr:
+        return remote_addr in LOCAL_ADDRS
+    # remote_addr is None or empty — we CANNOT safely trust X-Forwarded-For.
+    # Return False unconditionally to prevent proxy-based owner spoofing.
     return False
 
 
@@ -195,12 +198,13 @@ def run_preflight(
                 )
                 del _dk_pass  # never keep passphrase in scope longer than needed
                 if _ok:
+                    del _dk_id  # cleanup key ID after successful use
                     is_untrusted = False
                     trust_level = "limited"  # delegation scope only
                     advisory = f"Proceeding via delegation key (scope: {intent_action})"
                     logger.info(
-                        "Delegation key '%s' accepted for interlocutor '%s', action '%s'",
-                        _dk_id, _id, intent_action,
+                        "Delegation key accepted for interlocutor '%s', action '%s'",
+                        _id, intent_action,
                     )
                 else:
                     del _dk_id

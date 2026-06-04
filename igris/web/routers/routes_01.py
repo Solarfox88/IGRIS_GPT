@@ -152,10 +152,18 @@ def create_router(deps) -> APIRouter:
         import logging as _pf_log
         _pf_logger = _pf_log.getLogger(__name__)
         system_enrichment = ""
-        _sensitive_keywords = {"deploy", "delete", "remove", "rollback", "merge", "cancel", "drop", "wipe", "reset", "restart", "reboot", "admin"}
+        _sensitive_keywords = {
+            # English
+            "deploy", "delete", "remove", "rollback", "merge", "cancel",
+            "drop", "wipe", "reset", "restart", "reboot", "admin",
+            # Italian
+            "cancella", "elimina", "rimuovi", "riavvia", "mergia", "unisci",
+            "azzera", "distruggi", "svuota", "pulisci",
+            "fai deploy", "fai rollback", "shutdown", "spegni",
+        }
         try:
             from igris.core.chat_interlocutor_preflight import run_preflight, extract_interlocutor_id, is_trusted_local_request
-            _remote_addr = request.client.host if request.client else None
+            _remote_addr = request.client.host if request.client else ""
             _is_local = is_trusted_local_request(
                 request_headers=dict(request.headers),
                 remote_addr=_remote_addr,
@@ -301,10 +309,18 @@ def create_router(deps) -> APIRouter:
         _pf_logger2 = _pf_log2.getLogger(__name__)
         preflight_block = None
         system_enrichment = ""
-        _sensitive_keywords_s = {"deploy", "delete", "remove", "rollback", "merge", "cancel", "drop", "wipe", "reset", "restart", "reboot", "admin"}
+        _sensitive_keywords_s = {
+            # English
+            "deploy", "delete", "remove", "rollback", "merge", "cancel",
+            "drop", "wipe", "reset", "restart", "reboot", "admin",
+            # Italian
+            "cancella", "elimina", "rimuovi", "riavvia", "mergia", "unisci",
+            "azzera", "distruggi", "svuota", "pulisci",
+            "fai deploy", "fai rollback", "shutdown", "spegni",
+        }
         try:
             from igris.core.chat_interlocutor_preflight import run_preflight, extract_interlocutor_id, is_trusted_local_request
-            _remote_addr_s = request.client.host if request.client else None
+            _remote_addr_s = request.client.host if request.client else ""
             _is_local_s = is_trusted_local_request(
                 request_headers=dict(request.headers),
                 remote_addr=_remote_addr_s,

@@ -253,6 +253,8 @@ class ConversationMemoryStore:
                         importance=candidate.confidence,
                     )
 
+            # Best-effort MemoryGraph integration
+            self._persist_to_memory_graph(episode)
             return True
         except Exception as e:
             logger.warning("ConversationMemoryStore: persist failed (degraded): %s", e)
