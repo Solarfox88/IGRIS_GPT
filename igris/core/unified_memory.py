@@ -200,10 +200,15 @@ class UnifiedMemory:
     # ── Store operations ──────────────────────────────────────────────────────
 
     def store_episode(self, episode_or_kwargs, **kwargs) -> StoreResult:
-        """Store a conversation episode via ConversationMemoryStore."""
+        """Store a conversation episode via ConversationMemoryStore.
+
+        ok=True only if ConversationMemoryStore.persist() returns True.
+        ok=False if conv_store is unavailable, persist returns False, or persist raises.
+        """
         backends_status: dict = {}
         warnings: list = []
-        ep_id = str(uuid.uuid4())
+        ep_id = ""
+        any_primary_wrote = False
 
         try:
             from igris.core.conversation_memory import ConversationEpisode
@@ -213,20 +218,33 @@ class UnifiedMemory:
                 ep = ConversationEpisode(**{**episode_or_kwargs, **kwargs})
             ep_id = ep.episode_id
         except Exception as e:
-            return StoreResult(ok=False, kind="episode", id="", warnings=[str(e)])
+            return StoreResult(ok=False, kind="episode", id="",
+                               backends={}, warnings=[f"episode construction failed: {e}"])
 
         if self._conv_store:
             try:
-                ok = self._conv_store.persist(ep)
-                backends_status["conversation_store"] = "ok" if ok else "degraded"
+                persisted = self._conv_store.persist(ep)
+                if persisted:
+                    backends_status["conversation_store"] = "ok"
+                    any_primary_wrote = True
+                else:
+                    backends_status["conversation_store"] = "degraded"
+                    warnings.append("conv_store.persist() returned False")
+                    logger.warning("store_episode: ConversationMemoryStore.persist() returned False")
             except Exception as e:
                 backends_status["conversation_store"] = "degraded"
                 warnings.append(f"conv_store: {e}")
+                logger.warning("store_episode: ConversationMemoryStore.persist() raised: %s", e)
         else:
             backends_status["conversation_store"] = "unavailable"
 
-        return StoreResult(ok=True, kind="episode", id=ep_id,
-                           backends=backends_status, warnings=warnings)
+        return StoreResult(
+            ok=any_primary_wrote,
+            kind="episode",
+            id=ep_id if any_primary_wrote else "",
+            backends=backends_status,
+            warnings=warnings,
+        )
 
     def store_preference(self, interlocutor_id: str, trust_level: str, text: str,
                          tags: "list | None" = None) -> StoreResult:
@@ -500,12 +518,17 @@ class UnifiedMemory:
     def record_feedback(self, memory_id: str, used: bool, helpful: "bool | None" = None,
                         outcome: str = "neutral", mission_id: str = "",
                         query: str = "", notes: str = "") -> StoreResult:
-        """Record feedback on a memory item (for future learning)."""
-        # Fix 5: Redact sensitive fields
+        """Record feedback on a memory item.
+
+        ok=True only if LTM writes successfully.
+        ok=False if LTM unavailable or write fails.
+        """
         query = _redact(query)
         notes = _redact(notes)
         entry_id = str(uuid.uuid4())
         warnings: list = []
+        backends_status: dict = {}
+        any_primary_wrote = False
         domain = "feedback:system"
         content = {"kind": "feedback", "memory_id": memory_id, "used": used,
                    "helpful": helpful, "outcome": outcome, "id": entry_id,
@@ -520,20 +543,35 @@ class UnifiedMemory:
                     tags=[],
                     importance=0.3,
                 )
+                backends_status["ltm"] = "ok"
+                any_primary_wrote = True
             except Exception as e:
-                warnings.append(f"feedback ltm: {e}")
-                logger.warning("record_feedback LTM failed: %s", e)
+                backends_status["ltm"] = "degraded"
+                warnings.append(f"ltm: {e}")
+                logger.warning("record_feedback: LTM write failed: %s", e)
+        else:
+            backends_status["ltm"] = "unavailable"
 
-        return StoreResult(ok=True, kind="feedback", id=entry_id, warnings=warnings)
+        return StoreResult(
+            ok=any_primary_wrote,
+            kind="feedback",
+            id=entry_id if any_primary_wrote else "",
+            backends=backends_status,
+            warnings=warnings,
+        )
 
     def mark_superseded(self, memory_id: str, superseded_by_id: str,
                         reason: str = "") -> StoreResult:
-        """Mark a memory as superseded by a newer one."""
+        """Mark a memory as superseded by a newer one.
+
+        ok=True only if LTM writes successfully.
+        ok=False if LTM unavailable or write fails.
+        """
         entry_id = str(uuid.uuid4())
         warnings: list = []
+        backends_status: dict = {}
         any_wrote = False
-        content = {"kind": "superseded", "memory_id": memory_id,
-                   "superseded_by": superseded_by_id, "reason": reason}
+        content = f"[SUPERSEDED] {memory_id} superseded by {superseded_by_id}: {reason}"
 
         if self._ltm:
             try:
@@ -544,19 +582,34 @@ class UnifiedMemory:
                     tags=[],
                     importance=0.5,
                 )
+                backends_status["ltm"] = "ok"
                 any_wrote = True
             except Exception as e:
-                logger.warning("mark_superseded LTM failed: %s", e)
+                backends_status["ltm"] = "degraded"
                 warnings.append(f"ltm: {e}")
+                logger.warning("mark_superseded: LTM write failed: %s", e)
+        else:
+            backends_status["ltm"] = "unavailable"
 
-        return StoreResult(ok=any_wrote or self._ltm is None, kind="superseded",
-                           id=entry_id, warnings=warnings)
+        return StoreResult(
+            ok=any_wrote,
+            kind="superseded",
+            id=entry_id if any_wrote else "",
+            backends=backends_status,
+            warnings=warnings,
+        )
 
     def forget(self, memory_id: str, reason: str = "user_request") -> StoreResult:
-        """Soft-delete a memory item by marking it as forgotten."""
+        """Soft-delete a memory item by marking it as forgotten.
+
+        ok=True only if LTM writes the forgotten marker successfully.
+        ok=False if LTM unavailable or write fails.
+        """
+        entry_id = str(uuid.uuid4())
         warnings: list = []
+        backends_status: dict = {}
         any_wrote = False
-        content = {"kind": "forgotten", "memory_id": memory_id, "reason": reason}
+        content = f"[FORGOTTEN] {memory_id}: {reason}"
 
         if self._ltm:
             try:
@@ -567,13 +620,22 @@ class UnifiedMemory:
                     tags=[],
                     importance=0.1,
                 )
+                backends_status["ltm"] = "ok"
                 any_wrote = True
             except Exception as e:
-                logger.warning("forget LTM failed: %s", e)
+                backends_status["ltm"] = "degraded"
                 warnings.append(f"ltm: {e}")
+                logger.warning("forget: LTM write failed: %s", e)
+        else:
+            backends_status["ltm"] = "unavailable"
 
-        return StoreResult(ok=any_wrote or self._ltm is None, kind="forgotten",
-                           id=memory_id, warnings=warnings)
+        return StoreResult(
+            ok=any_wrote,
+            kind="forgotten",
+            id=memory_id if any_wrote else "",
+            backends=backends_status,
+            warnings=warnings,
+        )
 
     def memory_influence_report(self, retrieval_result: RetrievalResult) -> str:
         """Generate a human-readable influence report from retrieval result."""
