@@ -1569,7 +1569,8 @@ class AgentReasoningLoop:
             profile_id = "system"  # verified internal (scheduler/supervisor)
         else:
             profile_id = "unknown"  # no identity = unknown, NOT system
-            logger.debug(
+            import logging as _logging
+            _logging.getLogger(__name__).debug(
                 "_guard_action: no interlocutor_id set and _is_internal_supervisor=False "
                 "— using 'unknown' profile for action_type=%s", action_type
             )
