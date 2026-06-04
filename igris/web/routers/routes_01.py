@@ -217,7 +217,7 @@ def create_router(deps) -> APIRouter:
             _tl = preflight.trust_level if 'preflight' in dir() else "untrusted"
             _memory_context = _retriever.retrieve_for_context(_pid, _tl)
         except Exception as _mem_ret_exc:
-            import logging as _log_r; _log_r.getLogger(__name__).debug("Conversation memory retrieval failed (degraded): %s", _mem_ret_exc)
+            import logging as _log_r; _log_r.getLogger(__name__).warning("Conversation memory retrieval failed (degraded): %s", _mem_ret_exc)
         # --- end memory retrieval ---
 
         # Use real chat engine — always include IGRIS identity prompt,
