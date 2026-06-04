@@ -80,13 +80,14 @@ def test_post_message_persists_episode_to_disk_e2e(client, tmp_path, monkeypatch
     ltm = _open_ltm(tmp_path)
 
     found_entries = []
-    for domain in [f"chat:owner", "conversation"]:
+    _search_errors: list[str] = []
+    for domain in ["chat:owner", "conversation"]:
         try:
             results = ltm.get_entries(domain, limit=20)
             if results:
                 found_entries.extend(results)
-        except Exception:
-            pass
+        except Exception as _ltm_err:
+            _search_errors.append(f"domain {domain}: {_ltm_err}")
 
     if not found_entries:
         entries_file = tmp_path / ".igris" / "memory" / "long_term" / "entries.json"
@@ -146,13 +147,14 @@ def test_stream_message_persists_episode_source_stream(client, tmp_path, monkeyp
 
     ltm = _open_ltm(tmp_path)
     found = []
+    _search_errors2: list[str] = []
     for domain in ["chat:owner", "conversation"]:
         try:
             results = ltm.get_entries(domain, limit=20)
             if results:
                 found.extend(results)
-        except Exception:
-            pass
+        except Exception as _ltm_err:
+            _search_errors2.append(f"domain {domain}: {_ltm_err}")
 
     if not found:
         entries_file = tmp_path / ".igris" / "memory" / "long_term" / "entries.json"
@@ -267,7 +269,7 @@ def test_chat_system_prompt_does_not_receive_memory_context_for_unknown(client, 
         import igris.web.routers.routes_01 as _r
         monkeypatch.setattr(_r, "chat_llm", mock_chat)
     except Exception as e:
-        pytest.skip(f"Cannot patch chat_llm: {e}")
+        pytest.fail(f"Cannot patch chat_llm: {e}")
 
     r = client.post("/api/sessions")
     sid = r.json()["id"]
@@ -403,8 +405,10 @@ def test_conversation_summary_no_raw_secret(tmp_path):
     mgr = ConversationSummaryManager(project_root=str(tmp_path))
     result = mgr.update_summary("owner", "admin", ep)
 
-    if not result:
-        pytest.skip("update_summary returned False (degraded) — cannot verify disk")
+    assert result is True, (
+        "update_summary returned False — summary was NOT written. "
+        "Storage is broken, this is a test failure not a skip."
+    )
 
     entries_file = tmp_path / ".igris" / "memory" / "long_term" / "entries.json"
     if entries_file.exists():
@@ -427,7 +431,7 @@ def test_memory_retrieval_failure_logged_degraded(client, tmp_path, monkeypatch,
         from igris.core import conversation_memory as _cm
         monkeypatch.setattr(_cm.ConversationRetriever, "retrieve_for_context", broken_retrieve)
     except Exception as e:
-        pytest.skip(f"Cannot patch ConversationRetriever: {e}")
+        pytest.fail(f"Cannot patch ConversationRetriever: {e}")
 
     def mock_chat(message, history=None, system_prompt=None):
         return {
@@ -440,7 +444,7 @@ def test_memory_retrieval_failure_logged_degraded(client, tmp_path, monkeypatch,
         import igris.web.routers.routes_01 as _r
         monkeypatch.setattr(_r, "chat_llm", mock_chat)
     except Exception as e:
-        pytest.skip(f"Cannot patch chat_llm: {e}")
+        pytest.fail(f"Cannot patch chat_llm: {e}")
 
     r = client.post("/api/sessions")
     sid = r.json()["id"]
@@ -471,6 +475,11 @@ def test_memory_retrieval_failure_logged_degraded(client, tmp_path, monkeypatch,
 def test_memory_api_recent_returns_persisted_episode(client, tmp_path, monkeypatch):
     """recent endpoint MUST return the episode we just persisted."""
     monkeypatch.setattr("igris.models.config.CONFIG.project_root", tmp_path)
+
+    # Simulate local request so 'owner' is trusted (TestClient host is 'testclient', not 127.0.0.1)
+    import igris.core.chat_interlocutor_preflight as _preflight
+    monkeypatch.setattr(_preflight, "is_trusted_local_request",
+                        lambda request_headers=None, remote_addr=None: True)
 
     from igris.core.conversation_memory import (
         ConversationEpisode, ConversationMemoryStore, MEMORY_POLICY_FULL,
@@ -539,6 +548,11 @@ def test_memory_api_summary_returns_real_summary(client, tmp_path, monkeypatch):
     """summary endpoint MUST return non-null summary after update_summary."""
     monkeypatch.setattr("igris.models.config.CONFIG.project_root", tmp_path)
 
+    # Simulate local request so 'owner' is trusted (TestClient host is 'testclient', not 127.0.0.1)
+    import igris.core.chat_interlocutor_preflight as _preflight
+    monkeypatch.setattr(_preflight, "is_trusted_local_request",
+                        lambda request_headers=None, remote_addr=None: True)
+
     from igris.core.conversation_memory import (
         ConversationEpisode, ConversationSummaryManager, MEMORY_POLICY_FULL,
     )
@@ -583,8 +597,10 @@ def test_no_raw_secret_in_ltm_entries_json(tmp_path):
     store = ConversationMemoryStore(project_root=str(tmp_path))
     ok = store.persist(ep)
 
-    if not ok:
-        pytest.skip("persist() failed — cannot test secret storage (separate issue)")
+    assert ok, (
+        "persist() returned False — cannot test secret storage. "
+        "Storage is broken, this is a test failure not a skip."
+    )
 
     storage_root = tmp_path / ".igris"
     all_content = ""
@@ -641,6 +657,61 @@ def test_secret_not_exposed_by_memory_api(client, tmp_path, monkeypatch):
     r2 = client.get("/api/memory/conversation/summary?interlocutor_id=owner")
     assert r2.status_code == 200
     assert FAKE_SECRET not in r2.text, "Raw secret in summary API response"
+
+
+# ─── Security: non-local owner claims ────────────────────────────────────────
+
+def test_memory_api_recent_owner_from_nonlocal_gets_empty(client, tmp_path, monkeypatch):
+    """Non-local request claiming owner MUST NOT get owner's memory via API."""
+    monkeypatch.setattr("igris.models.config.CONFIG.project_root", tmp_path)
+
+    # Do NOT patch is_trusted_local_request — TestClient uses host 'testclient' (non-local)
+    _persist_preference(tmp_path, interlocutor_id="owner", trust_level="admin")
+
+    r = client.get("/api/memory/conversation/recent?interlocutor_id=owner&limit=10")
+    assert r.status_code == 200
+    data = r.json()
+
+    # Non-local claiming 'owner' must get empty list (anti-spoofing)
+    assert isinstance(data, list)
+    assert data == [], (
+        f"Non-local request claiming 'owner' received {len(data)} entries — SECURITY VIOLATION. "
+        "owner/system claims from non-local HTTP clients must be denied."
+    )
+
+    # No raw secret regardless
+    for entry in data:
+        entry_str = str(entry)
+        assert "FAKE_SECRET" not in entry_str
+        assert not re.search(r'passphrase\s*=\s*\S{8,}', entry_str, re.IGNORECASE)
+
+
+def test_memory_api_summary_owner_from_nonlocal_blocked_or_empty(client, tmp_path, monkeypatch):
+    """Non-local request claiming owner MUST NOT get owner's summary."""
+    monkeypatch.setattr("igris.models.config.CONFIG.project_root", tmp_path)
+
+    # Do NOT patch is_trusted_local_request — TestClient uses host 'testclient' (non-local)
+    from igris.core.conversation_memory import (
+        ConversationEpisode, ConversationSummaryManager, MEMORY_POLICY_FULL,
+    )
+    ep = ConversationEpisode(
+        interlocutor_id="owner", trust_level="admin",
+        user_message="sensitive owner preference",
+        memory_policy=MEMORY_POLICY_FULL,
+    )
+    mgr = ConversationSummaryManager(project_root=str(tmp_path))
+    mgr.update_summary("owner", "admin", ep)
+
+    r = client.get("/api/memory/conversation/summary?interlocutor_id=owner")
+    assert r.status_code == 200
+    d = r.json()
+
+    # Non-local owner claim must get null/empty summary (anti-spoofing)
+    summary_val = d.get("summary") or d.get("content") or ""
+    assert not summary_val, (
+        "Non-local request claiming 'owner' received non-empty summary — SECURITY VIOLATION. "
+        f"Got summary: {summary_val!r}"
+    )
 
 
 # ─── Regression guards ────────────────────────────────────────────────────────
