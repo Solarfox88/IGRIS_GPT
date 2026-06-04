@@ -45,14 +45,26 @@ def test_build_context_includes_route_section(agg):
 
 
 def test_build_context_includes_memory_section_for_admin(tmp_path):
+    """After store_preference, memory section must actually contain retrieved data."""
     from igris.core.unified_memory import UnifiedMemory
     mem = UnifiedMemory(project_root=tmp_path)
-    mem.store_preference("owner", "admin", "Preferisco risposte brevi")
+    r = mem.store_preference("owner", "admin", "Preferisco sempre risposte brevi")
+
+    if not r.ok:
+        pytest.skip("LTM unavailable — cannot test memory retrieval")
+
     agg = ContextAggregator(project_root=tmp_path, unified_memory=mem)
-    brief = agg.build_context(query="preferenze", interlocutor_id="owner", trust_level="admin")
+    brief = agg.build_context(query="risposte", interlocutor_id="owner", trust_level="admin",
+                               include_rank=False)
+
     sec = brief.get_section("memory")
     assert sec is not None
-    assert sec.status in ("ok", "empty", "degraded")
+    # After successful store, memory must be actually retrieved (not empty/degraded)
+    assert sec.status == "ok", (
+        f"Memory section should be 'ok' after store_preference, got status={sec.status!r}, "
+        f"summary={sec.summary!r}, warnings={sec.warnings}"
+    )
+    assert sec.items or sec.summary, "Memory section must have items or summary after retrieval"
 
 
 def test_build_context_untrusted_gets_limited_memory(tmp_path):
@@ -268,3 +280,78 @@ def test_to_dict_is_serializable(agg):
 def test_get_section_returns_none_for_missing(agg):
     brief = agg.build_context(query="test", interlocutor_id="owner", trust_level="admin")
     assert brief.get_section("nonexistent_xyz") is None
+
+
+def test_redact_dict_recursive_in_lists():
+    from igris.core.context_aggregator import _redact_dict
+    FAKE = "FAKE_TOKEN_DICT_LIST_NOTREAL"
+    data = {
+        "key": f"token={FAKE}",
+        "nested_list": [
+            {"inner_key": f"password={FAKE}"},
+            f"passphrase={FAKE}",
+        ],
+        "deep": {"a": {"b": f"secret={FAKE}"}},
+    }
+    result = _redact_dict(data)
+    result_str = json.dumps(result)
+    assert FAKE not in result_str, f"Secret leaked in nested structure: {result_str}"
+
+
+def test_project_state_safe_dict_failure_observable(tmp_path, monkeypatch):
+    """safe_dict() failure must produce observable warning, not silent pass."""
+    import igris.models.config as _cfg_mod
+    from igris.models.config import Config
+    monkeypatch.setattr(_cfg_mod.Config, "safe_dict",
+                        lambda self: (_ for _ in ()).throw(RuntimeError("safe_dict down")))
+
+    agg = ContextAggregator(project_root=tmp_path)
+    brief = agg.build_context(query="test", interlocutor_id="owner", trust_level="admin",
+                               include_rank=False)
+    sec = brief.get_section("project_state")
+    assert sec is not None
+    # Warning must be in section.warnings or brief.warnings
+    all_warnings = sec.warnings + brief.warnings
+    assert any("safe_dict" in w or "project_state" in w for w in all_warnings), (
+        f"safe_dict failure not observable in warnings: {all_warnings}"
+    )
+
+
+def test_requires_approval_memory_retrieval_not_called(tmp_path):
+    """When requires_approval=True, retrieve_for_chat/mission must NOT be called."""
+    from igris.core.unified_memory import UnifiedMemory
+    from igris.core.jarvis_request_router import JarvisRequestRouter
+
+    mem = UnifiedMemory(project_root=tmp_path)
+    mem.store_preference("owner", "admin", "sensitive preference")
+
+    retrieve_calls = []
+    original_chat = mem.retrieve_for_chat
+    original_mission = mem.retrieve_for_mission
+
+    def tracking_chat(*a, **kw):
+        retrieve_calls.append("chat")
+        return original_chat(*a, **kw)
+
+    def tracking_mission(*a, **kw):
+        retrieve_calls.append("mission")
+        return original_mission(*a, **kw)
+
+    mem.retrieve_for_chat = tracking_chat
+    mem.retrieve_for_mission = tracking_mission
+
+    router = JarvisRequestRouter(project_root=tmp_path, unified_memory=mem)
+    rd = router.classify("fai deploy in produzione", interlocutor_id="owner", trust_level="admin")
+    assert rd.requires_approval
+
+    agg = ContextAggregator(project_root=tmp_path, unified_memory=mem)
+    brief = agg.build_context(query="deploy", interlocutor_id="owner", trust_level="admin",
+                               route_decision=rd, include_rank=False)
+
+    assert len(retrieve_calls) == 0, (
+        f"retrieve_for_chat/mission was called despite requires_approval=True: {retrieve_calls}"
+    )
+    sec_mem = brief.get_section("memory")
+    assert sec_mem is not None
+    assert sec_mem.safe_for_prompt is False
+    assert sec_mem.status == "empty"

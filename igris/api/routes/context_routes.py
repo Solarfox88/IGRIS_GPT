@@ -1,16 +1,20 @@
 """Context Aggregator API routes (#1244)."""
-from __future__ import annotations
 import logging
 
 logger = logging.getLogger(__name__)
 
+try:
+    from fastapi import APIRouter, Request
+    _FASTAPI_AVAILABLE = True
+except ImportError:
+    _FASTAPI_AVAILABLE = False
+
 
 def _make_router():
-    try:
-        from fastapi import APIRouter, Request
-        router = APIRouter(prefix="/api/os", tags=["context"])
-    except ImportError:
+    if not _FASTAPI_AVAILABLE:
         return None
+
+    router = APIRouter(prefix="/api/os", tags=["context"])
 
     @router.post("/brief")
     async def get_brief(request: Request) -> dict:
@@ -23,16 +27,21 @@ def _make_router():
         interlocutor_id = body.get("interlocutor_id", "unknown")
         trust_level = body.get("trust_level", "untrusted")
 
-        # Anti-spoofing: apply same rule as #1239
+        # Anti-spoofing: trust_level from HTTP body is NEVER trusted
+        # Non-local requests cannot claim elevated trust
         try:
             from igris.core.chat_interlocutor_preflight import (
                 PRIVILEGED_IDS, is_trusted_local_request,
             )
             remote_addr = request.client.host if request.client else ""
             is_local = is_trusted_local_request(remote_addr=remote_addr)
-            if interlocutor_id in PRIVILEGED_IDS and not is_local:
-                interlocutor_id = "unknown"
-                trust_level = "untrusted"
+            if not is_local:
+                # Non-local: cannot trust any elevated claim
+                if (trust_level or "").lower() in ("admin", "trusted", "owner", "system"):
+                    trust_level = "untrusted"
+                if interlocutor_id in PRIVILEGED_IDS:
+                    interlocutor_id = "unknown"
+                    trust_level = "untrusted"
         except Exception as e:
             logger.debug("Context API: preflight check skipped: %s", e)
 

@@ -32,19 +32,15 @@ def _redact(text: str) -> str:
     return _SECRET_RE.sub(r'\1=<REDACTED>', str(text))
 
 
-def _redact_dict(d: dict) -> dict:
-    """Recursively redact dict values."""
-    out = {}
-    for k, v in d.items():
-        if isinstance(v, str):
-            out[k] = _redact(v)
-        elif isinstance(v, dict):
-            out[k] = _redact_dict(v)
-        elif isinstance(v, list):
-            out[k] = [_redact(i) if isinstance(i, str) else i for i in v]
-        else:
-            out[k] = v
-    return out
+def _redact_dict(d: Any) -> Any:
+    """Recursively redact secret patterns in a dict (including nested lists)."""
+    if isinstance(d, dict):
+        return {k: _redact_dict(v) for k, v in d.items()}
+    elif isinstance(d, list):
+        return [_redact_dict(item) for item in d]
+    elif isinstance(d, str):
+        return _redact(d)
+    return d
 
 
 # ── Trust helpers ─────────────────────────────────────────────────────────────
@@ -311,8 +307,9 @@ class ContextAggregator:
                 safe = CONFIG.safe_dict()
                 info.update({k: v for k, v in safe.items()
                               if k in ("app_name", "version", "environment", "log_level")})
-            except Exception:
-                pass
+            except Exception as e:
+                sec.warnings.append(f"safe_dict error: {e}")
+                logger.warning("ContextAggregator: _section_project_state safe_dict failed: %s", e)
             sec.items = [_redact_dict(info)]
             sec.summary = f"Project: {info.get('app', 'IGRIS_GPT')} at {info.get('project_root', '?')}"
             sec.status = "ok"
@@ -411,17 +408,22 @@ class ContextAggregator:
 
         # Memory section
         if include_memory and not is_blocked:
-            sec_mem = self._section_memory(
-                query=query,
-                interlocutor_id=interlocutor_id,
-                trust_level=trust_level,
-                route_str=route_str,
-                max_items=max_items_per_section,
-            )
             if requires_approval:
-                sec_mem.safe_for_prompt = False
-                sec_mem.summary = "Memory context suppressed — operation requires approval."
-                sec_mem.items = []
+                # Skip retrieval entirely — create suppressed section directly
+                sec_mem = ContextSection(
+                    name="memory", title="Memory Context", priority=20,
+                    status="empty", source="suppressed",
+                    summary="Memory context suppressed — operation requires explicit approval.",
+                    safe_for_prompt=False,
+                )
+            else:
+                sec_mem = self._section_memory(
+                    query=query,
+                    interlocutor_id=interlocutor_id,
+                    trust_level=trust_level,
+                    route_str=route_str,
+                    max_items=max_items_per_section,
+                )
             sections.append(sec_mem)
             if sec_mem.status in ("degraded", "unavailable"):
                 any_degraded = True
