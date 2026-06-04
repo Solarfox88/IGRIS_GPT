@@ -255,6 +255,14 @@ class ConversationMemoryStore:
 
             # Best-effort MemoryGraph integration
             self._persist_to_memory_graph(episode)
+
+            # Best-effort rolling summary update
+            try:
+                _summary_mgr = ConversationSummaryManager(self.project_root)
+                _summary_mgr.update_summary(episode.interlocutor_id, episode.trust_level, episode)
+            except Exception as _sum_exc:
+                logger.debug("Summary update skipped: %s", _sum_exc)
+
             return True
         except Exception as e:
             logger.warning("ConversationMemoryStore: persist failed (degraded): %s", e)
@@ -394,3 +402,38 @@ class ConversationSummaryManager:
         except Exception as e:
             logger.debug("Summary retrieval failed: %s", e)
         return None
+
+    def update_summary(self, interlocutor_id: str, trust_level: str, episode: "ConversationEpisode") -> bool:
+        """Update rolling summary for this interlocutor.
+
+        Only for trusted/scoped/full policy — not for minimal/unknown.
+        Returns True if updated, False if skipped or failed.
+        """
+        policy = _get_memory_policy(trust_level)
+        if policy == MEMORY_POLICY_MINIMAL:
+            return False  # no summary for unknown/untrusted
+
+        try:
+            from igris.core.long_term_memory import LongTermMemory
+            ltm = LongTermMemory(base_path=self.project_root / ".igris" / "memory" / "long_term")
+            domain = f"summary:{interlocutor_id}"
+
+            # Build summary text from episode
+            summary_text = (
+                f"[{episode.intent_action}/{episode.trust_level}] "
+                f"auth={episode.auth_decision} blocked={episode.blocked}"
+            )
+            if policy == MEMORY_POLICY_FULL and episode.user_message:
+                summary_text = f"User: {episode.user_message[:100]} | {summary_text}"
+
+            ltm.add_entry(
+                domain=domain,
+                content={"text": summary_text, "interlocutor_id": interlocutor_id, "trust_level": trust_level},
+                source="conversation_summary",
+                tags=["summary"],
+                importance=0.6,
+            )
+            return True
+        except Exception as e:
+            logger.warning("ConversationSummaryManager.update_summary failed (degraded): %s", e)
+            return False
