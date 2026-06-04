@@ -54,16 +54,16 @@ def get_memory_status() -> Dict[str, Any]:
     """Return memory system health status."""
     status: Dict[str, Any] = {"enabled": False, "status": "unknown", "error": None}
     try:
-        from igris.core.long_term_memory import LongTermMemory
         from igris.core.conversation_memory import (
             ConversationMemoryStore, ConversationRetriever, ConversationSummaryManager,
         )
-        # Quick instantiation check
-        ltm = LongTermMemory(base_path=None)  # uses default path — read-only check
+        # Just check modules are importable (no instantiation needed for health check)
+        _ = ConversationMemoryStore
+        _ = ConversationRetriever
+        _ = ConversationSummaryManager
         status["enabled"] = True
         status["status"] = "ok"
         status["modules"] = {
-            "LongTermMemory": "ok",
             "ConversationMemoryStore": "ok",
             "ConversationRetriever": "ok",
             "ConversationSummaryManager": "ok",
