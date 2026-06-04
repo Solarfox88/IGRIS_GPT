@@ -230,3 +230,158 @@ def test_retrieve_for_mission_untrusted_no_sensitive(tmp_path):
     result = mem.retrieve_for_mission("deploy", interlocutor_id="owner", trust_level="untrusted")
     for item in result.items:
         assert not (item.trust_required == "trusted" and item.safe_for_context)
+
+
+# ── Fix 7: store_* real persistence tests ─────────────────────────────────
+
+def test_store_preference_persists_to_ltm(tmp_path):
+    """store_preference with working LTM must actually write — verifiable via new LTM instance."""
+    from igris.core.unified_memory import UnifiedMemory
+    from igris.core.long_term_memory import LongTermMemory
+
+    mem = UnifiedMemory(project_root=tmp_path)
+    r = mem.store_preference("owner", "admin", "Preferisco risposte brevi")
+
+    if mem._ltm is not None:
+        assert r.ok, f"store_preference failed when LTM available: {r.warnings}"
+        assert r.id, "store_preference returned empty id when LTM available"
+        # Verify persistence on disk via a fresh LTM instance
+        ltm_path = tmp_path / ".igris" / "memory" / "long_term"
+        ltm2 = LongTermMemory(storage_dir=str(ltm_path))
+        found = ltm2.search("Preferisco", domains=[f"synaptic:owner"], limit=5)
+        assert found, "preference not found in LTM after store_preference"
+    else:
+        assert r.ok is False, "ok must be False when LTM unavailable"
+
+
+def test_store_decision_persists_to_ltm(tmp_path):
+    """store_decision with working LTM must actually write."""
+    from igris.core.unified_memory import UnifiedMemory
+    from igris.core.long_term_memory import LongTermMemory
+
+    mem = UnifiedMemory(project_root=tmp_path)
+    r = mem.store_decision("Use async APIs", project="test_proj", confidence=0.9)
+
+    if mem._ltm is not None:
+        assert r.ok, f"store_decision failed when LTM available: {r.warnings}"
+        ltm_path = tmp_path / ".igris" / "memory" / "long_term"
+        ltm2 = LongTermMemory(storage_dir=str(ltm_path))
+        found = ltm2.search("async", domains=["decision:test_proj"], limit=5)
+        assert found, "decision not found in LTM after store_decision"
+    else:
+        assert r.ok is False
+
+
+def test_store_lesson_persists_to_ltm(tmp_path):
+    """store_lesson with working LTM must actually write."""
+    from igris.core.unified_memory import UnifiedMemory
+    from igris.core.long_term_memory import LongTermMemory
+
+    mem = UnifiedMemory(project_root=tmp_path)
+    r = mem.store_lesson("Always validate input", project="test_proj")
+
+    if mem._ltm is not None:
+        assert r.ok, f"store_lesson failed when LTM available: {r.warnings}"
+        ltm_path = tmp_path / ".igris" / "memory" / "long_term"
+        ltm2 = LongTermMemory(storage_dir=str(ltm_path))
+        found = ltm2.search("validate", domains=["lesson:test_proj"], limit=5)
+        assert found, "lesson not found in LTM after store_lesson"
+    else:
+        assert r.ok is False
+
+
+def test_store_fact_persists_to_ltm(tmp_path):
+    """store_fact with working LTM must actually write."""
+    from igris.core.unified_memory import UnifiedMemory
+    from igris.core.long_term_memory import LongTermMemory
+
+    mem = UnifiedMemory(project_root=tmp_path)
+    r = mem.store_fact("IGRIS uses Python 3.11", fact_type="project_fact", project="main")
+
+    if mem._ltm is not None:
+        assert r.ok, f"store_fact failed when LTM available: {r.warnings}"
+        ltm_path = tmp_path / ".igris" / "memory" / "long_term"
+        ltm2 = LongTermMemory(storage_dir=str(ltm_path))
+        found = ltm2.search("Python 3.11", domains=["fact:main"], limit=5)
+        assert found, "fact not found in LTM after store_fact"
+    else:
+        assert r.ok is False
+
+
+# ── Fix 8: run_event / feedback secret tests ───────────────────────────────
+
+def test_store_run_event_redacts_secrets(tmp_path):
+    """store_run_event must not persist raw secrets to disk."""
+    from igris.core.unified_memory import UnifiedMemory
+    from pathlib import Path
+
+    FAKE = "FAKE_SECRET_RUNEVENT_NOTREAL_9988"
+    mem = UnifiedMemory(project_root=tmp_path)
+    mem.store_run_event(
+        mission_id="m1",
+        action=f"deploy token={FAKE}",
+        status="ok",
+        outcome=f"used key={FAKE}",
+        project="test",
+    )
+    # Check all JSON files under .igris
+    storage = tmp_path / ".igris"
+    all_text = ""
+    for f in storage.rglob("*.json"):
+        all_text += f.read_text()
+    assert FAKE not in all_text, f"Raw secret in storage after store_run_event: found in files"
+
+
+def test_record_feedback_redacts_secrets(tmp_path):
+    """record_feedback must not persist raw secrets (query/notes) to disk."""
+    from igris.core.unified_memory import UnifiedMemory
+    from pathlib import Path
+
+    FAKE = "FAKE_SECRET_FEEDBACK_NOTREAL_7766"
+    mem = UnifiedMemory(project_root=tmp_path)
+    mem.record_feedback(
+        memory_id="m1",
+        used=True,
+        query=f"token={FAKE}",
+        notes=f"passphrase={FAKE}",
+    )
+    storage = tmp_path / ".igris"
+    all_text = ""
+    for f in storage.rglob("*.json"):
+        all_text += f.read_text()
+    assert FAKE not in all_text, f"Raw secret in storage after record_feedback"
+
+
+# ── Fix 9: healthcheck primary backend degraded => ok=False ───────────────
+
+def test_healthcheck_primary_backend_degraded_ok_false(tmp_path, monkeypatch):
+    """healthcheck must return ok=False when a primary backend (LTM) is degraded."""
+    import igris.core.long_term_memory as ltm_mod
+
+    original_init = ltm_mod.LongTermMemory.__init__
+
+    def broken_init(self, *args, **kwargs):
+        raise RuntimeError("forced degraded for test")
+
+    monkeypatch.setattr(ltm_mod.LongTermMemory, "__init__", broken_init)
+
+    from igris.core.unified_memory import UnifiedMemory
+    mem = UnifiedMemory(project_root=tmp_path)
+    h = mem.healthcheck()
+    assert h["ok"] is False, (
+        "healthcheck should return ok=False when primary backend (LTM) is degraded"
+    )
+    assert h["backends"]["long_term_memory"] == "degraded"
+
+
+# ── Fix 10: retrieve_for_chat documents default project scope ──────────────
+
+def test_retrieve_for_chat_uses_default_project(tmp_path):
+    """retrieve_for_chat uses 'default' project scope when no project specified."""
+    from igris.core.unified_memory import UnifiedMemory
+
+    mem = UnifiedMemory(project_root=tmp_path)
+    result = mem.retrieve_for_chat("query", "owner", "admin")
+    # Must work without project param — uses default
+    assert isinstance(result.context, str)
+    assert isinstance(result.items, list)

@@ -23,7 +23,8 @@ logger = logging.getLogger(__name__)
 
 _SECRET_PATTERNS = [
     re.compile(
-        r'(token|passphrase|password|secret|api[_\s]?key|private[_\s]?key|bearer)'
+        r'(token|passphrase|password|secret|api[_\s]?key|private[_\s]?key|bearer'
+        r'|(?<!\w)key(?!\w)|auth|credential|cred)'
         r'\s*[=:]\s*\S+',
         re.IGNORECASE,
     ),
@@ -38,6 +39,10 @@ def _redact(text: str) -> str:
         text = p.sub('<REDACTED>', text)
     return text
 
+
+# ── Primary backends (degraded = healthcheck fails) ───────────────────────────
+
+_PRIMARY_BACKENDS = {"long_term_memory", "conversation_memory"}
 
 # ── Trust policy ──────────────────────────────────────────────────────────────
 
@@ -231,6 +236,7 @@ class UnifiedMemory:
         backends_status: dict = {}
         entry_id = str(uuid.uuid4())
         domain = f"synaptic:{interlocutor_id}"
+        any_primary_wrote = False
 
         if self._ltm:
             try:
@@ -246,13 +252,16 @@ class UnifiedMemory:
                 )
                 entry_id = entry.id
                 backends_status["ltm"] = "ok"
+                any_primary_wrote = True
             except Exception as e:
                 backends_status["ltm"] = "degraded"
                 warnings.append(f"ltm: {e}")
+                logger.warning("store_preference LTM failed: %s", e)
         else:
             backends_status["ltm"] = "unavailable"
 
-        return StoreResult(ok=True, kind="preference", id=entry_id,
+        return StoreResult(ok=any_primary_wrote, kind="preference",
+                           id=entry_id if any_primary_wrote else "",
                            backends=backends_status, warnings=warnings)
 
     def store_decision(self, text: str, interlocutor_id: str = "unknown",
@@ -264,6 +273,7 @@ class UnifiedMemory:
         warnings: list = []
         backends_status: dict = {}
         domain = f"decision:{project}"
+        any_primary_wrote = False
 
         if self._ltm:
             try:
@@ -279,13 +289,16 @@ class UnifiedMemory:
                 )
                 entry_id = entry.id
                 backends_status["ltm"] = "ok"
+                any_primary_wrote = True
             except Exception as e:
                 backends_status["ltm"] = "degraded"
                 warnings.append(f"ltm: {e}")
+                logger.warning("store_decision LTM failed: %s", e)
         else:
             backends_status["ltm"] = "unavailable"
 
-        return StoreResult(ok=True, kind="decision", id=entry_id,
+        return StoreResult(ok=any_primary_wrote, kind="decision",
+                           id=entry_id if any_primary_wrote else "",
                            backends=backends_status, warnings=warnings)
 
     def store_correction(self, text: str, interlocutor_id: str = "unknown",
@@ -297,6 +310,7 @@ class UnifiedMemory:
         warnings: list = []
         backends_status: dict = {}
         domain = f"synaptic:{interlocutor_id}"
+        any_primary_wrote = False
 
         if self._ltm:
             try:
@@ -311,13 +325,16 @@ class UnifiedMemory:
                 )
                 entry_id = entry.id
                 backends_status["ltm"] = "ok"
+                any_primary_wrote = True
             except Exception as e:
                 backends_status["ltm"] = "degraded"
                 warnings.append(f"ltm: {e}")
+                logger.warning("store_correction LTM failed: %s", e)
         else:
             backends_status["ltm"] = "unavailable"
 
-        return StoreResult(ok=True, kind="correction", id=entry_id,
+        return StoreResult(ok=any_primary_wrote, kind="correction",
+                           id=entry_id if any_primary_wrote else "",
                            backends=backends_status, warnings=warnings)
 
     def store_lesson(self, text: str, project: str = "default",
@@ -328,6 +345,7 @@ class UnifiedMemory:
         warnings: list = []
         backends_status: dict = {}
         domain = f"lesson:{project}"
+        any_primary_wrote = False
 
         if self._ltm:
             try:
@@ -342,24 +360,32 @@ class UnifiedMemory:
                 )
                 entry_id = entry.id
                 backends_status["ltm"] = "ok"
+                any_primary_wrote = True
             except Exception as e:
                 backends_status["ltm"] = "degraded"
                 warnings.append(f"ltm: {e}")
+                logger.warning("store_lesson LTM failed: %s", e)
         else:
             backends_status["ltm"] = "unavailable"
 
-        return StoreResult(ok=True, kind="lesson", id=entry_id,
+        return StoreResult(ok=any_primary_wrote, kind="lesson",
+                           id=entry_id if any_primary_wrote else "",
                            backends=backends_status, warnings=warnings)
 
     def store_run_event(self, mission_id: str, action: str, status: str,
                         outcome: str = "", evidence_ref: str = "",
                         project: str = "default") -> StoreResult:
         """Store an operational run event."""
+        # Fix 4: Redact sensitive fields before persistence
+        action = _redact(action)
+        outcome = _redact(outcome)
+        evidence_ref = _redact(evidence_ref)
         entry_id = str(uuid.uuid4())
         warnings: list = []
         backends_status: dict = {}
         domain = f"run:{project}"
         text = f"[{status}] {action}: {outcome}"
+        any_primary_wrote = False
 
         if self._ltm:
             try:
@@ -375,13 +401,16 @@ class UnifiedMemory:
                 )
                 entry_id = entry.id
                 backends_status["ltm"] = "ok"
+                any_primary_wrote = True
             except Exception as e:
                 backends_status["ltm"] = "degraded"
                 warnings.append(f"ltm: {e}")
+                logger.warning("store_run_event LTM failed: %s", e)
         else:
             backends_status["ltm"] = "unavailable"
 
-        return StoreResult(ok=True, kind="run_event", id=entry_id,
+        return StoreResult(ok=any_primary_wrote, kind="run_event",
+                           id=entry_id if any_primary_wrote else "",
                            backends=backends_status, warnings=warnings)
 
     def store_fact(self, text: str, fact_type: str = "project_fact",
@@ -392,6 +421,7 @@ class UnifiedMemory:
         warnings: list = []
         backends_status: dict = {}
         domain = f"fact:{project}"
+        any_primary_wrote = False
 
         if self._ltm:
             try:
@@ -406,13 +436,16 @@ class UnifiedMemory:
                 )
                 entry_id = entry.id
                 backends_status["ltm"] = "ok"
+                any_primary_wrote = True
             except Exception as e:
                 backends_status["ltm"] = "degraded"
                 warnings.append(f"ltm: {e}")
+                logger.warning("store_fact LTM failed: %s", e)
         else:
             backends_status["ltm"] = "unavailable"
 
-        return StoreResult(ok=True, kind=fact_type, id=entry_id,
+        return StoreResult(ok=any_primary_wrote, kind=fact_type,
+                           id=entry_id if any_primary_wrote else "",
                            backends=backends_status, warnings=warnings)
 
     # ── Retrieve operations ───────────────────────────────────────────────────
@@ -468,6 +501,9 @@ class UnifiedMemory:
                         outcome: str = "neutral", mission_id: str = "",
                         query: str = "", notes: str = "") -> StoreResult:
         """Record feedback on a memory item (for future learning)."""
+        # Fix 5: Redact sensitive fields
+        query = _redact(query)
+        notes = _redact(notes)
         entry_id = str(uuid.uuid4())
         warnings: list = []
         domain = "feedback:system"
@@ -486,6 +522,7 @@ class UnifiedMemory:
                 )
             except Exception as e:
                 warnings.append(f"feedback ltm: {e}")
+                logger.warning("record_feedback LTM failed: %s", e)
 
         return StoreResult(ok=True, kind="feedback", id=entry_id, warnings=warnings)
 
@@ -493,6 +530,8 @@ class UnifiedMemory:
                         reason: str = "") -> StoreResult:
         """Mark a memory as superseded by a newer one."""
         entry_id = str(uuid.uuid4())
+        warnings: list = []
+        any_wrote = False
         content = {"kind": "superseded", "memory_id": memory_id,
                    "superseded_by": superseded_by_id, "reason": reason}
 
@@ -505,13 +544,18 @@ class UnifiedMemory:
                     tags=[],
                     importance=0.5,
                 )
-            except Exception:
-                pass
+                any_wrote = True
+            except Exception as e:
+                logger.warning("mark_superseded LTM failed: %s", e)
+                warnings.append(f"ltm: {e}")
 
-        return StoreResult(ok=True, kind="superseded", id=entry_id)
+        return StoreResult(ok=any_wrote or self._ltm is None, kind="superseded",
+                           id=entry_id, warnings=warnings)
 
     def forget(self, memory_id: str, reason: str = "user_request") -> StoreResult:
         """Soft-delete a memory item by marking it as forgotten."""
+        warnings: list = []
+        any_wrote = False
         content = {"kind": "forgotten", "memory_id": memory_id, "reason": reason}
 
         if self._ltm:
@@ -523,10 +567,13 @@ class UnifiedMemory:
                     tags=[],
                     importance=0.1,
                 )
-            except Exception:
-                pass
+                any_wrote = True
+            except Exception as e:
+                logger.warning("forget LTM failed: %s", e)
+                warnings.append(f"ltm: {e}")
 
-        return StoreResult(ok=True, kind="forgotten", id=memory_id)
+        return StoreResult(ok=any_wrote or self._ltm is None, kind="forgotten",
+                           id=memory_id, warnings=warnings)
 
     def memory_influence_report(self, retrieval_result: RetrievalResult) -> str:
         """Generate a human-readable influence report from retrieval result."""
@@ -548,9 +595,17 @@ class UnifiedMemory:
         return "\n".join(lines)
 
     def healthcheck(self) -> dict:
-        """Return health status of all backends."""
+        """Return health status of all backends.
+
+        ok=False if any PRIMARY backend (long_term_memory, conversation_memory) is degraded.
+        Optional backends (memory_graph, topic_tree, etc.) degraded only add warnings.
+        """
+        primary_ok = all(
+            self._backends.get(b, "degraded") == "ok"
+            for b in _PRIMARY_BACKENDS
+        )
         return {
-            "ok": all(v in ("ok", "unavailable") for v in self._backends.values()),
+            "ok": primary_ok,
             "backends": dict(self._backends),
             "warnings": [
                 f"{k}: {v}" for k, v in self._backends.items()
