@@ -10,12 +10,9 @@ def router(tmp_path):
 
 @pytest.fixture
 def client():
-    try:
-        from igris.web.app import app
-        from fastapi.testclient import TestClient
-        return TestClient(app, raise_server_exceptions=False)
-    except Exception:
-        pytest.skip("TestClient or app not available")
+    from fastapi.testclient import TestClient
+    from igris.web.server import create_app
+    return TestClient(create_app(), raise_server_exceptions=False)
 
 
 # ── Classification tests ───────────────────────────────────────────────────────
@@ -158,12 +155,31 @@ def test_router_uses_unified_memory_for_chat_retrieval(tmp_path, monkeypatch):
     from igris.core.jarvis_request_router import JarvisRequestRouter
 
     mem = UnifiedMemory(project_root=tmp_path)
-    mem.store_preference("owner", "admin", "Preferisco risposte brevi")
+    # Store a preference so retrieval has something to find
+    mem.store_preference("owner", "admin", "Preferisco sempre risposte brevi e dirette")
+
+    retrieve_calls = []
+    original_retrieve = mem.retrieve_for_chat
+    def tracking_retrieve(query, interlocutor_id, trust_level, **kwargs):
+        retrieve_calls.append((query, interlocutor_id, trust_level))
+        return original_retrieve(query=query, interlocutor_id=interlocutor_id, trust_level=trust_level, **kwargs)
+    mem.retrieve_for_chat = tracking_retrieve
 
     router = JarvisRequestRouter(project_root=tmp_path, unified_memory=mem)
     d = router.route("fammi un riassunto", interlocutor_id="owner", trust_level="admin")
 
     assert not d.blocked
+    # Verify retrieve_for_chat was called
+    assert len(retrieve_calls) > 0, (
+        "retrieve_for_chat was NOT called by router.route() for chat context. "
+        "Router must call UnifiedMemory.retrieve_for_chat() for retrieve routes."
+    )
+    assert retrieve_calls[0][1] == "owner"  # correct interlocutor_id
+
+    # Verify memory context is safe (no raw secrets in metadata)
+    import json, re
+    meta_str = json.dumps(d.metadata)
+    assert not re.search(r'passphrase\s*=\s*\S{8,}', meta_str, re.IGNORECASE)
     # Memory context should be injected if available
     assert isinstance(d.metadata, dict)
 
@@ -214,15 +230,23 @@ def test_router_degraded_memory_does_not_crash(tmp_path, monkeypatch):
 
 def test_chat_returns_route_metadata(client):
     r = client.post("/api/sessions")
+    assert r.status_code == 200
     sid = r.json()["id"]
     r2 = client.post(
         f"/api/sessions/{sid}/messages",
-        json={"message": "ciao", "interlocutor_id": "owner"}
+        json={"message": "ciao come stai", "interlocutor_id": "owner"}
     )
     assert r2.status_code == 200
     d = r2.json()
-    # route metadata must be present (can be None if router failed gracefully)
-    assert "route" in d or "response" in d  # backward compatible
+    # route MUST be present and non-None
+    assert "route" in d, f"route key missing from response: {list(d.keys())}"
+    assert d["route"] is not None, "route must not be None"
+    route_data = d["route"]
+    assert isinstance(route_data, dict), f"route must be dict, got {type(route_data)}"
+    assert "route" in route_data, f"route.route missing: {route_data}"
+    assert route_data["route"] == "chat_only", (
+        f"Expected route=chat_only for innocuous message, got {route_data['route']!r}"
+    )
 
 def test_chat_innocua_unknown_allowed(client):
     r = client.post("/api/sessions")
@@ -248,6 +272,7 @@ def test_chat_sensitive_unknown_blocked(client):
 
 def test_chat_memory_update_owner_classified(client):
     r = client.post("/api/sessions")
+    assert r.status_code == 200
     sid = r.json()["id"]
     r2 = client.post(
         f"/api/sessions/{sid}/messages",
@@ -255,9 +280,15 @@ def test_chat_memory_update_owner_classified(client):
     )
     assert r2.status_code == 200
     d = r2.json()
-    route_data = d.get("route") or {}
-    if route_data:
-        assert route_data.get("route") in ("memory_update", "chat_only", None)
+    assert "route" in d, "route key missing"
+    route_data = d["route"]
+    assert route_data is not None, "route must not be None"
+    assert route_data["route"] == "memory_update", (
+        f"Expected memory_update for 'ricordati', got {route_data['route']!r}"
+    )
+    assert route_data.get("memory_mode") == "store", (
+        f"Expected memory_mode=store, got {route_data.get('memory_mode')!r}"
+    )
 
 def test_route_metadata_no_secrets(client):
     r = client.post("/api/sessions")
@@ -268,4 +299,109 @@ def test_route_metadata_no_secrets(client):
     )
     import re, json
     content = json.dumps(r2.json())
-    assert not re.search(r'passphrase\s*=\s*\S{8,}', content, re.IGNORECASE)
+    assert not re.search(r'passphrase\s*=\s*\S{8,}', content, re.IGNORECASE), \
+        "Raw secret in route metadata"
+
+
+def test_chat_high_risk_deploy_returns_approval_required(client, monkeypatch):
+    """High-risk operations must not call chat_llm — must return requires_approval."""
+    called = []
+
+    def mock_chat(message, history=None, system_prompt=None):
+        called.append(message)
+        return {"text": "mock", "provider": "mock", "model": "mock",
+                "fallback_used": False, "latency_ms": 0, "routing_reason": "test",
+                "intent_detected": None, "suggested_actions": []}
+
+    import igris.web.routers.routes_01 as _r
+    monkeypatch.setattr(_r, "chat_llm", mock_chat)
+
+    # Monkeypatch preflight to simulate a trusted local admin request
+    # (TestClient requests are non-local so 'owner' gets downgraded to 'unknown' by anti-spoofing)
+    from igris.core.chat_interlocutor_preflight import PreflightResult
+    def mock_preflight(message, interlocutor_id=None, project_root=None,
+                       is_new_session=False, is_local_request=False, payload=None):
+        return PreflightResult(
+            interlocutor_id="owner",
+            trust_level="admin",
+            response_mode={},
+            intent_action="deploy",
+            intent_risk="high",
+            block_reason=None,
+            blocked=False,
+            requires_clarification=False,
+            clarification_question=None,
+            advisory=None,
+            system_prompt_enrichment="",
+        )
+    import igris.core.chat_interlocutor_preflight as _pf_mod
+    monkeypatch.setattr(_pf_mod, "run_preflight", mock_preflight)
+    import igris.web.routers.routes_01 as _r2
+    monkeypatch.setattr(_r2, "run_preflight", mock_preflight, raising=False)
+
+    r = client.post("/api/sessions")
+    sid = r.json()["id"]
+    r2 = client.post(
+        f"/api/sessions/{sid}/messages",
+        json={"message": "fai deploy in produzione", "interlocutor_id": "owner"}
+    )
+    assert r2.status_code == 200
+    d = r2.json()
+
+    # chat_llm must NOT have been called
+    assert len(called) == 0, f"chat_llm was called despite requires_approval: {called}"
+    # Response must indicate approval required
+    assert d.get("requires_approval") is True, (
+        f"Expected requires_approval=True, got: {d}"
+    )
+    route_data = d.get("route") or {}
+    assert route_data.get("requires_approval") is True
+
+
+def test_stream_high_risk_returns_approval_not_stream(client, monkeypatch):
+    """Stream endpoint must not stream real response for high-risk — return approval message."""
+    # Monkeypatch preflight to simulate trusted local admin (anti-spoofing bypassed)
+    from igris.core.chat_interlocutor_preflight import PreflightResult
+    def mock_preflight(message, interlocutor_id=None, project_root=None,
+                       is_new_session=False, is_local_request=False, payload=None):
+        return PreflightResult(
+            interlocutor_id="owner",
+            trust_level="admin",
+            response_mode={},
+            intent_action="deploy",
+            intent_risk="high",
+            block_reason=None,
+            blocked=False,
+            requires_clarification=False,
+            clarification_question=None,
+            advisory=None,
+            system_prompt_enrichment="",
+        )
+    import igris.core.chat_interlocutor_preflight as _pf_mod
+    monkeypatch.setattr(_pf_mod, "run_preflight", mock_preflight)
+    import igris.web.routers.routes_01 as _r2
+    monkeypatch.setattr(_r2, "run_preflight", mock_preflight, raising=False)
+
+    r = client.post(
+        "/api/chat/stream",
+        json={"message": "fai deploy in produzione", "interlocutor_id": "owner",
+              "session_id": "stream_approval_test"}
+    )
+    assert r.status_code == 200
+    content = r.text
+    assert "approvazione" in content.lower() or "approval" in content.lower() or \
+           "requires_approval" in content.lower() or "richiede" in content.lower(), (
+        f"Stream did not return approval message for deploy. Got: {content[:300]!r}"
+    )
+
+
+def test_unknown_destructive_blocked_in_endpoint(client):
+    r = client.post("/api/sessions")
+    sid = r.json()["id"]
+    r2 = client.post(
+        f"/api/sessions/{sid}/messages",
+        json={"message": "cancella il database di produzione", "interlocutor_id": "unknown_attacker"}
+    )
+    assert r2.status_code == 200
+    d = r2.json()
+    assert d.get("blocked") is True, f"Expected blocked=True, got: {d}"

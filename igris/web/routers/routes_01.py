@@ -226,6 +226,24 @@ def create_router(deps) -> APIRouter:
                     "blocked": True,
                     "route": _route_decision.to_dict(),
                 }
+            # --- Router approval gate ---
+            if _route_decision and getattr(_route_decision, "requires_approval", False) and not getattr(_route_decision, "blocked", False):
+                return {
+                    "response": (
+                        f"Questa operazione ({_route_decision.route}) richiede approvazione esplicita. "
+                        f"Rischio: {_route_decision.risk}. "
+                        "Usa il gate di approvazione o delega per procedere."
+                    ),
+                    "requires_approval": True,
+                    "route": _route_decision.to_dict() if _route_decision else None,
+                    "provider": "jarvis_router",
+                    "model": "approval_gate",
+                    "fallback_used": False,
+                    "latency_ms": 0,
+                    "intent_detected": None,
+                    "suggested_actions": [],
+                }
+            # --- end approval gate ---
             # Use memory context from router if available (enriches system prompt)
             if _route_decision and _route_decision.metadata.get("memory_context"):
                 system_enrichment = (system_enrichment or "") + "\n" + _route_decision.metadata["memory_context"]
@@ -412,6 +430,21 @@ def create_router(deps) -> APIRouter:
                     media_type="text/event-stream",
                     headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
                 )
+            # --- Stream approval gate ---
+            if _stream_route_decision and getattr(_stream_route_decision, "requires_approval", False) and not getattr(_stream_route_decision, "blocked", False):
+                _approval_msg = (
+                    f"Questa operazione ({_stream_route_decision.route}) richiede approvazione esplicita. "
+                    f"Rischio: {_stream_route_decision.risk}."
+                )
+                async def _approval_generator():
+                    yield f"data: {json.dumps({'type': 'content', 'text': _approval_msg})}\n\n"
+                    yield "data: [DONE]\n\n"
+                return StreamingResponse(
+                    _approval_generator(),
+                    media_type="text/event-stream",
+                    headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+                )
+            # --- end stream approval gate ---
             if _stream_route_decision and _stream_route_decision.metadata.get("memory_context"):
                 system_enrichment = (system_enrichment or "") + "\n" + _stream_route_decision.metadata["memory_context"]
         except Exception as _sr_exc:
