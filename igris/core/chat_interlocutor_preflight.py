@@ -2,11 +2,24 @@
 
 Implements the full interlocutor-aware pipeline for conversational entry points
 as part of issue #526.
+
+Security hardening (#1239):
+- Anti-spoofing: owner/system from non-local requests downgraded to unknown
+- AuthorizationGate called for sensitive authorized actions
+- Delegation key verify path for unknown/untrusted interlocutors
+- Silent excepts replaced with logging/degraded state
+- Audit write failures produce visible degraded log
 """
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass, field
 from typing import Any
+
+logger = logging.getLogger(__name__)
+
+# Privileged IDs that cannot be claimed from non-local HTTP requests
+PRIVILEGED_IDS = {"owner", "system"}
 
 
 @dataclass
@@ -36,17 +49,64 @@ SENSITIVE_CHAT_ACTIONS = {
 }
 
 
+def is_trusted_local_request(
+    request_headers: dict | None = None,
+    remote_addr: str | None = None,
+) -> bool:
+    """Returns True if request is from localhost/127.0.0.1."""
+    LOCAL_ADDRS = {"127.0.0.1", "::1", "localhost"}
+    if remote_addr and remote_addr in LOCAL_ADDRS:
+        return True
+    # Also check forwarded headers — but only trust them if no remote_addr override
+    if remote_addr is None and request_headers:
+        fwd = request_headers.get("x-forwarded-for", "")
+        if fwd.split(",")[0].strip() in LOCAL_ADDRS:
+            return True
+    return False
+
+
+def _resolve_privileged_identity(candidate_id: str, is_local: bool) -> str:
+    """Privileged IDs (owner/system) only allowed from local/internal requests.
+
+    If a non-local caller claims 'owner' or 'system', downgrade to 'unknown'
+    to prevent spoofing attacks.
+    """
+    if candidate_id in PRIVILEGED_IDS:
+        if is_local:
+            return candidate_id  # trusted local UI
+        logger.warning(
+            "Anti-spoofing: privileged identity '%s' claimed from non-local request — "
+            "downgraded to 'unknown'",
+            candidate_id,
+        )
+        return "unknown"  # downgrade — cannot verify over network
+    return candidate_id
+
+
 def run_preflight(
     message: str,
     interlocutor_id: str | None = None,
     project_root: str | None = None,
     is_new_session: bool = False,
+    is_local_request: bool = False,
+    payload: dict | None = None,
 ) -> PreflightResult:
-    """Full interlocutor-aware preflight for a chat message."""
+    """Full interlocutor-aware preflight for a chat message.
+
+    Args:
+        message: The chat message to check.
+        interlocutor_id: Identity claimed by the caller.
+        project_root: Path to the IGRIS project root.
+        is_new_session: Whether this is the first message in a session.
+        is_local_request: True if the request originated from localhost (127.0.0.1).
+        payload: Raw request payload (for delegation key fields).
+    """
     from pathlib import Path
 
-    # 1. Resolve identity
-    _id = interlocutor_id or "unknown"
+    # 1. Resolve identity — with anti-spoofing for privileged IDs
+    raw_id = interlocutor_id or "unknown"
+    _id = _resolve_privileged_identity(raw_id, is_local=is_local_request)
+
     profile = None
     trust_level = "untrusted"
     try:
@@ -62,10 +122,10 @@ def run_preflight(
         if profile.profile_id not in _BUILTIN:
             try:
                 ir.update(profile)
-            except Exception:
-                pass
-    except Exception:
-        pass
+            except Exception as _upd_exc:
+                logger.debug("Profile update skipped: %s", _upd_exc)
+    except Exception as _id_exc:
+        logger.debug("Identity resolution failed for '%s': %s", _id, _id_exc)
 
     # 2. Detect state
     response_mode: dict = {
@@ -89,14 +149,15 @@ def run_preflight(
             "use_bullet_points": mode.use_bullet_points,
             "simplify_language": mode.simplify_language,
         }
-    except Exception:
-        pass
+    except Exception as _sc_exc:
+        logger.debug("State calibration skipped: %s", _sc_exc)
 
     # 3. Resolve intent
     intent_action = "unknown"
     intent_risk = "low"
     ambiguous = False
     clarification_question = None
+    intent = None
     try:
         from igris.core.intent_resolver import IntentResolver
         ir2 = IntentResolver()
@@ -105,8 +166,8 @@ def run_preflight(
         intent_risk = intent.risk_hint
         ambiguous = intent.ambiguous
         clarification_question = intent.clarification_question
-    except Exception:
-        pass
+    except Exception as _ir_exc:
+        logger.debug("Intent resolution failed: %s", _ir_exc)
 
     # 4. Authorization for action-like intents
     blocked = False
@@ -117,18 +178,84 @@ def run_preflight(
     is_untrusted = trust_level in ("untrusted", "unknown", "")
 
     if is_sensitive and is_untrusted:
-        blocked = True
-        block_reason = (
-            f"Action '{intent_action}' (risk: {intent_risk}) denied for unrecognized interlocutor. "
-            "Please identify yourself or provide a delegation key."
-        )
+        # 4a. Try delegation key verification before blocking
+        _dk_id = (payload or {}).get("delegation_key_id")
+        _dk_pass = (payload or {}).get("delegation_key_passphrase")
+
+        if _dk_id and _dk_pass:
+            try:
+                from igris.core.delegation_keys import verify_key
+                root = project_root or str(Path.home())
+                _ok, _dk_reason = verify_key(
+                    project_root=root,
+                    key_id=_dk_id,
+                    raw_passphrase=_dk_pass,
+                    requested_scopes=[intent_action],
+                    bearer=_id,
+                )
+                del _dk_pass  # never keep passphrase in scope longer than needed
+                if _ok:
+                    is_untrusted = False
+                    trust_level = "limited"  # delegation scope only
+                    advisory = f"Proceeding via delegation key (scope: {intent_action})"
+                    logger.info(
+                        "Delegation key '%s' accepted for interlocutor '%s', action '%s'",
+                        _dk_id, _id, intent_action,
+                    )
+                else:
+                    del _dk_id
+                    blocked = True
+                    block_reason = (
+                        f"Delegation key rejected: {_dk_reason}. "
+                        "Identify yourself or provide a valid delegation key."
+                    )
+                    logger.warning(
+                        "Delegation key rejected for interlocutor '%s': %s",
+                        _id, _dk_reason,
+                    )
+            except Exception as _dk_exc:
+                logger.warning("Delegation key verify error for '%s': %s", _id, _dk_exc)
+                blocked = True
+                block_reason = "Delegation key verification failed — sensitive action blocked for safety."
+        else:
+            blocked = True
+            block_reason = (
+                f"Action '{intent_action}' (risk: {intent_risk}) denied for unrecognized interlocutor. "
+                "Please identify yourself or provide a delegation key."
+            )
     elif is_sensitive and not is_untrusted:
         advisory = (
             f"Action '{intent_action}' is sensitive (risk: {intent_risk}). "
             "Proceeding with authorization."
         )
 
-    # 4b. Judgment Layer advisory (Layer 5) — only for authorized non-blocked actions
+    # 4b. AuthorizationGate check for authorized non-blocked sensitive actions
+    if is_sensitive and not is_untrusted and not blocked and profile is not None:
+        try:
+            from igris.core.authorization_gate import AuthorizationGate
+            root = project_root or str(Path.home())
+            _ag = AuthorizationGate(root)
+            _scope = (
+                intent.target_resource if intent is not None and hasattr(intent, "target_resource")
+                else intent_action
+            )
+            _auth_result = _ag.check(profile, action_type=intent_action, target_resource=_scope)
+            if not _auth_result.allowed:
+                blocked = True
+                block_reason = f"AuthorizationGate denied: {getattr(_auth_result, 'reason', 'scope not authorized')}"
+                logger.warning(
+                    "AuthorizationGate denied action '%s' for '%s': %s",
+                    intent_action, _id, block_reason,
+                )
+            elif getattr(_auth_result, "requires_delegation_key", False):
+                advisory = f"Action may require a delegation key: {getattr(_auth_result, 'message', '')}"
+        except Exception as _ag_exc:
+            logger.warning("AuthorizationGate unavailable: %s", _ag_exc)
+            if is_sensitive:
+                blocked = True
+                block_reason = "Authorization check unavailable — sensitive action blocked for safety."
+
+    # 4c. Judgment Layer advisory (Layer 5) — only for authorized non-blocked actions
     if not blocked and is_sensitive and not is_untrusted:
         try:
             from igris.core.judgment_layer import JudgmentLayer, OperationalContext
@@ -144,10 +271,10 @@ def run_preflight(
                 advisory = _adv.message
             elif _adv and _adv.message:
                 advisory = _adv.message
-        except Exception:
-            pass
+        except Exception as _jl_exc:
+            logger.debug("JudgmentLayer skipped: %s", _jl_exc)
 
-    # 4c. Proactive Engine scan (Layer 7) — appended to advisory if events found
+    # 4d. Proactive Engine scan (Layer 7) — appended to advisory if events found
     if not blocked and not is_untrusted:
         try:
             from igris.core.proactive_engine import ProactiveEngine
@@ -165,8 +292,8 @@ def run_preflight(
                 )
                 proactive_hint = f"[Proactive] {_event_summary}"
                 advisory = f"{advisory}\n{proactive_hint}" if advisory else proactive_hint
-        except Exception:
-            pass
+        except Exception as _pe_exc:
+            logger.debug("ProactiveEngine skipped: %s", _pe_exc)
 
     # 5. Build system prompt enrichment — behavioral instructions, not just context
     profile_summary = ""
@@ -235,11 +362,16 @@ def run_preflight(
             f"Se il tuo giudizio lo richiede, comunica questo advisory all'utente.\n"
         )
 
-    # 6. Audit
+    # 6. Audit — fix 7: use CONFIG.project_root, fix 9: log on write failure
     audit_event_id = None
     try:
         from igris.core.interlocutor_audit import InterlocutorAudit
-        audit = InterlocutorAudit()
+        try:
+            from igris.models.config import CONFIG
+            _audit_path = None  # InterlocutorAudit will use CONFIG.project_root if we pass None
+        except Exception:
+            _audit_path = None
+        audit = InterlocutorAudit(path=_audit_path)
         event_type = (
             "auth_denied" if blocked
             else ("auth_allowed" if is_sensitive else "identity_resolved")
@@ -254,8 +386,11 @@ def run_preflight(
             decision="denied" if blocked else "allowed",
             reason=block_reason or advisory or "chat message",
         )
-    except Exception:
-        pass
+        if not audit_event_id:
+            logger.warning("Audit write may have failed (degraded): no event_id returned")
+    except Exception as _audit_exc:
+        logger.warning("Audit write failed (degraded): %s", _audit_exc)
+        audit_event_id = None
 
     return PreflightResult(
         interlocutor_id=_id,

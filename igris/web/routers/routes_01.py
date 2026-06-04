@@ -149,9 +149,17 @@ def create_router(deps) -> APIRouter:
         message = content.get("message", "")
 
         # --- Interlocutor-aware preflight ---
+        import logging as _pf_log
+        _pf_logger = _pf_log.getLogger(__name__)
         system_enrichment = ""
+        _sensitive_keywords = {"deploy", "delete", "remove", "rollback", "merge", "cancel", "drop", "wipe", "reset", "restart", "reboot", "admin"}
         try:
-            from igris.core.chat_interlocutor_preflight import run_preflight, extract_interlocutor_id
+            from igris.core.chat_interlocutor_preflight import run_preflight, extract_interlocutor_id, is_trusted_local_request
+            _remote_addr = request.client.host if request.client else None
+            _is_local = is_trusted_local_request(
+                request_headers=dict(request.headers),
+                remote_addr=_remote_addr,
+            )
             interlocutor_id = extract_interlocutor_id(
                 payload=dict(content),
                 headers=dict(request.headers),
@@ -161,6 +169,8 @@ def create_router(deps) -> APIRouter:
                 interlocutor_id=interlocutor_id,
                 project_root=str(CONFIG.project_root),
                 is_new_session=len(sessions.get(session_id, [])) == 0,
+                is_local_request=_is_local,
+                payload=dict(content),
             )
             if preflight.blocked:
                 return {
@@ -176,7 +186,15 @@ def create_router(deps) -> APIRouter:
                     "interlocutor_id": preflight.interlocutor_id,
                 }
             system_enrichment = preflight.system_prompt_enrichment
-        except Exception:
+        except Exception as _pf_exc:
+            _pf_logger.error("Preflight failed: %s", _pf_exc)
+            # Fail-closed for sensitive requests
+            if any(kw in message.lower() for kw in _sensitive_keywords):
+                return {
+                    "response": "Preflight security check failed. Sensitive request blocked for safety.",
+                    "blocked": True,
+                    "error": "preflight_exception",
+                }
             system_enrichment = ""
         # --- end preflight ---
 
@@ -241,10 +259,18 @@ def create_router(deps) -> APIRouter:
             raise HTTPException(status_code=400, detail="message required")
 
         # --- Interlocutor-aware preflight ---
+        import logging as _pf_log2
+        _pf_logger2 = _pf_log2.getLogger(__name__)
         preflight_block = None
         system_enrichment = ""
+        _sensitive_keywords_s = {"deploy", "delete", "remove", "rollback", "merge", "cancel", "drop", "wipe", "reset", "restart", "reboot", "admin"}
         try:
-            from igris.core.chat_interlocutor_preflight import run_preflight, extract_interlocutor_id
+            from igris.core.chat_interlocutor_preflight import run_preflight, extract_interlocutor_id, is_trusted_local_request
+            _remote_addr_s = request.client.host if request.client else None
+            _is_local_s = is_trusted_local_request(
+                request_headers=dict(request.headers),
+                remote_addr=_remote_addr_s,
+            )
             interlocutor_id = extract_interlocutor_id(
                 payload=content,
                 headers=dict(request.headers),
@@ -254,6 +280,8 @@ def create_router(deps) -> APIRouter:
                 interlocutor_id=interlocutor_id,
                 project_root=str(CONFIG.project_root),
                 is_new_session=False,  # stream — session already initialized
+                is_local_request=_is_local_s,
+                payload=content,
             )
             if preflight.blocked:
                 preflight_block = preflight.block_reason
@@ -261,8 +289,11 @@ def create_router(deps) -> APIRouter:
                 preflight_block = preflight.clarification_question or "Please clarify your request."
             else:
                 system_enrichment = preflight.system_prompt_enrichment
-        except Exception:
-            pass
+        except Exception as _pf_exc2:
+            _pf_logger2.error("Stream preflight failed: %s", _pf_exc2)
+            # Fail-closed for sensitive requests
+            if any(kw in message.lower() for kw in _sensitive_keywords_s):
+                preflight_block = "Preflight security check failed. Sensitive request blocked for safety."
         # --- end preflight ---
 
         if preflight_block:

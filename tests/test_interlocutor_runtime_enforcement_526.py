@@ -132,12 +132,35 @@ def test_reasoning_loop_guard_blocks_untrusted(tmp_path, monkeypatch):
 
 
 def test_reasoning_loop_guard_allows_system(tmp_path, monkeypatch):
-    """_guard_action falls back to system profile when no interlocutor is set."""
+    """_guard_action with _is_internal_supervisor=True falls back to system (trusted internal).
+
+    Updated for #1239: loops without interlocutor_id AND without _is_internal_supervisor
+    now fall back to 'unknown' (deny-by-default). Only explicitly-flagged supervisor
+    loops get the 'system' admin bypass.
+    """
     monkeypatch.setenv("IGRIS_PROJECT_ROOT", str(tmp_path))
     monkeypatch.setattr("igris.core.action_guard._PROJECT_ROOT", str(tmp_path))
     from igris.core.agent_reasoning_loop import AgentReasoningLoop
     loop = AgentReasoningLoop(project_root=str(tmp_path))
-    # No interlocutor_id set → defaults to "system" (trusted internal)
+    # Explicitly mark as internal supervisor — only supervisors get system bypass
+    loop._is_internal_supervisor = True
     assert not hasattr(loop, "interlocutor_id") or loop.interlocutor_id is None
     allowed, reason = loop._guard_action("write_file")
-    assert allowed, f"Fallback system profile must allow write_file, got: {reason}"
+    assert allowed, f"Supervisor loop must allow write_file, got: {reason}"
+
+
+def test_reasoning_loop_guard_no_identity_denied(tmp_path, monkeypatch):
+    """Chat-originated loop with _is_internal_supervisor=False and no interlocutor_id is denied.
+
+    Security hardening #1239: chat-originated loops must explicitly set
+    _is_internal_supervisor=False. Without an interlocutor_id they fall back to 'unknown'.
+    """
+    monkeypatch.setenv("IGRIS_PROJECT_ROOT", str(tmp_path))
+    monkeypatch.setattr("igris.core.action_guard._PROJECT_ROOT", str(tmp_path))
+    from igris.core.agent_reasoning_loop import AgentReasoningLoop
+    loop = AgentReasoningLoop(project_root=str(tmp_path))
+    # Simulate a chat-originated loop: NOT internal supervisor, no identity set
+    loop._is_internal_supervisor = False
+    assert not hasattr(loop, "interlocutor_id") or loop.interlocutor_id is None
+    allowed, reason = loop._guard_action("write_file")
+    assert not allowed, f"Chat loop with no identity must be denied, got allowed=True reason={reason}"

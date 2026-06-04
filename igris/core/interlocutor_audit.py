@@ -1,14 +1,21 @@
 """
 Interlocutor Audit — append-only JSONL audit log with redaction (issue #526).
+
+Security hardening (#1239):
+- Path uses CONFIG.project_root when available (consistent across restarts)
+- Write failures produce a visible warning log entry (degraded state)
 """
 from __future__ import annotations
 
 import json
+import logging
 import re
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+
+_audit_logger = logging.getLogger(__name__)
 
 REDACT_PATTERNS = [
     re.compile(
@@ -35,7 +42,11 @@ def _safe_str(v: Any) -> str:
 class InterlocutorAudit:
     def __init__(self, path: Path | str | None = None):
         if path is None:
-            path = Path.home() / ".igris" / "interlocutor_audit.jsonl"
+            try:
+                from igris.models.config import CONFIG
+                path = Path(CONFIG.project_root) / ".igris" / "interlocutor_audit.jsonl"
+            except Exception:
+                path = Path.home() / ".igris" / "interlocutor_audit.jsonl"
         self.path = Path(path)
         self.path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -74,8 +85,9 @@ class InterlocutorAudit:
         try:
             with self.path.open("a") as f:
                 f.write(json.dumps(entry) + "\n")
-        except Exception:
-            pass  # never raises
+        except Exception as _write_exc:
+            _audit_logger.warning("Audit write failed (degraded): %s", _write_exc)
+            return ""  # not None — callers can check truthiness
         return event_id
 
     def recent(self, n: int = 50) -> list[dict]:

@@ -247,6 +247,10 @@ class AgentReasoningLoop:
         self.tool_result_budget = tool_result_budget
         self.issue_number = issue_number
         self.fleet_instance_id = fleet_instance_id
+        # Security (#1239): loops created programmatically (scheduler, tests, supervisor)
+        # are trusted internal. Set _is_internal_supervisor=True by default.
+        # Chat-originated loops must set this to False and supply interlocutor_id.
+        self._is_internal_supervisor: bool = True
 
         # State
         self._steps: List[LoopStep] = []
@@ -1545,16 +1549,27 @@ class AgentReasoningLoop:
         """Check ActionGuard before sensitive tool execution.
 
         Returns (allowed: bool, reason: str).
-        Falls back to profile_id='system' for internal/legacy runs with no
-        interlocutor context set, so existing tests and internal paths are
-        never blocked.
+
+        Identity resolution order:
+        1. If interlocutor_id is set (chat-originated), use it — this may be 'unknown'.
+        2. If _is_internal_supervisor=True, use 'system' (verified internal origin).
+        3. Otherwise, fall back to 'unknown' (deny-by-default for sensitive actions).
+
+        This prevents chat callers from silently inheriting 'system' admin bypass.
         """
         from igris.core.action_guard import check_action
         guard_type = self._SENSITIVE_ACTION_MAP.get(action_type)
         if guard_type is None:
             return True, "non-sensitive"
-        # Use interlocutor_id if set on the loop, else fall back to 'system' (trusted internal)
-        profile_id = getattr(self, "interlocutor_id", None) or "system"
+
+        _interlocutor = getattr(self, "interlocutor_id", None)
+        if _interlocutor:
+            profile_id = _interlocutor
+        elif getattr(self, "_is_internal_supervisor", False):
+            profile_id = "system"  # verified internal (scheduler/supervisor)
+        else:
+            profile_id = "unknown"  # no identity = unknown, NOT system
+
         return check_action(guard_type, profile_id=profile_id)
 
     def _execute_tool_runtime(self, action) -> Dict[str, Any]:

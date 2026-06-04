@@ -210,3 +210,74 @@ def list_keys(project_root: str, granted_by: Optional[str] = None) -> List[Deleg
     if granted_by is not None:
         result = [k for k in result if k.granted_by == granted_by]
     return result
+
+
+@dataclass
+class _VerifyResult:
+    """Result of DelegationKeyStore.verify()."""
+    valid: bool
+    reason: str
+    authorized_scopes: List[str] = field(default_factory=list)
+
+
+class DelegationKeyStore:
+    """OO wrapper around delegation_keys module-level functions.
+
+    Provides a convenient object API for test code and callers that prefer
+    an instance-based interface over bare module functions.
+    """
+
+    def __init__(self, project_root: str) -> None:
+        self.project_root = project_root
+
+    def create_key(
+        self,
+        granted_by: str,
+        granted_to: Optional[str] = None,
+        authorized_scopes: Optional[List[str]] = None,
+        passphrase: str = "",
+        expires_in_hours: Optional[float] = None,
+        single_use: bool = False,
+        grantor_scopes: Optional[List[str]] = None,
+    ) -> DelegationKey:
+        """Create and persist a new delegation key."""
+        _grantor_scopes = grantor_scopes or ["*"]
+        _scopes = authorized_scopes or []
+        _expires_s = expires_in_hours * 3600 if expires_in_hours is not None else None
+        return create_key(
+            project_root=self.project_root,
+            granted_by=granted_by,
+            grantor_scopes=_grantor_scopes,
+            authorized_scopes=_scopes,
+            raw_passphrase=passphrase,
+            granted_to=granted_to,
+            expires_in_seconds=_expires_s,
+            single_use=single_use,
+        )
+
+    def verify(
+        self,
+        key_id: str,
+        passphrase: str,
+        bearer: Optional[str] = None,
+        requested_scopes: Optional[List[str]] = None,
+    ) -> _VerifyResult:
+        """Verify a delegation key. Passphrase is never logged."""
+        _scopes = requested_scopes or ["*"]
+        keys = load_keys(self.project_root)
+        key = keys.get(key_id)
+        ok, reason = verify_key(
+            project_root=self.project_root,
+            key_id=key_id,
+            raw_passphrase=passphrase,
+            requested_scopes=_scopes,
+            bearer=bearer,
+        )
+        _auth_scopes = key.authorized_scopes if (key and ok) else []
+        return _VerifyResult(valid=ok, reason=reason, authorized_scopes=_auth_scopes)
+
+    def revoke(self, key_id: str) -> bool:
+        return revoke_key(self.project_root, key_id)
+
+    def list(self, granted_by: Optional[str] = None) -> List[DelegationKey]:
+        return list_keys(self.project_root, granted_by=granted_by)
