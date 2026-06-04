@@ -216,8 +216,8 @@ def create_router(deps) -> APIRouter:
             _pid = preflight.interlocutor_id if 'preflight' in dir() else "unknown"
             _tl = preflight.trust_level if 'preflight' in dir() else "untrusted"
             _memory_context = _retriever.retrieve_for_context(_pid, _tl)
-        except Exception:
-            pass
+        except Exception as _mem_ret_exc:
+            import logging as _log_r; _log_r.getLogger(__name__).debug("Conversation memory retrieval failed (degraded): %s", _mem_ret_exc)
         # --- end memory retrieval ---
 
         # Use real chat engine — always include IGRIS identity prompt,
@@ -372,8 +372,8 @@ def create_router(deps) -> APIRouter:
             _s_pid = preflight.interlocutor_id if 'preflight' in dir() else "unknown"
             _s_tl = preflight.trust_level if 'preflight' in dir() else "untrusted"
             _stream_memory_context = _s_retriever.retrieve_for_context(_s_pid, _s_tl)
-        except Exception:
-            pass
+        except Exception as _s_mem_ret_exc:
+            import logging as _log_sr; _log_sr.getLogger(__name__).debug("Stream memory retrieval failed (degraded): %s", _s_mem_ret_exc)
         # --- end memory retrieval ---
 
         # Always include IGRIS identity — never replace with enrichment alone
