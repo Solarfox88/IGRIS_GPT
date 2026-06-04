@@ -228,7 +228,7 @@ class ConversationMemoryStore:
                     "intent_action": episode.intent_action,
                     "blocked": episode.blocked,
                     "timestamp": episode.timestamp,
-                    "source": "chat",
+                    "source": episode.source,
                     "memory_policy": episode.memory_policy,
                 }
             else:
@@ -244,7 +244,7 @@ class ConversationMemoryStore:
                     "trust_level": episode.trust_level,
                     "blocked": episode.blocked,
                     "timestamp": episode.timestamp,
-                    "source": "chat",
+                    "source": episode.source,
                     "memory_policy": episode.memory_policy,
                 }
 
