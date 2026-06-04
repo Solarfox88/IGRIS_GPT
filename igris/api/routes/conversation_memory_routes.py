@@ -8,17 +8,33 @@ from fastapi import APIRouter, HTTPException, Query
 
 router = APIRouter(prefix="/api/memory", tags=["memory"])
 
-_PROJECT_ROOT = os.environ.get("IGRIS_PROJECT_ROOT", ".")
+
+def _project_root() -> str:
+    """Return current project root, respecting live CONFIG (supports monkeypatching in tests)."""
+    try:
+        from igris.models.config import CONFIG
+        return str(CONFIG.project_root)
+    except Exception:
+        return os.environ.get("IGRIS_PROJECT_ROOT", ".")
 
 
 def _retriever():
     from igris.core.conversation_memory import ConversationRetriever
-    return ConversationRetriever(project_root=_PROJECT_ROOT)
+    return ConversationRetriever(project_root=_project_root())
 
 
 def _summary_mgr():
     from igris.core.conversation_memory import ConversationSummaryManager
-    return ConversationSummaryManager(project_root=_PROJECT_ROOT)
+    return ConversationSummaryManager(project_root=_project_root())
+
+
+def _effective_trust_level(interlocutor_id: str, trust_level: str) -> str:
+    """Resolve effective trust level — 'owner' and 'system' are implicitly admin."""
+    if trust_level not in ("untrusted", "unknown", ""):
+        return trust_level
+    if interlocutor_id in ("owner", "system"):
+        return "admin"
+    return trust_level
 
 
 @router.get("/conversation/recent")
@@ -30,7 +46,8 @@ def get_recent_episodes(
     """Return recent conversation episodes for a given interlocutor (safe fields only)."""
     try:
         ret = _retriever()
-        return ret.get_recent_episodes_safe(interlocutor_id, trust_level, limit=limit)
+        tl = _effective_trust_level(interlocutor_id, trust_level)
+        return ret.get_recent_episodes_safe(interlocutor_id, tl, limit=limit)
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc))
 
@@ -43,7 +60,8 @@ def get_conversation_summary(
     """Return the rolling summary for a given interlocutor."""
     try:
         mgr = _summary_mgr()
-        summary = mgr.get_summary(interlocutor_id, trust_level)
+        tl = _effective_trust_level(interlocutor_id, trust_level)
+        summary = mgr.get_summary(interlocutor_id, tl)
         return {"interlocutor_id": interlocutor_id, "summary": summary}
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc))

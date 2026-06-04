@@ -109,6 +109,22 @@ SECRET_PATTERNS = [
 TRIVIAL_MESSAGES = {"ok", "sì", "no", "grazie", "ciao", "ok grazie", "yes", "nope", "sure", "fine", "great"}
 
 
+def _redact_for_storage(text: str) -> str:
+    """Remove obvious secret patterns before writing to LongTermMemory."""
+    if not text:
+        return text
+    # key=value patterns with secret-like keys
+    text = re.sub(
+        r'(token|passphrase|password|secret|api[_\s]?key|private[_\s]?key|bearer)\s*[=:]\s*\S+',
+        r'\1=<REDACTED>',
+        text,
+        flags=re.IGNORECASE,
+    )
+    # Long base64-like strings (>20 chars)
+    text = re.sub(r'[A-Za-z0-9+/]{20,}={0,2}', '<REDACTED_BASE64>', text)
+    return text
+
+
 @dataclass
 class SynapticCandidate:
     category: str  # preference | correction | decision | negative | fact | lesson
@@ -195,6 +211,10 @@ class ConversationMemoryStore:
             if episode.interlocutor_id and episode.interlocutor_id != "unknown":
                 domain = f"chat:{episode.interlocutor_id}"
 
+            # Redact sensitive values before storage
+            _safe_user = _redact_for_storage(episode.user_message or "")
+            _safe_response = _redact_for_storage(episode.assistant_response or "")
+
             # Prepare content — minimal for untrusted
             if episode.memory_policy == MEMORY_POLICY_MINIMAL:
                 content = {
@@ -213,8 +233,8 @@ class ConversationMemoryStore:
                 }
             else:
                 content = {
-                    "user_message": episode.user_message[:300],
-                    "assistant_response": episode.assistant_response[:300],
+                    "user_message": _safe_user[:300],
+                    "assistant_response": _safe_response[:300],
                     "intent_action": episode.intent_action,
                     "intent_risk": episode.intent_risk,
                     "auth_decision": episode.auth_decision,
@@ -243,7 +263,7 @@ class ConversationMemoryStore:
                     ltm.add_entry(
                         domain=f"synaptic:{episode.interlocutor_id}",
                         content={
-                            "text": candidate.content,
+                            "text": _redact_for_storage(candidate.content),
                             "category": candidate.category,
                             "confidence": candidate.confidence,
                             "source": "synaptic_extraction",
@@ -424,7 +444,7 @@ class ConversationSummaryManager:
                 f"auth={episode.auth_decision} blocked={episode.blocked}"
             )
             if policy == MEMORY_POLICY_FULL and episode.user_message:
-                summary_text = f"User: {episode.user_message[:100]} | {summary_text}"
+                summary_text = f"User: {_redact_for_storage(episode.user_message[:100])} | {summary_text}"
 
             ltm.add_entry(
                 domain=domain,
