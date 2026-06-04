@@ -116,8 +116,9 @@ def test_post_message_persists_episode_to_disk_e2e(client, tmp_path, monkeypatch
                 matching.append(entry)
 
     assert len(matching) > 0, (
-        f"No episode found for session_id={sid!r}. "
+        f"No episode found for session_id={sid!r} or interlocutor_id='owner'. "
         f"Found {len(found_entries)} total entries but none match. "
+        f"LTM search errors: {_search_errors!r}. "
         "post_message did NOT persist the episode correctly."
     )
 
@@ -166,8 +167,34 @@ def test_stream_message_persists_episode_source_stream(client, tmp_path, monkeyp
         found = data
 
     assert len(found) > 0, (
-        "api_chat_stream did NOT persist any episode to disk. "
-        "LTM get_entries returned empty for all domains."
+        f"api_chat_stream did NOT persist any episode to disk. "
+        f"LTM search errors: {_search_errors2!r}"
+    )
+
+    # Verify at least one entry has source="stream" at the LTM entry level.
+    # Note: anti-spoofing may downgrade 'owner' → 'unknown' for TestClient requests,
+    # so we match on entry.source (set by stream path) rather than interlocutor_id.
+    stream_source_entries = []
+    for entry in found:
+        # LTM entries may be objects with .source or dicts
+        entry_source = None
+        if hasattr(entry, "source"):
+            entry_source = entry.source
+        elif isinstance(entry, dict):
+            entry_source = entry.get("source")
+            # Also check nested content dict
+            if entry_source is None and isinstance(entry.get("content"), dict):
+                entry_source = entry["content"].get("source")
+
+        if entry_source == "stream":
+            stream_source_entries.append(entry)
+
+    assert stream_source_entries, (
+        f"No persisted stream episode with source='stream' found. "
+        f"Found {len(found)} total entries. "
+        f"Sources: {[getattr(e, 'source', e.get('source') if isinstance(e, dict) else '?') for e in found]!r}. "
+        f"LTM search errors: {_search_errors2!r}. "
+        "api_chat_stream must set source='stream' in ConversationEpisode."
     )
 
 
@@ -711,6 +738,53 @@ def test_memory_api_summary_owner_from_nonlocal_blocked_or_empty(client, tmp_pat
     assert not summary_val, (
         "Non-local request claiming 'owner' received non-empty summary — SECURITY VIOLATION. "
         f"Got summary: {summary_val!r}"
+    )
+
+
+# ─── IdentityResolver failure → untrusted fallback ───────────────────────────
+
+def test_memory_api_identity_resolver_failure_falls_back_untrusted(
+    client, tmp_path, monkeypatch, caplog
+):
+    """When IdentityResolver.resolve() raises, API must fall back to untrusted
+    and NOT expose any memory. Failure must be logged at DEBUG."""
+    monkeypatch.setattr("igris.models.config.CONFIG.project_root", tmp_path)
+
+    # Pre-persist some memory
+    _persist_preference(tmp_path, interlocutor_id="some_user", trust_level="trusted")
+
+    # Patch IdentityResolver to always raise
+    try:
+        from igris.core.identity_resolver import IdentityResolver
+
+        def broken_resolve(self, iid):
+            raise RuntimeError("resolver down — test injection")
+
+        monkeypatch.setattr(IdentityResolver, "resolve", broken_resolve)
+    except Exception as e:
+        pytest.fail(f"Cannot patch IdentityResolver: {e}")
+
+    with caplog.at_level(logging.DEBUG):
+        r = client.get("/api/memory/conversation/recent?interlocutor_id=some_user&limit=10")
+
+    assert r.status_code == 200, f"Unexpected status: {r.status_code}"
+    data = r.json()
+    assert isinstance(data, list), (
+        "IdentityResolver failure should result in empty list (untrusted fallback)"
+    )
+    # Must not expose memory when resolver fails
+    assert len(data) == 0, (
+        f"Memory exposed despite IdentityResolver failure: {data}"
+    )
+    # Failure must be logged
+    logged = (
+        "falling back to untrusted" in caplog.text.lower()
+        or "identity lookup failed" in caplog.text.lower()
+        or "resolver down" in caplog.text.lower()
+    )
+    assert logged, (
+        "IdentityResolver failure was not logged. "
+        f"caplog snippet: {caplog.text[-500:]!r}"
     )
 
 

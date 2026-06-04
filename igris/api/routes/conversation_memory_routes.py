@@ -1,8 +1,11 @@
 """Conversation memory API routes (#1240)."""
 from __future__ import annotations
 
+import logging
 import os
 from typing import Any, Dict, List
+
+_logger = logging.getLogger(__name__)
 
 from fastapi import APIRouter, HTTPException, Query, Request
 
@@ -59,8 +62,13 @@ def _effective_trust_level(interlocutor_id: str, request: Request | None = None)
         profile = ir.resolve(interlocutor_id)
         if profile:
             return str(getattr(profile, "trust_level", "untrusted")).lower()
-    except Exception:
-        pass
+    except Exception as _exc:
+        _logger.debug(
+            "Memory API identity lookup failed; falling back to untrusted for "
+            "interlocutor_id=%r: %s",
+            interlocutor_id,
+            _exc,
+        )
 
     return "untrusted"
 
