@@ -487,6 +487,16 @@ class MissionFirstController:
             )
         return f"Piano missione creato: {plan.route} (mode={plan.execution_mode})"
 
+    def verify_plan(self, plan: "MissionPlan") -> "EvidenceBundle":
+        """Verify a MissionPlan using the VerifierRegistry."""
+        from igris.core.verifier_registry import EvidenceBundle, VerifierRegistry
+        registry = VerifierRegistry(
+            project_root=self.project_root,
+            unified_memory=self._get_memory(),
+            context_aggregator=self._get_context_aggregator(),
+        )
+        return registry.verify_mission(plan, persist=True)
+
     def healthcheck(self) -> dict:
         status: dict[str, str] = {}
         mem = self._get_memory()
