@@ -299,8 +299,12 @@ def test_bundle_ok_true_for_blocked_plan(tmp_path, router_and_mfc):
     plan = _make_plan(router_and_mfc, "cancella database", trust_level="untrusted", interlocutor_id="unknown")
     registry = VerifierRegistry(project_root=tmp_path)
     bundle = registry.verify_mission(plan, persist=False)
-    # blocked plans are ok=True (correctly blocked)
-    assert bundle.ok is True or bundle.ok is False  # either is acceptable depending on trust
+    # blocked plans are ok=True (correctly blocked) — strict assertion
+    if bundle.status == "blocked":
+        assert bundle.ok is True, f"blocked plan must have ok=True, got ok={bundle.ok!r}"
+    else:
+        # Non-blocked result: ok may be True (passed/warning) or False (failed)
+        assert bundle.ok in (True, False)
 
 
 def test_persistence_degraded_warning_when_no_memory(tmp_path, router_and_mfc):
