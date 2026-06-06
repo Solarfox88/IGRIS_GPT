@@ -23,6 +23,15 @@ _SECRET_RE = re.compile(
 def _redact(text: str) -> str:
     return _SECRET_RE.sub(r'\1=<REDACTED>', str(text)) if text else text
 
+def _redact_any(val):
+    if isinstance(val, dict):
+        return {k: _redact_any(v) for k, v in val.items()}
+    elif isinstance(val, list):
+        return [_redact_any(i) for i in val]
+    elif isinstance(val, str):
+        return _redact(val)
+    return val
+
 
 @dataclass
 class LearningApplyResult:
@@ -39,7 +48,7 @@ class LearningApplyResult:
     metadata: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict:
-        return {
+        return _redact_any({
             "ok": self.ok,
             "report_id": self.report_id,
             "applied_count": self.applied_count,
@@ -50,7 +59,7 @@ class LearningApplyResult:
             "failed": self.failed,
             "warnings": self.warnings,
             "persistence_degraded": self.persistence_degraded,
-        }
+        })
 
 
 class LearningFeedbackApplier:

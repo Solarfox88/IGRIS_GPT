@@ -182,11 +182,8 @@ def test_report_no_raw_secret(tmp_path):
     reviewer = AfterActionReviewer(project_root=tmp_path)
     bundle = _make_bundle("passed", True)
     plan = _make_fake_plan()
-    # The fake token appears only in key=value form inside user_feedback — must be redacted
     report = reviewer.review(plan, bundle, user_feedback=f"token={FAKE}")
-    # Check all signal texts and summary don't contain raw secret
     output = json.dumps(report.to_dict())
-    # secret in key=value form should be redacted
     assert f"token={FAKE}" not in output
 
 
@@ -222,9 +219,30 @@ def test_review_with_none_plan_no_crash(tmp_path):
 
 def test_healthcheck_ok(tmp_path):
     from igris.core.after_action_review import AfterActionReviewer
-    reviewer = AfterActionReviewer(project_root=tmp_path)
+    from igris.core.unified_memory import UnifiedMemory
+    mem = UnifiedMemory(project_root=tmp_path)
+    reviewer = AfterActionReviewer(project_root=tmp_path, unified_memory=mem)
     h = reviewer.healthcheck()
     assert h["ok"] is True
+
+
+def test_healthcheck_degrades_observably_when_unified_memory_raises(tmp_path):
+    """healthcheck must log and return ok=False when UnifiedMemory raises, not silence."""
+    from igris.core.after_action_review import AfterActionReviewer
+    import unittest.mock as mock
+
+    reviewer = AfterActionReviewer(project_root=tmp_path, unified_memory=None)
+
+    with mock.patch("igris.core.after_action_review.AfterActionReviewer.healthcheck",
+                    wraps=reviewer.healthcheck):
+        # Patch UnifiedMemory constructor to raise inside healthcheck
+        with mock.patch("igris.core.unified_memory.UnifiedMemory.__init__",
+                        side_effect=RuntimeError("storage unavailable")):
+            h = reviewer.healthcheck()
+
+    assert h["ok"] is False
+    assert "unavailable" in h.get("unified_memory", "")
+    assert "error" in h
 
 
 def test_to_dict_structure(tmp_path):
