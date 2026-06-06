@@ -497,6 +497,37 @@ class MissionFirstController:
         )
         return registry.verify_mission(plan, persist=True)
 
+    def reflect_plan(self, plan, evidence_bundle, user_feedback: str = ""):
+        """Run After Action Review on completed mission."""
+        try:
+            from igris.core.after_action_review import AfterActionReviewer
+            reviewer = AfterActionReviewer(
+                project_root=self.project_root,
+                unified_memory=self._get_memory(),
+            )
+            return reviewer.review(plan, evidence_bundle, user_feedback=user_feedback)
+        except Exception as e:
+            import logging as _log
+            _log.getLogger(__name__).warning("reflect_plan failed: %s", e)
+            return None
+
+    def learn_from_plan(self, plan, evidence_bundle, user_feedback: str = ""):
+        """Reflect + apply learning signals from mission."""
+        try:
+            from igris.core.learning_feedback import LearningFeedbackApplier
+            report = self.reflect_plan(plan, evidence_bundle, user_feedback=user_feedback)
+            if report is None:
+                return None
+            applier = LearningFeedbackApplier(
+                project_root=self.project_root,
+                unified_memory=self._get_memory(),
+            )
+            return applier.apply_report(report)
+        except Exception as e:
+            import logging as _log
+            _log.getLogger(__name__).warning("learn_from_plan failed: %s", e)
+            return None
+
     def healthcheck(self) -> dict:
         status: dict[str, str] = {}
         mem = self._get_memory()
