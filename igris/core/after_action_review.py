@@ -447,8 +447,9 @@ class AfterActionReviewer:
             try:
                 from igris.core.unified_memory import UnifiedMemory
                 mem = UnifiedMemory(project_root=self.project_root)
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning("AfterActionReviewer.healthcheck: UnifiedMemory unavailable: %s", e)
+                return {"ok": False, "unified_memory": "unavailable", "error": str(e)}
         return {
             "ok": True,
             "unified_memory": "ok" if mem else "unavailable",

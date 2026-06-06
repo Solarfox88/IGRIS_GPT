@@ -28,7 +28,72 @@ def _make_fake_plan(route="read_only_inspection", blocked=False,
 
 # ── apply_signal ──────────────────────────────────────────────────────────────
 
-def test_apply_lesson_uses_unified_memory_store_lesson(tmp_path):
+def test_apply_lesson_ok_true_with_real_memory(tmp_path):
+    from igris.core.unified_memory import UnifiedMemory
+    from igris.core.learning_feedback import LearningFeedbackApplier
+    from igris.core.after_action_review import LearningSignal, LearningSignalKind
+
+    mem = UnifiedMemory(project_root=tmp_path)
+    applier = LearningFeedbackApplier(project_root=tmp_path, unified_memory=mem)
+    sig = LearningSignal.make(LearningSignalKind.LESSON.value, "test lesson", confidence=0.8)
+    result = applier.apply_signal(sig)
+    assert result["ok"] is True
+
+
+def test_apply_failure_pattern_ok_true_with_real_memory(tmp_path):
+    from igris.core.unified_memory import UnifiedMemory
+    from igris.core.learning_feedback import LearningFeedbackApplier
+    from igris.core.after_action_review import LearningSignal, LearningSignalKind
+
+    mem = UnifiedMemory(project_root=tmp_path)
+    applier = LearningFeedbackApplier(project_root=tmp_path, unified_memory=mem)
+    sig = LearningSignal.make(LearningSignalKind.FAILURE_PATTERN.value, "fp text", confidence=0.8)
+    result = applier.apply_signal(sig)
+    assert result["ok"] is True
+
+
+def test_apply_correction_ok_true_with_real_memory(tmp_path):
+    from igris.core.unified_memory import UnifiedMemory
+    from igris.core.learning_feedback import LearningFeedbackApplier
+    from igris.core.after_action_review import LearningSignal, LearningSignalKind
+
+    mem = UnifiedMemory(project_root=tmp_path)
+    applier = LearningFeedbackApplier(project_root=tmp_path, unified_memory=mem)
+    sig = LearningSignal.make(LearningSignalKind.CORRECTION.value, "correction text", confidence=0.8)
+    result = applier.apply_signal(sig)
+    assert result["ok"] is True
+
+
+def test_apply_memory_feedback_ok_true_with_real_memory(tmp_path):
+    from igris.core.unified_memory import UnifiedMemory
+    from igris.core.learning_feedback import LearningFeedbackApplier
+    from igris.core.after_action_review import LearningSignal, LearningSignalKind
+
+    mem = UnifiedMemory(project_root=tmp_path)
+    applier = LearningFeedbackApplier(project_root=tmp_path, unified_memory=mem)
+    sig = LearningSignal.make(LearningSignalKind.MEMORY_FEEDBACK.value, "fb text", confidence=0.8)
+    result = applier.apply_signal(sig)
+    assert result["ok"] is True
+
+
+def test_apply_signal_store_failure_ok_false(tmp_path):
+    """When underlying store raises, apply_signal must return ok=False."""
+    from igris.core.unified_memory import UnifiedMemory
+    from igris.core.learning_feedback import LearningFeedbackApplier
+    from igris.core.after_action_review import LearningSignal, LearningSignalKind
+
+    mem = UnifiedMemory(project_root=tmp_path)
+    mem.store_lesson = lambda *a, **kw: (_ for _ in ()).throw(RuntimeError("disk full"))
+
+    applier = LearningFeedbackApplier(project_root=tmp_path, unified_memory=mem)
+    sig = LearningSignal.make(LearningSignalKind.LESSON.value, "lesson", confidence=0.8)
+    result = applier.apply_signal(sig)
+    assert result["ok"] is False
+
+
+# ── apply_signal tracking (call presence) ────────────────────────────────────
+
+def test_apply_lesson_calls_store_lesson(tmp_path):
     from igris.core.unified_memory import UnifiedMemory
     from igris.core.learning_feedback import LearningFeedbackApplier
     from igris.core.after_action_review import LearningSignal, LearningSignalKind
@@ -43,11 +108,11 @@ def test_apply_lesson_uses_unified_memory_store_lesson(tmp_path):
 
     applier = LearningFeedbackApplier(project_root=tmp_path, unified_memory=mem)
     sig = LearningSignal.make(LearningSignalKind.LESSON.value, "test lesson", confidence=0.8)
-    result = applier.apply_signal(sig)
+    applier.apply_signal(sig)
     assert len(calls) > 0
 
 
-def test_apply_failure_pattern_uses_store_lesson(tmp_path):
+def test_apply_failure_pattern_calls_store_lesson(tmp_path):
     from igris.core.unified_memory import UnifiedMemory
     from igris.core.learning_feedback import LearningFeedbackApplier
     from igris.core.after_action_review import LearningSignal, LearningSignalKind
@@ -66,7 +131,7 @@ def test_apply_failure_pattern_uses_store_lesson(tmp_path):
     assert len(calls) > 0
 
 
-def test_apply_memory_feedback_uses_record_feedback(tmp_path):
+def test_apply_memory_feedback_calls_record_feedback(tmp_path):
     from igris.core.unified_memory import UnifiedMemory
     from igris.core.learning_feedback import LearningFeedbackApplier
     from igris.core.after_action_review import LearningSignal, LearningSignalKind
@@ -85,7 +150,7 @@ def test_apply_memory_feedback_uses_record_feedback(tmp_path):
     assert len(calls) > 0
 
 
-def test_apply_correction_uses_store_correction(tmp_path):
+def test_apply_correction_calls_store_correction(tmp_path):
     from igris.core.unified_memory import UnifiedMemory
     from igris.core.learning_feedback import LearningFeedbackApplier
     from igris.core.after_action_review import LearningSignal, LearningSignalKind
@@ -116,10 +181,10 @@ def test_policy_recommendation_skipped_by_default(tmp_path):
     reviewer = AfterActionReviewer(project_root=tmp_path)
     report = reviewer.review(plan, bundle)
 
-    result = applier.apply_report(report)  # default: policy NOT applied
+    result = applier.apply_report(report)
     skipped_reasons = [s.get("reason", "") for s in result.skipped]
     assert any("policy_recommendation" in r for r in skipped_reasons)
-    assert result.ok is True  # skips are acceptable
+    assert result.ok is True
 
 
 def test_apply_report_ok_true_on_success(tmp_path):
@@ -155,26 +220,33 @@ def test_apply_report_ok_false_when_storage_fails(tmp_path):
 
     applier = LearningFeedbackApplier(project_root=tmp_path, unified_memory=mem)
     result = applier.apply_report(report)
-    if result.failed_count > 0:
-        assert result.ok is False
+    # If any signals were attempted (not all skipped), must report failure
+    assert result.failed_count > 0
+    assert result.ok is False
 
 
 def test_apply_report_no_raw_secret_in_result(tmp_path):
-    FAKE = "FAKE_TOKEN_LEARNING_NOTREAL_9988"
+    FAKE = "FAKE_TOKEN_REFLECT_RESULT_NOTREAL"
     from igris.core.after_action_review import AfterActionReviewer
     from igris.core.learning_feedback import LearningFeedbackApplier
+    from igris.core.unified_memory import UnifiedMemory
+
+    mem = UnifiedMemory(project_root=tmp_path)
+    def store_raises(*a, **kw):
+        raise RuntimeError(f"token={FAKE}")
+    mem.store_lesson = store_raises
+    mem.record_feedback = store_raises
+    mem.store_correction = store_raises
 
     bundle = _make_bundle("passed", True)
     plan = _make_fake_plan()
     reviewer = AfterActionReviewer(project_root=tmp_path)
-    # secret only appears in key=value form in user_feedback
-    report = reviewer.review(plan, bundle, user_feedback=f"passphrase={FAKE}")
+    report = reviewer.review(plan, bundle)
 
-    applier = LearningFeedbackApplier(project_root=tmp_path)
+    applier = LearningFeedbackApplier(project_root=tmp_path, unified_memory=mem)
     apply_result = applier.apply_report(report)
     output = json.dumps(apply_result.to_dict())
-    # key=value form should be redacted
-    assert f"passphrase={FAKE}" not in output
+    assert f"token={FAKE}" not in output
 
 
 def test_apply_report_has_counts(tmp_path):
@@ -226,8 +298,8 @@ def test_apply_report_failure_plan_marks_degraded_on_storage_fail(tmp_path):
 
     applier = LearningFeedbackApplier(project_root=tmp_path, unified_memory=mem)
     result = applier.apply_report(report)
-    if result.failed_count > 0:
-        assert result.persistence_degraded is True
+    assert result.failed_count > 0
+    assert result.persistence_degraded is True
 
 
 def test_healthcheck_ok(tmp_path):
