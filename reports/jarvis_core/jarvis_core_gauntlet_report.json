@@ -1,9 +1,9 @@
 {
-  "report_id": "9a8421e1-0c4c-426d-826f-112a903ca804",
+  "report_id": "59685e5a-46e5-42a8-a948-df001a6a33cc",
   "target": "jarvis-core-ready",
   "status": "passed",
   "passed": true,
-  "generated_at": "2026-06-07T07:54:58.610714+00:00",
+  "generated_at": "2026-06-07T16:12:40.995844+00:00",
   "summary": "10/10 checks passed",
   "checks": [
     {
@@ -50,14 +50,14 @@
       "name": "Memory Persistence",
       "status": "passed",
       "passed": true,
-      "summary": "Memory persists across instances; 2 item(s) retrieved",
+      "summary": "Memory persists across instances; 3 item(s) retrieved",
       "evidence": [
         {
           "store_ok": true,
           "store_kind": "preference"
         },
         {
-          "retrieved_items": 2,
+          "retrieved_items": 3,
           "degraded": false
         },
         {
@@ -66,7 +66,7 @@
       ],
       "warnings": [],
       "errors": [],
-      "duration_ms": 169,
+      "duration_ms": 168,
       "metadata": {}
     },
     {
@@ -155,7 +155,7 @@
       ],
       "warnings": [],
       "errors": [],
-      "duration_ms": 230,
+      "duration_ms": 232,
       "metadata": {}
     },
     {
@@ -167,7 +167,7 @@
       "evidence": [
         {
           "read_only": {
-            "mission_id": "a82683be",
+            "mission_id": "e97b8701",
             "route": "read_only_inspection",
             "status": "planned",
             "execution_mode": "read_only",
@@ -193,7 +193,7 @@
       ],
       "warnings": [],
       "errors": [],
-      "duration_ms": 125,
+      "duration_ms": 123,
       "metadata": {}
     },
     {
@@ -252,7 +252,7 @@
       ],
       "warnings": [],
       "errors": [],
-      "duration_ms": 194,
+      "duration_ms": 199,
       "metadata": {}
     },
     {
@@ -292,7 +292,7 @@
       ],
       "warnings": [],
       "errors": [],
-      "duration_ms": 39,
+      "duration_ms": 35,
       "metadata": {}
     },
     {
@@ -321,7 +321,7 @@
           ]
         },
         {
-          "mission_id": "8cb621c0",
+          "mission_id": "5bd35be7",
           "route": "read_only_inspection",
           "execution_mode": "read_only"
         },
@@ -344,7 +344,7 @@
       ],
       "warnings": [],
       "errors": [],
-      "duration_ms": 296,
+      "duration_ms": 291,
       "metadata": {}
     },
     {
@@ -361,7 +361,7 @@
       ],
       "warnings": [],
       "errors": [],
-      "duration_ms": 190,
+      "duration_ms": 196,
       "metadata": {}
     }
   ],
@@ -371,7 +371,7 @@
     "total_checks": 10,
     "passed_checks": 10,
     "failed_checks": 0,
-    "total_duration_ms": 1390
+    "total_duration_ms": 1391
   },
   "artifacts": {},
   "metadata": {}

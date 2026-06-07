@@ -2,8 +2,8 @@
 
 **Target:** `jarvis-core-ready`
 **Status:** PASSED ✅
-**Generated:** 2026-06-07T07:54:58.610714+00:00
-**Report ID:** `9a8421e1-0c4c-426d-826f-112a903ca804`
+**Generated:** 2026-06-07T16:12:40.995844+00:00
+**Report ID:** `59685e5a-46e5-42a8-a948-df001a6a33cc`
 
 ## Summary
 
@@ -14,15 +14,15 @@
 | ID | Name | Status | Passed | Duration |
 |----|------|--------|--------|----------|
 | `security_gate` | Security Gate | passed | ✅ | 10ms |
-| `memory_persistence` | Memory Persistence | passed | ✅ | 169ms |
+| `memory_persistence` | Memory Persistence | passed | ✅ | 168ms |
 | `request_routing` | Request Routing | passed | ✅ | 0ms |
-| `context_aggregation` | Context Aggregation | passed | ✅ | 230ms |
-| `mission_first` | Mission-first Planning | passed | ✅ | 125ms |
+| `context_aggregation` | Context Aggregation | passed | ✅ | 232ms |
+| `mission_first` | Mission-first Planning | passed | ✅ | 123ms |
 | `verification_evidence` | Verification & Evidence | passed | ✅ | 137ms |
-| `reflection_learning` | Reflection & Learning | passed | ✅ | 194ms |
-| `ml_light_shadow` | ML-light Shadow Mode | passed | ✅ | 39ms |
-| `end_to_end_jarvis_flow` | End-to-End Jarvis Flow | passed | ✅ | 296ms |
-| `secret_redaction_global` | Global Secret Redaction | passed | ✅ | 190ms |
+| `reflection_learning` | Reflection & Learning | passed | ✅ | 199ms |
+| `ml_light_shadow` | ML-light Shadow Mode | passed | ✅ | 35ms |
+| `end_to_end_jarvis_flow` | End-to-End Jarvis Flow | passed | ✅ | 291ms |
+| `secret_redaction_global` | Global Secret Redaction | passed | ✅ | 196ms |
 
 ## Evidence
 
@@ -33,7 +33,7 @@
 
 ### Memory Persistence
 - {'store_ok': True, 'store_kind': 'preference'}
-- {'retrieved_items': 2, 'degraded': False}
+- {'retrieved_items': 3, 'degraded': False}
 - {'untrusted_items': 0}
 
 ### Request Routing
@@ -47,7 +47,7 @@
 - {'blocked_sections': ['route', 'missions', 'tasks_timeline', 'project_state', 'git_state', 'rank_status'], 'blocked_route': <RequestRoute.BLOCKED: 'blocked'>}
 
 ### Mission-first Planning
-- {'read_only': {'mission_id': 'a82683be', 'route': 'read_only_inspection', 'status': 'planned', 'execution_mode': 'read_only', 'blocked': False}}
+- {'read_only': {'mission_id': 'e97b8701', 'route': 'read_only_inspection', 'status': 'planned', 'execution_mode': 'read_only', 'blocked': False}}
 - {'deploy': {'route': 'deploy_operation', 'status': 'waiting_approval', 'execution_mode': 'approval_required', 'requires_approval': True, 'blocked': False}}
 - {'blocked_plan': {'route': 'blocked', 'blocked': True, 'status': 'blocked'}}
 
@@ -79,7 +79,7 @@
 - **total_checks**: 10
 - **passed_checks**: 10
 - **failed_checks**: 0
-- **total_duration_ms**: 1390
+- **total_duration_ms**: 1391
 
 ## Next Steps
 
