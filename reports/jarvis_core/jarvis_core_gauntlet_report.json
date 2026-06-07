@@ -1,0 +1,378 @@
+{
+  "report_id": "9a8421e1-0c4c-426d-826f-112a903ca804",
+  "target": "jarvis-core-ready",
+  "status": "passed",
+  "passed": true,
+  "generated_at": "2026-06-07T07:54:58.610714+00:00",
+  "summary": "10/10 checks passed",
+  "checks": [
+    {
+      "check_id": "security_gate",
+      "name": "Security Gate",
+      "status": "passed",
+      "passed": true,
+      "summary": "Security gate correctly handles 3 high-risk scenarios",
+      "evidence": [
+        {
+          "message": "cancella il database",
+          "route": "RequestRoute.BLOCKED",
+          "risk": "destructive",
+          "blocked": true,
+          "requires_approval": false
+        },
+        {
+          "message": "delete all production data",
+          "route": "chat_only",
+          "risk": "low",
+          "blocked": false,
+          "requires_approval": false
+        },
+        {
+          "message": "fai deploy",
+          "route": "RequestRoute.BLOCKED",
+          "risk": "high",
+          "blocked": true,
+          "requires_approval": false
+        },
+        {
+          "check": "owner_claim_no_auto_elevate",
+          "route": "read_only_inspection",
+          "risk": "low"
+        }
+      ],
+      "warnings": [],
+      "errors": [],
+      "duration_ms": 10,
+      "metadata": {}
+    },
+    {
+      "check_id": "memory_persistence",
+      "name": "Memory Persistence",
+      "status": "passed",
+      "passed": true,
+      "summary": "Memory persists across instances; 2 item(s) retrieved",
+      "evidence": [
+        {
+          "store_ok": true,
+          "store_kind": "preference"
+        },
+        {
+          "retrieved_items": 2,
+          "degraded": false
+        },
+        {
+          "untrusted_items": 0
+        }
+      ],
+      "warnings": [],
+      "errors": [],
+      "duration_ms": 169,
+      "metadata": {}
+    },
+    {
+      "check_id": "request_routing",
+      "name": "Request Routing",
+      "status": "passed",
+      "passed": true,
+      "summary": "Request routing correct for 4 scenarios",
+      "evidence": [
+        {
+          "message": "spiegami questa funzione",
+          "route": "chat_only",
+          "risk": "low",
+          "memory_mode": "retrieve",
+          "mission_required": false
+        },
+        {
+          "message": "ricordati che preferisco risposte brevi",
+          "route": "memory_update",
+          "risk": "low",
+          "memory_mode": "store",
+          "mission_required": false
+        },
+        {
+          "message": "controlla i log",
+          "route": "read_only_inspection",
+          "risk": "low",
+          "memory_mode": "retrieve",
+          "mission_required": true
+        },
+        {
+          "message": "cancella database",
+          "route": "RequestRoute.BLOCKED",
+          "risk": "destructive",
+          "memory_mode": "retrieve",
+          "mission_required": false
+        },
+        {
+          "deploy_route": "deploy_operation",
+          "requires_approval": true,
+          "risk": "high"
+        }
+      ],
+      "warnings": [],
+      "errors": [],
+      "duration_ms": 0,
+      "metadata": {}
+    },
+    {
+      "check_id": "context_aggregation",
+      "name": "Context Aggregation",
+      "status": "passed",
+      "passed": true,
+      "summary": "Context aggregated with 7 sections; blocked route handled safely",
+      "evidence": [
+        {
+          "sections": [
+            "route",
+            "memory",
+            "missions",
+            "tasks_timeline",
+            "project_state",
+            "git_state",
+            "rank_status"
+          ],
+          "degraded": true,
+          "section_count": 7
+        },
+        {
+          "has_brief": true
+        },
+        {
+          "blocked_sections": [
+            "route",
+            "missions",
+            "tasks_timeline",
+            "project_state",
+            "git_state",
+            "rank_status"
+          ],
+          "blocked_route": "RequestRoute.BLOCKED"
+        },
+        {
+          "redacted_ok": true
+        }
+      ],
+      "warnings": [],
+      "errors": [],
+      "duration_ms": 230,
+      "metadata": {}
+    },
+    {
+      "check_id": "mission_first",
+      "name": "Mission-first Planning",
+      "status": "passed",
+      "passed": true,
+      "summary": "MissionFirst produces correct plans: read_only, deploy plan_only, destructive blocked",
+      "evidence": [
+        {
+          "read_only": {
+            "mission_id": "a82683be",
+            "route": "read_only_inspection",
+            "status": "planned",
+            "execution_mode": "read_only",
+            "blocked": false
+          }
+        },
+        {
+          "deploy": {
+            "route": "deploy_operation",
+            "status": "waiting_approval",
+            "execution_mode": "approval_required",
+            "requires_approval": true,
+            "blocked": false
+          }
+        },
+        {
+          "blocked_plan": {
+            "route": "blocked",
+            "blocked": true,
+            "status": "blocked"
+          }
+        }
+      ],
+      "warnings": [],
+      "errors": [],
+      "duration_ms": 125,
+      "metadata": {}
+    },
+    {
+      "check_id": "verification_evidence",
+      "name": "Verification & Evidence",
+      "status": "passed",
+      "passed": true,
+      "summary": "Verifier produces evidence bundle; read_only=passed, blocked=blocked",
+      "evidence": [
+        {
+          "read_only_verify": {
+            "status": "passed",
+            "ok": true,
+            "result_count": 5
+          }
+        },
+        {
+          "blocked_verify": {
+            "status": "blocked",
+            "ok": true
+          }
+        },
+        {
+          "summary_safe": true
+        }
+      ],
+      "warnings": [],
+      "errors": [],
+      "duration_ms": 137,
+      "metadata": {}
+    },
+    {
+      "check_id": "reflection_learning",
+      "name": "Reflection & Learning",
+      "status": "passed",
+      "passed": true,
+      "summary": "Reflection/learning: success outcome, 3 signals applied, policy skipped=True",
+      "evidence": [
+        {
+          "outcome": "success",
+          "signals": 3,
+          "confidence": 0.8
+        },
+        {
+          "apply_ok": true,
+          "applied_count": 3,
+          "skipped_count": 0
+        },
+        {
+          "blocked_outcome": "blocked",
+          "blocked_signals": 2
+        },
+        {
+          "policy_skipped_by_default": true
+        }
+      ],
+      "warnings": [],
+      "errors": [],
+      "duration_ms": 194,
+      "metadata": {}
+    },
+    {
+      "check_id": "ml_light_shadow",
+      "name": "ML-light Shadow Mode",
+      "status": "passed",
+      "passed": true,
+      "summary": "ML shadow: ranker ok, intent risk=high, strategy=approval_required, all changed_decision=False",
+      "evidence": [
+        {
+          "ranker_shadow_only": true,
+          "ranker_changed_decision": false,
+          "scores": [
+            [
+              "m1",
+              0.618
+            ],
+            [
+              "m2",
+              0.385
+            ]
+          ]
+        },
+        {
+          "intent_shadow_risk": "high",
+          "intent_changed_decision": false
+        },
+        {
+          "strategy": "approval_required",
+          "strategy_changed_decision": false
+        },
+        {
+          "coordinator_shadow_only": true,
+          "coordinator_changed_decision": false,
+          "coordinator_ok": true
+        }
+      ],
+      "warnings": [],
+      "errors": [],
+      "duration_ms": 39,
+      "metadata": {}
+    },
+    {
+      "check_id": "end_to_end_jarvis_flow",
+      "name": "End-to-End Jarvis Flow",
+      "status": "passed",
+      "passed": true,
+      "summary": "E2E flow: pref_stored=True, route=read_only_inspection, bundle=passed, reflection=success, signals=3, shadow_only=True",
+      "evidence": [
+        {
+          "pref_stored": true
+        },
+        {
+          "route": "read_only_inspection",
+          "risk": "low"
+        },
+        {
+          "sections": [
+            "route",
+            "memory",
+            "missions",
+            "tasks_timeline",
+            "project_state",
+            "git_state",
+            "rank_status"
+          ]
+        },
+        {
+          "mission_id": "8cb621c0",
+          "route": "read_only_inspection",
+          "execution_mode": "read_only"
+        },
+        {
+          "bundle_status": "passed",
+          "bundle_ok": true
+        },
+        {
+          "reflection_outcome": "success",
+          "signals": 3
+        },
+        {
+          "learn_ok": true,
+          "applied": 3
+        },
+        {
+          "shadow_only": true,
+          "shadow_changed_decision": false
+        }
+      ],
+      "warnings": [],
+      "errors": [],
+      "duration_ms": 296,
+      "metadata": {}
+    },
+    {
+      "check_id": "secret_redaction_global",
+      "name": "Global Secret Redaction",
+      "status": "passed",
+      "passed": true,
+      "summary": "All 4 fake secrets redacted across all component outputs",
+      "evidence": [
+        {
+          "outputs_checked": 6,
+          "secrets_found": []
+        }
+      ],
+      "warnings": [],
+      "errors": [],
+      "duration_ms": 190,
+      "metadata": {}
+    }
+  ],
+  "warnings": [],
+  "errors": [],
+  "metrics": {
+    "total_checks": 10,
+    "passed_checks": 10,
+    "failed_checks": 0,
+    "total_duration_ms": 1390
+  },
+  "artifacts": {},
+  "metadata": {}
+}
