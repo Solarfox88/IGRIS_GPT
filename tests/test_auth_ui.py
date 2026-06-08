@@ -233,30 +233,46 @@ def test_index_html_loads_auth_js():
 
 def test_auth_js_loaded_after_app_js():
     content = _read(_INDEX_HTML)
-    app_js_pos = content.find("app.js")
-    auth_js_pos = content.find("auth.js")
-    assert app_js_pos >= 0, "app.js not found in index.html"
-    assert auth_js_pos >= 0, "auth.js not found in index.html"
-    assert auth_js_pos > app_js_pos, "auth.js must be loaded after app.js"
+    # Find script src= tags specifically (not comments)
+    import re
+    script_srcs = [(m.start(), m.group(1)) for m in re.finditer(r'<script[^>]+src=["\']([^"\']+)["\']', content)]
+    src_names = [src for _, src in script_srcs]
+    assert any("app.js" in s for s in src_names), "app.js script tag not found in index.html"
+    assert any("auth.js" in s for s in src_names), "auth.js script tag not found in index.html"
+    app_pos = next(pos for pos, src in script_srcs if "app.js" in src)
+    auth_pos = next(pos for pos, src in script_srcs if "auth.js" in src)
+    assert auth_pos > app_pos, "auth.js must be loaded after app.js (DOM must exist first)"
 
 
 # ── Topbar auth buttons ───────────────────────────────────────────────────────
 
 def test_index_html_has_login_button():
     content = _read(_INDEX_HTML)
-    assert "tb-auth-btn" in content or "authShowLogin" in content, \
-        "Login button/trigger not found in index.html"
+    assert "tb-auth-btn" in content, "Login button (tb-auth-btn) not found in index.html"
+    # Function must be in auth.js (no inline onclick)
+    auth_js = _read(_AUTH_JS)
+    assert "authShowLogin" in auth_js
 
 
 def test_index_html_has_logout_button():
     content = _read(_INDEX_HTML)
-    assert "tb-logout-btn" in content or "authDoLogout" in content, \
-        "Logout button/trigger not found in index.html"
+    assert "tb-logout-btn" in content, "Logout button (tb-logout-btn) not found in index.html"
+    auth_js = _read(_AUTH_JS)
+    assert "authDoLogout" in auth_js
 
 
 def test_index_html_has_enroll_button():
     content = _read(_INDEX_HTML)
-    assert "authShowEnroll" in content, "Enroll button/trigger not found in index.html"
+    assert "tb-enroll-btn" in content, "Enroll button (tb-enroll-btn) not found in index.html"
+    auth_js = _read(_AUTH_JS)
+    assert "authShowEnroll" in auth_js
+
+
+def test_no_inline_onclick_in_auth_modals():
+    """auth.js wires listeners; index.html must have zero onclick= attributes."""
+    content = _read(_INDEX_HTML)
+    assert "onclick=" not in content, \
+        "onclick= found in index.html — use event listeners in auth.js instead"
 
 
 # ── Gauntlet check integration ────────────────────────────────────────────────

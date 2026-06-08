@@ -24,15 +24,15 @@
         <span class="identity-safety-note" id="tb-safety-note"></span>
       </div>
       <div class="topbar-spacer"></div>
-      <!-- Auth controls (#1272 PR5) -->
+      <!-- Auth controls (#1272 PR5) — event listeners wired in auth.js -->
       <div class="topbar-auth" id="topbar-auth">
-        <button type="button" id="tb-auth-btn" class="auth-btn" onclick="authShowLogin()" aria-label="Login / Registrazione">
+        <button type="button" id="tb-auth-btn" class="auth-btn" aria-label="Login / Registrazione">
           🔐 Login
         </button>
-        <button type="button" id="tb-enroll-btn" class="auth-btn auth-btn-secondary" onclick="authShowEnroll()" aria-label="Registrazione" style="margin-left:4px">
+        <button type="button" id="tb-enroll-btn" class="auth-btn auth-btn-secondary" aria-label="Registrazione" style="margin-left:4px">
           Registrati
         </button>
-        <button type="button" id="tb-logout-btn" class="auth-btn auth-btn-danger" onclick="authDoLogout()" aria-label="Logout" style="display:none">
+        <button type="button" id="tb-logout-btn" class="auth-btn auth-btn-danger" aria-label="Logout" style="display:none">
           Logout
         </button>
       </div>
@@ -572,14 +572,14 @@
           <div id="auth-login-error" class="auth-error" style="display:none"></div>
         </div>
         <div class="auth-modal-footer">
-          <button type="button" id="auth-login-submit" class="auth-btn" onclick="authSubmitLogin()">
+          <button type="button" id="auth-login-submit" class="auth-btn">
             Accedi
           </button>
-          <button type="button" class="auth-btn auth-btn-secondary" onclick="authHideLogin()">
+          <button type="button" id="auth-login-cancel" class="auth-btn auth-btn-secondary">
             Annulla
           </button>
           <span class="auth-modal-hint">
-            Non hai un account? <a href="#" onclick="authHideLogin();authShowEnroll();return false">Registrati</a>
+            Non hai un account? <a href="#" id="auth-login-to-enroll">Registrati</a>
           </span>
         </div>
       </div>
@@ -617,10 +617,10 @@
                    class="auth-input" />
           </div>
           <div class="auth-modal-footer">
-            <button type="button" id="auth-enroll-step1-btn" class="auth-btn" onclick="authSubmitEnrollStep1()">
+            <button type="button" id="auth-enroll-step1-btn" class="auth-btn">
               Avanti →
             </button>
-            <button type="button" class="auth-btn auth-btn-secondary" onclick="authHideEnroll()">
+            <button type="button" id="auth-enroll-cancel1" class="auth-btn auth-btn-secondary">
               Annulla
             </button>
           </div>
@@ -640,10 +640,10 @@
                    class="auth-input" />
           </div>
           <div class="auth-modal-footer">
-            <button type="button" id="auth-enroll-step2-btn" class="auth-btn" onclick="authSubmitEnrollStep2()">
+            <button type="button" id="auth-enroll-step2-btn" class="auth-btn">
               Completa registrazione
             </button>
-            <button type="button" class="auth-btn auth-btn-secondary" onclick="authHideEnroll()">
+            <button type="button" id="auth-enroll-cancel2" class="auth-btn auth-btn-secondary">
               Annulla
             </button>
           </div>

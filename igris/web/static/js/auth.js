@@ -340,6 +340,32 @@ async function authDoLogout() {
 // ── Init on page load ─────────────────────────────────────────────────────────
 
 document.addEventListener("DOMContentLoaded", function () {
+  // Wire up auth button event listeners (no inline onclick in HTML)
+  var _wire = function (id, fn) {
+    var el = document.getElementById(id);
+    if (el) el.addEventListener("click", fn);
+  };
+
+  // Topbar buttons
+  _wire("tb-auth-btn",    function () { authShowLogin(); });
+  _wire("tb-enroll-btn",  function () { authShowEnroll(); });
+  _wire("tb-logout-btn",  function () { authDoLogout(); });
+
+  // Login modal
+  _wire("auth-login-submit",   function () { authSubmitLogin(); });
+  _wire("auth-login-cancel",   function () { authHideLogin(); });
+  _wire("auth-login-to-enroll", function (e) {
+    e.preventDefault();
+    authHideLogin();
+    authShowEnroll();
+  });
+
+  // Enrollment modal
+  _wire("auth-enroll-step1-btn", function () { authSubmitEnrollStep1(); });
+  _wire("auth-enroll-cancel1",   function () { authHideEnroll(); });
+  _wire("auth-enroll-step2-btn", function () { authSubmitEnrollStep2(); });
+  _wire("auth-enroll-cancel2",   function () { authHideEnroll(); });
+
   // Restore UI state from existing session if any
   if (getSessionToken()) {
     authUpdateUI().catch(function () { _authClearUI(); });
