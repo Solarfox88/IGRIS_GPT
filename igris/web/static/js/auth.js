@@ -211,8 +211,10 @@ async function authUpdateUI() {
     if (tbTrust) tbTrust.textContent = p.trust_level || "";
     if (tbAuthBtn) tbAuthBtn.style.display = "none";
     if (tbLogoutBtn) tbLogoutBtn.style.display = "";
-    // Expose profile_id for chat (read-only display, not auth)
+    // Expose profile_id for chat and diagnostics panel (read-only display, not auth)
     window._igrisAuthProfileId = p.profile_id;
+    // Notify app.js so sidebar/chat state is reconciled
+    if (typeof window.onAuthStateChanged === "function") window.onAuthStateChanged(p);
   } else {
     _authClearUI();
   }
@@ -230,6 +232,8 @@ function _authClearUI() {
   if (tbAuthBtn) tbAuthBtn.style.display = "";
   if (tbLogoutBtn) tbLogoutBtn.style.display = "none";
   window._igrisAuthProfileId = null;
+  // Notify app.js to reset sidebar/chat state
+  if (typeof window.onAuthStateCleared === "function") window.onAuthStateCleared();
 }
 
 // ── Modal helpers ────────────────────────────────────────────────────────────
