@@ -59,6 +59,35 @@ function authHeaders() {
 
 // ── API helpers ──────────────────────────────────────────────────────────────
 
+/**
+ * Normalize FastAPI / Pydantic error responses into our standard
+ * { ok: false, error: "...", details: [...] } shape.
+ * FastAPI uses { "detail": "Not Found" } for 404 and
+ * { "detail": [{loc, msg, type}, ...] } for 422 validation errors.
+ */
+function _normalizeApiError(httpStatus, data) {
+  // Already in our format
+  if (data.error !== undefined) return data;
+  // FastAPI detail
+  if (data.detail !== undefined) {
+    var d = data.detail;
+    if (typeof d === "string") {
+      // 404 "Not Found" → route_not_found; 403 → forbidden; etc.
+      var errCode = httpStatus === 404 ? "route_not_found"
+                  : httpStatus === 403 ? "forbidden"
+                  : httpStatus === 422 ? "validation_failed"
+                  : httpStatus >= 500  ? "internal_error"
+                  : "request_error";
+      return { ok: false, error: errCode, details: [d] };
+    }
+    if (Array.isArray(d)) {
+      var msgs = d.map(function(e) { return e.msg || JSON.stringify(e); });
+      return { ok: false, error: "validation_failed", details: msgs };
+    }
+  }
+  return { ok: false, error: "unknown_error" };
+}
+
 async function _authFetch(method, path, body) {
   var opts = {
     method: method,
@@ -70,9 +99,13 @@ async function _authFetch(method, path, body) {
   try {
     var r = await fetch(path, opts);
     var data = await r.json();
+    // Normalize FastAPI error format to our { ok, error, details } shape
+    if (!r.ok || data.ok === false) {
+      data = _normalizeApiError(r.status, data);
+    }
     return { ok: r.ok && data.ok !== false, status: r.status, data: data };
   } catch (e) {
-    return { ok: false, status: 0, data: { error: String(e.message || e) } };
+    return { ok: false, status: 0, data: { ok: false, error: "network_error", details: [String(e.message || e)] } };
   }
 }
 
@@ -216,6 +249,46 @@ function _setModalError(elId, msg) {
   if (el) { el.textContent = msg || ""; el.style.display = msg ? "" : "none"; }
 }
 
+/** Map error codes returned by /api/auth/enroll/start to Italian UI messages. */
+function _enrollErrorMsg(r) {
+  var _MESSAGES = {
+    username_taken:            "Nome utente già in uso. Scegline un altro.",
+    invalid_username_format:   "Nome utente non valido (usa solo lettere minuscole, numeri, _ . -).",
+    invalid_email:             "Indirizzo email non valido.",
+    invalid_mobile_phone:      "Numero di telefono non valido (includi prefisso internazionale, es. +39…).",
+    forbidden_field:           "Uno dei campi non è consentito.",
+    validation_failed:         "Dati non validi: " + (r.details ? r.details.join("; ") : "controlla i campi."),
+    route_not_found:           "Servizio di registrazione non disponibile. Riprova tra qualche istante.",
+    internal_error:            "Errore interno del server. Riprova tra qualche istante.",
+    network_error:             "Impossibile raggiungere il server. Controlla la connessione.",
+    unknown_error:             "Errore sconosciuto. Riprova o contatta il supporto.",
+  };
+  // validation_failed may have details inline — rebuild with actual details
+  if (r.error === "validation_failed" && r.details && r.details.length) {
+    return "Dati non validi: " + r.details.join("; ");
+  }
+  return _MESSAGES[r.error] || ("Errore: " + (r.error || "sconosciuto"));
+}
+
+/** Map error codes returned by /api/auth/enroll/complete to Italian UI messages. */
+function _enrollStep2ErrorMsg(r) {
+  var _MESSAGES = {
+    password_mismatch:          "Le due password non coincidono.",
+    password_too_short_min_8:   "La password deve essere di almeno 8 caratteri.",
+    password_requires_letter:   "La password deve contenere almeno una lettera.",
+    password_requires_digit:    "La password deve contenere almeno un numero.",
+    invalid_enrollment_token:   "Token di registrazione non valido. Ricomincia dal passo 1.",
+    expired_enrollment_token:   "Il token di registrazione è scaduto. Ricomincia dal passo 1.",
+    credential_already_exists:  "Utente già registrato. Accedi invece di registrarti.",
+    create_failed:              "Errore durante la creazione dell'account. Riprova.",
+    session_create_failed:      "Registrazione completata, ma accesso automatico fallito. Accedi manualmente.",
+    internal_error:             "Errore interno del server. Riprova tra qualche istante.",
+    network_error:              "Impossibile raggiungere il server. Controlla la connessione.",
+    validation_failed:          "Dati non validi: token di registrazione mancante. Ricomincia dal passo 1.",
+  };
+  return _MESSAGES[r.error] || ("Errore: " + (r.error || "sconosciuto"));
+}
+
 // ── Login modal flow ─────────────────────────────────────────────────────────
 
 function authShowLogin() { _showModal("auth-login-modal"); }
@@ -292,8 +365,7 @@ async function authSubmitEnrollStep1() {
     _setModalError("auth-enroll-error", "");
     _showEnrollStep(2);
   } else {
-    var detail = r.details ? r.details.join(", ") : (r.error || "Errore sconosciuto.");
-    _setModalError("auth-enroll-error", "Errore: " + detail);
+    _setModalError("auth-enroll-error", _enrollErrorMsg(r));
   }
   if (btn) btn.disabled = false;
 }
@@ -314,18 +386,20 @@ async function authSubmitEnrollStep2() {
     confirmPassword: pw2,
   });
 
-  // Clear password fields immediately
+  // Clear password fields immediately (security — never keep raw password in DOM)
   var pf1 = document.getElementById("auth-enroll-password");
   var pf2 = document.getElementById("auth-enroll-confirm");
   if (pf1) pf1.value = "";
   if (pf2) pf2.value = "";
-  _enrollmentToken = null;
+  // _enrollmentToken cleared ONLY on success — on failure keep it so the user
+  // can fix the password and retry without restarting from step 1.
 
   if (r.ok) {
+    _enrollmentToken = null;  // consumed — clear now
     authHideEnroll();
     await authUpdateUI();
   } else {
-    _setModalError("auth-enroll-error", "Errore: " + (r.error || "enroll_failed"));
+    _setModalError("auth-enroll-error", _enrollStep2ErrorMsg(r));
   }
   if (btn) btn.disabled = false;
 }
