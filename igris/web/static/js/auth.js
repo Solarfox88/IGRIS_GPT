@@ -191,9 +191,9 @@ function _authClearUI() {
   var tbTrust = document.getElementById("tb-trust");
   var tbAuthBtn = document.getElementById("tb-auth-btn");
   var tbLogoutBtn = document.getElementById("tb-logout-btn");
-  if (tbName) tbName.textContent = "—";
+  if (tbName) tbName.textContent = "non autenticato";
   if (tbAvatar) tbAvatar.textContent = "?";
-  if (tbTrust) tbTrust.textContent = "—";
+  if (tbTrust) tbTrust.textContent = "";
   if (tbAuthBtn) tbAuthBtn.style.display = "";
   if (tbLogoutBtn) tbLogoutBtn.style.display = "none";
   window._igrisAuthProfileId = null;
@@ -335,6 +335,90 @@ async function authSubmitEnrollStep2() {
 async function authDoLogout() {
   await authLogout();
   _authClearUI();
+}
+
+// ── Auth-first onboarding gate (#1278) ───────────────────────────────────────
+
+/** Enrollment intent keywords (Italian + English). */
+var _ENROLL_KEYWORDS = [
+  "registrarmi", "censirmi", "voglio registrarmi", "vorrei registrarmi",
+  "voglio censirmi", "vorrei censirmi", "censiscimi", "registrami",
+  "crea profilo", "creami un profilo", "nuovo profilo", "iscrivimi",
+  "create profile", "sign up", "register", "enroll",
+];
+
+/** Login intent keywords. */
+var _LOGIN_KEYWORDS = [
+  "login", "accedi", "voglio accedere", "fai login", "autenticami",
+  "sono già registrato", "ho già un profilo", "sign in", "log in",
+  "accesso", "già registrato", "ho un account",
+];
+
+/**
+ * Return true if text contains enrollment intent.
+ * Never call LLM for these when unauthenticated.
+ */
+function isEnrollmentIntent(text) {
+  if (!text) return false;
+  var lower = text.toLowerCase().trim();
+  for (var i = 0; i < _ENROLL_KEYWORDS.length; i++) {
+    if (lower.indexOf(_ENROLL_KEYWORDS[i]) >= 0) return true;
+  }
+  return false;
+}
+
+/**
+ * Return true if text contains login intent.
+ * Never call LLM for these when unauthenticated.
+ */
+function isLoginIntent(text) {
+  if (!text) return false;
+  var lower = text.toLowerCase().trim();
+  for (var i = 0; i < _LOGIN_KEYWORDS.length; i++) {
+    if (lower.indexOf(_LOGIN_KEYWORDS[i]) >= 0) return true;
+  }
+  return false;
+}
+
+/** Return true if text is any auth-related intent. */
+function isAuthIntent(text) {
+  return isEnrollmentIntent(text) || isLoginIntent(text);
+}
+
+/**
+ * Handle a chat message from an unauthenticated user.
+ * Shows a deterministic UI message and opens the appropriate modal.
+ * NEVER calls fetch() to the backend chat endpoint.
+ *
+ * @param {string} text - The message the user typed.
+ * @param {function} [addMsgFn] - Optional function to add a UI message (text, role).
+ * @returns {boolean} true = handled (caller must NOT call fetch), false = pass through.
+ */
+function handleUnauthenticatedMessage(text, addMsgFn) {
+  if (isEnrollmentIntent(text)) {
+    if (typeof addMsgFn === "function") {
+      addMsgFn("Per creare il tuo profilo compila il modulo di registrazione.", "assistant");
+    }
+    authShowEnroll();
+    return true;
+  }
+  if (isLoginIntent(text)) {
+    if (typeof addMsgFn === "function") {
+      addMsgFn("Accedi con username e password.", "assistant");
+    }
+    authShowLogin();
+    return true;
+  }
+  // Generic unauthenticated message
+  if (typeof addMsgFn === "function") {
+    addMsgFn(
+      "Prima di continuare devo riconoscerti. Accedi oppure registrati.",
+      "assistant"
+    );
+  }
+  // Show login by default for generic messages
+  authShowLogin();
+  return true;
 }
 
 // ── Init on page load ─────────────────────────────────────────────────────────

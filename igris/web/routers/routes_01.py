@@ -177,10 +177,12 @@ def create_router(deps) -> APIRouter:
                 request_headers=dict(request.headers),
                 payload=dict(content),
             )
+            # Use IGRIS_PROJECT_ROOT if set (matches auth_routes storage location)
+            _pf_project_root = os.environ.get("IGRIS_PROJECT_ROOT") or str(CONFIG.project_root)
             preflight = run_preflight(
                 message,
                 interlocutor_id=interlocutor_id,
-                project_root=str(CONFIG.project_root),
+                project_root=_pf_project_root,
                 is_new_session=len(sessions.get(session_id, [])) == 0,
                 is_local_request=_is_local,
                 payload=dict(content),
@@ -211,6 +213,37 @@ def create_router(deps) -> APIRouter:
                 }
             system_enrichment = ""
         # --- end preflight ---
+
+        # --- Auth-first gate (#1278) ---
+        # Gate fires for remote unauthenticated requests when IGRIS_REQUIRE_AUTH=true.
+        # Off by default for backward-compat — enable in production deployments.
+        # Allows: local request, any valid remote session, or IGRIS_REQUIRE_AUTH != "true".
+        # Blocks: remote callers without session when IGRIS_REQUIRE_AUTH=true.
+        _pf_obj_gate = preflight if 'preflight' in dir() else None
+        _gate_sess_auth = getattr(_pf_obj_gate, "session_authenticated", False)
+        _gate_sess_valid = getattr(_pf_obj_gate, "session_valid", False)
+        _gate_is_local = _is_local if '_is_local' in dir() else False
+        _gate_enabled = os.environ.get("IGRIS_REQUIRE_AUTH", "false").lower() == "true"
+        # Block if: gate enabled AND remote request AND no valid session
+        _gate_needs_auth = (
+            _gate_enabled
+            and not _gate_sess_auth
+            and not _gate_is_local
+        )
+        if _gate_needs_auth:
+            _gate_reason = "session_invalid" if (
+                _pf_obj_gate is not None and not _gate_sess_valid
+                and getattr(_pf_obj_gate, "session_reason", None)
+            ) else "unauthenticated"
+            return {
+                "response": "Prima di continuare devo riconoscerti. Accedi oppure registrati.",
+                "auth_required": True,
+                "auth_actions": ["login", "enroll"],
+                "auth_reason": _gate_reason,
+                "interlocutor_id": "unknown",
+                "trust_level": "untrusted",
+            }
+        # --- end auth-first gate ---
 
         # --- Jarvis Request Router (#1243) ---
         _route_decision = None
@@ -457,10 +490,12 @@ def create_router(deps) -> APIRouter:
                 request_headers=dict(request.headers),
                 payload=content,
             )
+            # Use IGRIS_PROJECT_ROOT if set (matches auth_routes storage location)
+            _pf_project_root_s = os.environ.get("IGRIS_PROJECT_ROOT") or str(CONFIG.project_root)
             preflight = run_preflight(
                 message,
                 interlocutor_id=interlocutor_id,
-                project_root=str(CONFIG.project_root),
+                project_root=_pf_project_root_s,
                 is_new_session=False,  # stream — session already initialized
                 is_local_request=_is_local_s,
                 payload=content,
@@ -488,6 +523,40 @@ def create_router(deps) -> APIRouter:
                 media_type="text/event-stream",
                 headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
             )
+
+        # --- Auth-first gate — stream (#1278) ---
+        # Gate fires for remote unauthenticated requests when IGRIS_REQUIRE_AUTH=true.
+        _pf_obj_gate_s = preflight if 'preflight' in dir() else None
+        _gate_sess_auth_s = getattr(_pf_obj_gate_s, "session_authenticated", False)
+        _gate_sess_valid_s = getattr(_pf_obj_gate_s, "session_valid", False)
+        _gate_is_local_s = _is_local_s if '_is_local_s' in dir() else False
+        _gate_enabled_s = os.environ.get("IGRIS_REQUIRE_AUTH", "false").lower() == "true"
+        _gate_needs_auth_s = (
+            _gate_enabled_s
+            and not _gate_sess_auth_s
+            and not _gate_is_local_s
+        )
+        if _gate_needs_auth_s:
+            _gate_reason_s = "session_invalid" if (
+                _pf_obj_gate_s is not None and not _gate_sess_valid_s
+                and getattr(_pf_obj_gate_s, "session_reason", None)
+            ) else "unauthenticated"
+            _gate_payload_s = json.dumps({
+                "auth_required": True,
+                "auth_actions": ["login", "enroll"],
+                "auth_reason": _gate_reason_s,
+                "response": "Prima di continuare devo riconoscerti. Accedi oppure registrati.",
+            })
+
+            async def _auth_gate_stream():
+                yield f"data: {json.dumps({'type': 'auth_required', 'auth_required': True, 'auth_actions': ['login', 'enroll'], 'auth_reason': _gate_reason_s, 'text': 'Prima di continuare devo riconoscerti. Accedi oppure registrati.'})}\n\n"
+                yield "data: [DONE]\n\n"
+            return StreamingResponse(
+                _auth_gate_stream(),
+                media_type="text/event-stream",
+                headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+            )
+        # --- end auth-first gate — stream ---
 
         # --- Jarvis Request Router — stream (#1243) ---
         _stream_route_decision = None
