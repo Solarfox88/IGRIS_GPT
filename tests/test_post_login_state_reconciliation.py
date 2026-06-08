@@ -68,7 +68,7 @@ def test_auth_js_calls_on_auth_state_cleared_on_logout():
     content = _auth_js()
     fn_start = content.find("function _authClearUI")
     assert fn_start >= 0
-    fn_body = content[fn_start:fn_start + 700]
+    fn_body = content[fn_start:fn_start + 1100]
     assert "onAuthStateCleared" in fn_body, \
         "_authClearUI does not call onAuthStateCleared — sidebar won't reset on logout"
 

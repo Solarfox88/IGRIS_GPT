@@ -221,6 +221,10 @@ async function authUpdateUI() {
 }
 
 function _authClearUI() {
+  // Always clear session token — prevents stale tokens from bypassing the
+  // frontend auth gate. This is called when /api/auth/me returns non-ok
+  // (expired/invalid session) as well as on explicit logout.
+  clearSessionToken();
   var tbName = document.getElementById("tb-name");
   var tbAvatar = document.getElementById("tb-avatar");
   var tbTrust = document.getElementById("tb-trust");
