@@ -218,3 +218,107 @@ def test_auth_js_fetch_normalizes_on_error():
     fn_body = content[fn_start:fn_start + 700]
     assert "_normalizeApiError" in fn_body, \
         "_authFetch does not call _normalizeApiError — FastAPI errors won't be normalized"
+
+
+# ── Backend: /api/auth/enroll/complete ───────────────────────────────────────
+
+def test_enroll_complete_missing_token_returns_422():
+    """Server returns HTTP 422 (not 500) when enrollment_token is missing from body."""
+    with tempfile.TemporaryDirectory() as tmp:
+        client = _client_with_tmp_root(tmp)
+        r = client.post("/api/auth/enroll/complete", json={
+            "password": "Test1234!",
+            "confirm_password": "Test1234!",
+        })
+        assert r.status_code == 422, \
+            f"Missing enrollment_token should give 422, got {r.status_code}: {r.text}"
+
+
+def test_enroll_complete_weak_password_returns_error():
+    """Weak password (no digit) returns password_requires_digit error."""
+    with tempfile.TemporaryDirectory() as tmp:
+        client = _client_with_tmp_root(tmp)
+        uname = _unique_username()
+        r1 = client.post("/api/auth/enroll/start", json={
+            "username": uname, "first_name": "A", "last_name": "B",
+            "email": f"{uname}@example.com", "mobile_phone": "+39000000010",
+        })
+        assert r1.json().get("ok") is True, r1.text
+        token = r1.json()["enrollment_token"]
+
+        r2 = client.post("/api/auth/enroll/complete", json={
+            "enrollment_token": token,
+            "password": "onlyletters",
+            "confirm_password": "onlyletters",
+        })
+        data = r2.json()
+        assert data.get("ok") is False
+        assert data.get("error") == "password_requires_digit", \
+            f"Expected password_requires_digit, got: {data}"
+
+
+def test_enroll_complete_retry_after_weak_password_succeeds():
+    """After a failed attempt (weak pw), retrying with same token and strong pw succeeds.
+
+    This verifies the JS fix: _enrollmentToken must NOT be cleared on failure,
+    so the user can retry without restarting from step 1.
+    """
+    with tempfile.TemporaryDirectory() as tmp:
+        client = _client_with_tmp_root(tmp)
+        uname = _unique_username()
+        r1 = client.post("/api/auth/enroll/start", json={
+            "username": uname, "first_name": "A", "last_name": "B",
+            "email": f"{uname}@example.com", "mobile_phone": "+39000000011",
+        })
+        token = r1.json()["enrollment_token"]
+
+        # First attempt — weak password
+        r2a = client.post("/api/auth/enroll/complete", json={
+            "enrollment_token": token,
+            "password": "onlyletters",
+            "confirm_password": "onlyletters",
+        })
+        assert r2a.json().get("ok") is False
+
+        # Second attempt — same token, correct password — must succeed
+        r2b = client.post("/api/auth/enroll/complete", json={
+            "enrollment_token": token,
+            "password": "StrongPass1",
+            "confirm_password": "StrongPass1",
+        })
+        data = r2b.json()
+        assert data.get("ok") is True, \
+            f"Retry with same token after weak-pw failure should succeed, got: {data}"
+        assert "session_token" in data, "session_token missing after successful complete"
+
+
+# ── Frontend static: step 2 JS fixes ─────────────────────────────────────────
+
+def test_auth_js_has_enroll_step2_error_msg():
+    assert "_enrollStep2ErrorMsg" in _auth_js(), \
+        "_enrollStep2ErrorMsg helper missing from auth.js"
+
+
+def test_auth_js_step2_token_cleared_only_on_success():
+    """_enrollmentToken = null must appear inside the 'if (r.ok)' block, not before."""
+    content = _auth_js()
+    fn_start = content.find("async function authSubmitEnrollStep2")
+    assert fn_start >= 0
+    fn_body = content[fn_start:fn_start + 1200]
+    # The null assignment must come AFTER 'if (r.ok)'
+    ok_pos = fn_body.find("if (r.ok)")
+    null_pos = fn_body.find("_enrollmentToken = null")
+    assert null_pos > ok_pos, \
+        "_enrollmentToken = null must be INSIDE if (r.ok) block — currently cleared before, " \
+        "which wipes the token on failure and causes 'validation_failed' on retry"
+
+
+def test_auth_js_step2_italian_messages():
+    """_enrollStep2ErrorMsg must contain Italian messages for password errors."""
+    content = _auth_js()
+    fn_start = content.find("function _enrollStep2ErrorMsg")
+    assert fn_start >= 0, "_enrollStep2ErrorMsg not found"
+    fn_body = content[fn_start:fn_start + 800]
+    for phrase in ["almeno", "lettera", "numero", "scaduto", "Ricomincia"]:
+        assert phrase in fn_body, \
+            f"Italian message fragment '{phrase}' missing from _enrollStep2ErrorMsg"

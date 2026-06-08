@@ -270,6 +270,25 @@ function _enrollErrorMsg(r) {
   return _MESSAGES[r.error] || ("Errore: " + (r.error || "sconosciuto"));
 }
 
+/** Map error codes returned by /api/auth/enroll/complete to Italian UI messages. */
+function _enrollStep2ErrorMsg(r) {
+  var _MESSAGES = {
+    password_mismatch:          "Le due password non coincidono.",
+    password_too_short_min_8:   "La password deve essere di almeno 8 caratteri.",
+    password_requires_letter:   "La password deve contenere almeno una lettera.",
+    password_requires_digit:    "La password deve contenere almeno un numero.",
+    invalid_enrollment_token:   "Token di registrazione non valido. Ricomincia dal passo 1.",
+    expired_enrollment_token:   "Il token di registrazione è scaduto. Ricomincia dal passo 1.",
+    credential_already_exists:  "Utente già registrato. Accedi invece di registrarti.",
+    create_failed:              "Errore durante la creazione dell'account. Riprova.",
+    session_create_failed:      "Registrazione completata, ma accesso automatico fallito. Accedi manualmente.",
+    internal_error:             "Errore interno del server. Riprova tra qualche istante.",
+    network_error:              "Impossibile raggiungere il server. Controlla la connessione.",
+    validation_failed:          "Dati non validi: token di registrazione mancante. Ricomincia dal passo 1.",
+  };
+  return _MESSAGES[r.error] || ("Errore: " + (r.error || "sconosciuto"));
+}
+
 // ── Login modal flow ─────────────────────────────────────────────────────────
 
 function authShowLogin() { _showModal("auth-login-modal"); }
@@ -367,18 +386,20 @@ async function authSubmitEnrollStep2() {
     confirmPassword: pw2,
   });
 
-  // Clear password fields immediately
+  // Clear password fields immediately (security — never keep raw password in DOM)
   var pf1 = document.getElementById("auth-enroll-password");
   var pf2 = document.getElementById("auth-enroll-confirm");
   if (pf1) pf1.value = "";
   if (pf2) pf2.value = "";
-  _enrollmentToken = null;
+  // _enrollmentToken cleared ONLY on success — on failure keep it so the user
+  // can fix the password and retry without restarting from step 1.
 
   if (r.ok) {
+    _enrollmentToken = null;  // consumed — clear now
     authHideEnroll();
     await authUpdateUI();
   } else {
-    _setModalError("auth-enroll-error", "Errore: " + (r.error || "enroll_failed"));
+    _setModalError("auth-enroll-error", _enrollStep2ErrorMsg(r));
   }
   if (btn) btn.disabled = false;
 }
