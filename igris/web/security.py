@@ -32,6 +32,14 @@ from fastapi.responses import JSONResponse
 _AUTH_EXEMPT_PATHS_EXACT: frozenset = frozenset({"/", "/health"})
 _AUTH_EXEMPT_PREFIXES: tuple = ("/docs", "/openapi.json", "/redoc", "/static/")
 
+# Path prefixes that bypass rate limiting entirely (static assets + health).
+_RATE_EXEMPT_PREFIXES: tuple = ("/static/", "/docs", "/redoc", "/openapi.json")
+_RATE_EXEMPT_PATHS_EXACT: frozenset = frozenset({"/", "/health", "/favicon.ico"})
+
+# IP ranges exempt from rate limiting (local machine + LAN).
+# Covers loopback, Docker bridge, and the production LAN (172.24.x.x).
+_RATE_EXEMPT_IP_PREFIXES: tuple = ("127.", "::1", "localhost", "172.24.", "192.168.", "10.")
+
 # Path prefixes that count as "destructive" and use the lower rate limit.
 _DESTRUCTIVE_PATH_PREFIXES: tuple = (
     "/api/rank/runs",
@@ -80,27 +88,34 @@ def apply_security_middleware(app: FastAPI) -> None:
         )
 
         # ---- Rate limiting ----
-        now = time.time()
-        _rate_buckets[client_ip] = [t for t in _rate_buckets[client_ip] if now - t < 60]
-        # GET requests to /api/rank/runs/{id} are read-only status checks — do not
-        # classify them as destructive even though the path prefix matches.
-        _method = request.method.upper()
-        is_destructive = (
-            any(path.startswith(p) for p in _DESTRUCTIVE_PATH_PREFIXES)
-            and _method not in ("GET", "HEAD", "OPTIONS")
+        # Skip rate limiting for static assets, health probes, and trusted IPs.
+        _rate_exempt = (
+            path in _RATE_EXEMPT_PATHS_EXACT
+            or any(path.startswith(p) for p in _RATE_EXEMPT_PREFIXES)
+            or any(client_ip.startswith(prefix) for prefix in _RATE_EXEMPT_IP_PREFIXES)
         )
-        limit = _rate_destructive if is_destructive else _rate_standard
-        if len(_rate_buckets[client_ip]) >= limit:
-            return JSONResponse(
-                status_code=429,
-                content={
-                    "detail": (
-                        f"Rate limit exceeded: max {limit} req/min "
-                        f"({'destructive' if is_destructive else 'standard'} endpoint)."
-                    )
-                },
+        if not _rate_exempt:
+            now = time.time()
+            _rate_buckets[client_ip] = [t for t in _rate_buckets[client_ip] if now - t < 60]
+            # GET requests to /api/rank/runs/{id} are read-only status checks — do not
+            # classify them as destructive even though the path prefix matches.
+            _method = request.method.upper()
+            is_destructive = (
+                any(path.startswith(p) for p in _DESTRUCTIVE_PATH_PREFIXES)
+                and _method not in ("GET", "HEAD", "OPTIONS")
             )
-        _rate_buckets[client_ip].append(now)
+            limit = _rate_destructive if is_destructive else _rate_standard
+            if len(_rate_buckets[client_ip]) >= limit:
+                return JSONResponse(
+                    status_code=429,
+                    content={
+                        "detail": (
+                            f"Rate limit exceeded: max {limit} req/min "
+                            f"({'destructive' if is_destructive else 'standard'} endpoint)."
+                        )
+                    },
+                )
+            _rate_buckets[client_ip].append(now)
 
         # ---- API-key authentication ----
         if _auth_enabled:
