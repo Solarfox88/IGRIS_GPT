@@ -34,6 +34,7 @@ OPTIONAL_API_ROUTERS: Sequence[tuple[str, str]] = (
     ("igris.api.routes.verifier_routes", "router"),
     ("igris.api.routes.learning_routes", "router"),
     ("igris.api.routes.shadow_routes", "router"),
+    ("igris.api.routes.auth_routes", "router"),
 )
 
 

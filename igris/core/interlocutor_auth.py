@@ -1,8 +1,9 @@
-"""Core Auth Models for Progressive Interlocutor Enrollment (#1272 PR 1).
+"""Core Auth Models for Progressive Interlocutor Enrollment (#1272 PR 1 + PR 3).
 
 SAFE BY DEFAULT:
 - Password raw NEVER stored, NEVER logged, NEVER in to_dict()
 - Session token raw returned only once at creation/login; only hash persisted
+- Enrollment token raw returned only once; only hash persisted
 - Recursive secret redaction on all boundary outputs
 - ok=True only if real disk persistence succeeds
 - No silent except — every failure logged and returned as error/warning
@@ -33,9 +34,12 @@ PASSWORD_SALT_BYTES = 32
 SESSION_TOKEN_BYTES = 32
 SESSION_TTL_SECONDS = 28_800  # 8 hours
 MAX_FAILED_LOGIN_ATTEMPTS = 5
+ENROLLMENT_TOKEN_BYTES = 32
+ENROLLMENT_TTL_SECONDS = 600  # 10 minutes
 
 _AUTH_CREDENTIALS_REL = Path(".igris") / "auth" / "credentials.json"
 _AUTH_SESSIONS_REL = Path(".igris") / "auth" / "sessions.json"
+_AUTH_ENROLLMENTS_REL = Path(".igris") / "auth" / "enrollments.json"
 _CREDENTIALS_VERSION = 1
 _SESSIONS_VERSION = 1
 
@@ -884,6 +888,297 @@ class AuthSessionManager:
             "active_sessions": active,
             "ttl_seconds": self.ttl_seconds,
             "sliding_window": self.sliding_window,
+            "warnings": [],
+            "errors": [],
+        })
+
+
+# ── PendingEnrollment ─────────────────────────────────────────────────────────
+
+@dataclass
+class PendingEnrollment:
+    enrollment_id: str
+    enrollment_token_hash: str
+    profile_id: str
+    first_name: str
+    last_name: str
+    email: str
+    mobile_phone: str
+    created_at: str
+    expires_at: str
+    used: bool = False
+    metadata: dict[str, Any] = field(default_factory=dict)
+
+    def to_dict(self, include_sensitive: bool = False) -> dict:
+        """Serialize. email/mobile always redacted in public output.
+
+        Raw enrollment_token is NEVER present regardless of flag.
+        """
+        base: dict[str, Any] = {
+            "enrollment_id": self.enrollment_id,
+            "enrollment_token_hash": self.enrollment_token_hash,
+            "profile_id": self.profile_id,
+            "first_name": self.first_name,
+            "last_name": self.last_name,
+            "email": self.email if include_sensitive else redact_email(self.email),
+            "mobile_phone": self.mobile_phone if include_sensitive else redact_phone(self.mobile_phone),
+            "created_at": self.created_at,
+            "expires_at": self.expires_at,
+            "used": self.used,
+            "metadata": _redact_any(dict(self.metadata)),
+        }
+        return base
+
+    @classmethod
+    def from_dict(cls, d: dict) -> "PendingEnrollment":
+        return cls(
+            enrollment_id=str(d.get("enrollment_id", "")),
+            enrollment_token_hash=str(d.get("enrollment_token_hash", "")),
+            profile_id=str(d.get("profile_id", "")),
+            first_name=str(d.get("first_name", "")),
+            last_name=str(d.get("last_name", "")),
+            email=str(d.get("email", "")),
+            mobile_phone=str(d.get("mobile_phone", "")),
+            created_at=str(d.get("created_at", "")),
+            expires_at=str(d.get("expires_at", "")),
+            used=bool(d.get("used", False)),
+            metadata=dict(d.get("metadata") or {}),
+        )
+
+
+# ── EnrollmentStore ───────────────────────────────────────────────────────────
+
+_ENROLLMENTS_VERSION = 1
+
+
+class EnrollmentStore:
+    """Store for pending enrollments.
+
+    Storage: .igris/auth/enrollments.json
+    Raw enrollment_token returned only once — only hash persisted.
+    Tokens expire after ENROLLMENT_TTL_SECONDS (10 min) and are single-use.
+    """
+
+    def __init__(
+        self,
+        project_root: str | Path | None = None,
+        storage_path: str | Path | None = None,
+        ttl_seconds: int = ENROLLMENT_TTL_SECONDS,
+    ) -> None:
+        self.project_root = Path(project_root) if project_root else Path.cwd()
+        if storage_path:
+            self.storage_path = Path(storage_path)
+        else:
+            self.storage_path = self.project_root / _AUTH_ENROLLMENTS_REL
+        self.ttl_seconds = ttl_seconds
+        self._enrollments: dict[str, PendingEnrollment] = {}  # keyed by token_hash
+
+        if self.storage_path.exists():
+            result = self.reload()
+            if not result.ok:
+                logger.warning(
+                    "EnrollmentStore: failed to load %s: %s",
+                    self.storage_path, result.errors,
+                )
+
+    def save(self) -> AuthOperationResult:
+        result = AuthOperationResult(ok=False, action="save_enrollments")
+        try:
+            self.storage_path.parent.mkdir(parents=True, exist_ok=True)
+            payload = {
+                "version": _ENROLLMENTS_VERSION,
+                "enrollments": {
+                    h: e.to_dict(include_sensitive=True)
+                    for h, e in self._enrollments.items()
+                },
+            }
+            self.storage_path.write_text(
+                json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8"
+            )
+            result.ok = True
+            result.metadata["saved_count"] = len(self._enrollments)
+        except Exception as exc:
+            msg = f"enrollments save failed: {exc}"
+            result.errors.append(msg)
+            logger.warning("EnrollmentStore.save: %s", msg)
+        return result
+
+    def reload(self) -> AuthOperationResult:
+        result = AuthOperationResult(ok=False, action="reload_enrollments")
+
+        if not self.storage_path.exists():
+            self._enrollments = {}
+            result.ok = True
+            result.warnings.append("storage_file_missing")
+            return result
+
+        try:
+            raw = self.storage_path.read_text(encoding="utf-8")
+        except Exception as exc:
+            msg = f"read failed: {exc}"
+            result.errors.append(msg)
+            logger.warning("EnrollmentStore.reload: %s", msg)
+            return result
+
+        try:
+            data = json.loads(raw)
+        except json.JSONDecodeError as exc:
+            msg = f"invalid json: {exc}"
+            result.errors.append(msg)
+            logger.warning("EnrollmentStore.reload: %s", msg)
+            return result
+
+        if not isinstance(data, dict):
+            result.errors.append("enrollments root is not a dict")
+            logger.warning("EnrollmentStore.reload: root is not dict")
+            return result
+
+        enroll_raw = data.get("enrollments")
+        if not isinstance(enroll_raw, dict):
+            self._enrollments = {}
+            result.ok = True
+            result.warnings.append("enrollments_not_dict")
+            return result
+
+        loaded: dict[str, PendingEnrollment] = {}
+        skipped = 0
+        for token_hash, raw_e in enroll_raw.items():
+            if not isinstance(raw_e, dict):
+                skipped += 1
+                continue
+            try:
+                loaded[token_hash] = PendingEnrollment.from_dict(raw_e)
+            except Exception as exc:
+                skipped += 1
+                logger.debug("EnrollmentStore.reload: skip %s: %s", token_hash[:8], exc)
+
+        self._enrollments = loaded
+        result.ok = True
+        result.metadata["loaded_count"] = len(loaded)
+        if skipped:
+            result.warnings.append(f"skipped_{skipped}_invalid_enrollments")
+        return result
+
+    def create_pending(
+        self,
+        profile_id: str,
+        first_name: str,
+        last_name: str,
+        email: str,
+        mobile_phone: str,
+    ) -> AuthOperationResult:
+        """Create a pending enrollment. Returns raw token once in result.session_token."""
+        result = AuthOperationResult(ok=False, action="create_pending_enrollment", profile_id=profile_id)
+
+        if not profile_id:
+            result.errors.append("profile_id_required")
+            return result
+
+        raw_token = secrets.token_urlsafe(ENROLLMENT_TOKEN_BYTES)
+        token_hash = hash_session_token(raw_token)  # reuse same SHA-256 helper
+        enrollment_id = str(uuid.uuid4())
+        now = now_iso()
+        expires = (
+            datetime.now(tz=timezone.utc) + timedelta(seconds=self.ttl_seconds)
+        ).isoformat()
+
+        enrollment = PendingEnrollment(
+            enrollment_id=enrollment_id,
+            enrollment_token_hash=token_hash,
+            profile_id=profile_id,
+            first_name=first_name,
+            last_name=last_name,
+            email=email,
+            mobile_phone=mobile_phone,
+            created_at=now,
+            expires_at=expires,
+        )
+        self._enrollments[token_hash] = enrollment
+        save_r = self.save()
+        if not save_r.ok:
+            del self._enrollments[token_hash]
+            result.errors.extend(save_r.errors)
+            result.errors.append("persist_failed_rollback")
+            return result
+
+        result.ok = True
+        result.session_token = raw_token  # reusing session_token field for enrollment_token
+        result.session_id = enrollment_id
+        result.expires_at = expires
+        return result
+
+    def resolve_token(
+        self,
+        enrollment_token: str,
+    ) -> tuple[PendingEnrollment | None, AuthOperationResult]:
+        """Look up a pending enrollment by raw token."""
+        result = AuthOperationResult(ok=False, action="resolve_enrollment_token")
+
+        token_hash = hash_session_token(enrollment_token)
+        enrollment = self._enrollments.get(token_hash)
+
+        if enrollment is None:
+            result.errors.append("enrollment_token_not_found")
+            return None, result
+
+        if enrollment.used:
+            result.errors.append("enrollment_token_already_used")
+            return None, result
+
+        if is_expired(enrollment.expires_at):
+            result.errors.append("enrollment_token_expired")
+            return None, result
+
+        result.ok = True
+        result.profile_id = enrollment.profile_id
+        return enrollment, result
+
+    def mark_used(self, enrollment_token: str) -> AuthOperationResult:
+        result = AuthOperationResult(ok=False, action="mark_enrollment_used")
+
+        token_hash = hash_session_token(enrollment_token)
+        enrollment = self._enrollments.get(token_hash)
+        if enrollment is None:
+            result.errors.append("enrollment_not_found")
+            return result
+
+        enrollment.used = True
+        save_r = self.save()
+        if not save_r.ok:
+            result.errors.extend(save_r.errors)
+            return result
+
+        result.ok = True
+        return result
+
+    def gc_expired(self) -> AuthOperationResult:
+        result = AuthOperationResult(ok=False, action="gc_expired_enrollments")
+        before = len(self._enrollments)
+        self._enrollments = {
+            h: e for h, e in self._enrollments.items()
+            if not e.used and not is_expired(e.expires_at)
+        }
+        removed = before - len(self._enrollments)
+        save_r = self.save()
+        if not save_r.ok:
+            result.errors.extend(save_r.errors)
+            return result
+        result.ok = True
+        result.metadata["removed_count"] = removed
+        return result
+
+    def healthcheck(self) -> dict:
+        active = sum(
+            1 for e in self._enrollments.values()
+            if not e.used and not is_expired(e.expires_at)
+        )
+        return _redact_any({
+            "ok": True,
+            "storage_path": str(self.storage_path),
+            "exists": self.storage_path.exists(),
+            "total_enrollments": len(self._enrollments),
+            "active_enrollments": active,
+            "ttl_seconds": self.ttl_seconds,
             "warnings": [],
             "errors": [],
         })
