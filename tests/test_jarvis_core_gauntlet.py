@@ -140,8 +140,8 @@ def test_run_all_passes(tmp_path):
         f"Errors: {report.errors}"
     )
     assert report.status == "passed"
-    assert report.metrics["total_checks"] == 10
-    assert report.metrics["passed_checks"] == 10
+    assert report.metrics["total_checks"] == 11  # 10 original + auth_enrollment_login_flow
+    assert report.metrics["passed_checks"] == 11
 
 
 # ── write_report ──────────────────────────────────────────────────────────────
@@ -250,3 +250,28 @@ def test_gauntlet_report_markdown_contains_required_sections(tmp_path):
     for section in ["# Jarvis Core Final Acceptance Gauntlet", "## Checks",
                      "## Summary", "## Next Steps", "jarvis-core-ready"]:
         assert section in md, f"Missing section: {section}"
+
+
+# ── auth_enrollment_login_flow (#1272 PR5) ────────────────────────────────────
+
+def test_gauntlet_auth_flow_passes(tmp_path):
+    from igris.core.jarvis_core_gauntlet import JarvisCoreGauntlet
+    g = JarvisCoreGauntlet(project_root=tmp_path)
+    result = g.run_check("auth_enrollment_login_flow")
+    assert result.passed is True, f"auth flow failed: {result.errors}"
+
+
+def test_gauntlet_auth_flow_no_raw_password_or_token(tmp_path):
+    """Ensure gauntlet check output contains no raw password or session token."""
+    from igris.core.jarvis_core_gauntlet import JarvisCoreGauntlet
+    g = JarvisCoreGauntlet(project_root=tmp_path)
+    result = g.run_check("auth_enrollment_login_flow")
+    output = json.dumps(result.to_dict())
+    # The FAKE_PW used internally in the check must not appear in the serialised result
+    assert "FAKE_PASSWORD_GAUNTLET_AUTH" not in output, \
+        "Raw fake password found in gauntlet check result"
+
+
+def test_gauntlet_includes_auth_check_in_mandatory():
+    from igris.core.jarvis_core_gauntlet import JarvisCoreGauntlet
+    assert "auth_enrollment_login_flow" in JarvisCoreGauntlet.MANDATORY_CHECKS
