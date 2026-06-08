@@ -1,14 +1,17 @@
 """
 GitHub Write Gateway API Routes
 Endpoints for gated GitHub write operations: comment, label, issue management, PR merge, actions trigger.
+
+Auth gate (#1293): all write endpoints require admin/owner session token.
 """
 import os
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field
 from typing import Optional, List, Dict, Any
 import logging
 
 from igris.core.github_write_gateway import GitHubWriteGateway, GitHubWriteResult
+from igris.api.write_auth import require_write_auth_or_raise
 router = APIRouter(prefix="/api/github/write", tags=["github-write"])
 
 logger = logging.getLogger(__name__)
@@ -136,8 +139,9 @@ def _result_to_response(result: GitHubWriteResult) -> dict:
 
 
 @router.post("/comment", response_model=CommentResponse)
-async def add_comment(request: CommentRequest):
+async def add_comment(request: CommentRequest, http_request: Request):
     """Add a comment to an issue or PR (gated, dry-run by default)."""
+    await require_write_auth_or_raise(http_request)
     try:
         gw = _get_gateway(dry_run=request.dry_run)
         issue_url = _make_url(request.repo, "issues", request.issue_number)
@@ -151,8 +155,9 @@ async def add_comment(request: CommentRequest):
 
 
 @router.post("/label", response_model=LabelResponse)
-async def manage_label(request: LabelRequest):
+async def manage_label(request: LabelRequest, http_request: Request):
     """Add or remove labels on an issue/PR (gated, dry-run by default)."""
+    await require_write_auth_or_raise(http_request)
     try:
         gw = _get_gateway(dry_run=request.dry_run)
         issue_url = _make_url(request.repo, "issues", request.issue_number)
@@ -171,8 +176,9 @@ async def manage_label(request: LabelRequest):
 
 
 @router.post("/issue/close", response_model=IssueCloseResponse)
-async def close_issue(request: IssueCloseRequest):
+async def close_issue(request: IssueCloseRequest, http_request: Request):
     """Close an issue with optional comment (gated, dry-run by default)."""
+    await require_write_auth_or_raise(http_request)
     try:
         gw = _get_gateway(dry_run=request.dry_run)
         issue_url = _make_url(request.repo, "issues", request.issue_number)
@@ -186,8 +192,9 @@ async def close_issue(request: IssueCloseRequest):
 
 
 @router.post("/issue/create", response_model=IssueCreateResponse)
-async def create_issue(request: IssueCreateRequest):
+async def create_issue(request: IssueCreateRequest, http_request: Request):
     """Open a new issue (gated, dry-run by default)."""
+    await require_write_auth_or_raise(http_request)
     try:
         gw = _get_gateway(dry_run=request.dry_run)
         result = gw.create_issue(
@@ -206,8 +213,9 @@ async def create_issue(request: IssueCreateRequest):
 
 
 @router.post("/pr/merge", response_model=PrMergeResponse)
-async def merge_pr(request: PrMergeRequest):
+async def merge_pr(request: PrMergeRequest, http_request: Request):
     """Merge a pull request (requires explicit approval; destructive)."""
+    await require_write_auth_or_raise(http_request)
     try:
         if not request.require_explicit_approval:
             raise HTTPException(status_code=400, detail="Merge requires require_explicit_approval=true")
@@ -225,8 +233,9 @@ async def merge_pr(request: PrMergeRequest):
 
 
 @router.post("/actions/trigger", response_model=ActionTriggerResponse)
-async def trigger_workflow(request: ActionTriggerRequest):
+async def trigger_workflow(request: ActionTriggerRequest, http_request: Request):
     """Trigger a GitHub Actions workflow (gated, dry-run by default)."""
+    await require_write_auth_or_raise(http_request)
     try:
         gw = _get_gateway(dry_run=request.dry_run)
         result = gw.trigger_action(

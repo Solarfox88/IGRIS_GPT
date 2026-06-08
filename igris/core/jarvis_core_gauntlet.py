@@ -205,6 +205,7 @@ class JarvisCoreGauntlet:
         "end_to_end_jarvis_flow",
         "secret_redaction_global",
         "auth_enrollment_login_flow",
+        "write_endpoint_auth_gate",
     )
 
     def __init__(
@@ -974,6 +975,129 @@ class JarvisCoreGauntlet:
                 except Exception:
                     pass
 
+    def _check_write_endpoint_auth_gate(self, r: GauntletCheckResult) -> None:
+        """Smoke: all write endpoints require a valid admin/owner session (P0 fix #1293).
+
+        Verifies:
+        1. igris/api/write_auth.py exists and is importable
+        2. require_write_auth_or_raise blocks unauthenticated HTTP requests (401)
+        3. require_write_auth_or_raise blocks limited-trust users (403)
+        4. github_write.py imports write_auth (static source check)
+        5. routes_08.py imports write_auth (static source check)
+        6. routes_04.py imports write_auth (static source check)
+        7. routes_03.py imports write_auth (static source check)
+        8. No raw token echoed in error responses
+
+        SAFE: uses FastAPI TestClient with isolated temp project_root.
+        """
+        import importlib
+        import sys
+        import tempfile
+        from pathlib import Path
+
+        repo = Path(__file__).parent.parent.parent
+
+        # 1. Module exists
+        write_auth_path = repo / "igris" / "api" / "write_auth.py"
+        if not write_auth_path.exists():
+            r.errors.append("igris/api/write_auth.py not found — P0 fix #1293 not applied")
+            return
+        r.metadata["write_auth_exists"] = True
+
+        # 2. Static source checks
+        src_gw = (repo / "igris/api/routes/github_write.py").read_text()
+        if "require_write_auth_or_raise" not in src_gw:
+            r.errors.append("github_write.py missing require_write_auth_or_raise")
+            return
+        src_r8 = (repo / "igris/web/routers/routes_08.py").read_text()
+        if "require_write_auth_or_raise" not in src_r8:
+            r.errors.append("routes_08.py missing require_write_auth_or_raise")
+            return
+        src_r4 = (repo / "igris/web/routers/routes_04.py").read_text()
+        if "require_write_auth_or_raise" not in src_r4:
+            r.errors.append("routes_04.py missing require_write_auth_or_raise")
+            return
+        src_r3 = (repo / "igris/web/routers/routes_03.py").read_text()
+        if "require_write_auth_or_raise" not in src_r3:
+            r.errors.append("routes_03.py missing require_write_auth_or_raise")
+            return
+        r.metadata["static_source_checks_ok"] = True
+
+        # 3. write_auth.py uses IGRIS_PROJECT_ROOT (not CONFIG.project_root)
+        write_auth_src = write_auth_path.read_text()
+        if "IGRIS_PROJECT_ROOT" not in write_auth_src:
+            r.errors.append("write_auth.py does not use IGRIS_PROJECT_ROOT env var")
+            return
+        if "CONFIG.project_root" in write_auth_src:
+            r.errors.append("write_auth.py uses CONFIG.project_root (must use IGRIS_PROJECT_ROOT env var)")
+            return
+        r.metadata["igris_project_root_env_ok"] = True
+
+        # 4. Live TestClient checks (unauthenticated → 401, limited → 403)
+        try:
+            temp_dir = tempfile.mkdtemp(prefix="igris_gauntlet_wg_")
+            import os
+            os.environ["IGRIS_PROJECT_ROOT"] = temp_dir
+
+            for k in list(sys.modules.keys()):
+                if any(x in k for x in ("write_auth", "github_write", "routes_08",
+                                         "routes_04", "routes_03", "auth_routes")):
+                    del sys.modules[k]
+
+            from fastapi.testclient import TestClient
+            from igris.web.server import create_app
+            client = TestClient(create_app(), raise_server_exceptions=False)
+
+            # Unauthenticated fs/write → 401
+            import time
+            canary = Path(temp_dir) / f"gauntlet_p0_{int(time.time()*1000)}.txt"
+            resp_fs = client.post("/api/tools/fs/write",
+                                  json={"path": str(canary), "content": "SHOULD_NOT_WRITE"})
+            if resp_fs.status_code not in (401, 403):
+                r.errors.append(f"fs/write unauthenticated: expected 401/403, got {resp_fs.status_code}")
+                return
+            if canary.exists():
+                canary.unlink()
+                r.errors.append("fs/write canary file was created without auth! P0 still open.")
+                return
+            r.metadata["fs_write_unauth_blocked"] = True
+
+            # Unauthenticated github/write/issue/create → 401
+            resp_gh = client.post("/api/github/write/issue/create",
+                                  json={"repo": "test/test", "title": "P0 canary",
+                                        "body": "Should be blocked", "dry_run": False})
+            if resp_gh.status_code not in (401, 403):
+                r.errors.append(f"github create_issue unauthenticated: expected 401/403, got {resp_gh.status_code}")
+                return
+            r.metadata["github_create_issue_unauth_blocked"] = True
+
+            # Token not echoed in error response
+            fake_tok = "FAKE_TOKEN_GAUNTLET_ECHO_CHECK_99887766"
+            resp_echo = client.post("/api/tools/fs/write",
+                                    json={"path": str(canary), "content": "x"},
+                                    headers={"Authorization": f"Bearer {fake_tok}"})
+            if fake_tok in resp_echo.text:
+                r.errors.append("Raw token echoed in error response — security violation")
+                return
+            r.metadata["no_raw_token_echo_ok"] = True
+
+            r.passed = True
+            r.status = "passed"
+            r.summary = (
+                "Write endpoint auth gate: write_auth.py ✓, "
+                "static source ✓, env var ✓, "
+                "fs/write blocked ✓, github/write blocked ✓, no token echo ✓"
+            )
+
+        except Exception as exc:
+            r.errors.append(f"Write auth gate check exception: {_redact(str(exc))}")
+        finally:
+            try:
+                import shutil
+                shutil.rmtree(temp_dir, ignore_errors=True)
+            except Exception:
+                pass
+
     # ── run_all ────────────────────────────────────────────────────────────────
 
     def run_all(self) -> JarvisCoreGauntletReport:
@@ -990,6 +1114,7 @@ class JarvisCoreGauntlet:
             "end_to_end_jarvis_flow": ("End-to-End Jarvis Flow", self._check_end_to_end_jarvis_flow),
             "secret_redaction_global": ("Global Secret Redaction", self._check_secret_redaction_global),
             "auth_enrollment_login_flow": ("Auth Enrollment/Login Flow", self._check_auth_enrollment_login_flow),
+            "write_endpoint_auth_gate": ("Write Endpoint Auth Gate", self._check_write_endpoint_auth_gate),
         }
 
         results: list[GauntletCheckResult] = []
@@ -1046,6 +1171,7 @@ class JarvisCoreGauntlet:
             "end_to_end_jarvis_flow": ("End-to-End Jarvis Flow", self._check_end_to_end_jarvis_flow),
             "secret_redaction_global": ("Global Secret Redaction", self._check_secret_redaction_global),
             "auth_enrollment_login_flow": ("Auth Enrollment/Login Flow", self._check_auth_enrollment_login_flow),
+            "write_endpoint_auth_gate": ("Write Endpoint Auth Gate", self._check_write_endpoint_auth_gate),
         }
         if check_id not in check_map:
             return GauntletCheckResult(

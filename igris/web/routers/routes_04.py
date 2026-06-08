@@ -309,7 +309,10 @@ def create_router(deps) -> APIRouter:
         return {"commands": list(ALLOWED_COMMANDS.keys())}
 
     @router.post("/api/terminal/run")
-    async def api_terminal_run(command: Dict[str, str] = Body(...)) -> Dict[str, object]:
+    async def api_terminal_run(request: Request, command: Dict[str, str] = Body(...)) -> Dict[str, object]:
+        """Run a pre-approved command. Requires admin/owner session (#1293)."""
+        from igris.api.write_auth import require_write_auth_or_raise
+        await require_write_auth_or_raise(request)
         # Reject if raw 'command' string is passed instead of command_id
         if "command" in command and "command_id" not in command:
             raise HTTPException(status_code=400, detail="Use command_id, not command")
