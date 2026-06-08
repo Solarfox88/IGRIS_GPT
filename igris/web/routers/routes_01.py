@@ -177,8 +177,12 @@ def create_router(deps) -> APIRouter:
                 request_headers=dict(request.headers),
                 payload=dict(content),
             )
-            # Use IGRIS_PROJECT_ROOT if set (matches auth_routes storage location)
-            _pf_project_root = os.environ.get("IGRIS_PROJECT_ROOT") or str(CONFIG.project_root)
+            # Use IGRIS_PROJECT_ROOT if set (matches auth_routes storage location).
+            # CRITICAL: must use same default as auth_routes.py ("." = CWD) so sessions
+            # are resolved in the same directory where they were written.
+            # Do NOT fall back to CONFIG.project_root (PROJECT_ROOT) — that env var
+            # is the workspace, not the auth store.
+            _pf_project_root = os.environ.get("IGRIS_PROJECT_ROOT") or "."
             preflight = run_preflight(
                 message,
                 interlocutor_id=interlocutor_id,
@@ -490,8 +494,9 @@ def create_router(deps) -> APIRouter:
                 request_headers=dict(request.headers),
                 payload=content,
             )
-            # Use IGRIS_PROJECT_ROOT if set (matches auth_routes storage location)
-            _pf_project_root_s = os.environ.get("IGRIS_PROJECT_ROOT") or str(CONFIG.project_root)
+            # Use IGRIS_PROJECT_ROOT if set (matches auth_routes storage location).
+            # CRITICAL: same default as auth_routes.py ("." = CWD) — not CONFIG.project_root.
+            _pf_project_root_s = os.environ.get("IGRIS_PROJECT_ROOT") or "."
             preflight = run_preflight(
                 message,
                 interlocutor_id=interlocutor_id,
