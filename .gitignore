@@ -39,5 +39,7 @@ wordpress_db_backup_*
 
 # Python build metadata
 *.egg-info/.claude/
-.claude/
+.claude/**
+# Shared project hooks/permissions — committed; personal overrides go in settings.local.json (gitignored)
+!.claude/settings.json
 igris_gpt.egg-info/

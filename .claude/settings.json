@@ -1,0 +1,30 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "cmd=$(jq -r '.tool_input.command'); if echo \"$cmd\" | grep -qE 'git commit' && ! echo \"$cmd\" | grep -q '\\[main-ok\\]'; then branch=$(git rev-parse --abbrev-ref HEAD 2>/dev/null); if [ \"$branch\" = \"main\" ] || [ \"$branch\" = \"master\" ]; then echo '{\"decision\":\"block\",\"reason\":\"⚠️  Commit diretto su main bloccato. Crea prima un branch: git checkout -b fix/nome-fix — poi apri una PR. (Per eccezioni legittime aggiungi [main-ok] al messaggio)\"}'; fi; fi",
+            "timeout": 5,
+            "statusMessage": "Controllo branch git..."
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "cmd=$(jq -r '.tool_input.command' 2>/dev/null || echo ''); if echo \"$cmd\" | grep -qE 'git push'; then current=$(git rev-parse --abbrev-ref HEAD 2>/dev/null); pushed=$(echo \"$cmd\" | grep -oP 'origin\\s+\\K\\S+' || echo \"$current\"); branch=${pushed:-$current}; if [ \"$branch\" != 'main' ] && [ \"$branch\" != 'master' ] && [ -n \"$branch\" ]; then echo \"{\\\"hookSpecificOutput\\\":{\\\"hookEventName\\\":\\\"PostToolUse\\\",\\\"additionalContext\\\":\\\"📋 Branch '$branch' pushato — apri la PR: gh pr create --title 'fix: ...' --body '...' oppure usa /review\\\"}}\"; fi; fi; exit 0",
+            "timeout": 5,
+            "statusMessage": "Verifica PR reminder..."
+          }
+        ]
+      }
+    ]
+  }
+}
