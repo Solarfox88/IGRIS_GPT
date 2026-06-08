@@ -2039,31 +2039,36 @@ console.log('Rank S dashboard is now visible');
         }
       }
 
-      if (lastChat.interlocutor_id) {
-        if (tbName) tbName.textContent = lastChat.interlocutor_id;
-        if (tbTrust) tbTrust.textContent = lastChat.trust_level || "—";
-        if (tbAvatar) tbAvatar.textContent = (lastChat.interlocutor_id || "?")[0].toUpperCase();
-        if (tbMode) tbMode.textContent = lastChat.response_mode ? "· " + lastChat.response_mode : "";
-        applyIdentityBadge(lastChat.trust_level, lastChat.interlocutor_id);
-      } else if (profiles.length > 0) {
-        var p0 = profiles[0];
-        if (tbName) tbName.textContent = p0.display_name || p0.profile_id || "—";
-        if (tbTrust) tbTrust.textContent = p0.trust_level || "—";
-        if (tbAvatar) tbAvatar.textContent = ((p0.display_name || p0.profile_id || "?")[0] || "?").toUpperCase();
-        applyIdentityBadge(p0.trust_level, p0.profile_id);
+      // If auth.js has set an authenticated profile, skip overwriting topbar/sidebar
+      // with stale diagnostics data (lastChat is from pre-auth chat, still unknown).
+      var _authPid = window._igrisAuthProfileId;
+      if (!_authPid) {
+        if (lastChat.interlocutor_id) {
+          if (tbName) tbName.textContent = lastChat.interlocutor_id;
+          if (tbTrust) tbTrust.textContent = lastChat.trust_level || "—";
+          if (tbAvatar) tbAvatar.textContent = (lastChat.interlocutor_id || "?")[0].toUpperCase();
+          if (tbMode) tbMode.textContent = lastChat.response_mode ? "· " + lastChat.response_mode : "";
+          applyIdentityBadge(lastChat.trust_level, lastChat.interlocutor_id);
+        } else if (profiles.length > 0) {
+          var p0 = profiles[0];
+          if (tbName) tbName.textContent = p0.display_name || p0.profile_id || "—";
+          if (tbTrust) tbTrust.textContent = p0.trust_level || "—";
+          if (tbAvatar) tbAvatar.textContent = ((p0.display_name || p0.profile_id || "?")[0] || "?").toUpperCase();
+          applyIdentityBadge(p0.trust_level, p0.profile_id);
+        }
       }
 
-      // Chat header meta
+      // Chat header meta — skip if auth has already set it
       var chatMeta = $("#chat-interlocutor-meta");
-      if (chatMeta && (lastChat.interlocutor_id || profiles.length > 0)) {
+      if (chatMeta && !_authPid && (lastChat.interlocutor_id || profiles.length > 0)) {
         var iname = lastChat.interlocutor_id || (profiles[0] && (profiles[0].display_name || profiles[0].profile_id)) || "";
         var itrust = lastChat.trust_level || (profiles[0] && profiles[0].trust_level) || "";
         chatMeta.textContent = iname ? (iname + (itrust ? " / " + itrust : "")) : "non autenticato";
       }
 
-      // Status panel interlocutor
+      // Status panel interlocutor — skip if auth has already set it
       var spIC = $("#sp-interlocutor-content");
-      if (spIC) {
+      if (spIC && !_authPid) {
         if (profiles.length > 0) {
           var p = profiles[0];
           var name = p.display_name || p.profile_id || "—";
@@ -2281,6 +2286,93 @@ console.log('Rank S dashboard is now visible');
     });
     observer.observe(chatMessages, { childList: true });
   })();
+
+  // ---- POST-AUTH STATE RECONCILIATION (#1283) ─────────────────────────────
+  // These functions are exposed globally so auth.js can call them after
+  // login/enrollment/logout without needing to import app.js internals.
+
+  /**
+   * Pre-auth message patterns to detect and remove from the chat history.
+   * These are shown before the user authenticates and must be cleared on auth.
+   */
+  var _PRE_AUTH_PATTERNS = [
+    "Prima di continuare devo riconoscerti",
+    "Accedi oppure registrati",
+    "Per creare il tuo profilo compila il modulo",
+    "Accedi con username e password",
+    "Non ho ancora un profilo per te",
+    "potresti dirmi chi sei",
+  ];
+
+  /** Remove all pre-auth assistant messages from the chat DOM. */
+  window.clearPreAuthMessages = function () {
+    var container = $("#chat-messages");
+    if (!container) return;
+    var msgs = container.querySelectorAll(".msg-assistant");
+    msgs.forEach(function (el) {
+      var txt = el.textContent || "";
+      var isPreAuth = _PRE_AUTH_PATTERNS.some(function (p) {
+        return txt.indexOf(p) >= 0;
+      });
+      if (isPreAuth) el.remove();
+    });
+  };
+
+  /** Add a deterministic "Accesso effettuato" message to the chat. */
+  window.addAuthSuccessMessage = function (profile) {
+    var displayName = (profile && (profile.display_name || profile.profile_id)) || "utente";
+    var trust = (profile && profile.trust_level) ? " (" + profile.trust_level + ")" : "";
+    addMsg("assistant",
+      "✅ Accesso effettuato come **" + displayName + "**" + trust + ". Ora puoi continuare la conversazione.",
+      "auth-success");
+  };
+
+  /** Update sidebar interlocutor panel and chat header meta from an auth profile. */
+  window.updateInterlocutorPanel = function (profile) {
+    if (!profile) return;
+    var displayName = profile.display_name || profile.profile_id || "—";
+    var trust = profile.trust_level || "—";
+
+    // Chat header meta
+    var chatMeta = $("#chat-interlocutor-meta");
+    if (chatMeta) chatMeta.textContent = displayName + " / " + trust;
+
+    // Status panel interlocutor card
+    var spIC = $("#sp-interlocutor-content");
+    if (spIC) {
+      spIC.innerHTML = '<div class="interlocutor-card">' +
+        '<div class="ic-header">' +
+        '<div class="ic-avatar">' + esc(displayName[0].toUpperCase()) + '</div>' +
+        '<div><div class="ic-name">' + esc(displayName) + '</div>' +
+        '<div class="ic-sub">' + esc(trust) + '</div></div>' +
+        '</div>' +
+        '<div class="ic-badges"><span class="ic-badge trusted">' + esc(trust) + '</span></div>' +
+        '</div>';
+    }
+  };
+
+  /**
+   * Full post-auth reconciliation: clear pre-auth messages, update sidebar,
+   * add success message. Called by auth.js after login/enrollment success.
+   */
+  window.onAuthStateChanged = function (profile) {
+    window.clearPreAuthMessages();
+    window.updateInterlocutorPanel(profile);
+    window.addAuthSuccessMessage(profile);
+  };
+
+  /**
+   * Reset sidebar and chat meta on logout. Called by auth.js _authClearUI.
+   */
+  window.onAuthStateCleared = function () {
+    var chatMeta = $("#chat-interlocutor-meta");
+    if (chatMeta) chatMeta.textContent = "non autenticato";
+    var spIC = $("#sp-interlocutor-content");
+    if (spIC) {
+      spIC.innerHTML = '<div class="kv-row"><span class="kv-key">interlocutore</span>' +
+        '<span class="kv-val">unknown · untrusted</span></div>';
+    }
+  };
 
   // ---- INIT STATUS PANEL (single registration, 60s interval) ----
   var _statusPanelStarted = false;
