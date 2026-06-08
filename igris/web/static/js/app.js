@@ -1366,6 +1366,15 @@
         );
         return;
       }
+      // Auth-first gate (#1278): intercept unauthenticated chat sends
+      if (typeof getSessionToken === "function" && !getSessionToken()) {
+        if (typeof handleUnauthenticatedMessage === "function") {
+          handleUnauthenticatedMessage(msg, function(text, role) { addMsg(role || "assistant", text); });
+        } else {
+          addMsg("assistant", "Prima di continuare devo riconoscerti. Accedi oppure registrati.");
+        }
+        return;
+      }
       addMsg("user", msg);
       inp.value = "";
       if (!sessionId) {
@@ -2049,7 +2058,7 @@ console.log('Rank S dashboard is now visible');
       if (chatMeta && (lastChat.interlocutor_id || profiles.length > 0)) {
         var iname = lastChat.interlocutor_id || (profiles[0] && (profiles[0].display_name || profiles[0].profile_id)) || "";
         var itrust = lastChat.trust_level || (profiles[0] && profiles[0].trust_level) || "";
-        chatMeta.textContent = iname ? (iname + (itrust ? " / " + itrust : "")) : "connesso";
+        chatMeta.textContent = iname ? (iname + (itrust ? " / " + itrust : "")) : "non autenticato";
       }
 
       // Status panel interlocutor
