@@ -320,7 +320,7 @@ def test_chat_high_risk_deploy_returns_approval_required(client, monkeypatch):
     # (TestClient requests are non-local so 'owner' gets downgraded to 'unknown' by anti-spoofing)
     from igris.core.chat_interlocutor_preflight import PreflightResult
     def mock_preflight(message, interlocutor_id=None, project_root=None,
-                       is_new_session=False, is_local_request=False, payload=None):
+                       is_new_session=False, is_local_request=False, payload=None, session_token=None):
         return PreflightResult(
             interlocutor_id="owner",
             trust_level="admin",
@@ -363,7 +363,7 @@ def test_stream_high_risk_returns_approval_not_stream(client, monkeypatch):
     # Monkeypatch preflight to simulate trusted local admin (anti-spoofing bypassed)
     from igris.core.chat_interlocutor_preflight import PreflightResult
     def mock_preflight(message, interlocutor_id=None, project_root=None,
-                       is_new_session=False, is_local_request=False, payload=None):
+                       is_new_session=False, is_local_request=False, payload=None, session_token=None):
         return PreflightResult(
             interlocutor_id="owner",
             trust_level="admin",
