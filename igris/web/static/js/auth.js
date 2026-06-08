@@ -59,6 +59,35 @@ function authHeaders() {
 
 // ── API helpers ──────────────────────────────────────────────────────────────
 
+/**
+ * Normalize FastAPI / Pydantic error responses into our standard
+ * { ok: false, error: "...", details: [...] } shape.
+ * FastAPI uses { "detail": "Not Found" } for 404 and
+ * { "detail": [{loc, msg, type}, ...] } for 422 validation errors.
+ */
+function _normalizeApiError(httpStatus, data) {
+  // Already in our format
+  if (data.error !== undefined) return data;
+  // FastAPI detail
+  if (data.detail !== undefined) {
+    var d = data.detail;
+    if (typeof d === "string") {
+      // 404 "Not Found" → route_not_found; 403 → forbidden; etc.
+      var errCode = httpStatus === 404 ? "route_not_found"
+                  : httpStatus === 403 ? "forbidden"
+                  : httpStatus === 422 ? "validation_failed"
+                  : httpStatus >= 500  ? "internal_error"
+                  : "request_error";
+      return { ok: false, error: errCode, details: [d] };
+    }
+    if (Array.isArray(d)) {
+      var msgs = d.map(function(e) { return e.msg || JSON.stringify(e); });
+      return { ok: false, error: "validation_failed", details: msgs };
+    }
+  }
+  return { ok: false, error: "unknown_error" };
+}
+
 async function _authFetch(method, path, body) {
   var opts = {
     method: method,
@@ -70,9 +99,13 @@ async function _authFetch(method, path, body) {
   try {
     var r = await fetch(path, opts);
     var data = await r.json();
+    // Normalize FastAPI error format to our { ok, error, details } shape
+    if (!r.ok || data.ok === false) {
+      data = _normalizeApiError(r.status, data);
+    }
     return { ok: r.ok && data.ok !== false, status: r.status, data: data };
   } catch (e) {
-    return { ok: false, status: 0, data: { error: String(e.message || e) } };
+    return { ok: false, status: 0, data: { ok: false, error: "network_error", details: [String(e.message || e)] } };
   }
 }
 
@@ -216,6 +249,27 @@ function _setModalError(elId, msg) {
   if (el) { el.textContent = msg || ""; el.style.display = msg ? "" : "none"; }
 }
 
+/** Map error codes returned by /api/auth/enroll/start to Italian UI messages. */
+function _enrollErrorMsg(r) {
+  var _MESSAGES = {
+    username_taken:            "Nome utente già in uso. Scegline un altro.",
+    invalid_username_format:   "Nome utente non valido (usa solo lettere minuscole, numeri, _ . -).",
+    invalid_email:             "Indirizzo email non valido.",
+    invalid_mobile_phone:      "Numero di telefono non valido (includi prefisso internazionale, es. +39…).",
+    forbidden_field:           "Uno dei campi non è consentito.",
+    validation_failed:         "Dati non validi: " + (r.details ? r.details.join("; ") : "controlla i campi."),
+    route_not_found:           "Servizio di registrazione non disponibile. Riprova tra qualche istante.",
+    internal_error:            "Errore interno del server. Riprova tra qualche istante.",
+    network_error:             "Impossibile raggiungere il server. Controlla la connessione.",
+    unknown_error:             "Errore sconosciuto. Riprova o contatta il supporto.",
+  };
+  // validation_failed may have details inline — rebuild with actual details
+  if (r.error === "validation_failed" && r.details && r.details.length) {
+    return "Dati non validi: " + r.details.join("; ");
+  }
+  return _MESSAGES[r.error] || ("Errore: " + (r.error || "sconosciuto"));
+}
+
 // ── Login modal flow ─────────────────────────────────────────────────────────
 
 function authShowLogin() { _showModal("auth-login-modal"); }
@@ -292,8 +346,7 @@ async function authSubmitEnrollStep1() {
     _setModalError("auth-enroll-error", "");
     _showEnrollStep(2);
   } else {
-    var detail = r.details ? r.details.join(", ") : (r.error || "Errore sconosciuto.");
-    _setModalError("auth-enroll-error", "Errore: " + detail);
+    _setModalError("auth-enroll-error", _enrollErrorMsg(r));
   }
   if (btn) btn.disabled = false;
 }
