@@ -1352,6 +1352,23 @@
       });
     }
 
+    // ---- AUTH GATE HELPERS (#1285) ─────────────────────────────────────────
+    // MUST be inside this IIFE to access addMsg (closure scope).
+    function isAuthenticatedForChat() {
+      return typeof getSessionToken === "function" && !!getSessionToken();
+    }
+    function requireAuthBeforeChat(message) {
+      if (isAuthenticatedForChat()) return false;
+      if (typeof handleUnauthenticatedMessage === "function") {
+        handleUnauthenticatedMessage(message, function(text, role) {
+          addMsg(role || "assistant", text);
+        });
+      } else {
+        addMsg("assistant", "Prima di continuare devo riconoscerti. Accedi oppure registrati.");
+      }
+      return true;
+    }
+
     form.addEventListener("submit", async function (e) {
       e.preventDefault();
       var inp = $("#chat-input");
@@ -2279,29 +2296,6 @@ console.log('Rank S dashboard is now visible');
     });
     observer.observe(chatMessages, { childList: true });
   })();
-
-  // ---- AUTH GATE HELPERS (#1285) ─────────────────────────────────────────
-  // Central auth gate used by ALL chat send paths.
-
-  function isAuthenticatedForChat() {
-    return typeof getSessionToken === "function" && !!getSessionToken();
-  }
-
-  /**
-   * If not authenticated: intercept, show auth prompt, return true (caller must return).
-   * If authenticated: return false (caller continues normally).
-   */
-  function requireAuthBeforeChat(message) {
-    if (isAuthenticatedForChat()) return false;
-    if (typeof handleUnauthenticatedMessage === "function") {
-      handleUnauthenticatedMessage(message, function(text, role) {
-        addMsg(role || "assistant", text);
-      });
-    } else {
-      addMsg("assistant", "Prima di continuare devo riconoscerti. Accedi oppure registrati.");
-    }
-    return true;
-  }
 
   // ---- POST-AUTH STATE RECONCILIATION (#1283) ─────────────────────────────
   // These functions are exposed globally so auth.js can call them after

@@ -261,6 +261,27 @@ def test_app_js_has_require_auth_before_chat():
         "requireAuthBeforeChat missing from app.js"
 
 
+def test_app_js_require_auth_before_chat_inside_chat_iife():
+    """requireAuthBeforeChat MUST be inside the chat inner-IIFE (4-space indent),
+    not in the status-panel IIFE. If defined outside, it cannot access addMsg
+    (closure scope) and the submit handler crashes silently — users can't send messages."""
+    content = _app_js()
+    # The chat inner-IIFE starts with '  (function () {' (2-space indent)
+    # and contains the submit handler.  requireAuthBeforeChat must appear
+    # BEFORE 'form.addEventListener("submit"' and AFTER the chat IIFE open.
+    chat_iife_start = content.find('  (function () {\n    var sessionId = null;')
+    assert chat_iife_start >= 0, "Chat inner-IIFE not found"
+    submit_pos = content.find('form.addEventListener("submit"', chat_iife_start)
+    assert submit_pos >= 0, "submit handler not found after chat IIFE start"
+    fn_pos = content.find("function requireAuthBeforeChat", chat_iife_start)
+    assert fn_pos >= 0, "requireAuthBeforeChat not found inside chat IIFE"
+    assert fn_pos < submit_pos, (
+        f"requireAuthBeforeChat (pos {fn_pos}) must be defined BEFORE submit handler "
+        f"(pos {submit_pos}) inside the chat IIFE. If placed in a different IIFE, "
+        "it cannot access addMsg and the submit handler crashes silently."
+    )
+
+
 def test_app_js_chat_submit_uses_require_auth_before_chat():
     """The chat form submit handler must use requireAuthBeforeChat(), not an inline check."""
     content = _app_js()
