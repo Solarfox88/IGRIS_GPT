@@ -9,6 +9,12 @@ Security hardening (#1239):
 - Delegation key verify path for unknown/untrusted interlocutors
 - Silent excepts replaced with logging/degraded state
 - Audit write failures produce visible degraded log
+
+Session auth integration (#1272 PR4):
+- extract_session_token(): reads Bearer / Cookie / body fallback
+- resolve_session_identity(): resolves AuthSession → profile_id
+- run_preflight() accepts session_token; valid session is source of truth
+- Invalid session never falls back to client-claimed interlocutor_id
 """
 from __future__ import annotations
 
@@ -36,10 +42,128 @@ class PreflightResult:
     advisory: str | None
     system_prompt_enrichment: str
     audit_event_id: str | None = None
+    # Session auth fields (#1272 PR4) — backward-compatible, all optional
+    session_authenticated: bool = False
+    session_valid: bool = False
+    session_reason: str | None = None
 
     @property
     def allowed(self) -> bool:
         return not self.blocked and not self.requires_clarification
+
+
+# ── Session identity helpers (#1272 PR4) ─────────────────────────────────────
+
+@dataclass
+class SessionIdentityResult:
+    """Result of resolving a session token to an identity."""
+    profile_id: str
+    authenticated: bool
+    session_valid: bool
+    reason: str = ""
+    session_id: str = ""
+    # Raw token NEVER stored here — only profile_id and status
+
+
+def extract_session_token(
+    request_headers: dict | None = None,
+    payload: dict | None = None,
+) -> str:
+    """Extract session token from request, in priority order.
+
+    Priority:
+        1. Authorization: Bearer <token>
+        2. Cookie: igris_session=<token>
+        3. payload["session_token"]  (test/non-browser fallback only)
+
+    SECURITY: raw token is never logged anywhere in this function.
+    """
+    # 1. Authorization header
+    auth = (request_headers or {}).get("Authorization", "") or \
+           (request_headers or {}).get("authorization", "")
+    if auth.startswith("Bearer "):
+        tok = auth[7:].strip()
+        if tok:
+            return tok
+
+    # 2. Cookie header (raw parse — no framework dependency)
+    cookie_header = (request_headers or {}).get("Cookie", "") or \
+                    (request_headers or {}).get("cookie", "")
+    if cookie_header:
+        for part in cookie_header.split(";"):
+            name, _, val = part.strip().partition("=")
+            if name.strip() == "igris_session" and val.strip():
+                return val.strip()
+
+    # 3. Body fallback (test / non-browser clients)
+    if payload:
+        tok = (payload.get("session_token") or "").strip()
+        if tok:
+            return tok
+
+    return ""
+
+
+def resolve_session_identity(
+    session_token: str,
+    project_root: str | None = None,
+) -> SessionIdentityResult:
+    """Resolve a session token to a verified profile_id.
+
+    Returns:
+        SessionIdentityResult with authenticated=True and profile_id if valid.
+        authenticated=False and reason string if invalid/expired/missing.
+
+    SECURITY: raw token is consumed internally and never stored in result.
+    """
+    if not session_token or not session_token.strip():
+        return SessionIdentityResult(
+            profile_id="unknown",
+            authenticated=False,
+            session_valid=False,
+            reason="missing_session",
+        )
+
+    try:
+        from pathlib import Path
+        from igris.core.interlocutor_auth import AuthSessionManager
+        root = project_root or str(Path.home())
+        sm = AuthSessionManager(project_root=root)
+        session, result = sm.resolve_session(session_token)
+    except Exception as exc:
+        logger.warning("resolve_session_identity: AuthSessionManager error: %s", exc)
+        return SessionIdentityResult(
+            profile_id="unknown",
+            authenticated=False,
+            session_valid=False,
+            reason="session_resolve_error",
+        )
+
+    if not result.ok or session is None:
+        # Map common error codes to reason strings
+        err = result.errors[0] if result.errors else "invalid_session"
+        if "expired" in err:
+            reason = "expired_session"
+        elif "revoked" in err:
+            reason = "revoked_session"
+        elif "not_found" in err or "unknown" in err:
+            reason = "invalid_session"
+        else:
+            reason = "invalid_session"
+        return SessionIdentityResult(
+            profile_id="unknown",
+            authenticated=False,
+            session_valid=False,
+            reason=reason,
+        )
+
+    return SessionIdentityResult(
+        profile_id=session.profile_id,
+        authenticated=True,
+        session_valid=True,
+        reason="",
+        session_id=session.session_id,
+    )
 
 
 SENSITIVE_CHAT_ACTIONS = {
@@ -93,22 +217,64 @@ def run_preflight(
     is_new_session: bool = False,
     is_local_request: bool = False,
     payload: dict | None = None,
+    session_token: str | None = None,
 ) -> PreflightResult:
     """Full interlocutor-aware preflight for a chat message.
 
     Args:
         message: The chat message to check.
-        interlocutor_id: Identity claimed by the caller.
+        interlocutor_id: Identity claimed by the caller (client-supplied, LOW trust).
         project_root: Path to the IGRIS project root.
         is_new_session: Whether this is the first message in a session.
         is_local_request: True if the request originated from localhost (127.0.0.1).
         payload: Raw request payload (for delegation key fields).
+        session_token: Opaque session token from Authorization Bearer / Cookie / body.
+            If present and valid, this is the SOURCE OF TRUTH for identity.
+            If present and invalid, interlocutor_id is NOT used as fallback.
+
+    Session priority rules:
+        1. Valid session_token  → profile_id from session overrides everything
+        2. Invalid/expired token → identity = unknown/untrusted, no fallback
+        3. No token at all      → legacy behavior (local owner allowed, else unknown)
     """
     from pathlib import Path
 
-    # 1. Resolve identity — with anti-spoofing for privileged IDs
-    raw_id = interlocutor_id or "unknown"
-    _id = _resolve_privileged_identity(raw_id, is_local=is_local_request)
+    # ── 0. Session token identity resolution (PR4) ────────────────────────────
+    _session_result: SessionIdentityResult | None = None
+    _session_authenticated = False
+    _session_valid = False
+    _session_reason: str | None = None
+    _token_present = bool(session_token and session_token.strip())
+
+    if _token_present:
+        _session_result = resolve_session_identity(session_token, project_root=project_root)
+        _session_authenticated = _session_result.authenticated
+        _session_valid = _session_result.session_valid
+        _session_reason = _session_result.reason or None
+
+    # ── 1. Resolve identity — session token is source of truth ────────────────
+    if _token_present and _session_authenticated:
+        # Valid session: use server-side profile_id, ignore client-claimed id
+        raw_id = _session_result.profile_id
+        _id = raw_id  # no anti-spoofing needed; server-verified
+        if interlocutor_id and interlocutor_id != raw_id:
+            logger.info(
+                "Session override: client claimed '%s', session resolves to '%s'",
+                interlocutor_id, raw_id,
+            )
+    elif _token_present and not _session_authenticated:
+        # Token present but invalid/expired/revoked — hard block on client identity
+        raw_id = "unknown"
+        _id = "unknown"
+        _session_reason = _session_result.reason if _session_result else "invalid_session"
+        logger.warning(
+            "Session token present but invalid (%s) — client interlocutor_id='%s' ignored",
+            _session_reason, interlocutor_id,
+        )
+    else:
+        # No token at all — legacy behavior with anti-spoofing
+        raw_id = interlocutor_id or "unknown"
+        _id = _resolve_privileged_identity(raw_id, is_local=is_local_request)
 
     profile = None
     trust_level = "untrusted"
@@ -409,6 +575,9 @@ def run_preflight(
         advisory=advisory,
         system_prompt_enrichment=profile_summary,
         audit_event_id=audit_event_id,
+        session_authenticated=_session_authenticated,
+        session_valid=_session_valid,
+        session_reason=_session_reason,
     )
 
 

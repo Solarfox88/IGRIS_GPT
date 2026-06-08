@@ -1,9 +1,9 @@
 {
-  "report_id": "59685e5a-46e5-42a8-a948-df001a6a33cc",
+  "report_id": "ee513182-1524-4125-9257-0e66ea17282e",
   "target": "jarvis-core-ready",
   "status": "passed",
   "passed": true,
-  "generated_at": "2026-06-07T16:12:40.995844+00:00",
+  "generated_at": "2026-06-08T00:58:50.928679+00:00",
   "summary": "10/10 checks passed",
   "checks": [
     {
@@ -42,7 +42,7 @@
       ],
       "warnings": [],
       "errors": [],
-      "duration_ms": 10,
+      "duration_ms": 7,
       "metadata": {}
     },
     {
@@ -66,7 +66,7 @@
       ],
       "warnings": [],
       "errors": [],
-      "duration_ms": 168,
+      "duration_ms": 160,
       "metadata": {}
     },
     {
@@ -155,7 +155,7 @@
       ],
       "warnings": [],
       "errors": [],
-      "duration_ms": 232,
+      "duration_ms": 206,
       "metadata": {}
     },
     {
@@ -167,7 +167,7 @@
       "evidence": [
         {
           "read_only": {
-            "mission_id": "e97b8701",
+            "mission_id": "97f43b92",
             "route": "read_only_inspection",
             "status": "planned",
             "execution_mode": "read_only",
@@ -193,7 +193,7 @@
       ],
       "warnings": [],
       "errors": [],
-      "duration_ms": 123,
+      "duration_ms": 108,
       "metadata": {}
     },
     {
@@ -222,7 +222,7 @@
       ],
       "warnings": [],
       "errors": [],
-      "duration_ms": 137,
+      "duration_ms": 113,
       "metadata": {}
     },
     {
@@ -252,7 +252,7 @@
       ],
       "warnings": [],
       "errors": [],
-      "duration_ms": 199,
+      "duration_ms": 202,
       "metadata": {}
     },
     {
@@ -292,7 +292,7 @@
       ],
       "warnings": [],
       "errors": [],
-      "duration_ms": 35,
+      "duration_ms": 29,
       "metadata": {}
     },
     {
@@ -321,7 +321,7 @@
           ]
         },
         {
-          "mission_id": "5bd35be7",
+          "mission_id": "d073dfa8",
           "route": "read_only_inspection",
           "execution_mode": "read_only"
         },
@@ -344,7 +344,7 @@
       ],
       "warnings": [],
       "errors": [],
-      "duration_ms": 291,
+      "duration_ms": 265,
       "metadata": {}
     },
     {
@@ -361,7 +361,7 @@
       ],
       "warnings": [],
       "errors": [],
-      "duration_ms": 196,
+      "duration_ms": 194,
       "metadata": {}
     }
   ],
@@ -371,7 +371,7 @@
     "total_checks": 10,
     "passed_checks": 10,
     "failed_checks": 0,
-    "total_duration_ms": 1391
+    "total_duration_ms": 1284
   },
   "artifacts": {},
   "metadata": {}
