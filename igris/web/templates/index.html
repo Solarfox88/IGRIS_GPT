@@ -551,6 +551,9 @@
         syncTitleFromActiveTab();
       })();
     </script>
+    <!-- auth.js must come BEFORE app.js so getSessionToken/authUpdateUI/authHeaders
+         are defined when app.js init code runs (DOMContentLoaded / IIFE). -->
+    <script src="/static/js/auth.js"></script>
     <script src="/static/js/app.js"></script>
 
     <!-- ── Auth modals (#1272 PR5) ────────────────────────────────────── -->
@@ -653,7 +656,6 @@
       </div>
     </div>
 
-    <!-- auth.js must come after app.js so DOM exists -->
-    <script src="/static/js/auth.js"></script>
+    <!-- auth.js already loaded above, before app.js -->
   </body>
 </html>

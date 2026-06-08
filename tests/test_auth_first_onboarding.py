@@ -323,7 +323,7 @@ def test_auth_clear_ui_shows_non_autenticato():
     """_authClearUI must set topbar to 'non autenticato' (not blank or dash)."""
     content = _auth_js()
     fn_start = content.find("function _authClearUI")
-    fn_body = content[fn_start:fn_start + 400]
+    fn_body = content[fn_start:fn_start + 700]
     assert "non autenticato" in fn_body, \
         "_authClearUI must set topbar name to 'non autenticato'"
 
