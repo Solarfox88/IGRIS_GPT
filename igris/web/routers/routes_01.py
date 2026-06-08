@@ -162,7 +162,7 @@ def create_router(deps) -> APIRouter:
             "fai deploy", "fai rollback", "shutdown", "spegni",
         }
         try:
-            from igris.core.chat_interlocutor_preflight import run_preflight, extract_interlocutor_id, is_trusted_local_request
+            from igris.core.chat_interlocutor_preflight import run_preflight, extract_interlocutor_id, is_trusted_local_request, extract_session_token
             _remote_addr = request.client.host if request.client else ""
             _is_local = is_trusted_local_request(
                 request_headers=dict(request.headers),
@@ -172,6 +172,11 @@ def create_router(deps) -> APIRouter:
                 payload=dict(content),
                 headers=dict(request.headers),
             )
+            # PR4: extract session token — Bearer > Cookie > body
+            _session_token = extract_session_token(
+                request_headers=dict(request.headers),
+                payload=dict(content),
+            )
             preflight = run_preflight(
                 message,
                 interlocutor_id=interlocutor_id,
@@ -179,6 +184,7 @@ def create_router(deps) -> APIRouter:
                 is_new_session=len(sessions.get(session_id, [])) == 0,
                 is_local_request=_is_local,
                 payload=dict(content),
+                session_token=_session_token or None,
             )
             if preflight.blocked:
                 return {
@@ -436,7 +442,7 @@ def create_router(deps) -> APIRouter:
             "fai deploy", "fai rollback", "shutdown", "spegni",
         }
         try:
-            from igris.core.chat_interlocutor_preflight import run_preflight, extract_interlocutor_id, is_trusted_local_request
+            from igris.core.chat_interlocutor_preflight import run_preflight, extract_interlocutor_id, is_trusted_local_request, extract_session_token
             _remote_addr_s = request.client.host if request.client else ""
             _is_local_s = is_trusted_local_request(
                 request_headers=dict(request.headers),
@@ -446,6 +452,11 @@ def create_router(deps) -> APIRouter:
                 payload=content,
                 headers=dict(request.headers),
             )
+            # PR4: extract session token — Bearer > Cookie > body
+            _session_token_s = extract_session_token(
+                request_headers=dict(request.headers),
+                payload=content,
+            )
             preflight = run_preflight(
                 message,
                 interlocutor_id=interlocutor_id,
@@ -453,6 +464,7 @@ def create_router(deps) -> APIRouter:
                 is_new_session=False,  # stream — session already initialized
                 is_local_request=_is_local_s,
                 payload=content,
+                session_token=_session_token_s or None,
             )
             if preflight.blocked:
                 preflight_block = preflight.block_reason
