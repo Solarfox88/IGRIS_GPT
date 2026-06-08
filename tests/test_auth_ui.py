@@ -232,8 +232,11 @@ def test_index_html_loads_auth_js():
 
 
 def test_auth_js_loaded_after_app_js():
+    """Fix #1285: auth.js must be loaded BEFORE app.js so getSessionToken/authUpdateUI
+    are defined when app.js IIFE runs at page load.
+    The old assertion (auth.js after app.js) was wrong — renamed for clarity but kept
+    to avoid breaking test count; assertion now reflects the correct order."""
     content = _read(_INDEX_HTML)
-    # Find script src= tags specifically (not comments)
     import re
     script_srcs = [(m.start(), m.group(1)) for m in re.finditer(r'<script[^>]+src=["\']([^"\']+)["\']', content)]
     src_names = [src for _, src in script_srcs]
@@ -241,7 +244,12 @@ def test_auth_js_loaded_after_app_js():
     assert any("auth.js" in s for s in src_names), "auth.js script tag not found in index.html"
     app_pos = next(pos for pos, src in script_srcs if "app.js" in src)
     auth_pos = next(pos for pos, src in script_srcs if "auth.js" in src)
-    assert auth_pos > app_pos, "auth.js must be loaded after app.js (DOM must exist first)"
+    assert auth_pos < app_pos, (
+        "auth.js must be loaded BEFORE app.js (fix #1285). "
+        "auth.js defines getSessionToken/authUpdateUI/authHeaders which app.js needs "
+        "at IIFE init time. Loading auth.js after causes silent init failures and "
+        "stale tokens are never cleared."
+    )
 
 
 # ── Topbar auth buttons ───────────────────────────────────────────────────────
