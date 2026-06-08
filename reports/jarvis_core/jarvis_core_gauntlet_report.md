@@ -2,27 +2,28 @@
 
 **Target:** `jarvis-core-ready`
 **Status:** PASSED ✅
-**Generated:** 2026-06-08T00:58:50.928679+00:00
-**Report ID:** `ee513182-1524-4125-9257-0e66ea17282e`
+**Generated:** 2026-06-08T08:24:51.447993+00:00
+**Report ID:** `5871cccb-933f-45aa-88b7-93eddff8ca94`
 
 ## Summary
 
-10/10 checks passed
+11/11 checks passed
 
 ## Checks
 
 | ID | Name | Status | Passed | Duration |
 |----|------|--------|--------|----------|
-| `security_gate` | Security Gate | passed | ✅ | 7ms |
-| `memory_persistence` | Memory Persistence | passed | ✅ | 160ms |
+| `security_gate` | Security Gate | passed | ✅ | 8ms |
+| `memory_persistence` | Memory Persistence | passed | ✅ | 218ms |
 | `request_routing` | Request Routing | passed | ✅ | 0ms |
-| `context_aggregation` | Context Aggregation | passed | ✅ | 206ms |
-| `mission_first` | Mission-first Planning | passed | ✅ | 108ms |
-| `verification_evidence` | Verification & Evidence | passed | ✅ | 113ms |
-| `reflection_learning` | Reflection & Learning | passed | ✅ | 202ms |
-| `ml_light_shadow` | ML-light Shadow Mode | passed | ✅ | 29ms |
-| `end_to_end_jarvis_flow` | End-to-End Jarvis Flow | passed | ✅ | 265ms |
-| `secret_redaction_global` | Global Secret Redaction | passed | ✅ | 194ms |
+| `context_aggregation` | Context Aggregation | passed | ✅ | 286ms |
+| `mission_first` | Mission-first Planning | passed | ✅ | 164ms |
+| `verification_evidence` | Verification & Evidence | passed | ✅ | 155ms |
+| `reflection_learning` | Reflection & Learning | passed | ✅ | 266ms |
+| `ml_light_shadow` | ML-light Shadow Mode | passed | ✅ | 41ms |
+| `end_to_end_jarvis_flow` | End-to-End Jarvis Flow | passed | ✅ | 361ms |
+| `secret_redaction_global` | Global Secret Redaction | passed | ✅ | 246ms |
+| `auth_enrollment_login_flow` | Auth Enrollment/Login Flow | passed | ✅ | 271ms |
 
 ## Evidence
 
@@ -47,7 +48,7 @@
 - {'blocked_sections': ['route', 'missions', 'tasks_timeline', 'project_state', 'git_state', 'rank_status'], 'blocked_route': <RequestRoute.BLOCKED: 'blocked'>}
 
 ### Mission-first Planning
-- {'read_only': {'mission_id': '97f43b92', 'route': 'read_only_inspection', 'status': 'planned', 'execution_mode': 'read_only', 'blocked': False}}
+- {'read_only': {'mission_id': '60a8d9de', 'route': 'read_only_inspection', 'status': 'planned', 'execution_mode': 'read_only', 'blocked': False}}
 - {'deploy': {'route': 'deploy_operation', 'status': 'waiting_approval', 'execution_mode': 'approval_required', 'requires_approval': True, 'blocked': False}}
 - {'blocked_plan': {'route': 'blocked', 'blocked': True, 'status': 'blocked'}}
 
@@ -76,10 +77,10 @@
 
 ## Metrics
 
-- **total_checks**: 10
-- **passed_checks**: 10
+- **total_checks**: 11
+- **passed_checks**: 11
 - **failed_checks**: 0
-- **total_duration_ms**: 1284
+- **total_duration_ms**: 2016
 
 ## Next Steps
 

@@ -204,6 +204,7 @@ class JarvisCoreGauntlet:
         "ml_light_shadow",
         "end_to_end_jarvis_flow",
         "secret_redaction_global",
+        "auth_enrollment_login_flow",
     )
 
     def __init__(
@@ -776,6 +777,203 @@ class JarvisCoreGauntlet:
         r.status = GauntletStatus.PASSED.value
         r.summary = "All 4 fake secrets redacted across all component outputs"
 
+    # ── Auth enrollment/login flow smoke (#1272 PR5) ───────────────────────────
+
+    def _check_auth_enrollment_login_flow(self, r: GauntletCheckResult) -> None:
+        """Smoke: full enrollment + session + preflight integration (#1272).
+
+        Verifies:
+        1. EnrollmentStore creates pending enrollment (hash-only storage)
+        2. AuthCredentialStore stores password hash only (no raw password)
+        3. AuthSessionManager creates & resolves session
+        4. run_preflight with valid session returns authenticated profile_id
+        5. Valid session overrides spoofed interlocutor_id="owner"
+        6. Invalid session token → unknown (no fallback)
+        7. Limited user attempting sensitive action is blocked
+        8. No raw password or token appears in gauntlet report
+
+        SAFE: uses isolated temp project_root, no production data accessed.
+        """
+        import tempfile
+        FAKE_PW = "FAKE_PASSWORD_GAUNTLET_AUTH_9876"
+        FAKE_USER = "gauntlet_auth_smoke_user"
+        temp_dir = None
+
+        try:
+            temp_dir = tempfile.mkdtemp(prefix="igris_gauntlet_auth_")
+
+            from igris.core.interlocutor_auth import (
+                EnrollmentStore, AuthCredentialStore, AuthSessionManager,
+            )
+            from igris.core.identity_resolver import IdentityResolver
+            from igris.core.chat_interlocutor_preflight import run_preflight
+
+            # 1. Create pending enrollment
+            es = EnrollmentStore(project_root=temp_dir)
+            er = es.create_pending(
+                profile_id=FAKE_USER,
+                first_name="Gauntlet",
+                last_name="Smoke",
+                email=f"{FAKE_USER}@igris.test",
+                mobile_phone="+39 000 0000000",
+            )
+            if not er.ok:
+                r.errors.append(f"EnrollmentStore.create_pending failed: {er.errors}")
+                return
+            enrollment_token = er.session_token  # raw token returned once
+            r.metadata["enrollment_token_present"] = bool(enrollment_token)
+
+            # Verify: only hash stored, not raw token
+            from igris.core.interlocutor_auth import hash_session_token
+            tok_hash = hash_session_token(enrollment_token)
+            if enrollment_token in str(es._enrollments):
+                r.errors.append("Raw enrollment_token found in enrollments storage — SECURITY VIOLATION")
+                return
+            if tok_hash not in es._enrollments:
+                r.errors.append("Enrollment hash not found after create_pending")
+                return
+            r.metadata["enrollment_hash_only_ok"] = True
+
+            # 2. Create profile + credential
+            ir = IdentityResolver(temp_dir)
+            profile = ir.create_enrolled_limited_profile(
+                profile_id=FAKE_USER,
+                first_name="Gauntlet",
+                last_name="Smoke",
+            )
+            if profile.trust_level != "limited":
+                r.errors.append(f"Expected trust_level=limited, got {profile.trust_level}")
+                return
+            if "*" in profile.authorized_scopes or "deploy" in profile.authorized_scopes:
+                r.errors.append(f"Dangerous scopes in limited profile: {profile.authorized_scopes}")
+                return
+            r.metadata["profile_trust_level"] = profile.trust_level
+
+            cs = AuthCredentialStore(project_root=temp_dir)
+            cred_r = cs.create_credential(
+                profile_id=FAKE_USER,
+                email=f"{FAKE_USER}@igris.test",
+                mobile_phone="+39 000 0000000",
+                raw_password=FAKE_PW,
+            )
+            if not cred_r.ok:
+                r.errors.append(f"create_credential failed: {cred_r.errors}")
+                return
+
+            # Verify: raw password not in stored credentials
+            cred_text = cs.storage_path.read_text(encoding="utf-8") if cs.storage_path.exists() else ""
+            if FAKE_PW in cred_text:
+                r.errors.append("Raw password found in credential storage — SECURITY VIOLATION")
+                return
+            r.metadata["password_hash_only_ok"] = True
+
+            # 3. Create and resolve session
+            sm = AuthSessionManager(project_root=temp_dir)
+            sess_r = sm.create_session(profile_id=FAKE_USER)
+            if not sess_r.ok:
+                r.errors.append(f"create_session failed: {sess_r.errors}")
+                return
+            session_token = sess_r.session_token  # raw token returned once
+
+            session, resolve_r = sm.resolve_session(session_token)
+            if not resolve_r.ok or session is None:
+                r.errors.append(f"resolve_session failed: {resolve_r.errors}")
+                return
+            if session.profile_id != FAKE_USER:
+                r.errors.append(f"profile_id mismatch: {session.profile_id} != {FAKE_USER}")
+                return
+
+            # Verify: raw token not in sessions storage
+            sess_text = sm.storage_path.read_text(encoding="utf-8") if sm.storage_path.exists() else ""
+            if session_token in sess_text:
+                r.errors.append("Raw session_token found in sessions storage — SECURITY VIOLATION")
+                return
+            r.metadata["session_hash_only_ok"] = True
+
+            # 4. run_preflight with valid session → authenticated profile_id
+            pf = run_preflight(
+                "ciao",
+                session_token=session_token,
+                project_root=temp_dir,
+            )
+            if pf.interlocutor_id != FAKE_USER:
+                r.errors.append(f"preflight: expected {FAKE_USER}, got {pf.interlocutor_id}")
+                return
+            if not pf.session_authenticated:
+                r.errors.append("preflight: session_authenticated should be True")
+                return
+            r.metadata["preflight_session_auth_ok"] = True
+
+            # 5. Valid session overrides spoofed interlocutor_id="owner"
+            pf_spoof = run_preflight(
+                "ciao",
+                interlocutor_id="owner",
+                session_token=session_token,
+                project_root=temp_dir,
+            )
+            if pf_spoof.interlocutor_id == "owner":
+                r.errors.append("SECURITY: spoofed owner not overridden by valid session")
+                return
+            if pf_spoof.interlocutor_id != FAKE_USER:
+                r.errors.append(f"preflight spoof override: expected {FAKE_USER}, got {pf_spoof.interlocutor_id}")
+                return
+            r.metadata["owner_spoof_overridden_ok"] = True
+
+            # 6. Invalid session → unknown (no fallback to client identity)
+            pf_bad = run_preflight(
+                "ciao",
+                interlocutor_id=FAKE_USER,
+                session_token="FAKE_TOKEN_GAUNTLET_INVALID_XYZ",
+                project_root=temp_dir,
+            )
+            if pf_bad.interlocutor_id != "unknown":
+                r.errors.append(f"Invalid session should yield unknown, got {pf_bad.interlocutor_id}")
+                return
+            r.metadata["invalid_session_blocks_fallback_ok"] = True
+
+            # 7. Limited user attempting sensitive action is blocked
+            pf_sens = run_preflight(
+                "delete the production database",
+                session_token=session_token,
+                project_root=temp_dir,
+            )
+            if not pf_sens.blocked:
+                r.errors.append("Limited user sensitive action should be blocked")
+                return
+            r.metadata["limited_sensitive_blocked_ok"] = True
+
+            # 8. No raw password/token in metadata (redaction check)
+            meta_str = str(r.metadata)
+            if FAKE_PW in meta_str:
+                r.errors.append("Raw FAKE_PW found in gauntlet metadata — SECURITY VIOLATION")
+                return
+            if session_token in meta_str:
+                r.errors.append("Raw session_token found in gauntlet metadata — SECURITY VIOLATION")
+                return
+            if enrollment_token in meta_str:
+                r.errors.append("Raw enrollment_token found in gauntlet metadata — SECURITY VIOLATION")
+                return
+
+            r.passed = True
+            r.status = GauntletStatus.PASSED.value
+            r.summary = (
+                f"Auth enrollment/login flow passed: "
+                f"hash-only storage ✓, session source-of-truth ✓, "
+                f"spoof-override ✓, invalid-session-blocks ✓, limited-user-blocked ✓, "
+                f"no-raw-secrets ✓"
+            )
+
+        except Exception as exc:
+            r.errors.append(f"Auth flow check exception: {exc}")
+        finally:
+            # Cleanup temp dir
+            if temp_dir:
+                try:
+                    import shutil
+                    shutil.rmtree(temp_dir, ignore_errors=True)
+                except Exception:
+                    pass
+
     # ── run_all ────────────────────────────────────────────────────────────────
 
     def run_all(self) -> JarvisCoreGauntletReport:
@@ -791,6 +989,7 @@ class JarvisCoreGauntlet:
             "ml_light_shadow": ("ML-light Shadow Mode", self._check_ml_light_shadow),
             "end_to_end_jarvis_flow": ("End-to-End Jarvis Flow", self._check_end_to_end_jarvis_flow),
             "secret_redaction_global": ("Global Secret Redaction", self._check_secret_redaction_global),
+            "auth_enrollment_login_flow": ("Auth Enrollment/Login Flow", self._check_auth_enrollment_login_flow),
         }
 
         results: list[GauntletCheckResult] = []
@@ -846,6 +1045,7 @@ class JarvisCoreGauntlet:
             "ml_light_shadow": ("ML-light Shadow Mode", self._check_ml_light_shadow),
             "end_to_end_jarvis_flow": ("End-to-End Jarvis Flow", self._check_end_to_end_jarvis_flow),
             "secret_redaction_global": ("Global Secret Redaction", self._check_secret_redaction_global),
+            "auth_enrollment_login_flow": ("Auth Enrollment/Login Flow", self._check_auth_enrollment_login_flow),
         }
         if check_id not in check_map:
             return GauntletCheckResult(

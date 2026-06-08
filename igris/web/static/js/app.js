@@ -5,8 +5,9 @@
   function $(sel) { return document.querySelector(sel); }
   function $$(sel) { return document.querySelectorAll(sel); }
 
-  async function api(method, url, body) {
-    var opts = { method: method, headers: { "Content-Type": "application/json" } };
+  async function api(method, url, body, extraHeaders) {
+    var hdrs = Object.assign({ "Content-Type": "application/json" }, extraHeaders || {});
+    var opts = { method: method, headers: hdrs };
     if (body) opts.body = JSON.stringify(body);
     try {
       var r = await fetch(url, opts);
@@ -1373,9 +1374,13 @@
       }
       if (!sessionId) { addMsg("assistant", "Failed to create session"); return; }
       addMsg("assistant", "...", "typing");
-      // Pass interlocutor_id so the preflight recognises the UI user as owner
+      // PR4/PR5: session token is source of truth — send via Authorization header.
+      // interlocutor_id retained as local fallback when no session is active.
       var _iid = window._igrisInterlocutorId || "owner";
-      var r = await api("POST", "/api/sessions/" + sessionId + "/messages", { message: msg, interlocutor_id: _iid });
+      var _chatHeaders = (typeof authHeaders === "function") ? authHeaders() : {};
+      var r = await api("POST", "/api/sessions/" + sessionId + "/messages",
+        { message: msg, interlocutor_id: _iid },
+        _chatHeaders);
       removeTyping();
       if (r.ok) {
         // Operator-grade block message (v4)

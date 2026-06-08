@@ -640,3 +640,51 @@ body{
   .topbar-identity{max-width:200px}
   .topbar-status{display:none}
 }
+
+/* ── Auth modals (#1272 PR5) ─────────────────────────────────────────────── */
+.auth-modal {
+  position: fixed; inset: 0; z-index: 9000;
+  background: rgba(0,0,0,.6);
+  display: flex; align-items: center; justify-content: center;
+}
+.auth-modal-box {
+  background: var(--bg-card, #1e2530); color: var(--text-main, #e0e8f0);
+  border-radius: 10px; padding: 2rem 2.4rem;
+  min-width: 340px; max-width: 480px; width: 92vw;
+  box-shadow: 0 8px 40px rgba(0,0,0,.5);
+}
+.auth-modal-title { font-size: 1.3rem; font-weight: 700; margin: 0 0 1.2rem; }
+.auth-modal-body { display: flex; flex-direction: column; gap: .6rem; }
+.auth-modal-body label { font-size: .82rem; color: var(--text-muted, #8a9ab0); }
+.auth-input {
+  width: 100%; padding: .5rem .75rem; border-radius: 6px;
+  border: 1px solid var(--border, #2d3a4a);
+  background: var(--bg-input, #151d28); color: inherit;
+  font-size: .9rem; box-sizing: border-box;
+}
+.auth-input:focus { outline: 2px solid #4a9eff; }
+.auth-modal-footer {
+  display: flex; align-items: center; gap: .6rem;
+  flex-wrap: wrap; margin-top: 1.2rem;
+}
+.auth-btn {
+  padding: .45rem 1rem; border-radius: 6px; border: none; cursor: pointer;
+  font-size: .88rem; font-weight: 600;
+  background: var(--accent, #3a7bd5); color: #fff;
+  transition: background .15s;
+}
+.auth-btn:hover { background: #2a6bc5; }
+.auth-btn:disabled { opacity: .6; cursor: not-allowed; }
+.auth-btn-secondary { background: var(--bg-alt, #2a3444); color: var(--text-main, #e0e8f0); }
+.auth-btn-secondary:hover { background: #354256; }
+.auth-btn-danger { background: #c0392b; }
+.auth-btn-danger:hover { background: #a93226; }
+.auth-error {
+  color: #ff6b6b; font-size: .83rem; margin-top: .4rem;
+  padding: .35rem .6rem; border-radius: 4px;
+  background: rgba(255,50,50,.08);
+}
+.auth-step-label { font-size: .8rem; color: var(--text-muted, #8a9ab0); margin: 0 0 .4rem; }
+.auth-modal-hint { font-size: .8rem; color: var(--text-muted, #8a9ab0); margin-left: auto; }
+.auth-modal-hint a { color: var(--accent, #3a7bd5); }
+.topbar-auth { display: flex; align-items: center; margin-right: .5rem; }

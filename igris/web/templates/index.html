@@ -24,6 +24,18 @@
         <span class="identity-safety-note" id="tb-safety-note"></span>
       </div>
       <div class="topbar-spacer"></div>
+      <!-- Auth controls (#1272 PR5) — event listeners wired in auth.js -->
+      <div class="topbar-auth" id="topbar-auth">
+        <button type="button" id="tb-auth-btn" class="auth-btn" aria-label="Login / Registrazione">
+          🔐 Login
+        </button>
+        <button type="button" id="tb-enroll-btn" class="auth-btn auth-btn-secondary" aria-label="Registrazione" style="margin-left:4px">
+          Registrati
+        </button>
+        <button type="button" id="tb-logout-btn" class="auth-btn auth-btn-danger" aria-label="Logout" style="display:none">
+          Logout
+        </button>
+      </div>
       <div class="topbar-status">
         <div class="status-pill" id="tb-tests">
           <div class="dot" id="tb-tests-dot"></div>
@@ -540,5 +552,108 @@
       })();
     </script>
     <script src="/static/js/app.js"></script>
+
+    <!-- ── Auth modals (#1272 PR5) ────────────────────────────────────── -->
+
+    <!-- Login modal -->
+    <div id="auth-login-modal" class="auth-modal" role="dialog" aria-modal="true"
+         aria-label="Accedi a IGRIS" aria-hidden="true" style="display:none">
+      <div class="auth-modal-box">
+        <h2 class="auth-modal-title">🔐 Accedi</h2>
+        <div class="auth-modal-body">
+          <label for="auth-login-username">Username</label>
+          <input type="text" id="auth-login-username" name="username"
+                 autocomplete="username" placeholder="es. mario_rossi"
+                 class="auth-input" />
+          <label for="auth-login-password">Password</label>
+          <input type="password" id="auth-login-password" name="password"
+                 autocomplete="current-password" placeholder="••••••••"
+                 class="auth-input" />
+          <div id="auth-login-error" class="auth-error" style="display:none"></div>
+        </div>
+        <div class="auth-modal-footer">
+          <button type="button" id="auth-login-submit" class="auth-btn">
+            Accedi
+          </button>
+          <button type="button" id="auth-login-cancel" class="auth-btn auth-btn-secondary">
+            Annulla
+          </button>
+          <span class="auth-modal-hint">
+            Non hai un account? <a href="#" id="auth-login-to-enroll">Registrati</a>
+          </span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Enrollment modal -->
+    <div id="auth-enroll-modal" class="auth-modal" role="dialog" aria-modal="true"
+         aria-label="Registrazione IGRIS" aria-hidden="true" style="display:none">
+      <div class="auth-modal-box">
+        <h2 class="auth-modal-title">📝 Registrazione</h2>
+
+        <!-- Step 1: identity data -->
+        <div id="auth-enroll-step1">
+          <div class="auth-modal-body">
+            <p class="auth-step-label">Passo 1 di 2 — Dati identificativi</p>
+            <label for="auth-enroll-username">Username (solo lettere minuscole, numeri, _ . -)</label>
+            <input type="text" id="auth-enroll-username" name="username"
+                   autocomplete="username" placeholder="es. mario_rossi"
+                   class="auth-input" />
+            <label for="auth-enroll-firstname">Nome</label>
+            <input type="text" id="auth-enroll-firstname" name="first_name"
+                   autocomplete="given-name" placeholder="Mario"
+                   class="auth-input" />
+            <label for="auth-enroll-lastname">Cognome</label>
+            <input type="text" id="auth-enroll-lastname" name="last_name"
+                   autocomplete="family-name" placeholder="Rossi"
+                   class="auth-input" />
+            <label for="auth-enroll-email">Email</label>
+            <input type="email" id="auth-enroll-email" name="email"
+                   autocomplete="email" placeholder="mario@esempio.it"
+                   class="auth-input" />
+            <label for="auth-enroll-phone">Telefono</label>
+            <input type="tel" id="auth-enroll-phone" name="mobile_phone"
+                   autocomplete="tel" placeholder="+39 333 1234567"
+                   class="auth-input" />
+          </div>
+          <div class="auth-modal-footer">
+            <button type="button" id="auth-enroll-step1-btn" class="auth-btn">
+              Avanti →
+            </button>
+            <button type="button" id="auth-enroll-cancel1" class="auth-btn auth-btn-secondary">
+              Annulla
+            </button>
+          </div>
+        </div>
+
+        <!-- Step 2: password -->
+        <div id="auth-enroll-step2" style="display:none">
+          <div class="auth-modal-body">
+            <p class="auth-step-label">Passo 2 di 2 — Scegli password</p>
+            <label for="auth-enroll-password">Password</label>
+            <input type="password" id="auth-enroll-password" name="password"
+                   autocomplete="new-password" placeholder="••••••••"
+                   class="auth-input" />
+            <label for="auth-enroll-confirm">Conferma password</label>
+            <input type="password" id="auth-enroll-confirm" name="confirm_password"
+                   autocomplete="new-password" placeholder="••••••••"
+                   class="auth-input" />
+          </div>
+          <div class="auth-modal-footer">
+            <button type="button" id="auth-enroll-step2-btn" class="auth-btn">
+              Completa registrazione
+            </button>
+            <button type="button" id="auth-enroll-cancel2" class="auth-btn auth-btn-secondary">
+              Annulla
+            </button>
+          </div>
+        </div>
+
+        <div id="auth-enroll-error" class="auth-error" style="display:none"></div>
+      </div>
+    </div>
+
+    <!-- auth.js must come after app.js so DOM exists -->
+    <script src="/static/js/auth.js"></script>
   </body>
 </html>
