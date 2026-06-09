@@ -167,9 +167,10 @@ _CLASSIFICATION_RULES: list[tuple[re.Pattern, str, str, str, bool]] = [
     # ══ PRIORITY 3 — GIT DESTRUCTIVE & WRITE OPERATIONS ══════════════════
 
     # Destructive git
-    (re.compile(r'\bgit\s+(reset\s+--hard|clean\s+-[fxdq]*f|push\s+--force|-f\s+push|push\s+-f)\b', re.I),
+    # Note: \b removed from end of clean pattern — git clean -fd has no word boundary after f
+    (re.compile(r'\bgit\s+(reset\s+--hard|clean\s+-\S*f\S*|push\s+--force|-f\s+push|push\s+-f)\b', re.I),
      RequestRoute.HIGH_RISK_OPERATION, RequestRisk.DESTRUCTIVE, "none", True),
-    (re.compile(r'\b(git reset --hard|git clean -f|force push|push --force)\b', re.I),
+    (re.compile(r'\b(git reset --hard|git clean -[a-z]*f|force push|push --force)\b', re.I),
      RequestRoute.HIGH_RISK_OPERATION, RequestRisk.DESTRUCTIVE, "none", True),
 
     # Git write (commit, push, merge, rebase, branch delete)
@@ -182,7 +183,8 @@ _CLASSIFICATION_RULES: list[tuple[re.Pattern, str, str, str, bool]] = [
 
     (re.compile(r'\b(fai deploy|esegui deploy|deploy in produzione|pubblica in prod|rilascia in prod|rollback|torna indietro)\b', re.I),
      RequestRoute.DEPLOY_OPERATION, RequestRisk.HIGH, "none", True),
-    (re.compile(r'\b(deploy|rollback|release to prod|push to production)\b', re.I),
+    # "deploy" prefix match: catches deploya, deployare, deploying, etc.
+    (re.compile(r'\bdeploy\w*\b|\b(rollback|release to prod|push to production)\b', re.I),
      RequestRoute.DEPLOY_OPERATION, RequestRisk.HIGH, "none", True),
 
     # ══ PRIORITY 5 — SERVER / SYSTEM OPERATION ════════════════════════════
@@ -214,8 +216,10 @@ _CLASSIFICATION_RULES: list[tuple[re.Pattern, str, str, str, bool]] = [
     (re.compile(r'\b(crea|apri|open|create|nuova|nuovo)\b.{0,30}\b(issue|ticket|bug report|pull request|pr)\b', re.I),
      RequestRoute.GITHUB_OPERATION, RequestRisk.MEDIUM, "none", True),
 
-    # Branch creation
-    (re.compile(r'\b(crea branch|crea pr|crea pull request|apri pr|open pr|create branch|create pr)\b', re.I),
+    # Branch creation — allow articles/det. between verb and noun ("crea un branch")
+    (re.compile(r'\b(crea|apri|open|create)\b.{0,15}\b(branch)\b', re.I),
+     RequestRoute.GITHUB_OPERATION, RequestRisk.MEDIUM, "none", True),
+    (re.compile(r'\b(crea pr|crea pull request|apri pr|open pr|create pr)\b', re.I),
      RequestRoute.GITHUB_OPERATION, RequestRisk.MEDIUM, "none", True),
 
     # Issue close/reopen
