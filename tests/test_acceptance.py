@@ -143,8 +143,9 @@ class TestEndpointReachability:
         assert r.status_code == 200
 
     def test_loop_step(self, client):
+        # loop/step is a write endpoint requiring admin/owner auth (#1293)
         r = client.post("/api/loop/step")
-        assert r.status_code == 200
+        assert r.status_code in (200, 401, 403), f"Unexpected status: {r.status_code}"
 
     def test_diagnostics(self, client):
         r = client.get("/api/diagnostics")

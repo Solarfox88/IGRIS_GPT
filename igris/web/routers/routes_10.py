@@ -1232,7 +1232,10 @@ def create_router(deps) -> APIRouter:
 
         Body: { strategy? (default git_pull_restart), hostname?, health_url?,
                 dry_run? (default false) }
+        Requires admin/owner session (#1293).
         """
+        from igris.api.write_auth import require_write_auth_or_raise
+        await require_write_auth_or_raise(request)
         from igris.core.devops_manager import DevOpsManager
         data = await request.json()
         mgr = DevOpsManager(str(CONFIG.project_root))
@@ -1259,7 +1262,11 @@ def create_router(deps) -> APIRouter:
 
     @router.post("/api/integration/run-mission")
     async def api_integration_run_mission(request: Request) -> Dict[str, object]:
-        """Run a full governed mission through the integration pipeline."""
+        """Run a full governed mission through the integration pipeline.
+        Requires admin/owner session (#1293).
+        """
+        from igris.api.write_auth import require_write_auth_or_raise
+        await require_write_auth_or_raise(request)
         from igris.core.integration_layer import IntegrationLayer
         content = await request.json()
         layer = IntegrationLayer(

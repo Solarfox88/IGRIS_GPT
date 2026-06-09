@@ -78,7 +78,9 @@ def create_router(deps) -> APIRouter:
 
     @router.post("/api/tools/shell/execute")
     async def api_tools_shell(request: Request) -> Dict[str, object]:
-        """Execute a governed shell command."""
+        """Execute a governed shell command. Requires admin/owner session (#1293)."""
+        from igris.api.write_auth import require_write_auth_or_raise
+        await require_write_auth_or_raise(request)
         from igris.core.tool_runtime import ToolRuntime
         rt = ToolRuntime(project_root=str(CONFIG.project_root))
         content = await request.json()
@@ -107,7 +109,9 @@ def create_router(deps) -> APIRouter:
 
     @router.post("/api/tools/fs/write")
     async def api_tools_fs_write(request: Request) -> Dict[str, object]:
-        """Write to a file safely."""
+        """Write to a file safely. Requires admin/owner session (#1293)."""
+        from igris.api.write_auth import require_write_auth_or_raise
+        await require_write_auth_or_raise(request)
         from igris.core.tool_runtime import ToolRuntime
         rt = ToolRuntime(project_root=str(CONFIG.project_root))
         content = await request.json()

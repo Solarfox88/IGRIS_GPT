@@ -479,7 +479,10 @@ def create_router(deps) -> APIRouter:
     # ---- Autonomous Loop ----
 
     @router.post("/api/loop/step")
-    async def api_loop_step() -> Dict[str, object]:
+    async def api_loop_step(request: Request) -> Dict[str, object]:
+        """Execute one autonomous loop step. Requires admin/owner session (#1293)."""
+        from igris.api.write_auth import require_write_auth_or_raise
+        await require_write_auth_or_raise(request)
         result = autonomous_loop.execute_step(
             task_engine, project_root=str(CONFIG.project_root),
         )
@@ -487,6 +490,9 @@ def create_router(deps) -> APIRouter:
 
     @router.post("/api/loop/run")
     async def api_loop_run(request: Request) -> Dict[str, object]:
+        """Run autonomous loop. Requires admin/owner session (#1293)."""
+        from igris.api.write_auth import require_write_auth_or_raise
+        await require_write_auth_or_raise(request)
         content = await request.json() if request.headers.get("content-type", "").startswith("application/json") else {}
         max_steps = content.get("max_steps", 1)
         if not isinstance(max_steps, int) or max_steps < 1:

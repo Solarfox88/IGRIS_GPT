@@ -175,6 +175,9 @@ def create_router(deps) -> APIRouter:
 
     @router.post("/api/github/pr/create")
     async def api_github_pr_create(request: Request) -> Dict[str, object]:
+        """Create a GitHub PR (gated, requires admin/owner session — #1293)."""
+        from igris.api.write_auth import require_write_auth_or_raise
+        await require_write_auth_or_raise(request)
         content = await request.json()
         title = content.get("title", "")
         body = content.get("body", "")
