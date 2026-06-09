@@ -1021,6 +1021,20 @@ class JarvisCoreGauntlet:
         if "require_write_auth_or_raise" not in src_r3:
             r.errors.append("routes_03.py missing require_write_auth_or_raise")
             return
+        # Perimeter extension: routes_08 git/commit and routes_02 git/commit
+        idx_tools_commit = src_r8.find('"/api/tools/git/commit"')
+        if idx_tools_commit != -1:
+            after = src_r8[idx_tools_commit:idx_tools_commit + 400]
+            if "require_write_auth_or_raise" not in after:
+                r.errors.append("routes_08.py /api/tools/git/commit missing require_write_auth_or_raise")
+                return
+        src_r2 = (repo / "igris/web/routers/routes_02.py").read_text()
+        idx_legacy_commit = src_r2.find('"/api/git/commit"')
+        if idx_legacy_commit != -1:
+            after2 = src_r2[idx_legacy_commit:idx_legacy_commit + 400]
+            if "require_write_auth_or_raise" not in after2:
+                r.errors.append("routes_02.py /api/git/commit missing require_write_auth_or_raise")
+                return
         r.metadata["static_source_checks_ok"] = True
 
         # 3. write_auth.py uses IGRIS_PROJECT_ROOT (not CONFIG.project_root)
@@ -1071,6 +1085,26 @@ class JarvisCoreGauntlet:
                 return
             r.metadata["github_create_issue_unauth_blocked"] = True
 
+            # Unauthenticated tools/git/commit → 401 (perimeter extension)
+            resp_gc = client.post("/api/tools/git/commit",
+                                  json={"message": "gauntlet_canary_should_not_commit"})
+            if resp_gc.status_code not in (401, 403):
+                r.errors.append(
+                    f"tools/git/commit unauthenticated: expected 401/403, got {resp_gc.status_code}"
+                )
+                return
+            r.metadata["tools_git_commit_unauth_blocked"] = True
+
+            # Unauthenticated /api/git/commit (legacy) → 401
+            resp_gc2 = client.post("/api/git/commit",
+                                   json={"message": "gauntlet_canary_legacy_should_not_commit"})
+            if resp_gc2.status_code not in (401, 403):
+                r.errors.append(
+                    f"/api/git/commit unauthenticated: expected 401/403, got {resp_gc2.status_code}"
+                )
+                return
+            r.metadata["api_git_commit_unauth_blocked"] = True
+
             # Token not echoed in error response
             fake_tok = "FAKE_TOKEN_GAUNTLET_ECHO_CHECK_99887766"
             resp_echo = client.post("/api/tools/fs/write",
@@ -1086,7 +1120,8 @@ class JarvisCoreGauntlet:
             r.summary = (
                 "Write endpoint auth gate: write_auth.py ✓, "
                 "static source ✓, env var ✓, "
-                "fs/write blocked ✓, github/write blocked ✓, no token echo ✓"
+                "fs/write blocked ✓, github/write blocked ✓, "
+                "git/commit blocked ✓, no token echo ✓"
             )
 
         except Exception as exc:
