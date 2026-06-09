@@ -140,8 +140,8 @@ def test_run_all_passes(tmp_path):
         f"Errors: {report.errors}"
     )
     assert report.status == "passed"
-    assert report.metrics["total_checks"] == 11  # 10 original + auth_enrollment_login_flow
-    assert report.metrics["passed_checks"] == 11
+    assert report.metrics["total_checks"] == 12  # 11 original + write_endpoint_auth_gate (#1293)
+    assert report.metrics["passed_checks"] == 12
 
 
 # ── write_report ──────────────────────────────────────────────────────────────

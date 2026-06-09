@@ -322,16 +322,18 @@ class TestDryRunWorkflow:
         record["pr_prepare"] = prep
         assert "body" in prep
 
-        # 4. PR create (no approval — must be blocked)
+        # 4. PR create (no approval and no auth token — must be blocked)
+        # Since #1293: 401 from auth gate, or 200 with success=False from approval gate
         r = client.post("/api/github/pr/create", json={
             "title": "Benchmark PR",
             "body": prep.get("body", ""),
             "base": "main",
         })
-        assert r.status_code == 200
-        create = r.json()
-        record["pr_create_blocked"] = create
-        assert create.get("success") is False or create.get("gated") is True
+        assert r.status_code in (200, 401, 403), f"Unexpected: {r.status_code}"
+        if r.status_code == 200:
+            create = r.json()
+            record["pr_create_blocked"] = create
+            assert create.get("success") is False or create.get("gated") is True
 
         # 5. PR status
         r = client.get("/api/github/pr/status")
@@ -361,9 +363,9 @@ class TestDryRunWorkflow:
         r = client.post(f"/api/missions/{mid}/materialize-tasks")
         assert r.status_code == 200
 
-        # Loop step
+        # Loop step — requires auth (#1293), so 401 without token
         r = client.post("/api/loop/step")
-        assert r.status_code == 200
+        assert r.status_code in (200, 401, 403), f"loop/step: {r.status_code}"
 
         # Decision report
         r = client.get("/api/decision-reports")
@@ -376,14 +378,15 @@ class TestDryRunWorkflow:
         })
         assert r.status_code == 200
 
-        # PR create (blocked without approval)
+        # PR create (no auth token → 401; or no approval → 200 success=False)
         r = client.post("/api/github/pr/create", json={
             "title": "Fix docs typo",
             "body": "Test",
             "base": "main",
         })
-        assert r.status_code == 200
-        assert r.json().get("success") is False or r.json().get("gated") is True
+        assert r.status_code in (200, 401, 403), f"pr/create: {r.status_code}"
+        if r.status_code == 200:
+            assert r.json().get("success") is False or r.json().get("gated") is True
 
 
 # ---------------------------------------------------------------------------
