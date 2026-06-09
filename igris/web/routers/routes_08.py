@@ -167,7 +167,9 @@ def create_router(deps) -> APIRouter:
 
     @router.post("/api/tools/git/commit")
     async def api_tools_git_commit(request: Request) -> Dict[str, object]:
-        """Gated git commit."""
+        """Gated git commit (requires admin/owner session — #1293 perimeter extension)."""
+        from igris.api.write_auth import require_write_auth_or_raise
+        await require_write_auth_or_raise(request)
         from igris.core.tool_runtime import ToolRuntime
         rt = ToolRuntime(project_root=str(CONFIG.project_root))
         content = await request.json()

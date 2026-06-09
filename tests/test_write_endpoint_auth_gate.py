@@ -372,3 +372,122 @@ def test_github_write_admin_valid_token_reaches_gateway_or_dry_run():
         assert r.status_code not in (401, 403), (
             f"Admin token wrongly blocked on github write: {r.status_code} — {r.text[:300]}"
         )
+
+
+# ── git/commit — perimeter extension (#1293 follow-up) ───────────────────────
+
+def test_tools_git_commit_without_token_blocked():
+    """POST /api/tools/git/commit must return 401 with no token."""
+    with tempfile.TemporaryDirectory() as tmp:
+        client = _client_isolated(tmp)
+        r = client.post("/api/tools/git/commit",
+                        json={"message": "P1 canary — should not commit"})
+        assert r.status_code in (401, 403), \
+            f"Expected 401/403, got {r.status_code}: {r.text[:200]}"
+
+
+def test_tools_git_commit_invalid_token_blocked():
+    """POST /api/tools/git/commit must return 401 with an invalid token."""
+    with tempfile.TemporaryDirectory() as tmp:
+        client = _client_isolated(tmp)
+        r = client.post("/api/tools/git/commit",
+                        json={"message": "P1 canary invalid token"},
+                        headers={"Authorization": "Bearer FAKE_TOKEN_GIT_COMMIT_INVALID"})
+        assert r.status_code in (401, 403), \
+            f"Expected 401/403 for invalid token, got {r.status_code}: {r.text[:200]}"
+
+
+def test_tools_git_commit_limited_user_blocked():
+    """POST /api/tools/git/commit must return 403 for limited user."""
+    with tempfile.TemporaryDirectory() as tmp:
+        client = _client_isolated(tmp)
+        tok = _enroll_and_login(client)
+        r = client.post("/api/tools/git/commit",
+                        json={"message": "P1 canary limited"},
+                        headers={"Authorization": f"Bearer {tok}"})
+        assert r.status_code in (401, 403), \
+            f"Expected 401/403 for limited user, got {r.status_code}: {r.text[:200]}"
+
+
+def test_tools_git_commit_no_side_effect_when_blocked():
+    """git commit must NOT be executed when auth gate blocks the request."""
+    import subprocess as _subprocess
+    with tempfile.TemporaryDirectory() as tmp:
+        client = _client_isolated(tmp)
+        git_called = {"flag": False}
+        original_run = _subprocess.run
+
+        def spy_run(*args, **kwargs):
+            cmd = list(args[0]) if args else []
+            if "git" in cmd and "commit" in cmd:
+                git_called["flag"] = True
+            return original_run(*args, **kwargs)
+
+        with patch("subprocess.run", side_effect=spy_run):
+            r = client.post("/api/tools/git/commit",
+                            json={"message": "canary must not execute"})
+
+        assert r.status_code in (401, 403), \
+            f"Expected 401/403, got {r.status_code}: {r.text[:200]}"
+        assert not git_called["flag"], \
+            "git commit was called even though auth gate should have blocked it!"
+
+
+def test_api_git_commit_without_token_blocked():
+    """POST /api/git/commit (legacy route) must also return 401 with no token."""
+    with tempfile.TemporaryDirectory() as tmp:
+        client = _client_isolated(tmp)
+        r = client.post("/api/git/commit",
+                        json={"message": "P1 legacy canary — should not commit"})
+        assert r.status_code in (401, 403), \
+            f"Expected 401/403, got {r.status_code}: {r.text[:200]}"
+
+
+def test_api_git_commit_limited_user_blocked():
+    """POST /api/git/commit (legacy route) must return 403 for limited user."""
+    with tempfile.TemporaryDirectory() as tmp:
+        client = _client_isolated(tmp)
+        tok = _enroll_and_login(client)
+        r = client.post("/api/git/commit",
+                        json={"message": "P1 legacy canary limited",
+                              "approval": "I_APPROVE_COMMIT"},
+                        headers={"Authorization": f"Bearer {tok}"})
+        assert r.status_code in (401, 403), \
+            f"Expected 401/403 for limited user on legacy route, got {r.status_code}: {r.text[:200]}"
+
+
+def test_tools_git_commit_admin_reaches_git_layer():
+    """A valid admin token must pass the gate and reach the git layer (not 401/403)."""
+    with tempfile.TemporaryDirectory() as tmp:
+        client = _client_isolated(tmp)
+        tok = _enroll_and_promote_to_admin(client, tmp)
+        r = client.post("/api/tools/git/commit",
+                        json={"message": "admin gate test — clean repo"},
+                        headers={"Authorization": f"Bearer {tok}"})
+        # Gate must NOT block admin — result may be success=False (nothing to commit)
+        # but must NOT be 401/403
+        assert r.status_code not in (401, 403), (
+            f"Admin token wrongly blocked on git commit: {r.status_code} — {r.text[:300]}"
+        )
+
+
+def test_routes_08_git_commit_imports_write_auth():
+    """routes_08.py git commit endpoint must call require_write_auth_or_raise."""
+    src = _REPO.joinpath("igris/web/routers/routes_08.py").read_text()
+    # Find the git commit section
+    idx = src.find('"/api/tools/git/commit"')
+    assert idx != -1, "git commit endpoint not found in routes_08.py"
+    # require_write_auth_or_raise must appear after the endpoint declaration
+    after = src[idx:idx + 400]
+    assert "require_write_auth_or_raise" in after, \
+        "routes_08.py /api/tools/git/commit does not call require_write_auth_or_raise"
+
+
+def test_routes_02_git_commit_imports_write_auth():
+    """routes_02.py /api/git/commit endpoint must call require_write_auth_or_raise."""
+    src = _REPO.joinpath("igris/web/routers/routes_02.py").read_text()
+    idx = src.find('"/api/git/commit"')
+    assert idx != -1, "git commit legacy endpoint not found in routes_02.py"
+    after = src[idx:idx + 400]
+    assert "require_write_auth_or_raise" in after, \
+        "routes_02.py /api/git/commit does not call require_write_auth_or_raise"
