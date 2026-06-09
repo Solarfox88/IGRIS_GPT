@@ -24,4 +24,7 @@ jobs:
           python -m pip install -U pip
           python -m pip install -e ".[dev]"
       - name: Run tests
+        env:
+          IGRIS_REQUIRE_AUTH: "true"
+          IGRIS_PROJECT_ROOT: "/tmp/igris_ci_test"
         run: python -m pytest -q
