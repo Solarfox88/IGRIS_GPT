@@ -269,3 +269,106 @@ def test_routes_04_imports_write_auth():
     src = _REPO.joinpath("igris/web/routers/routes_04.py").read_text()
     assert "require_write_auth_or_raise" in src, \
         "routes_04.py does not call require_write_auth_or_raise — terminal/run P0 not applied"
+
+
+# ── positive path: admin/owner token is allowed ───────────────────────────────
+
+def _enroll_and_promote_to_admin(client, tmp_dir: str) -> str:
+    """Enroll a user and promote to admin trust level; return session token."""
+    uname = "qa_admin_" + str(int(time.time() * 1000))[-7:]
+    # Enroll
+    r1 = client.post("/api/auth/enroll/start", json={
+        "username": uname, "first_name": "Admin", "last_name": "QA",
+        "email": uname + "@test.invalid", "mobile_phone": "+390000009002",
+    })
+    assert r1.json().get("ok") is True, r1.text
+    r2 = client.post("/api/auth/enroll/complete", json={
+        "enrollment_token": r1.json()["enrollment_token"],
+        "password": "AdminGate1!", "confirm_password": "AdminGate1!",
+    })
+    assert r2.json().get("ok") is True, r2.text
+    session_token = r2.json()["session_token"]
+
+    # Promote profile to admin directly (bypasses enrollment trust policy)
+    from igris.core.identity_resolver import IdentityResolver, InterlocutorProfile
+    ir = IdentityResolver(project_root=tmp_dir)
+    profiles = ir._load()
+    if uname in profiles:
+        profiles[uname].trust_level = "admin"
+        ir.update(profiles[uname])
+    else:
+        # Create from scratch if not yet stored
+        p = InterlocutorProfile(
+            profile_id=uname,
+            display_name=f"Admin QA {uname}",
+            first_name="Admin", last_name="QA",
+            trust_level="admin",
+            authorized_scopes=["chat", "read_own_profile"],
+        )
+        ir.update(p)
+    return session_token
+
+
+def test_write_auth_admin_valid_token_allowed():
+    """require_write_auth() must return allowed=True for a valid admin session."""
+    import asyncio
+    from unittest.mock import MagicMock
+    with tempfile.TemporaryDirectory() as tmp:
+        client = _client_isolated(tmp)
+        tok = _enroll_and_promote_to_admin(client, tmp)
+
+        import os
+        os.environ["IGRIS_PROJECT_ROOT"] = tmp
+        import importlib, sys
+        for k in list(sys.modules.keys()):
+            if "write_auth" in k:
+                del sys.modules[k]
+
+        from igris.api.write_auth import require_write_auth
+        req = MagicMock()
+        req.headers = {"Authorization": f"Bearer {tok}"}
+
+        result = asyncio.new_event_loop().run_until_complete(require_write_auth(req))
+        assert result.allowed, (
+            f"Admin token should be allowed but got: allowed={result.allowed}, "
+            f"trust={result.trust_level}, code={result.error_code}, msg={result.error_message}"
+        )
+        assert result.trust_level == "admin", f"Expected trust=admin, got {result.trust_level}"
+
+
+def test_fs_write_admin_valid_token_can_write_canary():
+    """A valid admin session token must be able to write a file."""
+    with tempfile.TemporaryDirectory() as tmp:
+        client = _client_isolated(tmp)
+        tok = _enroll_and_promote_to_admin(client, tmp)
+        canary = Path(tmp) / "admin_canary.txt"
+        r = client.post(
+            "/api/tools/fs/write",
+            json={"path": str(canary), "content": "admin_write_ok"},
+            headers={"Authorization": f"Bearer {tok}"},
+        )
+        # Must NOT be 401/403 — gate should let admin through
+        assert r.status_code not in (401, 403), (
+            f"Admin token wrongly blocked: {r.status_code} — {r.text[:300]}"
+        )
+
+
+def test_github_write_admin_valid_token_reaches_gateway_or_dry_run():
+    """A valid admin session must reach the github write handler (dry_run=True)."""
+    with tempfile.TemporaryDirectory() as tmp:
+        client = _client_isolated(tmp)
+        tok = _enroll_and_promote_to_admin(client, tmp)
+        r = client.post(
+            "/api/github/write/issue/create",
+            json={
+                "repo": "Solarfox88/IGRIS_GPT",
+                "title": "P0 canary — dry run admin test",
+                "body": "This is a dry-run test — no real issue should be created.",
+                "dry_run": True,
+            },
+            headers={"Authorization": f"Bearer {tok}"},
+        )
+        # Auth gate must pass; dry_run=True so no real GitHub call
+        assert r.status_code not in (401, 403), (
+            f"Admin token wrongly blocked on github write: {r.status_code} — {r.text[:300]}"
+        )

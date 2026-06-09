@@ -57,14 +57,14 @@ async def require_write_auth(request) -> "WriteAuthResult":
         from igris.core.interlocutor_auth import AuthSessionManager
         sm = AuthSessionManager(project_root=project_root)
         session, resolve_result = sm.resolve_session(token)
-        if not resolve_result.authenticated:
+        if not resolve_result.ok or session is None:
             return WriteAuthResult(
                 allowed=False, trust_level="untrusted",
                 error_code="authentication_required",
                 error_message="Session not found or expired.",
                 http_status=401,
             )
-        username = session.profile_id or ""
+        username = resolve_result.profile_id or session.profile_id or ""
     except Exception as exc:
         logger.warning("write_auth session error: %s", exc)
         return WriteAuthResult(
