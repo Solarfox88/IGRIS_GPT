@@ -140,8 +140,8 @@ def test_run_all_passes(tmp_path):
         f"Errors: {report.errors}"
     )
     assert report.status == "passed"
-    assert report.metrics["total_checks"] == 12  # 11 original + write_endpoint_auth_gate (#1293)
-    assert report.metrics["passed_checks"] == 12
+    assert report.metrics["total_checks"] == 13  # 12 previous + dangerous_intent_routing (#1295)
+    assert report.metrics["passed_checks"] == 13
 
 
 # ── write_report ──────────────────────────────────────────────────────────────

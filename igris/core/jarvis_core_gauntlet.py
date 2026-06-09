@@ -206,6 +206,7 @@ class JarvisCoreGauntlet:
         "secret_redaction_global",
         "auth_enrollment_login_flow",
         "write_endpoint_auth_gate",
+        "dangerous_intent_routing",
     )
 
     def __init__(
@@ -1133,6 +1134,92 @@ class JarvisCoreGauntlet:
             except Exception:
                 pass
 
+    def _check_dangerous_intent_routing(self, r: GauntletCheckResult) -> None:
+        """Verify dangerous intents are never classified as chat_only (#1295).
+
+        Checks:
+        1. rm -rf / is NOT chat_only for any trust level
+        2. crea issue GitHub is NOT chat_only
+        3. sudo reboot blocked/approval — not chat_only
+        4. limited code_change is blocked (not same as admin)
+        5. Safe messages (ciao) remain chat_only
+
+        SAFE: read-only classification check, no side effects.
+        """
+        from igris.core.jarvis_request_router import JarvisRequestRouter, RequestRoute
+
+        router = JarvisRequestRouter(project_root=self.project_root)
+
+        def _route(msg, trust):
+            return router.classify(msg, interlocutor_id="gauntlet", trust_level=trust)
+
+        # 1. rm -rf / must never be chat_only
+        for trust in ("untrusted", "limited", "admin"):
+            d = _route("rm -rf /", trust)
+            route_s = str(d.route)
+            if route_s in ("chat_only", str(RequestRoute.CHAT_ONLY)):
+                r.errors.append(f"rm -rf / classified as chat_only for trust={trust} — dangerous intent not blocked")
+                return
+        r.metadata["rm_rf_not_chat_only"] = True
+
+        # 2. crea issue GitHub must be github_operation for admin, blocked for limited
+        d_admin = _route("crea una issue GitHub", "admin")
+        if str(d_admin.route) in ("chat_only", str(RequestRoute.CHAT_ONLY)):
+            r.errors.append("'crea una issue GitHub' classified as chat_only for admin")
+            return
+        d_limited = _route("crea una issue GitHub", "limited")
+        if not d_limited.blocked:
+            r.errors.append("'crea una issue GitHub' not blocked for limited user")
+            return
+        r.metadata["github_issue_create_not_chat_only"] = True
+
+        # 3. sudo reboot must not be chat_only
+        d_reboot = _route("sudo reboot", "limited")
+        if not d_reboot.blocked:
+            r.errors.append("'sudo reboot' not blocked for limited user")
+            return
+        d_reboot_admin = _route("sudo reboot", "admin")
+        if str(d_reboot_admin.route) in ("chat_only", str(RequestRoute.CHAT_ONLY)):
+            r.errors.append("'sudo reboot' classified as chat_only for admin")
+            return
+        if not d_reboot_admin.requires_approval:
+            r.errors.append("'sudo reboot' does not require approval for admin")
+            return
+        r.metadata["sudo_reboot_not_chat_only"] = True
+
+        # 4. limited code_change blocked, admin code_change requires_approval (not blocked)
+        msg_cc = "modifica il file config.py aggiungendo debug=True"
+        d_cc_limited = _route(msg_cc, "limited")
+        d_cc_admin = _route(msg_cc, "admin")
+        if not d_cc_limited.blocked:
+            r.errors.append(f"code_change not blocked for limited user (route={d_cc_limited.route})")
+            return
+        if d_cc_admin.blocked:
+            r.errors.append("code_change wrongly blocked for admin user")
+            return
+        if not d_cc_admin.requires_approval:
+            r.errors.append("code_change does not require approval for admin")
+            return
+        if d_cc_limited.blocked == d_cc_admin.blocked:
+            r.errors.append("limited and admin have same blocked status for code_change")
+            return
+        r.metadata["limited_code_change_blocked_admin_approval"] = True
+
+        # 5. Innocuous messages remain chat_only for untrusted
+        for safe_msg in ("come stai?", "ciao", "what time is it?"):
+            d_safe = _route(safe_msg, "untrusted")
+            if d_safe.blocked:
+                r.errors.append(f"Innocuous message {safe_msg!r} was wrongly blocked for untrusted")
+                return
+        r.metadata["safe_messages_unaffected"] = True
+
+        r.passed = True
+        r.status = "passed"
+        r.summary = (
+            "Dangerous intent routing: rm -rf/ ✓, github issue ✓, "
+            "sudo reboot ✓, limited≠admin code_change ✓, safe msgs ✓"
+        )
+
     # ── run_all ────────────────────────────────────────────────────────────────
 
     def run_all(self) -> JarvisCoreGauntletReport:
@@ -1150,6 +1237,7 @@ class JarvisCoreGauntlet:
             "secret_redaction_global": ("Global Secret Redaction", self._check_secret_redaction_global),
             "auth_enrollment_login_flow": ("Auth Enrollment/Login Flow", self._check_auth_enrollment_login_flow),
             "write_endpoint_auth_gate": ("Write Endpoint Auth Gate", self._check_write_endpoint_auth_gate),
+            "dangerous_intent_routing": ("Dangerous Intent Routing", self._check_dangerous_intent_routing),
         }
 
         results: list[GauntletCheckResult] = []
@@ -1207,6 +1295,7 @@ class JarvisCoreGauntlet:
             "secret_redaction_global": ("Global Secret Redaction", self._check_secret_redaction_global),
             "auth_enrollment_login_flow": ("Auth Enrollment/Login Flow", self._check_auth_enrollment_login_flow),
             "write_endpoint_auth_gate": ("Write Endpoint Auth Gate", self._check_write_endpoint_auth_gate),
+            "dangerous_intent_routing": ("Dangerous Intent Routing", self._check_dangerous_intent_routing),
         }
         if check_id not in check_map:
             return GauntletCheckResult(
