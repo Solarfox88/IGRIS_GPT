@@ -8,7 +8,12 @@ import re
 import tempfile
 from typing import Any, Dict, List
 
-from igris.core.redaction import redact as _redact_string  # noqa: F401
+from igris.core.redaction import redact as _canonical_redact, redact_nested as _canonical_redact_nested
+
+
+def _redact_string(value: str) -> str:
+    # Delegate to canonical module; replace marker to match [REDACTED] convention expected by existing tests.
+    return _canonical_redact(value).replace("<REDACTED>", "[REDACTED]")
 
 
 def compute_task_signature(goal_text: str) -> str:

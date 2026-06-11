@@ -17,10 +17,11 @@ SECRET_RE = re.compile(
     re.IGNORECASE,
 )
 
-# Well-known token prefixes (OpenAI, GitHub, AWS, VAST, FAKE_*)
+# Well-known token prefixes and standalone Bearer tokens
 _PREFIX_RE = re.compile(
     r'(?:'
-    r'sk-[A-Za-z0-9_\-]{3,}[A-Za-z0-9]{10,}'       # OpenAI/Anthropic sk-...
+    r'Bearer\s+[A-Za-z0-9\-._~+/]{20,}'              # standalone Bearer <token>
+    r'|sk-[A-Za-z0-9_\-]{3,}[A-Za-z0-9]{10,}'        # OpenAI/Anthropic sk-...
     r'|gh[pos]_[A-Za-z0-9]{10,}'                      # GitHub tokens
     r'|github_pat_[A-Za-z0-9_]{20,}'                  # GitHub PATs
     r'|AKIA[A-Z0-9]{16}'                               # AWS access keys
@@ -28,7 +29,7 @@ _PREFIX_RE = re.compile(
     r'|FAKE_SECRET_[A-Za-z0-9_]+'                      # test fake secrets
     r'|FAKE_TOKEN_[A-Za-z0-9_]+'                       # test fake tokens
     r')',
-    re.ASCII,
+    re.IGNORECASE,
 )
 
 
