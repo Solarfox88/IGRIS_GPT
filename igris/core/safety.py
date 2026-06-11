@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import Iterable, List, Optional
 
 from igris.layers.execution.safe_commands import ALLOWED_COMMANDS
+from igris.core.redaction import redact as _redact_canonical  # noqa: F401
 
 # ---------------------------------------------------------------------------
 # SafetyDecision
@@ -97,40 +98,21 @@ def check_command_allowed(command_id: str) -> bool:
 # Secret detection & redaction
 # ---------------------------------------------------------------------------
 
-_SECRET_PATTERNS = [
-    # OpenAI / Anthropic keys (sk-..., sk-ant-..., multi-segment)
-    re.compile(r"sk-[A-Za-z0-9_\-]{3,}[A-Za-z0-9]{10,}", re.ASCII),
-    re.compile(r"sk-[A-Za-z0-9]{20,}"),
-    # GitHub tokens
-    re.compile(r"gh[pos]_[A-Za-z0-9]{10,}"),
-    re.compile(r"github_pat_[A-Za-z0-9_]{20,}"),
-    # Bearer tokens
-    re.compile(r"Bearer\s+[A-Za-z0-9\-._~+/]{20,}"),
-    # AWS-like keys
-    re.compile(r"AKIA[A-Z0-9]{16}"),
-    # VAST/generic API keys
-    re.compile(r"(?:VAST|VASTAI)[A-Za-z0-9_]{8,}"),
-    # Generic KEY= / TOKEN= / SECRET= lines
-    re.compile(r"(?:API_KEY|SECRET|TOKEN|PASSWORD|PRIVATE_KEY)\s*[=:]\s*\S{8,}", re.IGNORECASE),
-    # Long hex-like tokens (40+ chars)
-    re.compile(r"[A-Fa-f0-9]{40,}"),
-]
+from igris.core.redaction import SECRET_RE as _SECRET_RE_CANONICAL, _PREFIX_RE as _PREFIX_RE_CANONICAL  # noqa: E402,F401
 
-# Compiled once for the broader catch-all
-_SECRET_CATCHALL = re.compile(
-    r"(?:(?:sk|ghp|gho|api|token|secret)[A-Za-z0-9_]{8,})"
-    r"|(?:[A-Za-z0-9_]{20,})",
-)
+# Keep as list for detect_secret_like_content backward-compat
+_SECRET_PATTERNS = [_SECRET_RE_CANONICAL, _PREFIX_RE_CANONICAL]
 
 
 def redact_secrets(text: Optional[str]) -> str:
-    """Mask secret-like sequences in a string."""
+    """Mask secret-like sequences in a string.
+
+    Delegates to the canonical igris.core.redaction module; kept here for
+    backward-compatibility with all existing callers.
+    """
     if not text:
         return ""
-    result = text
-    for pat in _SECRET_PATTERNS:
-        result = pat.sub("***REDACTED***", result)
-    return result
+    return _redact_canonical(text)
 
 
 def detect_secret_like_content(text: str) -> bool:

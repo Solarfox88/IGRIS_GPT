@@ -15,32 +15,9 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from igris.core.redaction import redact as _redact, redact_nested as _redact_dict  # noqa: F401
+
 logger = logging.getLogger(__name__)
-
-# ── Secret redaction ──────────────────────────────────────────────────────────
-
-_SECRET_RE = re.compile(
-    r'(token|passphrase|password|secret|api[_\s]?key|private[_\s]?key|bearer|auth[_\s]?key)'
-    r'\s*[=:]\s*\S+',
-    re.IGNORECASE,
-)
-
-
-def _redact(text: str) -> str:
-    if not text:
-        return text
-    return _SECRET_RE.sub(r'\1=<REDACTED>', str(text))
-
-
-def _redact_dict(d: Any) -> Any:
-    """Recursively redact secret patterns in a dict (including nested lists)."""
-    if isinstance(d, dict):
-        return {k: _redact_dict(v) for k, v in d.items()}
-    elif isinstance(d, list):
-        return [_redact_dict(item) for item in d]
-    elif isinstance(d, str):
-        return _redact(d)
-    return d
 
 
 # ── Trust helpers ─────────────────────────────────────────────────────────────

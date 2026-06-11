@@ -5571,8 +5571,8 @@ class SelfRepairSupervisor:
         ]).lower()
 
         # Check for secret patterns (raw or already-redacted by _safe_redact)
-        secret_re = re.compile(r"sk-[A-Za-z0-9_\-]{3,}[A-Za-z0-9]{10,}|bearer\s+\S{20,}", re.I)
-        if secret_re.search(all_text) or "***redacted***" in all_text:
+        from igris.core.redaction import SECRET_RE as _secret_re_canonical
+        if _secret_re_canonical.search(all_text) or "***redacted***" in all_text:
             return "block_unsafe_decomposition"
 
         # Check for destructive keywords

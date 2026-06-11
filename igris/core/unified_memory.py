@@ -17,27 +17,9 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from igris.core.redaction import redact as _redact  # noqa: F401
+
 logger = logging.getLogger(__name__)
-
-# ── Secret redaction ──────────────────────────────────────────────────────────
-
-_SECRET_PATTERNS = [
-    re.compile(
-        r'(token|passphrase|password|secret|api[_\s]?key|private[_\s]?key|bearer'
-        r'|(?<!\w)key(?!\w)|auth|credential|cred)'
-        r'\s*[=:]\s*\S+',
-        re.IGNORECASE,
-    ),
-    re.compile(r'[A-Za-z0-9+/]{20,}={0,2}'),  # base64-like
-]
-
-
-def _redact(text: str) -> str:
-    if not text:
-        return text
-    for p in _SECRET_PATTERNS:
-        text = p.sub('<REDACTED>', text)
-    return text
 
 
 # ── Primary backends (degraded = healthcheck fails) ───────────────────────────

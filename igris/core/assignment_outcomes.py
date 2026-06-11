@@ -8,13 +8,7 @@ import re
 import tempfile
 from typing import Any, Dict, List
 
-_SECRET_PATTERNS = [
-    re.compile(r"sk-[A-Za-z0-9\-_]{20,}"),
-    re.compile(r"Bearer\s+[A-Za-z0-9\-_\.]{20,}"),
-    re.compile(r"OPENAI_API_KEY\s*=\s*\S+"),
-    re.compile(r"ANTHROPIC_API_KEY\s*=\s*\S+"),
-    re.compile(r"DEEPSEEK_API_KEY\s*=\s*\S+"),
-]
+from igris.core.redaction import redact as _redact_string  # noqa: F401
 
 
 def compute_task_signature(goal_text: str) -> str:
@@ -24,12 +18,6 @@ def compute_task_signature(goal_text: str) -> str:
     """
     normalized = " ".join(goal_text.lower().strip().split())
     return hashlib.sha256(normalized.encode()).hexdigest()
-
-
-def _redact_string(value: str) -> str:
-    for pattern in _SECRET_PATTERNS:
-        value = pattern.sub("[REDACTED]", value)
-    return value
 
 
 def sanitize_for_storage(record: Dict[str, Any]) -> Dict[str, Any]:

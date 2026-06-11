@@ -24,6 +24,13 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
+from igris.core.redaction import (  # noqa: F401
+    redact as _redact,
+    redact_nested as _redact_any,
+    redact_email,
+    redact_phone,
+)
+
 logger = logging.getLogger(__name__)
 
 # ── Constants ─────────────────────────────────────────────────────────────────
@@ -42,46 +49,6 @@ _AUTH_SESSIONS_REL = Path(".igris") / "auth" / "sessions.json"
 _AUTH_ENROLLMENTS_REL = Path(".igris") / "auth" / "enrollments.json"
 _CREDENTIALS_VERSION = 1
 _SESSIONS_VERSION = 1
-
-# ── Secret redaction ──────────────────────────────────────────────────────────
-
-_SECRET_RE = re.compile(
-    r'(token|passphrase|password|secret|api[_\s]?key|private[_\s]?key|bearer|auth[_\s]?key)'
-    r'\s*[=:]\s*\S+',
-    re.IGNORECASE,
-)
-
-
-def _redact(text: str) -> str:
-    return _SECRET_RE.sub(r'\1=<REDACTED>', str(text)) if text else text
-
-
-def _redact_any(val: Any) -> Any:
-    if isinstance(val, dict):
-        return {k: _redact_any(v) for k, v in val.items()}
-    elif isinstance(val, list):
-        return [_redact_any(i) for i in val]
-    elif isinstance(val, str):
-        return _redact(val)
-    return val
-
-
-def redact_email(email: str) -> str:
-    """Redact email: m***@domain.com"""
-    if not email or "@" not in email:
-        return "<REDACTED>"
-    local, domain = email.split("@", 1)
-    if len(local) <= 1:
-        return f"{local}***@{domain}"
-    return f"{local[0]}***@{domain}"
-
-
-def redact_phone(phone: str) -> str:
-    """Redact phone: keep last 4 digits visible."""
-    digits = re.sub(r"\D", "", phone)
-    if len(digits) < 4:
-        return "***"
-    return f"*** *** {digits[-4:]}"
 
 
 # ── Time helpers ─────────────────────────────────────────────────────────────
