@@ -189,6 +189,7 @@ class JarvisCoreGauntlet:
         "auth_enrollment_login_flow",
         "write_endpoint_auth_gate",
         "dangerous_intent_routing",
+        "memory_cross_session",
     )
 
     def __init__(
@@ -1202,6 +1203,106 @@ class JarvisCoreGauntlet:
             "sudo reboot ✓, limited≠admin code_change ✓, safe msgs ✓"
         )
 
+    def _check_memory_cross_session(self, r: GauntletCheckResult) -> None:
+        """Verify preference stored in session 1 is retrieved in session 2 (#1294).
+
+        Checks:
+        1. store_preference writes to disk
+        2. New UnifiedMemory instance retrieves the preference (cross-session)
+        3. Cross-user isolation: other user does NOT get the preference
+        4. Router sets memory_store_ok=True for memory_update with known user
+        5. Secret is redacted before storage
+
+        SAFE: uses isolated tmp dir, no side effects on real storage.
+        """
+        import tempfile
+        from pathlib import Path as _Path
+
+        with tempfile.TemporaryDirectory() as _tmp:
+            tmp = _Path(_tmp)
+
+            # 1. Write preference in session 1
+            from igris.core.unified_memory import UnifiedMemory
+            um1 = UnifiedMemory(project_root=str(tmp))
+            r1 = um1.store_preference(
+                interlocutor_id="gauntlet_user_a",
+                trust_level="trusted",
+                text="Preferisco risposte brevi e pratiche",
+                tags=["memory_update"],
+            )
+            if not r1.ok:
+                r.errors.append(f"store_preference failed: {r1.warnings}")
+                return
+
+            # 2. New instance (session 2) retrieves it
+            um2 = UnifiedMemory(project_root=str(tmp))
+            ret = um2.retrieve_for_chat(
+                query="Come preferisco le risposte?",
+                interlocutor_id="gauntlet_user_a",
+                trust_level="trusted",
+                limit=5,
+            )
+            if not ret.context:
+                r.errors.append("retrieve_for_chat returned empty context in new session")
+                return
+            if "brevi" not in ret.context and "pratiche" not in ret.context:
+                r.errors.append(f"Preference text not found in context: {ret.context!r}")
+                return
+            r.metadata["cross_session_retrieved"] = True
+
+            # 3. Cross-user isolation
+            ret_b = um2.retrieve_for_chat(
+                query="Come preferisco le risposte?",
+                interlocutor_id="gauntlet_user_b",
+                trust_level="trusted",
+                limit=5,
+            )
+            if "brevi" in (ret_b.context or "") or "pratiche" in (ret_b.context or ""):
+                r.errors.append(f"User B received User A's preference: {ret_b.context!r}")
+                return
+            r.metadata["cross_user_isolation"] = True
+
+            # 4. Router stores on memory_update route
+            from igris.core.jarvis_request_router import JarvisRequestRouter
+            router = JarvisRequestRouter(project_root=str(tmp))
+            dec = router.route(
+                "Ricordati che preferisco Python 3.12",
+                interlocutor_id="gauntlet_router_user",
+                trust_level="trusted",
+            )
+            if dec.memory_mode != "store":
+                r.errors.append(f"Router did not set memory_mode=store: {dec.memory_mode}")
+                return
+            if not dec.metadata.get("memory_store_ok"):
+                r.errors.append(f"Router memory_store_ok not True: {dec.metadata}")
+                return
+            r.metadata["router_store_ok"] = True
+
+            # 5. Secret redacted
+            from igris.core.unified_memory import UnifiedMemory as _UM2
+            um3 = _UM2(project_root=str(tmp))
+            um3.store_preference(
+                interlocutor_id="gauntlet_redact_user",
+                trust_level="trusted",
+                text="token è FAKE_SECRET_GAUNTLET_NOTREAL",
+            )
+            from igris.core.long_term_memory import LongTermMemory
+            ltm = LongTermMemory(base_path=tmp / ".igris" / "memory" / "long_term")
+            import json as _j
+            entries = ltm.get_entries("synaptic:gauntlet_redact_user", limit=5)
+            stored = _j.dumps([e.content for e in entries])
+            if "FAKE_SECRET_GAUNTLET_NOTREAL" in stored:
+                r.errors.append("Raw secret found in storage after store_preference")
+                return
+            r.metadata["secret_redacted"] = True
+
+        r.passed = True
+        r.status = "passed"
+        r.summary = (
+            "Memory cross-session: write ✓, new-session retrieve ✓, "
+            "cross-user isolation ✓, router store ✓, secret redacted ✓"
+        )
+
     # ── run_all ────────────────────────────────────────────────────────────────
 
     def run_all(self) -> JarvisCoreGauntletReport:
@@ -1220,6 +1321,7 @@ class JarvisCoreGauntlet:
             "auth_enrollment_login_flow": ("Auth Enrollment/Login Flow", self._check_auth_enrollment_login_flow),
             "write_endpoint_auth_gate": ("Write Endpoint Auth Gate", self._check_write_endpoint_auth_gate),
             "dangerous_intent_routing": ("Dangerous Intent Routing", self._check_dangerous_intent_routing),
+            "memory_cross_session": ("Memory Cross-Session", self._check_memory_cross_session),
         }
 
         results: list[GauntletCheckResult] = []
@@ -1278,6 +1380,7 @@ class JarvisCoreGauntlet:
             "auth_enrollment_login_flow": ("Auth Enrollment/Login Flow", self._check_auth_enrollment_login_flow),
             "write_endpoint_auth_gate": ("Write Endpoint Auth Gate", self._check_write_endpoint_auth_gate),
             "dangerous_intent_routing": ("Dangerous Intent Routing", self._check_dangerous_intent_routing),
+            "memory_cross_session": ("Memory Cross-Session", self._check_memory_cross_session),
         }
         if check_id not in check_map:
             return GauntletCheckResult(

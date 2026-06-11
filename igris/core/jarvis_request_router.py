@@ -586,4 +586,23 @@ class JarvisRequestRouter:
                 logger.debug("JarvisRequestRouter: memory retrieval failed: %s", e)
                 decision.warnings.append(f"memory_retrieval_degraded: {e}")
 
+        # Deterministic memory store for memory_update route (#1294)
+        if not decision.blocked and decision.memory_mode == "store" and interlocutor_id != "unknown":
+            try:
+                mem = self._get_memory()
+                if mem:
+                    store_result = mem.store_preference(
+                        interlocutor_id=interlocutor_id,
+                        trust_level=trust_level,
+                        text=message,
+                        tags=["memory_update"],
+                    )
+                    decision.metadata["memory_store_ok"] = store_result.ok
+                    decision.metadata["memory_store_id"] = store_result.id
+                    if not store_result.ok:
+                        decision.warnings.append(f"memory_store_degraded: {store_result.warnings}")
+            except Exception as e:
+                logger.warning("JarvisRequestRouter: memory store failed: %s", e)
+                decision.warnings.append(f"memory_store_failed: {e}")
+
         return decision

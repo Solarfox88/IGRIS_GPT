@@ -325,6 +325,64 @@ def create_router(deps) -> APIRouter:
             logging.getLogger(__name__).debug("JarvisRequestRouter unavailable (non-blocking): %s", _router_exc)
         # --- end Jarvis Request Router ---
 
+        # --- Memory update handler (#1294) ---
+        # memory_update is a non-mission route: store deterministically and return
+        # without calling the LLM. Router already stored via store_preference() if
+        # interlocutor_id is known; here we also store using the per-request
+        # project_root (same as auth, from IGRIS_PROJECT_ROOT env) and return
+        # a deterministic confirmation so the user knows the preference was saved.
+        if (
+            _route_decision is not None
+            and not _route_decision.blocked
+            and str(getattr(_route_decision, "route", "")) in ("memory_update", "RequestRoute.MEMORY_UPDATE")
+            and getattr(_route_decision, "memory_mode", "") == "store"
+        ):
+            _mem_pf = preflight if 'preflight' in dir() else None
+            _mem_iid = _mem_pf.interlocutor_id if _mem_pf else "unknown"
+            _mem_tl = _mem_pf.trust_level if _mem_pf else "untrusted"
+            _mem_ok = _route_decision.metadata.get("memory_store_ok", False)
+            _mem_store_warnings = []
+
+            # If router didn't store (interlocutor_id was unknown at router time
+            # but is now resolved from preflight), store here using correct root.
+            if not _mem_ok and _mem_iid != "unknown":
+                try:
+                    from igris.core.unified_memory import UnifiedMemory as _UM
+                    _mem_project_root = os.environ.get("IGRIS_PROJECT_ROOT") or str(CONFIG.project_root)
+                    _um = _UM(project_root=_mem_project_root)
+                    _sr = _um.store_preference(
+                        interlocutor_id=_mem_iid,
+                        trust_level=_mem_tl,
+                        text=message,
+                        tags=["memory_update"],
+                    )
+                    _mem_ok = _sr.ok
+                    _mem_store_warnings = _sr.warnings
+                except Exception as _mem_exc:
+                    logging.getLogger(__name__).warning("Memory update store failed: %s", _mem_exc)
+                    _mem_store_warnings = [str(_mem_exc)]
+
+            if _mem_iid == "unknown":
+                return {
+                    "response": "Per salvare questa preferenza devo identificarti. Accedi o registrati prima.",
+                    "route": _route_decision.to_dict() if _route_decision else None,
+                    "memory_stored": False,
+                    "memory_requires_auth": True,
+                }
+            _mem_confirmation = (
+                "Ho salvato questa preferenza per il tuo profilo."
+                if _mem_ok
+                else "Non ho potuto salvare la preferenza in modo persistente, ma la terrò presente per questa sessione."
+            )
+            return {
+                "response": _mem_confirmation,
+                "route": _route_decision.to_dict() if _route_decision else None,
+                "memory_stored": _mem_ok,
+                "memory_store_warnings": _mem_store_warnings,
+                "interlocutor_id": _mem_iid,
+            }
+        # --- end memory update handler ---
+
         # --- Mission-first execution path (#1245) ---
         try:
             from igris.core.mission_first import MissionFirstController
@@ -615,6 +673,43 @@ def create_router(deps) -> APIRouter:
         except Exception as _sr_exc:
             logging.getLogger(__name__).debug("JarvisRequestRouter stream unavailable (non-blocking): %s", _sr_exc)
         # --- end Jarvis Request Router stream ---
+
+        # --- Memory update handler stream (#1294) ---
+        if (
+            _stream_route_decision is not None
+            and not _stream_route_decision.blocked
+            and str(getattr(_stream_route_decision, "route", "")) in ("memory_update", "RequestRoute.MEMORY_UPDATE")
+            and getattr(_stream_route_decision, "memory_mode", "") == "store"
+        ):
+            _smem_pf = preflight if 'preflight' in dir() else None
+            _smem_iid = _smem_pf.interlocutor_id if _smem_pf else "unknown"
+            _smem_tl = _smem_pf.trust_level if _smem_pf else "untrusted"
+            _smem_ok = _stream_route_decision.metadata.get("memory_store_ok", False)
+
+            if not _smem_ok and _smem_iid != "unknown":
+                try:
+                    from igris.core.unified_memory import UnifiedMemory as _UM_S
+                    _smem_root = os.environ.get("IGRIS_PROJECT_ROOT") or str(CONFIG.project_root)
+                    _smem_r = _UM_S(project_root=_smem_root).store_preference(
+                        interlocutor_id=_smem_iid, trust_level=_smem_tl,
+                        text=message, tags=["memory_update"],
+                    )
+                    _smem_ok = _smem_r.ok
+                except Exception as _smem_exc:
+                    logging.getLogger(__name__).warning("Stream memory update store failed: %s", _smem_exc)
+
+            if _smem_iid == "unknown":
+                _smem_msg = "Per salvare questa preferenza devo identificarti. Accedi o registrati prima."
+            else:
+                _smem_msg = "Ho salvato questa preferenza per il tuo profilo." if _smem_ok else "Preferenza ricevuta per questa sessione."
+
+            async def _stream_mem_gen():
+                import json as _j
+                yield f"data: {_j.dumps({'type': 'text', 'text': _smem_msg, 'memory_stored': _smem_ok})}\n\n"
+                yield "data: [DONE]\n\n"
+            from fastapi.responses import StreamingResponse as _SR
+            return _SR(_stream_mem_gen(), media_type="text/event-stream")
+        # --- end memory update handler stream ---
 
         # --- Mission-first stream path (#1245) ---
         try:
