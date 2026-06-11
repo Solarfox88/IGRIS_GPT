@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from igris.core.embedding_store import EmbeddingStore
+from igris.core.redaction import SECRET_RE as _SECRET_RE  # noqa: F401
 
 _log = logging.getLogger("igris.memory.graph")
 
@@ -28,9 +29,6 @@ EDGE_TYPES = {
     "supersedes", "related_to", "requires_approval", "same_category",
     "triggered_by_intent",
 }
-
-_SECRET_RE = re.compile(r"(?i)(token|secret|password|api_key)\s*[=:]\s*\S+")
-_LEGACY_SECRET_RE = re.compile(r"(?i)(token|secret|password|key).*?=\S+")
 
 
 class MemoryGraph:
@@ -75,7 +73,7 @@ CREATE INDEX IF NOT EXISTS idx_edges_dst  ON memory_edges(dst_node);
 
     def _contains_secret(self, value: Any) -> bool:
         if isinstance(value, str):
-            return bool(_SECRET_RE.search(value)) or bool(_LEGACY_SECRET_RE.search(value))
+            return bool(_SECRET_RE.search(value))
         if isinstance(value, dict):
             return any(self._contains_secret(v) for v in value.values())
         if isinstance(value, list):

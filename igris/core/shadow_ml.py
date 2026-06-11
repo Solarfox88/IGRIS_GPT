@@ -18,27 +18,9 @@ from enum import Enum
 from pathlib import Path
 from typing import Any
 
+from igris.core.redaction import redact as _redact, redact_nested as _redact_any  # noqa: F401
+
 logger = logging.getLogger(__name__)
-
-# ── Secret redaction ──────────────────────────────────────────────────────────
-
-_SECRET_RE = re.compile(
-    r'(token|passphrase|password|secret|api[_\s]?key|private[_\s]?key|bearer|auth[_\s]?key)'
-    r'\s*[=:]\s*\S+',
-    re.IGNORECASE,
-)
-
-def _redact(text: str) -> str:
-    return _SECRET_RE.sub(r'\1=<REDACTED>', str(text)) if text else text
-
-def _redact_any(val: Any) -> Any:
-    if isinstance(val, dict):
-        return {k: _redact_any(v) for k, v in val.items()}
-    elif isinstance(val, list):
-        return [_redact_any(i) for i in val]
-    elif isinstance(val, str):
-        return _redact(val)
-    return val
 
 
 # ── Enums ─────────────────────────────────────────────────────────────────────

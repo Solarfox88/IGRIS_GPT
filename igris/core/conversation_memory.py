@@ -101,28 +101,11 @@ NEGATIVE_PATTERNS = [
 FACT_PATTERNS = [
     re.compile(r'\b(il progetto si chiama|il repository è|il server è|the project is|the repo is|the server is)\b', re.IGNORECASE),
 ]
-SECRET_PATTERNS = [
-    re.compile(r'(passphrase|password|token|secret|api[_\s]?key|private[_\s]?key|bearer)\s*[=:]\s*\S+', re.IGNORECASE),
-    re.compile(r'\b[A-Za-z0-9+/]{20,}={0,2}\b'),  # base64-like
-]
+from igris.core.redaction import SECRET_RE as _SECRET_RE_CANONICAL, redact as _redact_for_storage  # noqa: F401
+
+SECRET_PATTERNS = [_SECRET_RE_CANONICAL]
 
 TRIVIAL_MESSAGES = {"ok", "sì", "no", "grazie", "ciao", "ok grazie", "yes", "nope", "sure", "fine", "great"}
-
-
-def _redact_for_storage(text: str) -> str:
-    """Remove obvious secret patterns before writing to LongTermMemory."""
-    if not text:
-        return text
-    # key=value patterns with secret-like keys
-    text = re.sub(
-        r'(token|passphrase|password|secret|api[_\s]?key|private[_\s]?key|bearer)\s*[=:]\s*\S+',
-        r'\1=<REDACTED>',
-        text,
-        flags=re.IGNORECASE,
-    )
-    # Long base64-like strings (>20 chars)
-    text = re.sub(r'[A-Za-z0-9+/]{20,}={0,2}', '<REDACTED_BASE64>', text)
-    return text
 
 
 @dataclass

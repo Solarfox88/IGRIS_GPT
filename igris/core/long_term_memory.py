@@ -18,22 +18,8 @@ from typing import Any, Dict, List, Optional
 _log = logging.getLogger("igris.memory.long_term")
 
 from igris.core.safety import redact_secrets
+from igris.core.redaction import redact_nested as _redact_nested  # noqa: F401
 from igris.models.config import CONFIG
-
-
-# ---------------------------------------------------------------------------
-# Nested redaction helper (#1129)
-# ---------------------------------------------------------------------------
-
-def _redact_nested(value: Any) -> Any:
-    """Recursively redact secrets in str/dict/list structures."""
-    if isinstance(value, str):
-        return redact_secrets(value)
-    if isinstance(value, dict):
-        return {k: _redact_nested(v) for k, v in value.items()}
-    if isinstance(value, list):
-        return [_redact_nested(item) for item in value]
-    return value
 
 
 # ---------------------------------------------------------------------------
