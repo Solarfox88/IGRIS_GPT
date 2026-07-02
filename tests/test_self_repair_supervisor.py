@@ -5977,10 +5977,12 @@ def test_decomposition_policy_request_approval_for_destructive():
     )
 
 
-def test_decomposition_policy_block_unsafe_for_secret():
+def test_decomposition_policy_block_unsafe_for_secret(tmp_path):
     """Decomposition containing a secret pattern is blocked as unsafe."""
+    # Use tmp_path instead of /tmp/project to avoid shared-state flakiness
+    # when tests run concurrently or in different orderings (#1337).
     backend = _decomp_backend(_make_valid_decomposition_result(has_secret=True))
-    supervisor = SelfRepairSupervisor("/tmp/project", backend=backend)
+    supervisor = SelfRepairSupervisor(str(tmp_path), backend=backend)
     config = _config(
         max_rank_attempts=3,
         max_repair_cycles=1,
@@ -6051,10 +6053,11 @@ def test_decomposition_subissue_urls_persisted_in_report():
     )
 
 
-def test_decomposition_no_secrets_in_subissue_body():
+def test_decomposition_no_secrets_in_subissue_body(tmp_path):
     """Decomposition with secret content is blocked before create_issue is called."""
+    # Use tmp_path instead of /tmp/project to avoid shared-state flakiness (#1337).
     backend = _decomp_backend(_make_valid_decomposition_result(has_secret=True))
-    supervisor = SelfRepairSupervisor("/tmp/project", backend=backend)
+    supervisor = SelfRepairSupervisor(str(tmp_path), backend=backend)
     config = _config(
         max_rank_attempts=3,
         max_repair_cycles=1,
