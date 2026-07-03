@@ -19,10 +19,12 @@ import pytest
 # ─── fixtures ────────────────────────────────────────────────────────────────
 
 @pytest.fixture
-def client():
+def client(monkeypatch):
     from igris.web.server import create_app
     app = create_app()
     from fastapi.testclient import TestClient
+    # Disable IGRIS_REQUIRE_AUTH gate so tests reach endpoint logic regardless of CI env (#1337-A).
+    monkeypatch.setenv("IGRIS_REQUIRE_AUTH", "false")
     return TestClient(app)
 
 

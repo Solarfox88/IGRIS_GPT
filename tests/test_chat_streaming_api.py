@@ -13,7 +13,7 @@ from igris.web.server import create_app
 
 
 @pytest.fixture
-def client(tmp_path):
+def client(tmp_path, monkeypatch):
     from igris.models.config import CONFIG
     root = tmp_path / "project"
     root.mkdir(exist_ok=True)
@@ -22,6 +22,8 @@ def client(tmp_path):
     os.environ["PROJECT_ROOT"] = str(root)
     os.environ["WORKSPACE_ROOT"] = str(root)
     CONFIG.project_root = Path(str(root))
+    # Disable IGRIS_REQUIRE_AUTH gate so tests reach endpoint logic regardless of CI env (#1337-A).
+    monkeypatch.setenv("IGRIS_REQUIRE_AUTH", "false")
     return TestClient(create_app())
 
 

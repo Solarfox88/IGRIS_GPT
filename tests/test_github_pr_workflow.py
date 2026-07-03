@@ -57,7 +57,13 @@ def git_repo(tmp_path):
 
 
 @pytest.fixture
-def client():
+def client(monkeypatch):
+    # Bypass write-auth gate so gating logic is reached in tests (#1337-A).
+    import igris.api.write_auth as _wa
+    from igris.api.write_auth import WriteAuthResult
+    async def _allow(request):
+        return WriteAuthResult(allowed=True, trust_level="admin")
+    monkeypatch.setattr(_wa, "require_write_auth_or_raise", _allow)
     return TestClient(create_app())
 
 
