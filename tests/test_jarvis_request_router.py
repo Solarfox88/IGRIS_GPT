@@ -9,9 +9,11 @@ def router(tmp_path):
 
 
 @pytest.fixture
-def client():
+def client(monkeypatch):
     from fastapi.testclient import TestClient
     from igris.web.server import create_app
+    # Disable IGRIS_REQUIRE_AUTH gate so tests reach endpoint logic regardless of CI env (#1337-A).
+    monkeypatch.setenv("IGRIS_REQUIRE_AUTH", "false")
     return TestClient(create_app(), raise_server_exceptions=False)
 
 
