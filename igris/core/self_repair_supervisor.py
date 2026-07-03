@@ -5570,9 +5570,17 @@ class SelfRepairSupervisor:
             ],
         ]).lower()
 
-        # Check for secret patterns (raw or already-redacted by _safe_redact)
+        # Check for secret patterns (raw or already-redacted by _safe_redact).
+        # _safe_redact uses "<REDACTED>" (canonical marker); older code used "***redacted***".
+        # Both must be caught here because _ask_igris_decompose redacts final_summary
+        # before passing the parsed decomposition to this policy (#1337).
         from igris.core.redaction import SECRET_RE as _secret_re_canonical, _PREFIX_RE as _prefix_re_canonical
-        if _secret_re_canonical.search(all_text) or _prefix_re_canonical.search(all_text) or "***redacted***" in all_text:
+        if (
+            _secret_re_canonical.search(all_text)
+            or _prefix_re_canonical.search(all_text)
+            or "<redacted>" in all_text
+            or "***redacted***" in all_text
+        ):
             return "block_unsafe_decomposition"
 
         # Check for destructive keywords
