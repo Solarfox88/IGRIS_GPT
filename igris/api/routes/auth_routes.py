@@ -22,13 +22,12 @@ SAFE BY DEFAULT:
 # FastAPI uses runtime annotation inspection for Pydantic models.
 
 import logging
-import os
 import re
 from typing import Any, Dict, List, Optional
 
-logger = logging.getLogger(__name__)
+from igris.api.write_auth import _get_auth_root
 
-_PROJECT_ROOT = os.environ.get("IGRIS_PROJECT_ROOT", ".")
+logger = logging.getLogger(__name__)
 
 # ── Username validation ───────────────────────────────────────────────────────
 
@@ -119,19 +118,19 @@ def _make_router():
 
     def _cred_store():
         from igris.core.interlocutor_auth import AuthCredentialStore
-        return AuthCredentialStore(project_root=_PROJECT_ROOT)
+        return AuthCredentialStore(project_root=_get_auth_root())
 
     def _sess_mgr():
         from igris.core.interlocutor_auth import AuthSessionManager
-        return AuthSessionManager(project_root=_PROJECT_ROOT)
+        return AuthSessionManager(project_root=_get_auth_root())
 
     def _enroll_store():
         from igris.core.interlocutor_auth import EnrollmentStore
-        return EnrollmentStore(project_root=_PROJECT_ROOT)
+        return EnrollmentStore(project_root=_get_auth_root())
 
     def _resolver():
         from igris.core.identity_resolver import IdentityResolver
-        return IdentityResolver(_PROJECT_ROOT)
+        return IdentityResolver(_get_auth_root())
 
     # ── POST /api/auth/enroll/start ───────────────────────────────────────────
 
