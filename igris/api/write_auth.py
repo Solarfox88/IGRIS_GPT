@@ -18,6 +18,16 @@ logger = logging.getLogger(__name__)
 _WRITE_ALLOWED_TRUST_LEVELS = frozenset({"admin", "owner", "system"})
 
 
+def _get_auth_root() -> str:
+    """Return the auth-store project root, resolved lazily at call time.
+
+    Reads IGRIS_PROJECT_ROOT from the live environment so that env changes
+    after module import (e.g. in tests) are always respected.
+    Fallback: "." (current working directory).
+    """
+    return os.environ.get("IGRIS_PROJECT_ROOT") or "."
+
+
 @dataclass
 class WriteAuthResult:
     allowed: bool
@@ -52,7 +62,7 @@ async def require_write_auth(request) -> "WriteAuthResult":
             http_status=401,
         )
 
-    project_root = os.environ.get("IGRIS_PROJECT_ROOT") or "."
+    project_root = _get_auth_root()
     try:
         from igris.core.interlocutor_auth import AuthSessionManager
         sm = AuthSessionManager(project_root=project_root)

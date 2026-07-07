@@ -268,10 +268,26 @@ def test_routes_01_stream_does_not_fall_back_to_config_project_root():
 
 
 def test_auth_routes_and_routes_01_use_same_env_var():
-    """Both auth_routes.py and routes_01.py must read IGRIS_PROJECT_ROOT for consistency."""
+    """Both auth_routes.py and routes_01.py must resolve IGRIS_PROJECT_ROOT for consistency.
+
+    After #1301-PR1, auth_routes.py delegates to _get_auth_root() (imported from
+    write_auth.py) which reads IGRIS_PROJECT_ROOT lazily.  The invariant is that
+    auth_routes uses _get_auth_root (the canonical helper) AND write_auth.py
+    contains IGRIS_PROJECT_ROOT as the single source of truth.
+    """
     auth_content = _AUTH_ROUTES.read_text(encoding="utf-8")
     routes_content = _ROUTES_01.read_text(encoding="utf-8")
-    assert "IGRIS_PROJECT_ROOT" in auth_content, \
-        "auth_routes.py does not use IGRIS_PROJECT_ROOT — inconsistency with routes_01"
+    write_auth_path = Path(__file__).resolve().parents[1] / "igris" / "api" / "write_auth.py"
+    write_auth_content = write_auth_path.read_text(encoding="utf-8")
+
+    # auth_routes.py now uses _get_auth_root() from write_auth (lazy resolution)
+    assert "_get_auth_root" in auth_content, (
+        "auth_routes.py must use _get_auth_root() for IGRIS_PROJECT_ROOT resolution (#1301-PR1)"
+    )
+    # write_auth.py is the canonical source that reads IGRIS_PROJECT_ROOT
+    assert "IGRIS_PROJECT_ROOT" in write_auth_content, (
+        "write_auth.py must contain IGRIS_PROJECT_ROOT — it is the auth root source of truth"
+    )
+    # routes_01.py still reads IGRIS_PROJECT_ROOT directly
     assert "IGRIS_PROJECT_ROOT" in routes_content, \
         "routes_01.py does not use IGRIS_PROJECT_ROOT — inconsistency with auth_routes"
