@@ -74,6 +74,16 @@ class Config(BaseModel):
     workspace_root: Path = Field(default_factory=lambda: Path(os.getenv("WORKSPACE_ROOT", "./workspace")))
     project_root: Path = Field(default_factory=lambda: Path(os.getenv("PROJECT_ROOT", ".")))
 
+    @property
+    def igris_dir(self) -> Path:
+        """Canonical .igris runtime directory — always project_root / '.igris'.
+
+        Previously referenced as CONFIG.igris_dir but the attribute did not exist,
+        causing AttributeError on the default fallback path in long_term_memory and
+        browser_evidence (#1301-PR2).
+        """
+        return self.project_root / ".igris"
+
     @classmethod
     def load(cls) -> "Config":
         """Load configuration from environment variables with defaults."""
