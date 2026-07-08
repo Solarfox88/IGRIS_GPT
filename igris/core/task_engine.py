@@ -18,7 +18,7 @@ from igris.models.task import Task, TaskStatus
 
 
 def _runtime_root() -> Path:
-    return CONFIG.project_root / ".igris"
+    return CONFIG.igris_dir
 
 
 class TaskEngine:

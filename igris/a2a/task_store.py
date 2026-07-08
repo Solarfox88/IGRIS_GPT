@@ -24,7 +24,7 @@ def _a2a_dir(project_root: Optional[str] = None) -> Path:
         d = Path(project_root) / ".igris" / "a2a"
     else:
         from igris.models.config import CONFIG
-        d = CONFIG.project_root / ".igris" / "a2a"
+        d = CONFIG.igris_dir / "a2a"
     d.mkdir(parents=True, exist_ok=True)
     return d
 

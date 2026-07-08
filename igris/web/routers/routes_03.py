@@ -370,7 +370,7 @@ def create_router(deps) -> APIRouter:
         """Search long-term memory entries by query and optional domain."""
         from igris.core.long_term_memory import LongTermMemory
 
-        ltm = LongTermMemory(storage_dir=str(Path(CONFIG.project_root) / ".igris" / "memory" / "long_term"))
+        ltm = LongTermMemory(storage_dir=str(CONFIG.igris_dir / "memory" / "long_term"))
         domains = [domain] if domain else None
         entries = ltm.search(query=q, domains=domains, limit=limit)
         return {
@@ -399,7 +399,7 @@ def create_router(deps) -> APIRouter:
         """Generate/retrieve rolling summary for a long-term memory domain."""
         from igris.core.long_term_memory import LongTermMemory
 
-        ltm = LongTermMemory(storage_dir=str(Path(CONFIG.project_root) / ".igris" / "memory" / "long_term"))
+        ltm = LongTermMemory(storage_dir=str(CONFIG.igris_dir / "memory" / "long_term"))
         summary = ltm.generate_summary(domain=domain, force=force)
         return {
             "domain": domain,
