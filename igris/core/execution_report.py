@@ -17,7 +17,7 @@ from igris.models.config import CONFIG
 
 
 def _reports_dir() -> Path:
-    d = CONFIG.project_root / ".igris" / "reports"
+    d = CONFIG.igris_dir / "reports"
     d.mkdir(parents=True, exist_ok=True)
     return d
 

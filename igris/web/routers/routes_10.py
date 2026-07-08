@@ -199,7 +199,7 @@ def create_router(deps) -> APIRouter:
         # Fallback: check on-disk archive so callers receive a terminal status
         # (blocked/completed) instead of 404, which stops poll loops.
         try:
-            _runs_path = Path(CONFIG.project_root) / ".igris" / "supervisor_runs.json"
+            _runs_path = CONFIG.igris_dir / "supervisor_runs.json"
             if _runs_path.exists():
                 _payload = json.loads(_runs_path.read_text(encoding="utf-8"))
                 _record = (_payload.get("runs") or {}).get(run_id)
@@ -1395,7 +1395,7 @@ def create_router(deps) -> APIRouter:
     async def api_storage_stats() -> Dict[str, object]:
         """Return size and rotation stats for .igris/ JSON files."""
         from igris.core.file_rotation import get_file_stats
-        igris_dir = Path(CONFIG.project_root) / ".igris"
+        igris_dir = CONFIG.igris_dir
         return {"files": get_file_stats(igris_dir)}
 
     return router

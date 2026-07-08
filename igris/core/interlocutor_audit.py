@@ -44,9 +44,9 @@ class InterlocutorAudit:
         if path is None:
             try:
                 from igris.models.config import CONFIG
-                path = Path(CONFIG.project_root) / ".igris" / "interlocutor_audit.jsonl"
+                path = CONFIG.igris_dir / "interlocutor_audit.jsonl"
             except Exception:
-                path = Path.home() / ".igris" / "interlocutor_audit.jsonl"
+                path = Path(".igris") / "interlocutor_audit.jsonl"
         self.path = Path(path)
         self.path.parent.mkdir(parents=True, exist_ok=True)
 
