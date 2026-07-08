@@ -127,7 +127,7 @@ def resolve_session_identity(
     try:
         from pathlib import Path
         from igris.core.interlocutor_auth import AuthSessionManager
-        root = project_root or str(Path.home())
+        root = project_root or "."
         sm = AuthSessionManager(project_root=root)
         session, result = sm.resolve_session(session_token)
     except Exception as exc:
@@ -280,7 +280,7 @@ def run_preflight(
     trust_level = "untrusted"
     try:
         from igris.core.identity_resolver import IdentityResolver
-        root = project_root or str(Path.home())
+        root = project_root or "."
         ir = IdentityResolver(root)
         profile = ir.resolve(_id)
         trust_level = str(getattr(profile, "trust_level", "untrusted")).lower()
@@ -354,7 +354,7 @@ def run_preflight(
         if _dk_id and _dk_pass:
             try:
                 from igris.core.delegation_keys import verify_key
-                root = project_root or str(Path.home())
+                root = project_root or "."
                 _ok, _dk_reason = verify_key(
                     project_root=root,
                     key_id=_dk_id,
@@ -403,7 +403,7 @@ def run_preflight(
     if is_sensitive and not is_untrusted and not blocked and profile is not None:
         try:
             from igris.core.authorization_gate import AuthorizationGate
-            root = project_root or str(Path.home())
+            root = project_root or "."
             _ag = AuthorizationGate(root)
             _scope = (
                 intent.target_resource if intent is not None and hasattr(intent, "target_resource")
@@ -449,7 +449,7 @@ def run_preflight(
         try:
             from igris.core.proactive_engine import ProactiveEngine
             from pathlib import Path as _Path
-            _pe = ProactiveEngine(project_root or str(_Path.home()))
+            _pe = ProactiveEngine(project_root or ".")
             _scopes = list(getattr(profile, "authorized_scopes", []) or []) if profile else []
             _events = _pe.scan(
                 state_snapshot={},
@@ -536,12 +536,7 @@ def run_preflight(
     audit_event_id = None
     try:
         from igris.core.interlocutor_audit import InterlocutorAudit
-        try:
-            from igris.models.config import CONFIG
-            _audit_path = None  # InterlocutorAudit will use CONFIG.project_root if we pass None
-        except Exception:
-            _audit_path = None
-        audit = InterlocutorAudit(path=_audit_path)
+        audit = InterlocutorAudit(project_root=project_root)
         event_type = (
             "auth_denied" if blocked
             else ("auth_allowed" if is_sensitive else "identity_resolved")
