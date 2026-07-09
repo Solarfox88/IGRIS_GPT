@@ -40,13 +40,20 @@ def _safe_str(v: Any) -> str:
 
 
 class InterlocutorAudit:
-    def __init__(self, path: Path | str | None = None):
+    def __init__(
+        self,
+        path: Path | str | None = None,
+        project_root: str | None = None,
+    ):
         if path is None:
-            try:
-                from igris.models.config import CONFIG
-                path = CONFIG.igris_dir / "interlocutor_audit.jsonl"
-            except Exception:
-                path = Path(".igris") / "interlocutor_audit.jsonl"
+            if project_root is not None:
+                path = Path(project_root) / ".igris" / "interlocutor_audit.jsonl"
+            else:
+                try:
+                    from igris.models.config import CONFIG
+                    path = CONFIG.igris_dir / "interlocutor_audit.jsonl"
+                except Exception:
+                    path = Path(".igris") / "interlocutor_audit.jsonl"
         self.path = Path(path)
         self.path.parent.mkdir(parents=True, exist_ok=True)
 
