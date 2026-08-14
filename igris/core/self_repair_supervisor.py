@@ -217,6 +217,13 @@ from igris.core.supervisor_completion import (  # noqa: F401
     persist_assignment_outcome as _persist_assignment_outcome_helper,
     pr_body as _pr_body_helper,
 )
+from igris.core.supervisor_repair_helpers import (  # noqa: F401
+    preserve_targeted_tests_after_restore_retry as _preserve_targeted_tests_helper,
+    quick_provider_check as _quick_provider_check_helper,
+    re_scaffold_targeted_test_if_missing as _re_scaffold_helper,
+    scaffold_missing_tests_target as _scaffold_missing_tests_helper,
+    synthetic_missing_tests_diff as _synthetic_missing_tests_diff_helper,
+)
 
 # AssignmentRouter — lazy import to avoid circular deps at module load
 _assignment_router_available = False
@@ -762,44 +769,8 @@ class SelfRepairSupervisor:
         return _strategy_for_repair_helper(run, has_execution_plan)
 
     def _quick_provider_check(self, timeout: int = 10) -> bool:
-        """Fast health-check: ping the configured LLM provider with a 10s timeout.
-
-        Returns True if at least one provider responds, False if all are
-        unreachable or timeout.  Used before repair_reasoning to avoid burning
-        the full repair budget on silent provider failures (#1059).
-        """
-        _log = logging.getLogger("igris.supervisor.provider_check")
-        helper_command = str(os.getenv("IGRIS_API_HELPER_COMMAND", "")).strip()
-        if not helper_command:
-            # No external helper configured — assume local model is available.
-            _log.debug("_quick_provider_check: no IGRIS_API_HELPER_COMMAND set, assuming available")
-            return True
-
-        # Build a minimal ping payload
-        ping_payload = {
-            "messages": [{"role": "user", "content": "ping"}],
-            "max_tokens": 1,
-        }
-        try:
-            import subprocess as _sp, json as _json
-            result = _sp.run(
-                helper_command.split(),
-                input=_json.dumps(ping_payload),
-                capture_output=True,
-                text=True,
-                timeout=timeout,
-            )
-            if result.returncode == 0 and result.stdout.strip():
-                _log.debug("_quick_provider_check: provider OK (returncode=0)")
-                return True
-            _log.warning(
-                "_quick_provider_check: provider returned rc=%d; stdout=%r",
-                result.returncode, result.stdout[:200],
-            )
-            return False
-        except Exception as exc:  # TimeoutExpired, FileNotFoundError, etc.
-            _log.warning("_quick_provider_check: provider ping failed: %s", exc)
-            return False
+        """Fast health-check: ping the configured LLM provider with a 10s timeout."""
+        return _quick_provider_check_helper(timeout)
 
     @staticmethod
     def _check_execution_budget(run: SupervisorRun) -> Optional[str]:
@@ -2923,61 +2894,14 @@ class SelfRepairSupervisor:
 
     def _synthetic_missing_tests_diff(self, config: RankSupervisorConfig) -> str:
         target = self._targeted_test_file(config)
-        if not target:
-            return ""
-        target_path = Path(self.project_root) / target
-        if not target_path.exists():
-            return ""
-        try:
-            content = target_path.read_text(encoding="utf-8")
-        except OSError:
-            return ""
-        lines = [
-            f"diff --git a/{target} b/{target}",
-            "new file mode 100644",
-            "--- /dev/null",
-            f"+++ b/{target}",
-        ]
-        for line in content.splitlines():
-            lines.append(f"+{line}")
-        if not content.endswith("\n"):
-            lines.append("\\ No newline at end of file")
-        return "\n".join(lines) + "\n"
+        return _synthetic_missing_tests_diff_helper(self.project_root, target)
 
     def _re_scaffold_targeted_test_if_missing(
         self,
         run: SupervisorRun,
         config: RankSupervisorConfig,
     ) -> bool:
-        target = self._targeted_test_file(config)
-        if not target:
-            return False
-        target_path = Path(self.project_root) / target
-        if target_path.exists():
-            return False
-
-        scaffold = self._scaffold_missing_tests_target(config)
-        run.add("repair_scaffold", "success" if scaffold.success else "failure", _command_detail(scaffold))
-        if not scaffold.success:
-            return False
-
-        synthetic_diff = self._synthetic_missing_tests_diff(config)
-        if not synthetic_diff or not _is_valid_missing_tests_repair_diff(synthetic_diff, config.goal):
-            restore = self.backend.restore_dangerous_diff()
-            run.add(
-                "repair_restore",
-                "success" if restore.success else "failure",
-                "Post-restore targeted test scaffold was invalid; restored.",
-            )
-            return False
-
-        run.add(
-            "repair_scaffold_diff",
-            "success",
-            "Synthesized missing-tests diff from post-restore scaffold file.",
-            synthesized_untracked=True,
-        )
-        return True
+        return _re_scaffold_helper(self, run, config)
 
     def _preserve_targeted_tests_after_restore_retry(
         self,
@@ -2985,60 +2909,11 @@ class SelfRepairSupervisor:
         config: RankSupervisorConfig,
         failure: str,
     ) -> None:
-        if failure not in {"missing_tests", "pytest_failure"}:
-            return
-        if self._re_scaffold_targeted_test_if_missing(run, config):
-            run.add(
-                "repair_completion",
-                "degraded",
-                "Re-scaffolded targeted tests after restore-based retry path.",
-            )
+        _preserve_targeted_tests_helper(self, run, config, failure)
 
     def _scaffold_missing_tests_target(self, config: RankSupervisorConfig) -> CommandResult:
         target = self._targeted_test_file(config)
-        if not target:
-            return CommandResult(False, "", "No targeted test path configured for missing-tests scaffold", 2)
-
-        endpoint = _required_endpoint_from_goal(config.goal)
-        if not endpoint:
-            return CommandResult(False, "", "No API endpoint found in goal for missing-tests scaffold", 2)
-
-        test_slug = endpoint.strip("/").replace("/", "_").replace("-", "_").lower()
-        test_slug = re.sub(r"[^a-z0-9_]+", "_", test_slug).strip("_")
-        if not test_slug:
-            test_slug = "mission_endpoint"
-
-        # Scaffold a placeholder test that accepts both 200 (implemented) and 404/405
-        # (endpoint not yet added).  A hard assert==200 on an unimplemented endpoint
-        # wastes the full pytest run (~16 min) and leaves workspace dirty.
-        # The tmp_path fixture sets PROJECT_ROOT to a temp directory so the watchdog
-        # lifespan task has nothing to do and does not block pytest for minutes.
-        content = (
-            "import os\n\n"
-            "from fastapi.testclient import TestClient\n\n"
-            "from igris.web.server import create_app\n\n\n"
-            f"def test_{test_slug}(tmp_path):\n"
-            "    # Isolate watchdog from real project during scaffold test.\n"
-            "    os.environ[\"PROJECT_ROOT\"] = str(tmp_path)\n"
-            "    os.environ[\"WORKSPACE_ROOT\"] = str(tmp_path)\n"
-            "    client = TestClient(create_app())\n"
-            f"    response = client.get(\"{endpoint}\")\n"
-            "    # Accept 200 (implemented) or 404/405 (scaffold placeholder — not yet implemented).\n"
-            "    # A 5xx error would indicate a real problem and is not accepted.\n"
-            "    assert response.status_code in (200, 404, 405), (\n"
-            f"        f\"Unexpected status {{response.status_code}} for '{endpoint}' — \"\n"
-            "        \"expected 200 (implemented) or 404/405 (not yet implemented)\"\n"
-            "    )\n"
-        )
-
-        target_path = Path(self.project_root) / target
-        try:
-            target_path.parent.mkdir(parents=True, exist_ok=True)
-            target_path.write_text(content, encoding="utf-8")
-        except OSError as exc:
-            return CommandResult(False, "", str(exc), 1)
-
-        return CommandResult(True, f"Scaffolded {target} for {endpoint}", "", 0)
+        return _scaffold_missing_tests_helper(self.project_root, target, config.goal)
 
     def _repair_cycle(
         self,
