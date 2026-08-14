@@ -6,6 +6,7 @@ Anti-flood: cooldown per event type, urgency threshold, deny-by-default for untr
 from __future__ import annotations
 
 import json
+import logging
 import time
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
@@ -13,6 +14,8 @@ from typing import Any, Dict, List, Optional
 
 _COOLDOWN_FILE = ".igris/proactive_cooldowns.json"
 _DEFAULT_MIN_INTERVAL_SEC = 300
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass

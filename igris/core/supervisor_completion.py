@@ -279,7 +279,7 @@ def persist_assignment_outcome(
             "attempts": attempts,
             "execution_provider": "",
             "execution_model": "",
-            "created_at": run.created_at.isoformat() if hasattr(run, "created_at") and run.created_at else "",
+            "created_at": run.created_at if hasattr(run, "created_at") and run.created_at else 0.0,
         }
         save_assignment_outcome(outcomes_path, record)
     except Exception as exc:

@@ -1537,19 +1537,20 @@ class SelfRepairSupervisor:
                             previous_profile=prev_profile,
                             forced_profile=forced_planner_profile,
                         )
-                run.add(
-                    "assignment_routing",
-                    "success",
-                    (
-                        f"role={assignment_decision.agent_role} "
-                        f"type={assignment_decision.task_type} "
-                        f"profile={assignment_decision.preferred_profile} "
-                        f"strategy={assignment_decision.execution_strategy} "
-                        f"p={assignment_decision.estimated_success_probability:.2f} "
-                        f"history={assignment_decision.history_matches}"
-                    ),
-                    **assignment_decision.to_dict(),
-                )
+                if assignment_decision is not None:
+                    run.add(
+                        "assignment_routing",
+                        "success",
+                        (
+                            f"role={assignment_decision.agent_role} "
+                            f"type={assignment_decision.task_type} "
+                            f"profile={assignment_decision.preferred_profile} "
+                            f"strategy={assignment_decision.execution_strategy} "
+                            f"p={assignment_decision.estimated_success_probability:.2f} "
+                            f"history={assignment_decision.history_matches}"
+                        ),
+                        **assignment_decision.to_dict(),
+                    )
             except Exception as _exc:
                 run.add("assignment_routing", "skipped", f"AssignmentRouter error: {_exc}")
 
@@ -3144,7 +3145,7 @@ class SelfRepairSupervisor:
         # Determine execution strategy when helper has provided an execution plan.
         has_execution_plan = bool(helper_advice and str(helper_advice.get("execution_plan", "")).strip())
         strategy, strategy_profile = self._strategy_for_repair(run, has_execution_plan)
-        if strategy:
+        if strategy and helper_advice is not None:
             run.strategy_used = strategy
             # Inject structured plan fields so the reasoning worker can use them.
             repair_context.update({
@@ -3652,8 +3653,8 @@ class SelfRepairSupervisor:
                 _patch_path = Path(self.project_root) / ".igris" / "rank_pending.patch"
                 if _patch_path.exists():
                     run.add("commit_patch_recovery", "running", "Applying saved diff patch to recover working tree")
-                    apply = self.backend._run(
-                        ["git", "apply", "--index", str(_patch_path)],
+                    apply = self.backend.git_apply_patch(
+                        str(_patch_path),
                         timeout=30,
                     )
                     run.add(
