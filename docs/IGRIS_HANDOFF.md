@@ -21,13 +21,11 @@ Skipping this process is not allowed.
 
 ## Current next issue
 
-**Process upgrade: 5-pass → 10-pass mandatory completion rule + quality hardening rules.**
+**#1356 — supervisor split Phase 3 in progress on branch `refactor/1356-supervisor-split-phase3`.**
 
-The mandatory 10-pass completion rule replaces the previous 5-pass rule. Quality hardening rules added to prevent false completion, duplicated centralized logic, missing VM validation, and inconsistent memory state. See `AGENTS.md` and ADR-IGRIS-0009.
+Extracted mission planning methods to `supervisor_mission_planning.py` (523 lines). `self_repair_supervisor.py` reduced from 6,327 to 6,011 lines. Still above 2,000 line target. Status: **Phase completed, parent issue not complete.** Next: merge PR, then continue with next extraction cluster (repair cycle, decomposition, or completion/cleanup).
 
-**Next code issue: #1356 — supervisor split Phase 3** (after process upgrade is merged).
-
-**Roadmap primary items addressed in Phase 1/2. Follow-up issues open: #1353, #1355, #1356.**
+**Roadmap primary items addressed in Phase 1/2/3. Follow-up issues open: #1353, #1355, #1356.**
 
 The roadmap is NOT "complete" — it is "primary phases merged, follow-up phases pending":
 - #1296 and #1291 are completed and closed.
@@ -35,7 +33,7 @@ The roadmap is NOT "complete" — it is "primary phases merged, follow-up phases
 - #1353 Phase 2 merged (PR #1360 `8ed5ac0`); parent #1314 still open (535 `except Exception` remain, target <50).
 - #1354 Phase 2 merged (PR #1361 `6131bb9`); parent #1315 acceptance criteria met.
 - #1355 Phase 2 merged (PR #1359 `7d2181f`); parent #1316 still open (91 pyright errors remain, CI `|| true`).
-- #1312 was closed on GitHub but work is incomplete; follow-up #1356 tracks Phase 3.
+- #1312 was closed on GitHub but work is incomplete; follow-up #1356 Phase 3 in progress (6,011 lines, target <2,000).
 
 ## Follow-up issues (created 2026-08-14)
 
