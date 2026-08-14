@@ -157,7 +157,7 @@ def _build_missions_context() -> Dict[str, Any]:
             "total": len(missions),
             "active": len(active),
             "completed": len(completed),
-            "active_titles": [redact_secrets(m.get("title", "")) for m in active[:5]],
+            "active_titles": [redact_secrets(m.title) for m in active[:5]],
         }
     except (OSError, ValueError, TypeError, KeyError):
         return {"total": 0, "active": 0, "completed": 0, "active_titles": []}
