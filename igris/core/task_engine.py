@@ -8,6 +8,7 @@ Timeline events go under ``.igris/timeline/``.
 from __future__ import annotations
 
 import json
+import logging
 import time
 from pathlib import Path
 from typing import Dict, List, Optional
@@ -15,6 +16,8 @@ from typing import Dict, List, Optional
 from igris.core import anti_loop, semantic_dedup
 from igris.models.config import CONFIG
 from igris.models.task import Task, TaskStatus
+
+logger = logging.getLogger(__name__)
 
 
 def _runtime_root() -> Path:
@@ -46,6 +49,7 @@ class TaskEngine:
                 if task.id >= max_id:
                     max_id = task.id
             except Exception:
+                logger.debug("Failed to load task from %s", fp, exc_info=True)
                 continue
         self._next_id = max_id + 1
 
@@ -243,5 +247,6 @@ class TaskEngine:
             try:
                 events.append(json.loads(fp.read_text(encoding="utf-8")))
             except Exception:
+                logger.debug("Failed to load timeline event from %s", fp, exc_info=True)
                 continue
         return events

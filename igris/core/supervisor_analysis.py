@@ -8,6 +8,7 @@ modularity (Issue #1312).
 from __future__ import annotations
 
 import json
+import logging
 import os
 import re
 import time
@@ -15,6 +16,8 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Set, Tuple
 
 from igris.core.supervisor_models import CommandResult, WRITE_ACTION_TYPES
+
+logger = logging.getLogger(__name__)
 
 
 def classify_failure(
@@ -232,6 +235,7 @@ def _load_known_baseline_failures(project_root: str, main_sha: str) -> Optional[
         if str(data.get("main_sha", "")).strip() == str(main_sha).strip():
             return list(data.get("failed_nodes", []))
     except Exception:
+        logger.debug("Failed to load known baseline failures", exc_info=True)
         pass
     return None
 

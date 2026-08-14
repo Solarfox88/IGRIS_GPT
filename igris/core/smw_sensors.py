@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import subprocess
 import time
 from dataclasses import dataclass
@@ -9,6 +10,8 @@ from pathlib import Path
 from typing import Dict, List, Optional
 
 from igris.core.self_repair_supervisor import list_active_supervised_runs, list_supervised_runs
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -39,6 +42,7 @@ def _safe_run(cmd: list[str], cwd: Optional[str] = None) -> str:
         p = subprocess.run(cmd, capture_output=True, text=True, cwd=cwd, timeout=10)
         return p.stdout if p.returncode == 0 else ""
     except Exception:
+        logger.debug("_safe_run failed for cmd=%s", cmd, exc_info=True)
         return ""
 
 
@@ -63,6 +67,7 @@ async def take_snapshot(project_root: str) -> SystemSnapshot:
                     pid = int(line.split("pid=")[1].split(",")[0].split(")")[0])
                     pids.append(pid)
                 except Exception:
+                    logger.debug("Failed to parse pid from ss output line", exc_info=True)
                     pass
         return (pids[0] if pids else None, bool(lines), len(set(pids)) > 1)
 
@@ -89,6 +94,7 @@ async def take_snapshot(project_root: str) -> SystemSnapshot:
                 dist[fc] = dist.get(fc, 0) + 1
             return active_ids, getattr(last, "run_id", None), getattr(last, "status", None), getattr(last, "failure_class", None), getattr(last, "started_at", None), since, avg_repair, escal, dist
         except Exception:
+            logger.debug("runs_data collection failed", exc_info=True)
             return [], None, None, None, None, None, 0.0, 0.0, {}
 
     async def logs() -> list[str]:
@@ -100,6 +106,7 @@ async def take_snapshot(project_root: str) -> SystemSnapshot:
             filtered = [l for l in lines if "watchdog" in l.lower() and "HTTP" not in l][-20:]
             return filtered
         except Exception:
+            logger.debug("Failed to read log lines", exc_info=True)
             return []
 
     async def skipped() -> list[int]:
@@ -109,6 +116,7 @@ async def take_snapshot(project_root: str) -> SystemSnapshot:
                 raw = json.loads(p.read_text(encoding="utf-8"))
                 return [int(x) for x in raw if isinstance(x, int) or str(x).isdigit()]
         except Exception:
+            logger.debug("Failed to load skipped issues", exc_info=True)
             pass
         return []
 

@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+import logging
 import time
 import uuid
 from dataclasses import asdict, dataclass
 from enum import Enum
 from typing import Any, Dict, List, Optional
+
+logger = logging.getLogger(__name__)
 
 
 class WorkPhase(str, Enum):
@@ -151,6 +154,7 @@ class WorkSession:
                     confidence=0.7,
                 )
         except Exception:
+            logger.debug("WorkSession.remember: MemoryGraph persist failed", exc_info=True)
             pass
 
     def to_dict(self) -> Dict[str, Any]:

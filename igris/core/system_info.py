@@ -6,12 +6,15 @@ without revealing environment variables, private IPs, or secrets.
 
 from __future__ import annotations
 
+import logging
 import os
 import platform
 import sys
 import time
 from pathlib import Path
 from typing import Any, Dict, Optional
+
+logger = logging.getLogger(__name__)
 
 
 def get_system_info(
@@ -110,6 +113,7 @@ def _get_memory_info() -> Dict[str, Any]:
         else:
             mem["note"] = "Memory details available on Linux only"
     except Exception:
+        logger.debug("Could not read memory info", exc_info=True)
         mem["note"] = "Could not read memory info"
     return mem
 
@@ -132,6 +136,7 @@ def _get_disk_info(project_root: Optional[str] = None) -> Dict[str, Any]:
         else:
             disk["note"] = "Disk info not available on this platform"
     except Exception:
+        logger.debug("Could not read disk info", exc_info=True)
         disk["note"] = "Could not read disk info"
     return disk
 
@@ -163,6 +168,7 @@ def _detect_container() -> bool:
         if "docker" in content or "kubepods" in content or "containerd" in content:
             return True
     except Exception:
+        logger.debug("Container detection via cgroup failed", exc_info=True)
         pass
     # Check container env hint (safe — only checks existence, not value)
     if os.environ.get("container") or os.environ.get("KUBERNETES_SERVICE_HOST"):
@@ -181,6 +187,7 @@ def _get_ollama_status() -> Dict[str, Any]:
         from igris.models.config import CONFIG
         status["model_configured"] = getattr(CONFIG, "local_llm_model", None)
     except Exception:
+        logger.debug("Could not read CONFIG.local_llm_model", exc_info=True)
         pass
 
     try:
@@ -211,6 +218,7 @@ def _get_ollama_status() -> Dict[str, Any]:
                         for m in models
                     )
     except Exception:
+        logger.debug("Ollama status check failed", exc_info=True)
         pass
 
     return status

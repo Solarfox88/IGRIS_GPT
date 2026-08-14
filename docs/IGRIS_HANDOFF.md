@@ -2,11 +2,18 @@
 
 The exact point where work resumes. Updated by every agent at the end of each task.
 
-Last updated: 2026-08-14 (Devin — post #1345 merge)
+Last updated: 2026-08-14 (Devin — post #1314 Phase 1 merge)
 
 ## Current next issue
 
-**#1314 — except Exception cleanup, phased**
+**#1315 — structured logging (JSON logging in igris/core/)**
+
+## Completed: #1314 Phase 1 (except Exception cleanup — logging)
+
+PR TBD (branch `fix/1314-except-exception-cleanup-phase1`). Phase 1 merged.
+- Added `logger.debug(..., exc_info=True)` to 46 silent `except Exception:` catches in 16 `igris/core/` files
+- No behavior change — only observability improvement
+- Phase 2 (replace with specific exceptions) pending
 
 ## Completed: #1345 (PR5A auth contract guard)
 

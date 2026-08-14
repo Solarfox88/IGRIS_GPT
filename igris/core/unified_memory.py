@@ -108,6 +108,7 @@ class UnifiedMemory:
                 from igris.models.config import CONFIG
                 project_root = CONFIG.project_root
             except Exception:
+                logger.debug("CONFIG.project_root unavailable, falling back to home dir", exc_info=True)
                 project_root = Path.home()
         self.project_root = Path(project_root)
         self._backends: dict = {}  # name -> "ok"|"degraded"|"unavailable"
@@ -161,6 +162,7 @@ class UnifiedMemory:
             self._scorer = MemoryScorer(str(self.project_root))
             self._backends["memory_scorer"] = "ok"
         except Exception:
+            logger.debug("MemoryScorer unavailable", exc_info=True)
             self._backends["memory_scorer"] = "unavailable"
 
         # TopicTree (optional)
@@ -169,6 +171,7 @@ class UnifiedMemory:
             self._topic_tree = MemoryTopicTree(str(self.project_root))
             self._backends["topic_tree"] = "ok"
         except Exception:
+            logger.debug("MemoryTopicTree unavailable", exc_info=True)
             self._backends["topic_tree"] = "unavailable"
 
         # EmbeddingStore (optional — best-effort only)
@@ -177,6 +180,7 @@ class UnifiedMemory:
             self._embedding_store = EmbeddingStore(str(self.project_root))
             self._backends["embedding_store"] = "ok"
         except Exception:
+            logger.debug("EmbeddingStore unavailable", exc_info=True)
             self._backends["embedding_store"] = "unavailable"
 
     # ── Store operations ──────────────────────────────────────────────────────

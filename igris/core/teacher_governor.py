@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import time
 import uuid
 from dataclasses import dataclass, field
@@ -26,6 +27,8 @@ from typing import Any, Dict, List, Optional, Set
 
 from igris.core import anti_loop, semantic_dedup
 from igris.core.safety import redact_secrets
+
+logger = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
@@ -437,4 +440,5 @@ class TeacherGovernor:
             self.threshold = data.get("threshold", 3)
             return True
         except Exception:
+            logger.debug("Governor state load failed", exc_info=True)
             return False

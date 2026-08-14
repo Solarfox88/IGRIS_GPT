@@ -72,6 +72,7 @@ class HardwareProbe:
                         kb = int(line.split()[1])
                         return kb / (1024 ** 2)
         except Exception:
+            logger.debug("Failed to read /proc/meminfo for available RAM", exc_info=True)
             pass
         return 0.0
 
@@ -270,6 +271,7 @@ class TTSEngine:
             data = json.loads(manifest.read_text(encoding="utf-8"))
             return VoiceProfile.from_dict(data)
         except Exception:
+            logger.debug("Failed to load voice profile %s", name, exc_info=True)
             return None
 
     def list_voice_profiles(self) -> List[VoiceProfile]:
@@ -286,5 +288,6 @@ class TTSEngine:
                         data = json.loads(manifest.read_text(encoding="utf-8"))
                         result.append(VoiceProfile.from_dict(data))
                     except Exception:
+                        logger.debug("Failed to load voice profile from %s", profile_dir.name, exc_info=True)
                         pass
         return result

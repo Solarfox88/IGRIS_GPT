@@ -380,6 +380,7 @@ class SupervisorRunStore:
                         )
                         self._audit_log.append(entry)
                     except Exception:
+                        logger.debug("Failed to parse audit log entry", exc_info=True)
                         pass
         except Exception as exc:
             logger.warning("supervisor_run_store: could not load audit log: %s", exc)

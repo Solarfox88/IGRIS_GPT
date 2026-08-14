@@ -1,12 +1,15 @@
 from __future__ import annotations
 
 import json
+import logging
 import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, List
 
 from igris.core.smw_sensors import SystemSnapshot
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -46,6 +49,7 @@ def detect_patterns(snapshot: SystemSnapshot) -> List[DetectedPattern]:
                 ev = f"active_runs={len(snapshot.active_runs)} port_in_use={snapshot.igris_port_in_use} dirty={len(snapshot.dirty_files)}"
                 out.append(DetectedPattern(pattern=p, snapshot=snapshot, detected_at=time.time(), evidence=ev))
         except Exception:
+            logger.debug("Pattern check failed for %s", p.name, exc_info=True)
             continue
     return out
 
@@ -58,6 +62,7 @@ def learn_pattern(name: str, description: str, check_code_str: str, severity: st
         try:
             records = json.loads(p.read_text(encoding="utf-8"))
         except Exception:
+            logger.debug("Failed to parse incident patterns JSON, resetting to empty list", exc_info=True)
             records = []
     records.append({"name": name, "description": description, "check_code_str": check_code_str, "severity": severity, "learned_at": time.time()})
     p.write_text(json.dumps(records, indent=2), encoding="utf-8")

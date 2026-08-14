@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import sys
 import threading
@@ -11,6 +12,8 @@ from pathlib import Path
 
 from igris.core.agent_reasoning_loop import AgentReasoningLoop
 from igris.core.work_session import DeliveryReport, WorkPhase, WorkSession
+
+logger = logging.getLogger(__name__)
 
 _HEARTBEAT_INTERVAL_SECONDS = 30
 
@@ -83,6 +86,7 @@ def main() -> int:
                 ws.advance_phase(WorkPhase.OBSERVE)
                 ws.advance_phase(WorkPhase.VERIFY)
         except Exception:
+            logger.debug("Failed to advance work session phase", exc_info=True)
             pass
         try:
             Path(progress_path).parent.mkdir(parents=True, exist_ok=True)
@@ -131,6 +135,7 @@ def main() -> int:
         _mg = _get_graph()
         _mg.flush_session_memory(result.loop_id, getattr(loop, "_memory_items", []))
     except Exception:
+        logger.debug("Failed to flush session memory to graph", exc_info=True)
         pass
     try:
         cfg_path = Path(project_root) / ".igris" / "memory_config.json"
@@ -142,6 +147,7 @@ def main() -> int:
             max_age_days=float(cfg.get("max_age_days", 30.0)),
         )
     except Exception:
+        logger.debug("MemoryValidator run failed", exc_info=True)
         pass
 
     stop_event.set()

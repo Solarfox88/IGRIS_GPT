@@ -181,6 +181,7 @@ class IntentRiskShadowModel:
                 from igris.models.config import CONFIG
                 project_root = CONFIG.project_root
             except Exception:
+                logger.debug("CONFIG.project_root unavailable, falling back to home dir", exc_info=True)
                 project_root = Path.home()
         self.project_root = Path(project_root)
 
@@ -274,6 +275,7 @@ class StrategySelectorShadow:
                 from igris.models.config import CONFIG
                 project_root = CONFIG.project_root
             except Exception:
+                logger.debug("CONFIG.project_root unavailable, falling back to home dir", exc_info=True)
                 project_root = Path.home()
         self.project_root = Path(project_root)
 
@@ -369,6 +371,7 @@ class ShadowMLCoordinator:
                 from igris.models.config import CONFIG
                 project_root = CONFIG.project_root
             except Exception:
+                logger.debug("CONFIG.project_root unavailable, falling back to home dir", exc_info=True)
                 project_root = Path.home()
         self.project_root = Path(project_root)
         self._memory = unified_memory
