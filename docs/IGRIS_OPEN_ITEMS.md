@@ -2,7 +2,7 @@
 
 Open issues and tech debt for IGRIS_GPT. Updated after every task.
 
-Last updated: 2026-08-14 (mandatory 5-pass rule added)
+Last updated: 2026-08-14 (mandatory 10-pass rule + quality hardening added)
 
 ## Completion policy
 
@@ -11,11 +11,12 @@ Items in this file are not considered complete just because a PR was merged.
 An item is complete only when:
 
 - the issue acceptance criteria are satisfied
-- the 5-pass completion rule has been completed
+- the **mandatory 10-pass completion rule** has been completed
 - tests/gauntlet pass
 - VM validation is done when applicable
 - memory files are updated
 - no hidden follow-up remains
+- GitHub issue state verified (open issue = not complete unless explicitly explained)
 
 If only part of the work was done, mark the item as:
 
@@ -39,8 +40,8 @@ Phase complete, follow-up pending.
 
 | Priority | Issue | Status | Next action |
 |---|---|---|---|
-| Critical | #1314 | **open** — Phase 1 merged (PR #1349 `0ac7a7b`), Phase 2 in progress | Follow-up: **#1353** — except Exception count reduced 627→535 (92 narrowed), target <50 |
-| Critical | #1315 | **open** — Phase 1 merged (PR #1350 `79fe072`), Phase 2 in progress | Follow-up: **#1354** — structured logging wired into server startup, redaction added to StructuredFormatter, 12 new tests |
+| Critical | #1314 | **open** — Phase 1 merged (PR #1349 `0ac7a7b`), Phase 2 merged (PR #1360 `8ed5ac0`) | Follow-up: **#1353** — except Exception count reduced 627→535 (92 narrowed), target <50; 535 remain |
+| Critical | #1315 | **open** — Phase 1 merged (PR #1350 `79fe072`), Phase 2 merged (PR #1361 `6131bb9`) | Follow-up: **#1354** — structured logging wired into server startup, redaction added to StructuredFormatter, 22 tests; acceptance criteria met |
 | Critical | #1316 | **open** — Phase 1 merged (PR #1351 `9866bf5`), Phase 2 in progress | Follow-up: **#1355** — pyright errors reduced 174→91 (48%), 91 remain; CI `|| true` kept until 0 errors |
 | Tech debt | #1312 | **closed on GitHub but incomplete** — Phase 2 merged (PR #1352 `67c3783`) | Follow-up: **#1356** — `self_repair_supervisor.py` still 6,013 lines (target <2,000), extract ~4,000 more lines |
 | Refactor | #1317 (I1) | open | router anonymous routes `routes_01..10` — rename by domain |

@@ -79,7 +79,7 @@ Architecture, security, and process decisions for IGRIS_GPT. Append a new ADR wh
 ## ADR-IGRIS-0008 — Mandatory 5-pass completion rule
 
 **Date**: 2026-08-14
-**Status**: accepted
+**Status**: superseded by ADR-IGRIS-0009
 
 **Decision**: Every IGRIS task must follow the mandatory 5-pass completion rule before being declared complete, ready to merge, ready to close, or production-ready.
 
@@ -94,3 +94,35 @@ The rule applies to all work types: issues, PRs, bugfixes, refactors, tests, doc
 - Every non-trivial PR must include a 5-pass completion review.
 - Parent issues cannot be closed when only a phase is complete.
 - Follow-up issues must be created when acceptance criteria remain unmet.
+
+## ADR-IGRIS-0009 — Mandatory 10-pass completion and quality hardening
+
+**Date**: 2026-08-14
+**Status**: accepted
+
+**Decision**: The previous mandatory 5-pass rule is replaced by a stricter mandatory 10-pass completion rule for all IGRIS work.
+
+The 10 passes are:
+
+1. memory and task intake
+2. acceptance criteria extraction
+3. baseline and evidence collection
+4. first focused implementation
+5. self-review against issue and diff
+6. architecture and existing-pattern review
+7. edge cases, negative paths, and regression review
+8. runtime, VM, and integration validation
+9. GitHub state and closure verification
+10. final honesty gate and memory update
+
+**Rationale**: The 5-pass process improved quality, but recent work still showed recurring weaknesses: claiming parent completion while GitHub issues remained open, loosely interpreting acceptance criteria, duplicating redaction logic instead of clearly using the centralized implementation, and describing runtime-impacting changes as "no behavior change".
+
+**Consequences**:
+
+- No work can be called complete before all 10 passes are performed.
+- GitHub state must be verified before claiming merge/closure/completion.
+- Acceptance criteria must be satisfied literally or any architectural interpretation must be documented.
+- Centralized logic must be reused where available.
+- Runtime-impacting work requires VM validation.
+- PR bodies and final reports must include a 10-pass review and honest status.
+- Quality hardening rules (GitHub reality, no fake "no behavior change", centralized-logic reuse, VM validation, measurable before/after, memory consistency) are mandatory.

@@ -7,15 +7,12 @@ Chronological worklog of all agent work on IGRIS_GPT. Append a row after every t
 Every worklog entry for a non-trivial PR must mention:
 
 - issue/PR
-- pass 1 summary
-- pass 2 summary
-- pass 3 summary
-- pass 4 summary
-- pass 5 summary
+- pass 1–10 summary (mandatory 10-pass completion rule)
 - tests
 - gauntlet
 - VM validation if applicable
-- honest status: complete / phase-complete / blocked
+- before/after metrics
+- honest status: complete / phase-complete / blocked / needs follow-up
 
 | Date | Issue/PR | Agent | Summary | Tests | Merge commit |
 |---|---|---|---|---|---|
@@ -54,6 +51,7 @@ Every worklog entry for a non-trivial PR must mention:
 | 2026-08-14 | #1355 Phase 2 | Devin | chore(#1355): pyright Phase 2 — fixed 83 type errors (174→91, 48% reduction); fixed missing imports (AgentResult, Any, os, logger, EvidenceBundle, TopicTree), platform-specific APIs (os.killpg, signal.SIGKILL, fcntl, os.statvfs, os.sys→sys), wrong attribute/method names (resource→relevant_resource, list_proposals→list_patch_proposals, MemoryTopicTree→TopicTree), wrong parameter name (cli/main.py app=→positional), added missing dataclass fields (blocked_reason, created_at, project_root), replaced dynamic proxy classes with SimpleNamespace, moved flags_list from monkey-patch to proper method; added 3 new config tests; documented CI `|| true` with Phase 2 comment | `tests/test_pyright_config.py` (10/10), regression 169/169, gauntlet 14/15 (memory_cross_session pre-existing Windows) | (pending merge) |
 | 2026-08-14 | #1353 Phase 2 | Devin | chore(#1353): except Exception cleanup Phase 2 — narrowed 92 broad catches (627→535); JSON parsing→(json.JSONDecodeError, TypeError, ValueError), file I/O→(OSError, PermissionError, UnicodeDecodeError), SQLite→sqlite3.Error, subprocess→(subprocess.SubprocessError, OSError), network→(urllib.error.URLError, ConnectionError, TimeoutError, OSError), import→(ImportError, AttributeError); top-level safety boundaries kept as except Exception; added 4 new tests (count decreased, no bare pass in changed modules, proactive_engine specific types, memory_gc specific types); no bare except Exception: pass remaining | `tests/test_except_exception_cleanup.py` (13/13), regression 173/173, gauntlet 14/15 (memory_cross_session pre-existing Windows) | (pending merge) |
 | 2026-08-14 | #1354 Phase 2 | Devin | chore(#1354): structured logging Phase 2 — wired `configure_structured_logging()` into `create_app()` server startup; added redaction to `StructuredFormatter` (secrets in log messages, extra fields, and exception messages are redacted using regex patterns for token/password/secret/api_key/bearer/Authorization headers/GitHub tokens/OpenAI keys); file logging now opt-in via `IGRIS_LOG_FILE` env var (default: console-only to avoid Windows file lock issues); handler cleanup on re-configure (closes file handles); added 12 new tests (redaction for secrets/auth headers/cookie/bearer/exception messages/GitHub tokens/Basic auth/API keys, server startup wiring, env var log level, handler cleanup, non-secret message preservation) | `tests/test_structured_logging.py` (22/22), regression 185/185, gauntlet 14/15 (memory_cross_session pre-existing Windows) | (pending merge) |
+| 2026-08-14 | process upgrade | Devin | docs: upgrade completion rule to 10-pass quality gate — replaced mandatory 5-pass rule with mandatory 10-pass completion rule in AGENTS.md; added 12 quality hardening rules (GitHub reality beats local claims, open issue = not complete, phase ≠ parent, no silent criteria reinterpretation, no duplicated centralized logic, no fake "no behavior change", VM is runtime truth, tests must prove claim, measurable before/after, update VM after merge, PR body must include proof, memory files must be consistent); added ADR-IGRIS-0009; marked ADR-IGRIS-0008 as superseded; updated PROJECT_MEMORY, HANDOFF, OPEN_ITEMS, WORKLOG | — | (pending merge) |
 
 ## Test commands reference
 

@@ -2,7 +2,7 @@
 
 The exact point where work resumes. Updated by every agent at the end of each task.
 
-Last updated: 2026-08-14 (mandatory 5-pass rule added)
+Last updated: 2026-08-14 (mandatory 10-pass rule + quality hardening added)
 
 ## Mandatory process before next task
 
@@ -12,24 +12,29 @@ Before starting any next task, every agent must:
 2. read `AGENTS.md`
 3. read all `docs/IGRIS_*.md` memory files
 4. read the GitHub issue/PR and comments
-5. apply the 5-pass completion rule
-6. update memory files before PR/merge/close
-7. validate on VM when runtime-impacting
+5. apply the **mandatory 10-pass completion rule** (see `AGENTS.md`)
+6. follow the quality hardening rules (GitHub-state verification, no fake "no behavior change", centralized-logic reuse, VM validation, measurable before/after, memory consistency)
+7. update memory files before PR/merge/close
+8. validate on VM when runtime-impacting
 
 Skipping this process is not allowed.
 
 ## Current next issue
 
-**#1354 — structured logging Phase 2 in progress on branch `chore/1354-structured-logging-phase-2`.**
+**Process upgrade: 5-pass → 10-pass mandatory completion rule + quality hardening rules.**
 
-Structured logging wired into server startup (`create_app()` now calls `configure_structured_logging()`). Redaction added to `StructuredFormatter` — secrets in log messages, extra fields, and exception messages are all redacted. File logging is now opt-in via `IGRIS_LOG_FILE` env var to avoid Windows file lock issues. 12 new tests added (22 total). Next: merge, validate on VM, then move to #1356.
+The mandatory 10-pass completion rule replaces the previous 5-pass rule. Quality hardening rules added to prevent false completion, duplicated centralized logic, missing VM validation, and inconsistent memory state. See `AGENTS.md` and ADR-IGRIS-0009.
 
-**Roadmap primary items addressed in Phase 1/2. Follow-up issues open: #1353, #1354, #1355, #1356.**
+**Next code issue: #1356 — supervisor split Phase 3** (after process upgrade is merged).
+
+**Roadmap primary items addressed in Phase 1/2. Follow-up issues open: #1353, #1355, #1356.**
 
 The roadmap is NOT "complete" — it is "primary phases merged, follow-up phases pending":
 - #1296 and #1291 are completed and closed.
 - #1345 is merged.
-- #1314, #1315, #1316 have Phase 1 merged but remain open with follow-up issues.
+- #1353 Phase 2 merged (PR #1360 `8ed5ac0`); parent #1314 still open (535 `except Exception` remain, target <50).
+- #1354 Phase 2 merged (PR #1361 `6131bb9`); parent #1315 acceptance criteria met.
+- #1355 Phase 2 merged (PR #1359 `7d2181f`); parent #1316 still open (91 pyright errors remain, CI `|| true`).
 - #1312 was closed on GitHub but work is incomplete; follow-up #1356 tracks Phase 3.
 
 ## Follow-up issues (created 2026-08-14)

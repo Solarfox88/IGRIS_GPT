@@ -2,38 +2,59 @@
 
 Stable project state — source of truth for all agents.
 
-Last updated: 2026-08-14 (mandatory 5-pass rule added)
+Last updated: 2026-08-14 (mandatory 10-pass rule + quality hardening added)
 
 ## Repository
 
 - repo: `Solarfox88/IGRIS_GPT` (public)
 - default branch: `main`
-- current `main` commit: `8ed5ac0` (chore(#1353): except Exception cleanup Phase 2 — narrow 92 catches)
-  - **Note**: #1354 Phase 2 in progress on branch `chore/1354-structured-logging-phase-2` — structured logging wired into server startup, redaction added to StructuredFormatter
+- current `main` commit: `6131bb9` (chore(#1354): structured logging Phase 2 — wire into server startup + redaction)
 
 ## Mandatory operating method
 
-IGRIS uses a mandatory 5-pass completion rule for all tasks.
+IGRIS uses a mandatory 10-pass completion rule for all tasks.
 
-No task, issue, PR, refactor, test change, CI change, runtime fix, VM validation, or security hardening may be declared complete before five review/improvement passes.
+No task, issue, PR, refactor, test change, CI change, runtime fix, VM validation, or security hardening may be declared complete before ten review/improvement passes.
 
 The full rule is canonical in `AGENTS.md`.
 
 Summary:
 
-1. understand and implement first version
-2. reread issue and review own diff
-3. check edge cases and regressions
-4. verify safety, VM, integration, and memory
-5. final acceptance review
+1. memory and task intake
+2. acceptance criteria extraction
+3. baseline and evidence collection
+4. first focused implementation
+5. self-review against issue and diff
+6. architecture and existing-pattern review
+7. edge cases, negative paths, and regression review
+8. runtime, VM, and integration validation
+9. GitHub state and closure verification
+10. final honesty gate and memory update
 
-If full acceptance criteria are not satisfied after five passes, the task must be marked:
+If full acceptance criteria are not satisfied after ten passes, the task must be marked:
 
 ```text
 Phase completed, parent issue not complete.
 ```
 
 and a follow-up issue must be created or updated.
+
+## Quality hardening rules
+
+The following quality hardening rules are mandatory (full text in `AGENTS.md`):
+
+1. GitHub reality beats local claims — verify GitHub state before claiming merge/closure/completion
+2. Open issue means not complete unless explicitly explained
+3. Phase complete is not parent complete
+4. Acceptance criteria must not be reinterpreted silently
+5. Do not duplicate centralized logic — reuse canonical modules
+6. No fake "no behavior change" — use accurate wording for behavior-impacting changes
+7. VM is the runtime truth for runtime-impacting changes
+8. Tests must prove the actual claim — prefer behavioral tests over source-string checks
+9. Record measurable before/after evidence
+10. Update VM after every merge
+11. PR body must include proof, not only narrative
+12. Memory files must be internally consistent before merge
 
 ## Completed
 
