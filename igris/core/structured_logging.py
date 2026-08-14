@@ -21,8 +21,14 @@ from logging.handlers import RotatingFileHandler
 from pathlib import Path
 from typing import Any, Dict, Optional
 
+from igris.core.safety import redact_secrets as _centralized_redact_secrets
 
-# Redaction patterns for secrets that might appear in log messages
+
+# Redaction patterns for secrets that might appear in log messages.
+# These are kept for backward compatibility but the actual redaction is
+# delegated to the centralized safety.redact_secrets function (#1313).
+# The formatter-level redaction is a defense-in-depth layer: even if a
+# caller forgets to redact before logging, the formatter catches it.
 _SECRET_PATTERNS = [
     re.compile(r'(token|passphrase|password|secret|api[_\s]?key|bearer)\s*[=:]\s*\S+', re.IGNORECASE),
     re.compile(r'Authorization:\s*Bearer\s+\S+', re.IGNORECASE),
@@ -34,9 +40,16 @@ _REDACTED = '<REDACTED>'
 
 
 def _redact_message(msg: str) -> str:
-    """Redact secrets from a log message string."""
+    """Redact secrets from a log message string.
+
+    Uses the centralized safety.redact_secrets as the primary redaction
+    mechanism, with formatter-level patterns as defense-in-depth.
+    """
     if not msg:
         return msg
+    # Primary: centralized redaction from safety module
+    msg = _centralized_redact_secrets(msg)
+    # Defense-in-depth: formatter-level patterns for any remaining secrets
     for pattern in _SECRET_PATTERNS:
         msg = pattern.sub(_REDACTED, msg)
     return msg
