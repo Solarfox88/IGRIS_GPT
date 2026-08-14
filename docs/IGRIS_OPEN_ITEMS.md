@@ -11,7 +11,7 @@ Last updated: 2026-08-14
 | P1 | #1296 | **closed** (PR #1347 merged `8fa9d8e`) | Fixed — task engine worker, safe validate, honest diagnostics |
 | P0 | #1300 | open (EPIC) | Live Acceptance Harness — browser/runtime E2E validation |
 | P0 | #1301 | open (EPIC, active) | Auth & Session SSOT — PR1–PR4A merged, PR #1345 (PR5A) open |
-| P2 | #1291 | open | **NEXT** — residual `code_change` route gating for limited users |
+| P2 | #1291 | **closed** (PR TBD) | Fixed — /api/chat/intent now gates code_change for limited users |
 | P2 | #1290 | open | diagnostics starvation — task_engine/mission_controller unavailable (overlaps with #1296, partially fixed by #1347) |
 | P2 | #1289 | open | API path inconsistency — `/api/github/prs`, `/api/github/issues`, `/api/git/log` do not exist |
 | P2 | #1297 | open | Verifier/Reflection payload contract undocumented, misleading error |

@@ -2,11 +2,20 @@
 
 The exact point where work resumes. Updated by every agent at the end of each task.
 
-Last updated: 2026-08-14 (Devin — post #1296 merge)
+Last updated: 2026-08-14 (Devin — post #1291 merge)
 
 ## Current next issue
 
-**#1291 — P2: code_change gating residual for limited users**
+**#1345 — PR5A auth contract guard — verify/merge or close**
+
+## Completed: #1291
+
+PR TBD (branch `fix/1291-code-change-gating`). Issue closed.
+- `/api/chat/intent` now uses `JarvisRequestRouter` to classify messages
+- Limited users get `blocked=true, scope_denied=true` on code_change/patching intents
+- Admin users get `approval_required=true` (not blocked) on code_change
+- Untrusted users get `blocked=true` on code_change
+- Response includes `blocked`, `approval_required`, `scope_denied`, `interlocutor_id`, `trust_level`
 
 ## Completed: #1296
 

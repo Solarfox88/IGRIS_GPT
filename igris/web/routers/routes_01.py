@@ -1029,11 +1029,59 @@ def create_router(deps) -> APIRouter:
         intent = detect_intent(message)
         response = get_grounded_response(intent) if intent else None
         actions = get_suggested_actions(intent) if intent else []
+
+        # --- Interlocutor-aware gating (#1291) ---
+        # Use JarvisRequestRouter to classify the message with the caller's
+        # trust level, so limited users get blocked on code_change/patching.
+        blocked = False
+        approval_required = False
+        scope_denied = False
+        interlocutor_id = content.get("interlocutor_id", "unknown")
+        trust_level = content.get("trust_level", "untrusted")
+        block_reason = ""
+        try:
+            from igris.core.jarvis_request_router import JarvisRequestRouter
+            _pf_project_root = os.environ.get("IGRIS_PROJECT_ROOT") or "."
+            router_cls = JarvisRequestRouter(project_root=_pf_project_root)
+            rd = router_cls.classify(
+                message,
+                interlocutor_id=interlocutor_id,
+                trust_level=trust_level,
+            )
+            if rd.blocked:
+                blocked = True
+                block_reason = rd.reason or "Operation blocked by authorization gate."
+                if trust_level == "limited" and intent in ("patching", "code_change"):
+                    scope_denied = True
+            elif intent in ("patching", "code_change"):
+                if trust_level == "limited":
+                    blocked = True
+                    scope_denied = True
+                    approval_required = True
+                    block_reason = (
+                        "This operation requires additional authorization. "
+                        "Limited-trust users cannot initiate code_change operations."
+                    )
+                elif trust_level in ("admin", "owner", "trusted"):
+                    approval_required = True
+        except Exception as _pf_exc:
+            _pf_logger.error("chat/intent router failed: %s", _pf_exc)
+            # Fail-closed for sensitive intents
+            if intent in ("patching", "code_change", "deploy"):
+                blocked = True
+                block_reason = "Security check failed. Sensitive request blocked for safety."
+
         return {
             "intent": intent,
             "grounded_response": response,
             "has_response": response is not None,
             "suggested_actions": actions,
+            "blocked": blocked,
+            "approval_required": approval_required,
+            "scope_denied": scope_denied,
+            "interlocutor_id": interlocutor_id,
+            "trust_level": trust_level,
+            **({"block_reason": block_reason} if block_reason else {}),
         }
 
 
