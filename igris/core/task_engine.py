@@ -48,7 +48,7 @@ class TaskEngine:
                 self._tasks.append(task)
                 if task.id >= max_id:
                     max_id = task.id
-            except Exception:
+            except (json.JSONDecodeError, KeyError, TypeError, ValueError, OSError):
                 logger.debug("Failed to load task from %s", fp, exc_info=True)
                 continue
         self._next_id = max_id + 1
@@ -270,7 +270,7 @@ class TaskEngine:
         for fp in files[-limit:]:
             try:
                 events.append(json.loads(fp.read_text(encoding="utf-8")))
-            except Exception:
+            except (json.JSONDecodeError, OSError, TypeError, ValueError):
                 logger.debug("Failed to load timeline event from %s", fp, exc_info=True)
                 continue
         return events

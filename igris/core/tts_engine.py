@@ -71,7 +71,7 @@ class HardwareProbe:
                     if line.startswith("MemAvailable:"):
                         kb = int(line.split()[1])
                         return kb / (1024 ** 2)
-        except Exception:
+        except (OSError, ValueError, IndexError, PermissionError):
             logger.debug("Failed to read /proc/meminfo for available RAM", exc_info=True)
             pass
         return 0.0

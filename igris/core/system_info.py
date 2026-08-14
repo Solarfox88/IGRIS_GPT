@@ -6,6 +6,7 @@ without revealing environment variables, private IPs, or secrets.
 
 from __future__ import annotations
 
+import json
 import logging
 import os
 import platform
@@ -112,7 +113,7 @@ def _get_memory_info() -> Dict[str, Any]:
                 )
         else:
             mem["note"] = "Memory details available on Linux only"
-    except Exception:
+    except (OSError, ValueError, TypeError, KeyError):
         logger.debug("Could not read memory info", exc_info=True)
         mem["note"] = "Could not read memory info"
     return mem
@@ -135,7 +136,7 @@ def _get_disk_info(project_root: Optional[str] = None) -> Dict[str, Any]:
             disk["path"] = str(path)
         else:
             disk["note"] = "Disk info not available on this platform"
-    except Exception:
+    except (OSError, ValueError, TypeError, ZeroDivisionError):
         logger.debug("Could not read disk info", exc_info=True)
         disk["note"] = "Could not read disk info"
     return disk
@@ -167,7 +168,7 @@ def _detect_container() -> bool:
             content = f.read()
         if "docker" in content or "kubepods" in content or "containerd" in content:
             return True
-    except Exception:
+    except (OSError, PermissionError):
         logger.debug("Container detection via cgroup failed", exc_info=True)
         pass
     # Check container env hint (safe — only checks existence, not value)
@@ -186,7 +187,7 @@ def _get_ollama_status() -> Dict[str, Any]:
     try:
         from igris.models.config import CONFIG
         status["model_configured"] = getattr(CONFIG, "local_llm_model", None)
-    except Exception:
+    except (ImportError, AttributeError):
         logger.debug("Could not read CONFIG.local_llm_model", exc_info=True)
         pass
 
@@ -217,7 +218,7 @@ def _get_ollama_status() -> Dict[str, Any]:
                         configured in m or configured.replace("-", "") in m
                         for m in models
                     )
-    except Exception:
+    except (OSError, ConnectionError, TimeoutError, ValueError, TypeError, json.JSONDecodeError, ImportError):
         logger.debug("Ollama status check failed", exc_info=True)
         pass
 

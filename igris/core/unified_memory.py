@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import logging
 import re
+import sqlite3
 import time
 import uuid
 from dataclasses import dataclass, field
@@ -107,7 +108,7 @@ class UnifiedMemory:
             try:
                 from igris.models.config import CONFIG
                 project_root = CONFIG.project_root
-            except Exception:
+            except (ImportError, AttributeError):
                 logger.debug("CONFIG.project_root unavailable, falling back to home dir", exc_info=True)
                 project_root = Path.home()
         self.project_root = Path(project_root)
@@ -130,7 +131,7 @@ class UnifiedMemory:
             ltm_path = self.project_root / ".igris" / "memory" / "long_term"
             self._ltm = LongTermMemory(storage_dir=str(ltm_path))
             self._backends["long_term_memory"] = "ok"
-        except Exception as e:
+        except (ImportError, OSError, ValueError, TypeError, sqlite3.Error) as e:
             logger.warning("UnifiedMemory: LongTermMemory unavailable: %s", e)
             self._backends["long_term_memory"] = "degraded"
 
@@ -139,7 +140,7 @@ class UnifiedMemory:
             from igris.core.memory_graph import MemoryGraph
             self._graph = MemoryGraph(str(self.project_root))
             self._backends["memory_graph"] = "ok"
-        except Exception as e:
+        except (ImportError, OSError, ValueError, TypeError, sqlite3.Error) as e:
             logger.debug("UnifiedMemory: MemoryGraph unavailable: %s", e)
             self._backends["memory_graph"] = "degraded"
 
@@ -152,7 +153,7 @@ class UnifiedMemory:
             self._retriever = ConversationRetriever(project_root=str(self.project_root))
             self._summary_mgr = ConversationSummaryManager(project_root=str(self.project_root))
             self._backends["conversation_memory"] = "ok"
-        except Exception as e:
+        except (ImportError, OSError, ValueError, TypeError, sqlite3.Error) as e:
             logger.warning("UnifiedMemory: ConversationMemory unavailable: %s", e)
             self._backends["conversation_memory"] = "degraded"
 
@@ -161,7 +162,7 @@ class UnifiedMemory:
             from igris.core.memory_scorer import MemoryScorer
             self._scorer = MemoryScorer(str(self.project_root))
             self._backends["memory_scorer"] = "ok"
-        except Exception:
+        except (ImportError, OSError, ValueError, TypeError, sqlite3.Error):
             logger.debug("MemoryScorer unavailable", exc_info=True)
             self._backends["memory_scorer"] = "unavailable"
 
@@ -170,7 +171,7 @@ class UnifiedMemory:
             from igris.core.memory_topic_tree import TopicTree as MemoryTopicTree
             self._topic_tree = MemoryTopicTree(str(self.project_root))
             self._backends["topic_tree"] = "ok"
-        except Exception:
+        except (ImportError, OSError, ValueError, TypeError, sqlite3.Error):
             logger.debug("TopicTree unavailable", exc_info=True)
             self._backends["topic_tree"] = "unavailable"
 
@@ -179,7 +180,7 @@ class UnifiedMemory:
             from igris.core.embedding_store import EmbeddingStore
             self._embedding_store = EmbeddingStore(str(self.project_root))
             self._backends["embedding_store"] = "ok"
-        except Exception:
+        except (ImportError, OSError, ValueError, TypeError, sqlite3.Error):
             logger.debug("EmbeddingStore unavailable", exc_info=True)
             self._backends["embedding_store"] = "unavailable"
 

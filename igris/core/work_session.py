@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import sqlite3
 import time
 import uuid
 from dataclasses import asdict, dataclass
@@ -153,7 +154,7 @@ class WorkSession:
                     },
                     confidence=0.7,
                 )
-        except Exception:
+        except (OSError, ValueError, TypeError, KeyError, sqlite3.Error):
             logger.debug("WorkSession.remember: MemoryGraph persist failed", exc_info=True)
             pass
 

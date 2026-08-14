@@ -131,7 +131,7 @@ CREATE INDEX IF NOT EXISTS idx_edges_dst  ON memory_edges(dst_node);
                     "skipping ContentStore/Scorer write for node %s", node_id,
                 )
                 return
-        except Exception:
+        except (ImportError, AttributeError, RuntimeError, OSError):
             _breaker = None  # breaker unavailable — proceed without guard
 
         try:
@@ -434,7 +434,7 @@ CREATE INDEX IF NOT EXISTS idx_edges_dst  ON memory_edges(dst_node);
                 try:
                     content = json.loads(row["content"])
                     tags = json.loads(row["tags"] or "[]")
-                except Exception:
+                except (json.JSONDecodeError, TypeError, KeyError, ValueError):
                     continue
                 if "stale" in tags:
                     continue
@@ -466,7 +466,7 @@ CREATE INDEX IF NOT EXISTS idx_edges_dst  ON memory_edges(dst_node);
             try:
                 content = json.loads(row["content"])
                 tags = json.loads(row["tags"] or "[]")
-            except Exception:
+            except (json.JSONDecodeError, TypeError, KeyError, ValueError):
                 continue
             goal_key = str(content.get("goal") or "")[:50]
             outcome = str(content.get("outcome") or "")
@@ -509,7 +509,7 @@ CREATE INDEX IF NOT EXISTS idx_edges_dst  ON memory_edges(dst_node);
         try:
             store = EmbeddingStore(db_path)
             return store.search(query=query, top_k=top_k, node_type=node_type)
-        except Exception:
+        except (ImportError, OSError, ValueError, TypeError, sqlite3.Error):
             return []
 
     def index_node_for_search(
@@ -526,7 +526,7 @@ CREATE INDEX IF NOT EXISTS idx_edges_dst  ON memory_edges(dst_node);
         try:
             store = EmbeddingStore(db_path)
             return store.upsert(node_id=node_id, node_type=node_type, text=text)
-        except Exception:
+        except (ImportError, OSError, ValueError, TypeError, sqlite3.Error):
             return False
 
     # ------------------------------------------------------------------
@@ -586,14 +586,14 @@ CREATE INDEX IF NOT EXISTS idx_edges_dst  ON memory_edges(dst_node);
         try:
             from igris.core.memory_content_store import ContentStore  # noqa: F401
             report["content_store_available"] = True
-        except Exception:
+        except (ImportError, OSError):
             report["content_store_available"] = False
 
         # 4. MemoryScorer availability
         try:
             from igris.core.memory_scorer import MemoryScorer  # noqa: F401
             report["scorer_available"] = True
-        except Exception:
+        except (ImportError, OSError):
             report["scorer_available"] = False
 
         return report
@@ -652,7 +652,7 @@ CREATE INDEX IF NOT EXISTS idx_edges_dst  ON memory_edges(dst_node);
 
                 try:
                     content = _json.loads(content_raw) if isinstance(content_raw, str) else content_raw
-                except Exception:
+                except (json.JSONDecodeError, TypeError, ValueError):
                     content_empty += 1
                     continue
 
@@ -671,7 +671,7 @@ CREATE INDEX IF NOT EXISTS idx_edges_dst  ON memory_edges(dst_node);
                         updated_at = row["updated_at"] if hasattr(row, "__getitem__") else row[5]
                         if updated_at and float(updated_at) < stale_threshold_ts:
                             stale_count += 1
-                except Exception:
+                except (KeyError, IndexError, TypeError, ValueError):
                     pass
 
                 # Collect lesson advice for contradiction check
@@ -682,7 +682,7 @@ CREATE INDEX IF NOT EXISTS idx_edges_dst  ON memory_edges(dst_node);
                         advice = content.get("lesson", content.get("advice", content.get("summary", "")))
                         if goal_type and advice:
                             lesson_advice.setdefault(goal_type, []).append(str(advice))
-                except Exception:
+                except (KeyError, IndexError, TypeError, ValueError):
                     pass
 
             # Count contradictions: goal_type with 3+ conflicting lessons
@@ -762,7 +762,7 @@ CREATE INDEX IF NOT EXISTS idx_edges_dst  ON memory_edges(dst_node);
             recipe = self.get_command_recipe(goal)
             if recipe:
                 packet["command_recipe"] = recipe
-        except Exception:
+        except (KeyError, TypeError, ValueError, sqlite3.Error):
             pass
 
         if include_health:
@@ -856,7 +856,7 @@ CREATE INDEX IF NOT EXISTS idx_edges_dst  ON memory_edges(dst_node);
         if global_latest is None:
             try:
                 global_candidates = store.read_all("global_digest")
-            except Exception:
+            except (OSError, TypeError, ValueError, sqlite3.Error):
                 global_candidates = []
             if global_candidates:
                 def _digest_sort_key(item: Dict[str, Any]) -> tuple[str, str]:

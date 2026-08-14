@@ -10,6 +10,8 @@ going through the proper workflow (validate → apply).
 
 from __future__ import annotations
 
+import json
+import subprocess
 import time
 from typing import Any, Dict, List, Optional
 
@@ -157,7 +159,7 @@ def _build_missions_context() -> Dict[str, Any]:
             "completed": len(completed),
             "active_titles": [redact_secrets(m.get("title", "")) for m in active[:5]],
         }
-    except Exception:
+    except (OSError, ValueError, TypeError, KeyError):
         return {"total": 0, "active": 0, "completed": 0, "active_titles": []}
 
 
@@ -177,7 +179,7 @@ def _build_tasks_context(task_engine: Optional[TaskEngine] = None) -> Dict[str, 
             "completed": completed,
             "blocked": blocked,
         }
-    except Exception:
+    except (OSError, ValueError, TypeError, KeyError):
         return {"total": 0, "pending": 0, "running": 0, "completed": 0, "blocked": 0}
 
 
@@ -190,7 +192,7 @@ def _build_memory_context(project_root: str) -> Dict[str, Any]:
             "recent_failure_count": constraints.get("recent_failure_count", 0),
             "recent_decision_count": constraints.get("recent_decision_count", 0),
         }
-    except Exception:
+    except (OSError, ValueError, TypeError, KeyError):
         return {"avoid_families": [], "saturated_families": [], "recent_failure_count": 0, "recent_decision_count": 0}
 
 
@@ -203,7 +205,7 @@ def _build_git_context() -> Dict[str, Any]:
             "changed": info.changed,
             "head": info.head[:8] if info.head else "",
         }
-    except Exception:
+    except (OSError, subprocess.SubprocessError, ValueError, TypeError):
         return {"branch": "", "dirty": False, "changed": 0, "head": ""}
 
 
@@ -217,7 +219,7 @@ def _build_patches_context() -> Dict[str, Any]:
             "pending": pending,
             "applied": applied,
         }
-    except Exception:
+    except (OSError, ValueError, TypeError, KeyError, json.JSONDecodeError):
         return {"total": 0, "pending": 0, "applied": 0}
 
 
@@ -228,7 +230,7 @@ def _build_cost_context() -> Dict[str, Any]:
             "provider": provider,
             "model": model,
         }
-    except Exception:
+    except (ValueError, TypeError, RuntimeError, OSError):
         return {"provider": "", "model": ""}
 
 
@@ -240,5 +242,5 @@ def _build_project_state_context(project_root: str) -> Dict[str, Any]:
             "critical": state.get("critical_families", []),
             "elevated": state.get("elevated_families", []),
         }
-    except Exception:
+    except (OSError, ValueError, TypeError, KeyError):
         return {"cooling_down": [], "critical": [], "elevated": []}

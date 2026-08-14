@@ -109,7 +109,7 @@ class ContextAggregator:
             try:
                 from igris.models.config import CONFIG
                 project_root = CONFIG.project_root
-            except Exception:
+            except (ImportError, AttributeError):
                 project_root = Path.home()
         self.project_root = Path(project_root)
         self._memory = unified_memory
@@ -532,7 +532,7 @@ class ContextAggregator:
             try:
                 h = mem.healthcheck()
                 status["unified_memory"] = "ok" if h.get("ok") else "degraded"
-            except Exception:
+            except (OSError, ValueError, TypeError, KeyError):
                 status["unified_memory"] = "degraded"
         else:
             status["unified_memory"] = "unavailable"
@@ -544,13 +544,13 @@ class ContextAggregator:
             r = subprocess.run(["git", "rev-parse", "HEAD"], capture_output=True, timeout=3,
                                cwd=str(self.project_root))
             status["git"] = "ok" if r.returncode == 0 else "degraded"
-        except Exception:
+        except (subprocess.SubprocessError, OSError, FileNotFoundError):
             status["git"] = "unavailable"
 
         try:
             from igris.core.rank_gauntlet import RankGauntlet  # noqa: F401
             status["rank_gauntlet"] = "ok"
-        except Exception:
+        except (ImportError, OSError):
             status["rank_gauntlet"] = "unavailable"
 
         ok = all(v in ("ok", "unavailable") for v in status.values())

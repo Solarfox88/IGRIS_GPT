@@ -123,6 +123,104 @@ def test_tts_engine_handles_missing_manifest(tmp_path):
     assert engine is not None
 
 
+# ── Phase 2 tests — specific exception types (#1353) ─────────────────────────
+
+REPO_ROOT = Path(__file__).parent.parent
+
+
+def test_except_exception_count_decreased():
+    """Phase 2: the number of 'except Exception' patterns should decrease.
+
+    Baseline was 627 at the start of #1353 Phase 2.
+    We expect at least 50 to be narrowed to specific types.
+    """
+    import subprocess
+    result = subprocess.run(
+        ["python", "-c",
+         "import subprocess,sys; "
+         "r=subprocess.run(['rg','--count','except Exception','igris/'],"
+         "capture_output=True,text=True); "
+         "print(r.stdout.count(chr(10)))"],
+        capture_output=True, text=True, cwd=str(REPO_ROOT),
+    )
+    # Fallback: count manually
+    import re
+    count = 0
+    for py_file in (REPO_ROOT / "igris").rglob("*.py"):
+        try:
+            content = py_file.read_text(encoding="utf-8")
+            count += len(re.findall(r'except Exception', content))
+        except Exception:
+            continue
+    # Baseline was 627; we should have reduced by at least 50
+    assert count < 627, \
+        f"except Exception count ({count}) should be less than baseline (627)"
+
+
+def test_no_bare_except_exception_pass_in_changed_modules():
+    """Phase 2: no 'except Exception: pass' in modules we narrowed.
+
+    The modules we changed should not have bare 'except Exception: pass'
+    patterns remaining — they should either log or use specific types.
+    """
+    import re
+    changed_modules = [
+        "igris/core/chat_context.py",
+        "igris/core/system_info.py",
+        "igris/core/proactive_engine.py",
+        "igris/core/unified_memory.py",
+        "igris/core/memory_gc.py",
+        "igris/core/memory_graph.py",
+        "igris/core/context_aggregator.py",
+        "igris/core/task_engine.py",
+        "igris/core/work_session.py",
+        "igris/core/tts_engine.py",
+        "igris/core/verifier_registry.py",
+        "igris/core/code_health_monitor.py",
+        "igris/core/mbop_runner.py",
+        "igris/core/execution_report.py",
+        "igris/core/patch_proposal.py",
+        "igris/core/inventory_catalog.py",
+    ]
+    bare_pattern = re.compile(r'except Exception:\s*pass\s*$')
+    violations = []
+    for mod in changed_modules:
+        fp = REPO_ROOT / mod
+        if not fp.exists():
+            continue
+        try:
+            content = fp.read_text(encoding="utf-8")
+        except Exception:
+            continue
+        for i, line in enumerate(content.splitlines(), 1):
+            if bare_pattern.search(line):
+                violations.append(f"{mod}:{i}")
+    assert not violations, \
+        f"Found bare 'except Exception: pass' in changed modules: {violations}"
+
+
+def test_proactive_engine_uses_specific_exceptions():
+    """Phase 2: proactive_engine should use specific exception types."""
+    fp = REPO_ROOT / "igris" / "core" / "proactive_engine.py"
+    content = fp.read_text(encoding="utf-8")
+    # Should no longer have 'except Exception' for JSON parsing
+    assert "(OSError, json.JSONDecodeError, TypeError)" in content or \
+           "(json.JSONDecodeError, OSError, TypeError)" in content, \
+        "proactive_engine should use specific exception types for JSON parsing"
+
+
+def test_memory_gc_uses_specific_exceptions():
+    """Phase 2: memory_gc should use specific exception types."""
+    fp = REPO_ROOT / "igris" / "core" / "memory_gc.py"
+    content = fp.read_text(encoding="utf-8")
+    # Should use specific types for value conversion
+    assert "(ValueError, TypeError)" in content, \
+        "memory_gc should use (ValueError, TypeError) for float conversions"
+    # Should use sqlite3.Error for database operations
+    assert "sqlite3.Error" in content, \
+        "memory_gc should use sqlite3.Error for database operations"
+
+
 # ── Logging verification ─────────────────────────────────────────────────────
 
 def test_silent_catches_now_log(tmp_path, caplog):

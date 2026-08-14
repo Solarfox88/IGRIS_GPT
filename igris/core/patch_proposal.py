@@ -220,7 +220,7 @@ def create_patch_proposal(
             if target.exists() and target.is_file():
                 try:
                     before = target.read_text(errors="replace")
-                except Exception:
+                except (OSError, PermissionError, UnicodeDecodeError):
                     before = ""
 
         diff = generate_unified_diff(before or "", after or "", path)

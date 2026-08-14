@@ -538,7 +538,7 @@ class VerifierRegistry:
             try:
                 from igris.models.config import CONFIG
                 project_root = CONFIG.project_root
-            except Exception:
+            except (ImportError, AttributeError):
                 logger.debug("CONFIG.project_root unavailable, falling back to home dir", exc_info=True)
                 project_root = Path.home()
         self.project_root = Path(project_root)

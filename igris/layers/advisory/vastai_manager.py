@@ -123,7 +123,7 @@ def _vastai_request(
         body = ""
         try:
             body = e.read().decode()[:200]
-        except Exception:
+        except (OSError, UnicodeDecodeError, TypeError):
             pass
         raise RuntimeError(f"Vast.ai API {method} {path} → HTTP {e.code}: {body}") from e
     except Exception as e:
@@ -928,7 +928,7 @@ class VastAIManager:
             url = f"http://{host}:{port}/api/tags"
             with urllib.request.urlopen(url, timeout=timeout) as resp:
                 return resp.status == 200
-        except Exception:
+        except (urllib.error.URLError, ConnectionError, TimeoutError, OSError):
             return False
 
     # -- Set mode (gated) --

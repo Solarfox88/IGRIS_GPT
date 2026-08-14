@@ -103,11 +103,11 @@ def create_router(deps) -> APIRouter:
                         continue
                     try:
                         record = json.loads(line)
-                    except Exception:
+                    except (json.JSONDecodeError, TypeError, ValueError):
                         continue
                     if str(record.get("run_id") or "") == str(run_id):
                         records.append(record)
-        except Exception:
+        except (OSError, PermissionError):
             return []
         return records
 

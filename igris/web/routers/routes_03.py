@@ -97,7 +97,7 @@ def create_router(deps) -> APIRouter:
         try:
             with requested.open("r", encoding="utf-8", errors="replace") as f:
                 content = f.read(20_000)
-        except Exception as e:
+        except (OSError, PermissionError, UnicodeDecodeError) as e:
             raise HTTPException(status_code=500, detail=str(e))
         if safety.detect_secret_like_content(content):
             content = safety.redact_secrets(content)
@@ -288,9 +288,9 @@ def create_router(deps) -> APIRouter:
                             "satisfied": _dep_ok,
                             "unsatisfied": _dep_unsat,
                         }
-                    except Exception:
+                    except (KeyError, TypeError, ValueError, json.JSONDecodeError):
                         dependency_graph[_issue_str] = {"deps": _deps, "satisfied": None}
-        except Exception:
+        except (OSError, KeyError, TypeError, ValueError, json.JSONDecodeError):
             pass
         return {
             "node_count": node_count,
