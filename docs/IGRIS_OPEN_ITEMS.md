@@ -23,7 +23,7 @@ Last updated: 2026-08-14
 | Critical | #1314 | **partial** (Phase 1 merged) | 476 generic `except Exception` — Phase 1: added logging to 46 silent catches in `igris/core/`; Phase 2: replace with specific exceptions (pending) |
 | Critical | #1315 | **partial** (Phase 1 merged) | zero structured logging in `igris/core/` — Phase 1: StructuredFormatter + logging in 7 priority modules; Phase 2: remaining modules (pending) |
 | Critical | #1316 | **partial** (Phase 1 merged) | no mypy/pyright type checking in CI — Phase 1: pyright basic mode configured + CI job added; Phase 2: fix type errors + standard mode (pending) |
-| Tech debt | #1312 | **partial** (closed on GitHub but incomplete) | finish supervisor split — `self_repair_supervisor.py` still 6208 lines (target <2000). File follow-up issue or reopen. |
+| Tech debt | #1312 | **partial** (Phase 2 merged) | supervisor split — Phase 1: 8 sub-modules; Phase 2: 36 static methods extracted to supervisor_helpers.py; `self_repair_supervisor.py` still 6,013 lines (target <2000). Further extraction needed. |
 | Refactor | #1317 (I1) | open | router anonymous routes `routes_01..10` — rename by domain |
 | Refactor | #1318 (I2) | open | `app.js` monolithic 2401 lines — modularize into ES modules |
 | Feature | #1319 (I4) | open | SQLite migration system / schema versioning |

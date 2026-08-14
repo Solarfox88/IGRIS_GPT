@@ -2,11 +2,19 @@
 
 The exact point where work resumes. Updated by every agent at the end of each task.
 
-Last updated: 2026-08-14 (Devin — post #1316 Phase 1 merge)
+Last updated: 2026-08-14 (Devin — post #1312 Phase 2 merge)
 
 ## Current next issue
 
-**#1312 follow-up — finish supervisor split below 2,000 lines**
+**Roadmap complete — all 6 items addressed. Next: continue Phase 2 of #1314, #1315, #1316, #1312 as needed.**
+
+## Completed: #1312 Phase 2 (supervisor split — static method extraction)
+
+PR TBD (branch `fix/1312-supervisor-split-phase2`). Phase 2 merged.
+- Extracted 36 pure static methods from `SelfRepairSupervisor` into `igris/core/supervisor_helpers.py` (576 lines)
+- `self_repair_supervisor.py` reduced from 6,208 to 6,013 lines
+- No behavior change — all methods delegate to extracted functions
+- Further extraction needed to reach <2,000 lines target
 
 ## Completed: #1316 Phase 1 (pyright type checking)
 

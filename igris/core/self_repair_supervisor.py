@@ -153,6 +153,45 @@ from igris.core.supervisor_api import (  # noqa: F401
     summarize_supervised_run,
 )
 
+from igris.core.supervisor_helpers import (  # noqa: F401
+    _api_escalation_report_fragment as _api_escalation_report_fragment_helper,
+    _build_reasoning_loop_repair_prompt as _build_reasoning_loop_repair_prompt_helper,
+    _build_telemetry_fragment as _build_telemetry_fragment_helper,
+    _build_wrong_file_edit_repair_prompt as _build_wrong_file_edit_repair_prompt_helper,
+    _check_execution_budget as _check_execution_budget_helper,
+    _compute_degraded_completion as _compute_degraded_completion_helper,
+    _detect_capability_limit as _detect_capability_limit_helper,
+    _get_max_codex_direct_budget_usd as _get_max_codex_direct_budget_usd_helper,
+    _get_max_cost_per_issue as _get_max_cost_per_issue_helper,
+    _get_max_cost_per_run as _get_max_cost_per_run_helper,
+    _get_max_same_failure_retries as _get_max_same_failure_retries_helper,
+    _goal_needs_preflight_decomposition as _goal_needs_preflight_decomposition_helper,
+    _goal_prefers_tool_first as _goal_prefers_tool_first_helper,
+    _goal_requires_backend_change as _goal_requires_backend_change_helper,
+    _goal_requires_docs_or_config as _goal_requires_docs_or_config_helper,
+    _goal_requires_tests as _goal_requires_tests_helper,
+    _goal_requires_ui_visibility as _goal_requires_ui_visibility_helper,
+    _goal_targets_rank_ui_card as _goal_targets_rank_ui_card_helper,
+    _has_ui_visibility_change as _has_ui_visibility_change_helper,
+    _infer_parent_issue_url as _infer_parent_issue_url_helper,
+    _is_codex_direct_execution_enabled as _is_codex_direct_execution_enabled_helper,
+    _is_structural_ceiling as _is_structural_ceiling_helper,
+    _record_capability_signal as _record_capability_signal_helper,
+    _repair_issue_already_created as _repair_issue_already_created_helper,
+    _required_stages_green as _required_stages_green_helper,
+    _sanitize_escalation_value as _sanitize_escalation_value_helper,
+    _should_fast_track_capability_limit as _should_fast_track_capability_limit_helper,
+    _stage_status_list as _stage_status_list_helper,
+    _stage_status_template as _stage_status_template_helper,
+    _strategy_for_repair as _strategy_for_repair_helper,
+    _targeted_test_file as _targeted_test_file_helper,
+    _timestamp_is_due as _timestamp_is_due_helper,
+    _timestamp_now_iso as _timestamp_now_iso_helper,
+    _timestamp_to_iso as _timestamp_to_iso_helper,
+    _ui_stage_hard_forbidden_paths as _ui_stage_hard_forbidden_paths_helper,
+    _validate_helper_response as _validate_helper_response_helper,
+)
+
 # AssignmentRouter — lazy import to avoid circular deps at module load
 _assignment_router_available = False
 try:
@@ -302,12 +341,7 @@ class SelfRepairSupervisor:
 
     @staticmethod
     def _timestamp_to_iso(ts: Optional[float]) -> str:
-        if ts is None:
-            return ""
-        try:
-            return datetime.fromtimestamp(float(ts), tz=timezone.utc).isoformat()
-        except (TypeError, ValueError, OSError):
-            return ""
+        return _timestamp_to_iso_helper(ts)
 
     def _persisted_run_record(self, run: SupervisorRun) -> Dict[str, Any]:
         snapshot = summarize_supervised_run(run)
@@ -404,22 +438,7 @@ class SelfRepairSupervisor:
 
     @staticmethod
     def _sanitize_escalation_value(value: Any) -> Any:
-        if isinstance(value, dict):
-            out: Dict[str, Any] = {}
-            for key, raw in value.items():
-                lowered = str(key).lower()
-                if any(token in lowered for token in ("secret", "token", "password", "api_key", "authorization")):
-                    out[str(key)] = "[redacted]"
-                else:
-                    out[str(key)] = SelfRepairSupervisor._sanitize_escalation_value(raw)
-            return out
-        if isinstance(value, list):
-            return [SelfRepairSupervisor._sanitize_escalation_value(item) for item in value][:50]
-        if isinstance(value, (bool, int, float)) or value is None:
-            return value
-        text = _safe_redact(value)
-        text = re.sub(r"\bsk-[A-Za-z0-9_-]{6,}\b", "***REDACTED***", text)
-        return text[:2000] + ("...(truncated)" if len(text) > 2000 else "")
+        return _sanitize_escalation_value_helper(value)
 
     def _event_scope_hash(self, event: SupervisorEvent) -> str:
         canonical = {
@@ -432,17 +451,11 @@ class SelfRepairSupervisor:
 
     @staticmethod
     def _timestamp_now_iso() -> str:
-        return datetime.now(timezone.utc).isoformat()
+        return _timestamp_now_iso_helper()
 
     @staticmethod
     def _timestamp_is_due(next_review_after: str) -> bool:
-        if not str(next_review_after or "").strip():
-            return True
-        try:
-            due = datetime.fromisoformat(str(next_review_after).replace("Z", "+00:00"))
-        except ValueError:
-            return True
-        return datetime.now(timezone.utc) >= due
+        return _timestamp_is_due_helper(next_review_after)
 
     def _resolve_event_audit(self, event: SupervisorEvent) -> None:
         scope_hash = self._event_scope_hash(event)
@@ -531,42 +544,7 @@ class SelfRepairSupervisor:
 
     @staticmethod
     def _validate_helper_response(payload: Any) -> Tuple[bool, Dict[str, Any], str]:
-        if not isinstance(payload, dict):
-            return False, {}, "helper response is not a JSON object"
-        required = [
-            "diagnosis",
-            "likely_supervisor_gap",
-            "suggested_repair_strategy",
-            "suggested_tests",
-            "risk",
-            "confidence",
-            "requires_human_or_codex_audit",
-            "must_not_complete_product_manually",
-        ]
-        missing = [key for key in required if key not in payload]
-        normalized = {
-            "diagnosis": payload.get("diagnosis", ""),
-            "likely_supervisor_gap": payload.get("likely_supervisor_gap", ""),
-            "suggested_repair_strategy": payload.get("suggested_repair_strategy", ""),
-            "suggested_tests": payload.get("suggested_tests", []),
-            "risk": payload.get("risk", "unknown"),
-            "confidence": payload.get("confidence", 0),
-            "requires_human_or_codex_audit": bool(payload.get("requires_human_or_codex_audit", False)),
-            "must_not_complete_product_manually": bool(payload.get("must_not_complete_product_manually", False)),
-            # Execution-plan fields (optional, backward-compatible).
-            # advice_only is always True — helper is never an authority.
-            "advice_only": True,
-            "execution_plan": str(payload.get("execution_plan", "") or ""),
-            "file_targets": list(payload.get("file_targets", []) or []),
-            "operations": list(payload.get("operations", []) or []),
-            "acceptance_matrix": list(payload.get("acceptance_matrix", []) or []),
-            "required_tests": list(payload.get("required_tests", []) or []),
-            "do_not_do": list(payload.get("do_not_do", []) or []),
-            "retry_focus": str(payload.get("retry_focus", "") or ""),
-        }
-        if missing:
-            return False, normalized, f"missing required helper fields: {', '.join(missing)}"
-        return True, normalized, ""
+        return _validate_helper_response_helper(payload)
 
     def _maybe_api_escalate(
         self,
@@ -696,18 +674,12 @@ class SelfRepairSupervisor:
     @staticmethod
     def _get_max_same_failure_retries() -> int:
         """Max consecutive same-failure repairs before escalating to strong model."""
-        try:
-            return max(1, int(os.getenv("IGRIS_MAX_SAME_FAILURE_RETRIES", "2") or "2"))
-        except (ValueError, TypeError):
-            return 2
+        return _get_max_same_failure_retries_helper()
 
     @staticmethod
     def _get_max_cost_per_run() -> float:
         """USD cap per supervised run; 0 means unlimited."""
-        try:
-            return max(0.0, float(os.getenv("IGRIS_MAX_COST_PER_RUN", "0") or "0"))
-        except (ValueError, TypeError):
-            return 0.0
+        return _get_max_cost_per_run_helper()
 
     @staticmethod
     def _is_codex_direct_execution_enabled() -> bool:
@@ -716,23 +688,17 @@ class SelfRepairSupervisor:
         Only active when IGRIS_ENABLE_CODEX_DIRECT_EXECUTION=true.
         Uses its own budget: IGRIS_MAX_CODEX_DIRECT_BUDGET_USD (default 0 = disabled).
         """
-        return os.getenv("IGRIS_ENABLE_CODEX_DIRECT_EXECUTION", "").lower() in ("true", "1", "yes")
+        return _is_codex_direct_execution_enabled_helper()
 
     @staticmethod
     def _get_max_codex_direct_budget_usd() -> float:
         """USD cap for experimental codex direct execution; 0 means disabled."""
-        try:
-            return max(0.0, float(os.getenv("IGRIS_MAX_CODEX_DIRECT_BUDGET_USD", "0") or "0"))
-        except (ValueError, TypeError):
-            return 0.0
+        return _get_max_codex_direct_budget_usd_helper()
 
     @staticmethod
     def _get_max_cost_per_issue() -> float:
         """USD cap per issue; 0 means unlimited. Not yet enforced cross-run."""
-        try:
-            return max(0.0, float(os.getenv("IGRIS_MAX_COST_PER_ISSUE", "0") or "0"))
-        except (ValueError, TypeError):
-            return 0.0
+        return _get_max_cost_per_issue_helper()
 
     @staticmethod
     def _collect_repair_diagnostics(
@@ -767,12 +733,7 @@ class SelfRepairSupervisor:
         Codex direct execution is experimental and NOT selected here; it requires
         IGRIS_ENABLE_CODEX_DIRECT_EXECUTION=true and is handled separately.
         """
-        if not has_execution_plan:
-            return "", None
-        max_retries = SelfRepairSupervisor._get_max_same_failure_retries()
-        if run.same_failure_count >= max_retries:
-            return "helper_advice_then_gpt4o_execution", "strong_execution"
-        return "helper_advice_then_mini_execution", "mini_execution"
+        return _strategy_for_repair_helper(run, has_execution_plan)
 
     def _quick_provider_check(self, timeout: int = 10) -> bool:
         """Fast health-check: ping the configured LLM provider with a 10s timeout.
@@ -817,10 +778,7 @@ class SelfRepairSupervisor:
     @staticmethod
     def _check_execution_budget(run: SupervisorRun) -> Optional[str]:
         """Return failure_class string if execution budget is exceeded, else None."""
-        max_per_run = SelfRepairSupervisor._get_max_cost_per_run()
-        if max_per_run > 0 and run.execution_budget_used_usd >= max_per_run:
-            return "execution_budget_exceeded"
-        return None
+        return _check_execution_budget_helper(run)
 
     @staticmethod
     def _build_telemetry_fragment(
@@ -831,39 +789,26 @@ class SelfRepairSupervisor:
         total_attempts: int,
     ) -> Dict[str, Any]:
         """Build execution-effectiveness telemetry fragment for run.report (Issue #715)."""
-        denom = max(total_attempts, 1)
-        return {
-            "time_to_first_diff_s": time_to_first_diff_s,
-            "no_diff_rate": round(no_diff_count / denom, 4),
-            "decompose_rate": round(decompose_count / denom, 4),
-            "attempt_outcomes": list(attempt_outcomes),
-        }
+        return _build_telemetry_fragment_helper(
+            time_to_first_diff_s, no_diff_count, decompose_count,
+            attempt_outcomes, total_attempts,
+        )
 
     @staticmethod
     def _repair_issue_already_created(run: SupervisorRun, failure: str) -> bool:
-        for event in run.events:
-            if event.phase != "repair_issue":
-                continue
-            if event.status != "success":
-                continue
-            if str(event.data.get("failure_class", "")) == failure:
-                return True
-        return False
+        return _repair_issue_already_created_helper(run, failure)
 
     @staticmethod
     def _goal_requires_backend_change(goal: str) -> bool:
-        lowered = goal.lower()
-        return any(token in lowered for token in ("backend", "api", "endpoint", "/api/"))
+        return _goal_requires_backend_change_helper(goal)
 
     @staticmethod
     def _goal_requires_docs_or_config(goal: str) -> bool:
-        lowered = goal.lower()
-        return any(token in lowered for token in ("docs", "documentation", "readme", "config"))
+        return _goal_requires_docs_or_config_helper(goal)
 
     @staticmethod
     def _goal_requires_tests(goal: str) -> bool:
-        lowered = goal.lower()
-        return any(token in lowered for token in ("test", "pytest", "coverage"))
+        return _goal_requires_tests_helper(goal)
 
     def _mission_is_non_trivial(self, config: RankSupervisorConfig) -> bool:
         score = 0
@@ -1063,23 +1008,7 @@ class SelfRepairSupervisor:
 
     @staticmethod
     def _stage_status_template(stage: MissionStage) -> Dict[str, Any]:
-        return {
-            "stage_id": stage.stage_id,
-            "goal": stage.goal,
-            "required": stage.required,
-            "allowed_file_families": list(stage.allowed_file_families),
-            "acceptance_criteria": list(stage.acceptance_criteria),
-            "validation": list(stage.validation),
-            "rollback_policy": stage.rollback_policy,
-            "preserved_progress_policy": stage.preserved_progress_policy,
-            "failure_classification": list(stage.failure_classification),
-            "repair_strategy": stage.repair_strategy,
-            "report_entry": stage.report_entry,
-            "status": "pending",
-            "detail": "",
-            "no_op": False,
-            "non_blocking_behaviors": [],
-        }
+        return _stage_status_template_helper(stage)
 
     def _init_stage_statuses(self, plan: MissionPlan) -> Dict[str, Dict[str, Any]]:
         return {stage.stage_id: self._stage_status_template(stage) for stage in plan.stages}
@@ -1139,17 +1068,11 @@ class SelfRepairSupervisor:
         include_final_report: bool = False,
         exclude_stage_ids: Optional[Set[str]] = None,
     ) -> bool:
-        excluded = exclude_stage_ids or set()
-        for stage_id, entry in statuses.items():
-            if stage_id in excluded:
-                continue
-            if not entry.get("required", False):
-                continue
-            if stage_id == "final_report" and not include_final_report:
-                continue
-            if entry.get("status") not in {"success", "skipped"}:
-                return False
-        return True
+        return _required_stages_green_helper(
+            statuses,
+            include_final_report=include_final_report,
+            exclude_stage_ids=exclude_stage_ids,
+        )
 
     @staticmethod
     def _compute_degraded_completion(
@@ -1183,29 +1106,18 @@ class SelfRepairSupervisor:
         quality.  Only genuine delivery failures (failed stages, unconfirmed
         smoke, non-empty failure_class) trigger degraded.
         """
-        reasons: List[str] = []
-        required_all_green = (
-            stage_statuses is None
-            or SelfRepairSupervisor._required_stages_green(stage_statuses)
+        return _compute_degraded_completion_helper(
+            completion_mode=completion_mode,
+            runtime_refresh_required=runtime_refresh_required,
+            post_merge_smoke_success=post_merge_smoke_success,
+            smoke_was_applicable=smoke_was_applicable,
+            failure_class=failure_class,
+            stage_statuses=stage_statuses,
         )
-        if failure_class:
-            reasons.append(f"failure_class set: {failure_class}")
-        if not required_all_green:
-            reasons.append("not all required stages passed")
-        if smoke_was_applicable and runtime_refresh_required and not post_merge_smoke_success:
-            reasons.append(
-                "post-merge smoke deferred; runtime refresh required but smoke not confirmed"
-            )
-        return bool(reasons), "; ".join(reasons)
 
     @staticmethod
     def _stage_status_list(statuses: Dict[str, Dict[str, Any]], plan: MissionPlan) -> List[Dict[str, Any]]:
-        ordered: List[Dict[str, Any]] = []
-        for stage in plan.stages:
-            entry = dict(statuses.get(stage.stage_id, {}))
-            if entry:
-                ordered.append(entry)
-        return ordered
+        return _stage_status_list_helper(statuses, plan)
 
     def _stage_is_already_satisfied(self, stage: MissionStage, config: RankSupervisorConfig) -> bool:
         if stage.stage_id == "understand_locate":
@@ -1245,15 +1157,7 @@ class SelfRepairSupervisor:
         statuses: Dict[str, Dict[str, Any]],
         config: RankSupervisorConfig,
     ) -> Set[str]:
-        forbidden: Set[str] = set()
-        if statuses.get("backend_api_change", {}).get("status") == "success":
-            forbidden.add("igris/web/server.py")
-        if statuses.get("backend_tests", {}).get("status") == "success":
-            for target in config.targeted_tests:
-                normalized = str(target or "").strip()
-                if normalized:
-                    forbidden.add(normalized)
-        return forbidden
+        return _ui_stage_hard_forbidden_paths_helper(statuses, config)
 
     def _ui_stage_retry_goal(
         self,
@@ -3122,9 +3026,7 @@ class SelfRepairSupervisor:
 
     @staticmethod
     def _goal_prefers_tool_first(goal: str) -> bool:
-        text = (goal or "").lower()
-        markers = ("analyze", "analysis", "compare", "mapping", "blueprint", "gap", "inventory", "logs", "roadmap")
-        return any(m in text for m in markers)
+        return _goal_prefers_tool_first_helper(goal)
 
     def _build_tool_first_snapshot(self) -> Dict[str, Any]:
         snapshot: Dict[str, Any] = {"project_root": str(self.project_root), "file_count": 0, "top_dirs": []}
@@ -3277,24 +3179,11 @@ class SelfRepairSupervisor:
 
     @staticmethod
     def _goal_requires_ui_visibility(goal: str) -> bool:
-        import re as _re
-        lowered = goal.lower()
-        # Use word-boundary matching to avoid false positives from substrings
-        # (e.g. Italian "qui" contains "ui", "visible" matches "visibility" correctly).
-        _UI_PATTERNS = _re.compile(
-            r"\b(ui|dashboard|frontend)\b|visib",
-            _re.IGNORECASE,
-        )
-        return bool(_UI_PATTERNS.search(lowered))
+        return _goal_requires_ui_visibility_helper(goal)
 
     @staticmethod
     def _goal_targets_rank_ui_card(goal: str) -> bool:
-        lowered = goal.lower()
-        if "/api/rank/ui-card" in lowered:
-            return True
-        if "ui-card" in lowered or "ui card" in lowered:
-            return True
-        return "rank card" in lowered and "ui" in lowered
+        return _goal_targets_rank_ui_card_helper(goal)
 
     @staticmethod
     def _build_reasoning_loop_repair_prompt(
@@ -3309,25 +3198,8 @@ class SelfRepairSupervisor:
         Ciclo 1: semplifica il task, output minimo, approccio incrementale.
         Ciclo 2+: suddividi nel componente più piccolo risolvibile, ignora ottimizzazioni.
         """
-        _ = previous_reasoning_output
-        if repair_cycle <= 1:
-            return (
-                f"{goal} "
-                f"(REPAIR CYCLE {repair_cycle} — previous attempt on stage '{stage_id}' "
-                f"timed out or exceeded reasoning budget. "
-                f"Focus ONLY on the minimal change needed. "
-                f"Do not optimize, refactor, or add features beyond what the goal strictly requires. "
-                f"Use an incremental approach: implement the smallest complete unit first, verify it, then stop. "
-                f"Prioritise writing code and tests over exploration. Keep edits minimal, do not push.)"
-            )
-        return (
-            f"{goal} "
-            f"(REPAIR CYCLE {repair_cycle} — previous attempts on stage '{stage_id}' "
-            f"were repeatedly blocked. "
-            f"Break the task down to its single smallest resolvable sub-component. "
-            f"Ignore all non-critical aspects, optimisations, and edge cases. "
-            f"Implement only what is strictly necessary to satisfy the goal, nothing more. "
-            f"Do not push.)"
+        return _build_reasoning_loop_repair_prompt_helper(
+            stage_id, goal, previous_reasoning_output, repair_cycle,
         )
 
     @staticmethod
@@ -3345,51 +3217,17 @@ class SelfRepairSupervisor:
         3. Chiede di ripetere SOLO la modifica consentita
         4. Al ciclo 2+: aggiunge vincolo hard
         """
-        wrong_list = "\n".join(f"  - {p}" for p in wrong_paths) if wrong_paths else "  - (unknown paths)"
-        allowed_list = (
-            "\n".join(f"  - {fam}" for fam in allowed_families)
-            if allowed_families
-            else "  - (mission-owned minimal scope)"
+        return _build_wrong_file_edit_repair_prompt_helper(
+            stage_id, goal, wrong_paths, allowed_families, repair_cycle,
         )
-        prompt = (
-            f"{goal} "
-            f"(REPAIR CYCLE {repair_cycle} — previous attempt on stage '{stage_id}' "
-            f"modified files outside the allowed scope.\n"
-            f"Files wrongly modified:\n{wrong_list}\n"
-            f"Allowed file families:\n{allowed_list}\n"
-            f"You MUST only modify files belonging to the allowed families listed above. "
-            f"Repeat your edit but restrict ALL changes to the allowed files. "
-            f"Do not touch any file outside the allowed families.)"
-        )
-        if repair_cycle >= 2:
-            prompt += (
-                " If you cannot complete the task within the allowed files, "
-                "output ONLY the changes to allowed files and stop. "
-                "Do not modify any file outside the allowed list under any circumstance."
-            )
-        return prompt
 
     @staticmethod
     def _has_ui_visibility_change(files_modified: List[str]) -> bool:
-        ui_markers = (
-            "igris/web/templates/",
-            "igris/web/static/js/",
-            "igris/web/static/css/",
-            ".html",
-            ".js",
-            ".css",
-        )
-        for path in files_modified:
-            if any(marker in path for marker in ui_markers):
-                return True
-        return False
+        return _has_ui_visibility_change_helper(files_modified)
 
     @staticmethod
     def _targeted_test_file(config: RankSupervisorConfig) -> str:
-        for candidate in config.targeted_tests:
-            if candidate.startswith("tests/test_") and candidate.endswith(".py"):
-                return candidate
-        return ""
+        return _targeted_test_file_helper(config)
 
     def _synthetic_missing_tests_diff(self, config: RankSupervisorConfig) -> str:
         target = self._targeted_test_file(config)
@@ -4239,13 +4077,7 @@ class SelfRepairSupervisor:
 
     @staticmethod
     def _api_escalation_report_fragment(run: SupervisorRun) -> Dict[str, Any]:
-        return {
-            "api_escalation": {
-                "calls_used": run.api_escalations_used,
-                "calls_failed_unconfigured": run.api_escalations_failed_unconfigured,
-                "budget_used_usd": round(run.api_budget_used_usd, 6),
-            }
-        }
+        return _api_escalation_report_fragment_helper(run)
 
     def _complete_rank(
         self,
@@ -4683,7 +4515,7 @@ class SelfRepairSupervisor:
 
     @staticmethod
     def _record_capability_signal(run: SupervisorRun, signal: str) -> None:
-        run.capability_signals[signal] = run.capability_signals.get(signal, 0) + 1
+        _record_capability_signal_helper(run, signal)
 
     @staticmethod
     def _detect_capability_limit(run: SupervisorRun) -> Optional[str]:
@@ -4693,12 +4525,7 @@ class SelfRepairSupervisor:
         the combined total of all distinct signals reaches the threshold (mixed-failure
         capability wall — e.g. one reasoning_timeout + one no_diff_repair).
         """
-        for signal, count in run.capability_signals.items():
-            if count >= CAPABILITY_LIMIT_THRESHOLD:
-                return signal
-        if sum(run.capability_signals.values()) >= CAPABILITY_LIMIT_THRESHOLD:
-            return max(run.capability_signals, key=run.capability_signals.get)
-        return None
+        return _detect_capability_limit_helper(run)
 
     @staticmethod
     def _is_structural_ceiling(run: SupervisorRun, triggering_signal: str) -> bool:
@@ -4709,7 +4536,7 @@ class SelfRepairSupervisor:
         `no_diff_repair` signals indicate transient failures where decomposition may
         still help — these go through the normal decompose path.
         """
-        return run.capability_signals.get("max_steps_ceiling", 0) >= 1
+        return _is_structural_ceiling_helper(run, triggering_signal)
 
     @staticmethod
     def _should_fast_track_capability_limit(
@@ -4717,14 +4544,7 @@ class SelfRepairSupervisor:
         failure: str,
     ) -> Optional[str]:
         """Return capability signal when we should decompose immediately."""
-        if failure not in {
-            "reasoning_loop_blocked",
-            "pytest_failure",
-            "test_runner_timeout",
-            "infrastructure_bug",
-        }:
-            return None
-        return SelfRepairSupervisor._detect_capability_limit(run)
+        return _should_fast_track_capability_limit_helper(run, failure)
 
     def _handle_capability_limit(
         self,
@@ -5514,20 +5334,7 @@ class SelfRepairSupervisor:
 
     @staticmethod
     def _goal_needs_preflight_decomposition(goal: str) -> bool:
-        text = (goal or "").lower()
-        strong_markers = (
-            "memory tree",
-            "hierarchy",
-            "pipeline",
-            "roadmap",
-            "phase-2bis",
-            "chunk",
-            "topic",
-            "global",
-            "decompose",
-        )
-        score = sum(1 for marker in strong_markers if marker in text)
-        return score >= 3 or len(text) >= 220
+        return _goal_needs_preflight_decomposition_helper(goal)
 
     @staticmethod
     def _decomposition_policy(
@@ -5957,8 +5764,7 @@ class SelfRepairSupervisor:
     @staticmethod
     def _infer_parent_issue_url(goal: str) -> Optional[str]:
         """Extract a GitHub issue URL from the goal string if present."""
-        m = re.search(r"https://github\.com/[^\s\)\"']+/issues/\d+", goal)
-        return m.group(0) if m else None
+        return _infer_parent_issue_url_helper(goal)
 
     @staticmethod
     def _autorun_guards(
