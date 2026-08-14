@@ -290,3 +290,95 @@ def test_delegation_wrappers_preserve_behavior():
     plan = SelfRepairSupervisor._build_mission_plan(None, config)
     assert plan is not None
     assert plan.mode == "single-stage"
+
+
+# ------------------------------------------------------------------
+# Phase 4 Block 1 tests — completion/cleanup extraction (#1356)
+# ------------------------------------------------------------------
+
+def test_supervisor_completion_module_exists():
+    """supervisor_completion.py module exists."""
+    mod = REPO_ROOT / "igris" / "core" / "supervisor_completion.py"
+    assert mod.exists(), "igris/core/supervisor_completion.py not found"
+
+
+def test_supervisor_completion_importable():
+    """supervisor_completion module is importable."""
+    from igris.core import supervisor_completion
+    assert supervisor_completion is not None
+
+
+def test_completion_functions_importable():
+    """Key functions are importable from supervisor_completion."""
+    from igris.core.supervisor_completion import (
+        cancelled,
+        cleanup_blocked_workspace,
+        cleanup_cancelled_workspace,
+        complete_noop,
+        persist_assignment_outcome,
+        pr_body,
+    )
+    assert callable(cancelled)
+    assert callable(cleanup_blocked_workspace)
+    assert callable(cleanup_cancelled_workspace)
+    assert callable(complete_noop)
+    assert callable(persist_assignment_outcome)
+    assert callable(pr_body)
+
+
+def test_pr_body_generates_summary():
+    """pr_body generates a PR body with summary."""
+    from igris.core.supervisor_completion import pr_body
+    from igris.core.supervisor_models import SupervisorRun
+    run = SupervisorRun(run_id="test-123", rank_id="rank-1", goal="Fix bug #42")
+    body = pr_body(run)
+    assert "## Summary" in body
+    assert "test-123" in body
+    assert "Closes #42" in body
+
+
+def test_pr_body_no_issue_ref():
+    """pr_body works without issue reference in goal."""
+    from igris.core.supervisor_completion import pr_body
+    from igris.core.supervisor_models import SupervisorRun
+    run = SupervisorRun(run_id="test-456", rank_id="rank-1", goal="fix typo")
+    body = pr_body(run)
+    assert "## Summary" in body
+    assert "Closes" not in body
+
+
+def test_persist_assignment_outcome_noop_when_none():
+    """persist_assignment_outcome is a no-op when assignment_decision is None."""
+    from igris.core.supervisor_completion import persist_assignment_outcome
+    from igris.core.supervisor_models import SupervisorRun
+    run = SupervisorRun(run_id="test-789", rank_id="rank-1", goal="test")
+    # Should not raise
+    persist_assignment_outcome(run, "/tmp", None)
+
+
+def test_supervisor_file_size_decreased_block1():
+    """self_repair_supervisor.py should have decreased from Phase 3 baseline."""
+    p = REPO_ROOT / "igris" / "core" / "self_repair_supervisor.py"
+    content = p.read_text(encoding="utf-8")
+    line_count = content.count("\n") + (1 if content and not content.endswith("\n") else 0)
+    # Phase 3 left it at 6,011 lines; Block 1 should have reduced it
+    assert line_count < 6011, f"self_repair_supervisor.py is {line_count} lines (expected < 6011 after Block 1)"
+
+
+def test_supervisor_completion_file_size():
+    """supervisor_completion.py should have substantial content."""
+    p = REPO_ROOT / "igris" / "core" / "supervisor_completion.py"
+    content = p.read_text(encoding="utf-8")
+    line_count = content.count("\n") + (1 if content and not content.endswith("\n") else 0)
+    assert line_count >= 100, f"supervisor_completion.py has only {line_count} lines (expected >= 100)"
+
+
+def test_delegation_wrappers_preserve_completion_behavior():
+    """SelfRepairSupervisor completion methods delegate correctly."""
+    from igris.core.self_repair_supervisor import SelfRepairSupervisor
+    from igris.core.supervisor_models import SupervisorRun
+    run = SupervisorRun(run_id="test-wrapper", rank_id="rank-1", goal="Fix bug #99")
+    # _pr_body should still work via delegation
+    body = SelfRepairSupervisor._pr_body(None, run)
+    assert "## Summary" in body
+    assert "Closes #99" in body
