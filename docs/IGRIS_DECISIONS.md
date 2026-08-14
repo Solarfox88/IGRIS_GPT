@@ -98,7 +98,7 @@ The rule applies to all work types: issues, PRs, bugfixes, refactors, tests, doc
 ## ADR-IGRIS-0009 — Mandatory 10-pass completion and quality hardening
 
 **Date**: 2026-08-14
-**Status**: accepted
+**Status**: superseded by ADR-IGRIS-0011
 
 **Decision**: The previous mandatory 5-pass rule is replaced by a stricter mandatory 10-pass completion rule for all IGRIS work.
 
@@ -151,3 +151,23 @@ The 10 passes are:
 - Runtime-impacting PRs without validation evidence are not complete.
 - VM validation must be reported with commands and results.
 - Memory files must record post-merge VM state when relevant.
+
+## ADR-IGRIS-0011 — Mandatory 20-pass quality gate
+
+**Date**: 2026-08-14
+**Status**: accepted
+
+**Decision**: The mandatory 10-pass rule is superseded by a stricter mandatory 20-pass quality gate for all IGRIS work.
+
+The 20-pass gate expands the previous process with explicit GitHub reality checks, architecture checks, risk classification, local smoke validation, security/privacy review, behavior-change honesty, VM branch validation, post-merge VM verification, and final status control.
+
+**Rationale**: The 10-pass process produced significantly better work, but the project now requires a larger autonomous roadmap. To safely execute multiple consecutive blocks without user review after every PR, each block must include stronger self-checking and traceable validation.
+
+**Consequences**:
+
+- No non-trivial task may be declared complete before all 20 passes are performed.
+- Runtime-impacting work requires VM branch validation and post-merge VM verification.
+- GitHub state must be verified before claiming merge, closure, or completion.
+- Memory files must remain internally consistent.
+- Every block in a roadmap must have measurable before/after evidence.
+- Parent issues cannot be closed when only a phase is complete.

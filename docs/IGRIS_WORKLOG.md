@@ -7,7 +7,7 @@ Chronological worklog of all agent work on IGRIS_GPT. Append a row after every t
 Every worklog entry for a non-trivial PR must mention:
 
 - issue/PR
-- pass 1–10 summary (mandatory 10-pass completion rule)
+- pass 1–20 summary (mandatory 20-pass quality gate)
 - tests
 - gauntlet
 - VM validation if applicable
@@ -67,3 +67,4 @@ pytest tests/test_redaction_centralized.py -q
 pytest tests/test_jarvis_core_gauntlet.py -q
 python -m igris.core.jarvis_core_gauntlet
 ```
+| 2026-08-14 | process upgrade | Devin | docs: upgrade quality gate to 20-pass roadmap process — replaced mandatory 10-pass with mandatory 20-pass quality gate in AGENTS.md; added ADR-IGRIS-0011; marked ADR-IGRIS-0009 as superseded; updated PROJECT_MEMORY, HANDOFF, OPEN_ITEMS, WORKLOG | — | (pending merge) |
