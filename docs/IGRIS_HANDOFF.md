@@ -2,11 +2,16 @@
 
 The exact point where work resumes. Updated by every agent at the end of each task.
 
-Last updated: 2026-08-14 (Devin — post #1291 merge)
+Last updated: 2026-08-14 (Devin — post #1345 merge)
 
 ## Current next issue
 
-**#1345 — PR5A auth contract guard — verify/merge or close**
+**#1314 — except Exception cleanup, phased**
+
+## Completed: #1345 (PR5A auth contract guard)
+
+PR #1345 merged as `54b6b60`. 13 guard tests + docs/auth-contract.md.
+No runtime changes — codifies auth/preflight contract as executable invariants.
 
 ## Completed: #1291
 
