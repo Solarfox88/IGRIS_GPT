@@ -2,105 +2,85 @@
 
 The exact point where work resumes. Updated by every agent at the end of each task.
 
-Last updated: 2026-08-14 (Devin — post #1312 Phase 2 merge)
+Last updated: 2026-08-14 (Devin — roadmap alignment checkpoint)
 
 ## Current next issue
 
-**Roadmap complete — all 6 items addressed. Next: continue Phase 2 of #1314, #1315, #1316, #1312 as needed.**
+**Roadmap primary items addressed in Phase 1/2. Follow-up issues open: #1353, #1354, #1355, #1356.**
 
-## Completed: #1312 Phase 2 (supervisor split — static method extraction)
+The roadmap is NOT "complete" — it is "primary phases merged, follow-up phases pending":
+- #1296 and #1291 are completed and closed.
+- #1345 is merged.
+- #1314, #1315, #1316 have Phase 1 merged but remain open with follow-up issues.
+- #1312 was closed on GitHub but work is incomplete; follow-up #1356 tracks Phase 3.
 
-PR TBD (branch `fix/1312-supervisor-split-phase2`). Phase 2 merged.
-- Extracted 36 pure static methods from `SelfRepairSupervisor` into `igris/core/supervisor_helpers.py` (576 lines)
-- `self_repair_supervisor.py` reduced from 6,208 to 6,013 lines
-- No behavior change — all methods delegate to extracted functions
-- Further extraction needed to reach <2,000 lines target
+## Follow-up issues (created 2026-08-14)
 
-## Completed: #1316 Phase 1 (pyright type checking)
+| Issue | Title | Parent |
+|---|---|---|
+| #1353 | Continue except Exception cleanup — replace with specific exceptions | #1314 Phase 2 |
+| #1354 | Structured logging rollout — remaining modules + hardening | #1315 Phase 2 |
+| #1355 | Pyright enforcement — fix type errors, progress to standard mode | #1316 Phase 2 |
+| #1356 | Finish supervisor split — self_repair_supervisor.py below 2,000 lines | #1312 Phase 3 |
 
-PR TBD (branch `fix/1316-pyright-type-checking`). Phase 1 merged.
-- Added `[tool.pyright]` to pyproject.toml (basic mode, Python 3.12)
-- Added `type-check` job to CI workflow (pyright --outputjson)
-- Added pyright to dev dependencies
-- Phase 2 (fix type errors, standard mode) pending
+## Completed: #1296 (fully closed)
 
-## Completed: #1315 Phase 1 (structured logging)
-
-PR TBD (branch `fix/1315-structured-logging`). Phase 1 merged.
-- New `igris/core/structured_logging.py` with `StructuredFormatter` (JSON output)
-- `configure_structured_logging()` with env var `IGRIS_LOG_LEVEL`, file rotation (10MB, 5 files)
-- Added structured logging to 7 priority modules: task_engine, tool_runtime, model_orchestrator, chat_engine, verifier_registry, unified_memory, diagnostics
-- Phase 2 (remaining modules) pending
-
-## Completed: #1314 Phase 1 (except Exception cleanup — logging)
-
-PR TBD (branch `fix/1314-except-exception-cleanup-phase1`). Phase 1 merged.
-- Added `logger.debug(..., exc_info=True)` to 46 silent `except Exception:` catches in 16 `igris/core/` files
-- No behavior change — only observability improvement
-- Phase 2 (replace with specific exceptions) pending
-
-## Completed: #1345 (PR5A auth contract guard)
-
-PR #1345 merged as `54b6b60`. 13 guard tests + docs/auth-contract.md.
-No runtime changes — codifies auth/preflight contract as executable invariants.
-
-## Completed: #1291
-
-PR TBD (branch `fix/1291-code-change-gating`). Issue closed.
-- `/api/chat/intent` now uses `JarvisRequestRouter` to classify messages
-- Limited users get `blocked=true, scope_denied=true` on code_change/patching intents
-- Admin users get `approval_required=true` (not blocked) on code_change
-- Untrusted users get `blocked=true` on code_change
-- Response includes `blocked`, `approval_required`, `scope_denied`, `interlocutor_id`, `trust_level`
-
-## Completed: #1296
-
-PR #1347 merged as `8fa9d8e`. Issue closed.
+PR #1347 merged as `8fa9d8e`. Issue #1296 closed 2026-08-14T13:19:05Z.
 - Task engine worker step (`process_one_pending_task`)
-- Safe validate endpoint (400/404, never 500)
+- Safe validate endpoint (405/422, never 500)
 - Honest diagnostics (`task_engine_state`)
 - Context aggregator wires `task_engine` from `app.state`
 - Gauntlet check `task_engine_reliability` (15th)
 - VM validated at http://192.168.1.253:7778
 
-`production-complete-task-engine-reliability`
+## Completed: #1291 (fully closed)
 
-## Do next
+PR #1348 merged as `19a1dc4`. Issue #1291 closed 2026-08-14T13:29:06Z.
+- `/api/chat/intent` now uses `JarvisRequestRouter` to classify messages
+- Limited users get `blocked=true, scope_denied=true` on code_change/patching
+- Admin users get `approval_required=true` (not blocked) on code_change
+- VM validated: limited → blocked=true, admin → approval_required=true
 
-1. audit task engine — read `igris/core/task_engine.py`, `igris/core/task_store.py`, `igris/core/mission_first.py`, `igris/core/context_aggregator.py`, `igris/core/jarvis_core_gauntlet.py`, `igris/web/routers/routes_*.py`, `igris/api/routes/*`, `tests/*task*`, `tests/*mission*`, `tests/*diagnostics*`, `tests/test_jarvis_core_gauntlet.py`
-2. reproduce validate 500 — `POST /api/tasks/{id}/validate {}` must become: valid → 200, invalid → 400, missing → 404, never 500
-3. implement safe worker/step progression — `pending → running → completed`, `pending → running → failed`, stale running → recoverable, dangerous task → blocked/approval_required
-4. add tests — `tests/test_task_engine_reliability.py` (see PHASE 10 of handoff for minimum test list)
-5. update gauntlet to 15/15 if `task_engine_reliability` check is added — update `igris/core/jarvis_core_gauntlet.py` and `tests/test_jarvis_core_gauntlet.py`
-6. open PR on branch `fix/1296-task-engine-reliability`
+## Completed: #1345 (merged)
 
-## Branch
+PR #1345 merged as `54b6b60`. 13 guard tests + docs/auth-contract.md.
+No runtime changes — codifies auth/preflight contract as executable invariants.
 
-`fix/1296-task-engine-reliability` (off synced `main`)
+## Partial: #1314 Phase 1 (merged, Phase 2 pending — follow-up #1353)
 
-## Constraints
+PR #1349 merged as `0ac7a7b`. Issue #1314 still open.
+- Phase 1: Added `logger.debug(..., exc_info=True)` to 46 silent catches in 16 `igris/core/` files
+- Phase 2 pending: Replace `except Exception` with specific exception types (476 → <50 target)
 
-- do not bypass `write_auth`, `dangerous_intent_routing`, `memory_cross_session`, centralized redaction, auth sessions, approval policies, memory isolation
-- implement at minimum a deterministic `process_one_pending_task()` (or equivalent) so tests can prove progression
-- if background worker is added: startup starts it, shutdown stops it, safe locking/lease, logs errors, no high-risk execution without approval
-- diagnostics must honestly distinguish: `task_engine_enabled`, `task_engine_running`, `task_engine_unhealthy`, `starvation_detected`, `pending_old_count` — no fake healthy status
+## Partial: #1315 Phase 1 (merged, Phase 2 pending — follow-up #1354)
 
-## Do not close #1296 until
+PR #1350 merged as `79fe072`. Issue #1315 still open.
+- Phase 1: `StructuredFormatter` + logging in 7 priority modules
+- Phase 2 pending: Rollout to remaining ~30 modules, wire into server startup
 
-- validate no longer returns 500
-- pending tasks can transition to terminal state
-- diagnostics accurately report task engine state
-- PR is merged and post-merge verification passes
+## Partial: #1316 Phase 1 (merged, Phase 2 pending — follow-up #1355)
 
-## Hyper-V VM audit (2026-08-14)
+PR #1351 merged as `9866bf5`. Issue #1316 still open.
+- Phase 1: Pyright config (basic mode) + CI job (non-blocking)
+- Phase 2 pending: Fix type errors, make CI blocking, progress to standard mode
 
-| VM | State | Repo found | Branch | Relation to GitHub main | Action |
-|---|---|---|---|---|---|
-| `IGRIS-GPT` (Hyper-V Gen2) | Off (inspected read-only) | `/home/igris/IGRIS_GPT` | `fix/1301-pr5a-auth-contract-guard` @ `b7c7e74` | aligned with `origin/main` @ `7878a7c`; HEAD = PR #1345 (already pushed) | none — no unpushed work |
+## Partial: #1312 Phase 2 (merged, Phase 3 pending — follow-up #1356)
 
-Most advanced state found in Hyper-V VM: `IGRIS-GPT`, repo `/home/igris/IGRIS_GPT`, branch `fix/1301-pr5a-auth-contract-guard` @ `b7c7e74` — **equal to GitHub, no newer work**.
+PR #1352 merged as `67c3783`. Issue #1312 closed on GitHub but incomplete.
+- Phase 1: 8 sub-modules extracted (dataclasses, backend, analysis, API, etc.)
+- Phase 2: 36 static methods extracted to `supervisor_helpers.py` (576 lines)
+- `self_repair_supervisor.py` still 6,013 lines (target <2,000)
+- Phase 3 pending: Extract ~4,000 more lines (mission planning, repair cycle, decomposition, completion)
 
-## Preview VM status
+## Gauntlet fix (this checkpoint)
+
+Fixed `task_engine_reliability` gauntlet check — `mkdir(parents=True)` without `exist_ok=True`
+caused `[Errno 17] File exists` on Linux when TaskEngine.__init__ pre-creates directories.
+Fix: added `exist_ok=True` to mkdir calls in `jarvis_core_gauntlet.py`.
+
+VM gauntlet result after fix: **15/15 PASSED** (Linux, via `.venv/bin/python`).
+
+## Hyper-V VM status (2026-08-14, latest checkpoint)
 
 | Field | Value |
 |---|---|
@@ -108,11 +88,19 @@ Most advanced state found in Hyper-V VM: `IGRIS-GPT`, repo `/home/igris/IGRIS_GP
 | IP | 192.168.1.253 (static, on IGRIS External Switch) |
 | URL | http://192.168.1.253:7778 |
 | Branch | main |
-| Commit | 553b6f0 |
-| Service | igris.service (systemd, enabled, uvicorn on 0.0.0.0:7778) |
-| Last updated | 2026-08-14T11:26Z |
-| Health | DEGRADED — 3 pending tasks, starvation detected, task_engine=null in /api/os/brief (this is #1296) |
+| Commit | 84b39ef (latest) |
+| Service | igris.service (systemd, active, `.venv/bin/python` uvicorn on 0.0.0.0:7778) |
+| Python env | `/home/igris/IGRIS_GPT/.venv/bin/python` (Python 3.12.3, fastapi 0.136.1) |
+| Gauntlet | 15/15 PASSED (via `.venv/bin/python -m igris.core.jarvis_core_gauntlet`) |
+| diagnostics | HTTP 200 — task_engine_state present, starvation_detected=true (3 old pending tasks) |
+| os/brief | HTTP 200 — ok=true, backends: unified_memory=ok, git=ok, rank_gauntlet=ok |
+| chat/intent | limited+code_change → blocked=true, scope_denied=true; admin → approval_required=true |
 
-VM access: SSH (user=igris, password=igris) to 192.168.1.253, or WMI keyboard via Hyper-V console.
-Network: VM on IGRIS External Switch with static IP 192.168.1.253/24, gateway 192.168.1.1, DNS 192.168.1.1+8.8.8.8.
-Netplan: /etc/netplan/01-static.yaml (static, no DHCP).
+VM access: SSH (user=igris, password=igris) to 192.168.1.253.
+Network: IGRIS External Switch, static IP 192.168.1.253/24, gateway 192.168.1.1.
+
+## Do next
+
+1. Pick a follow-up issue (#1353, #1354, #1355, or #1356)
+2. Follow the standard procedure: sync main, read memory files, create branch, diagnose, fix, test, gauntlet, VM validate, PR, merge
+3. Do NOT declare issues complete until acceptance criteria are fully met

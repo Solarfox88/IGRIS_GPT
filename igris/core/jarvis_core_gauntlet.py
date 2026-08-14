@@ -1361,8 +1361,8 @@ class JarvisCoreGauntlet:
 
             # 4. Empty queue returns None
             engine2 = TaskEngine(runtime_root=tmp / ".igris" / "tasks_empty" / "..")
-            (tmp / ".igris" / "tasks_empty").mkdir(parents=True)
-            (tmp / ".igris" / "tasks_empty_timeline").mkdir(parents=True)
+            (tmp / ".igris" / "tasks_empty").mkdir(parents=True, exist_ok=True)
+            (tmp / ".igris" / "tasks_empty_timeline").mkdir(parents=True, exist_ok=True)
             engine_empty = TaskEngine(runtime_root=tmp / ".igris_empty")
             result = engine_empty.process_one_pending_task()
             if result is not None:

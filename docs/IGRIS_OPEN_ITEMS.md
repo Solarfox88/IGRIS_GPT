@@ -2,7 +2,7 @@
 
 Open issues and tech debt for IGRIS_GPT. Updated after every task.
 
-Last updated: 2026-08-14
+Last updated: 2026-08-14 (roadmap alignment checkpoint)
 
 ## Priority issues
 
@@ -11,7 +11,7 @@ Last updated: 2026-08-14
 | P1 | #1296 | **closed** (PR #1347 merged `8fa9d8e`) | Fixed — task engine worker, safe validate, honest diagnostics |
 | P0 | #1300 | open (EPIC) | Live Acceptance Harness — browser/runtime E2E validation |
 | P0 | #1301 | open (EPIC, active) | Auth & Session SSOT — PR1–PR5A merged (#1345 merged `54b6b60`) |
-| P2 | #1291 | **closed** (PR TBD) | Fixed — /api/chat/intent now gates code_change for limited users |
+| P2 | #1291 | **closed** (PR #1348 merged `19a1dc4`) | Fixed — /api/chat/intent now gates code_change for limited users |
 | P2 | #1290 | open | diagnostics starvation — task_engine/mission_controller unavailable (overlaps with #1296, partially fixed by #1347) |
 | P2 | #1289 | open | API path inconsistency — `/api/github/prs`, `/api/github/issues`, `/api/git/log` do not exist |
 | P2 | #1297 | open | Verifier/Reflection payload contract undocumented, misleading error |
@@ -20,10 +20,10 @@ Last updated: 2026-08-14
 
 | Priority | Issue | Status | Next action |
 |---|---|---|---|
-| Critical | #1314 | **partial** (Phase 1 merged) | 476 generic `except Exception` — Phase 1: added logging to 46 silent catches in `igris/core/`; Phase 2: replace with specific exceptions (pending) |
-| Critical | #1315 | **partial** (Phase 1 merged) | zero structured logging in `igris/core/` — Phase 1: StructuredFormatter + logging in 7 priority modules; Phase 2: remaining modules (pending) |
-| Critical | #1316 | **partial** (Phase 1 merged) | no mypy/pyright type checking in CI — Phase 1: pyright basic mode configured + CI job added; Phase 2: fix type errors + standard mode (pending) |
-| Tech debt | #1312 | **partial** (Phase 2 merged) | supervisor split — Phase 1: 8 sub-modules; Phase 2: 36 static methods extracted to supervisor_helpers.py; `self_repair_supervisor.py` still 6,013 lines (target <2000). Further extraction needed. |
+| Critical | #1314 | **open** — Phase 1 merged (PR #1349 `0ac7a7b`), Phase 2 pending | Follow-up: **#1353** — replace `except Exception` with specific exception types (476 → <50 target) |
+| Critical | #1315 | **open** — Phase 1 merged (PR #1350 `79fe072`), Phase 2 pending | Follow-up: **#1354** — rollout structured logging to remaining ~30 modules, wire into server startup |
+| Critical | #1316 | **open** — Phase 1 merged (PR #1351 `9866bf5`), Phase 2 pending | Follow-up: **#1355** — fix type errors, make CI blocking, progress to standard mode |
+| Tech debt | #1312 | **closed on GitHub but incomplete** — Phase 2 merged (PR #1352 `67c3783`) | Follow-up: **#1356** — `self_repair_supervisor.py` still 6,013 lines (target <2,000), extract ~4,000 more lines |
 | Refactor | #1317 (I1) | open | router anonymous routes `routes_01..10` — rename by domain |
 | Refactor | #1318 (I2) | open | `app.js` monolithic 2401 lines — modularize into ES modules |
 | Feature | #1319 (I4) | open | SQLite migration system / schema versioning |
