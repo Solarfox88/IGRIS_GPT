@@ -23,7 +23,7 @@ Skipping this process is not allowed.
 
 **#1356 — supervisor split Phase 3 in progress on branch `refactor/1356-supervisor-split-phase3`.**
 
-Extracted mission planning methods to `supervisor_mission_planning.py` (523 lines). `self_repair_supervisor.py` reduced from 6,327 to 6,011 lines. Still above 2,000 line target. Status: **Phase completed, parent issue not complete.** Next: merge PR, then continue with next extraction cluster (repair cycle, decomposition, or completion/cleanup).
+Phase 4 complete: extracted 5 clusters (completion/cleanup, repair helpers, decomposition part 1+2, audit/persistence). `self_repair_supervisor.py` reduced from 6,011 to 4,874 lines. Still above 2,000 line target. Status: **Phase completed, parent issue not complete.** Follow-up: **#1371** — Phase 5 extraction of remaining large methods (_run_rank_loop, _repair_cycle, _run_preflight_phase, etc.).
 
 **Roadmap primary items addressed in Phase 1/2/3. Follow-up issues open: #1353, #1355, #1356.**
 

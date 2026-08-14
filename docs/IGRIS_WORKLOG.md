@@ -68,3 +68,4 @@ pytest tests/test_jarvis_core_gauntlet.py -q
 python -m igris.core.jarvis_core_gauntlet
 ```
 | 2026-08-14 | process upgrade | Devin | docs: upgrade quality gate to 20-pass roadmap process — replaced mandatory 10-pass with mandatory 20-pass quality gate in AGENTS.md; added ADR-IGRIS-0011; marked ADR-IGRIS-0009 as superseded; updated PROJECT_MEMORY, HANDOFF, OPEN_ITEMS, WORKLOG | — | (pending merge) |
+| 2026-08-14 | #1356 Phase 4 | Devin | refactor(#1356): supervisor split Phase 4 — extracted 5 clusters across 5 PRs (#1366 completion/cleanup 6011→5840, #1367 repair helpers 5840→5715, #1368 decomposition part 1 5715→5403, #1369 decomposition part 2 5403→4926, #1370 audit/persistence 4926→4874); created follow-up #1371 for Phase 5; all tests pass (5 pre-existing Windows); all VM gauntlets 15/15 | — | merged |
