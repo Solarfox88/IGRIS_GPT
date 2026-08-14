@@ -8,6 +8,7 @@ so that the application never crashes.
 
 from __future__ import annotations
 
+import logging
 import time
 from typing import Any, Dict, Optional
 
@@ -18,6 +19,8 @@ from igris.core.chat_personality import (
     get_grounded_response,
     get_suggested_actions,
 )
+
+logger = logging.getLogger(__name__)
 
 # Keyword-based contextual fallback responses
 _FALLBACK_HINTS: list[tuple[list[str], str]] = [
@@ -152,6 +155,12 @@ def chat(
         grounded = get_grounded_response(intent)
         if grounded is not None:
             latency_ms = int((time.monotonic() - t0) * 1000)
+            logger.info(
+                "chat_response",
+                extra={"provider": "igris_personality", "model": "capability_grounding",
+                       "fallback_used": False, "latency_ms": latency_ms,
+                       "intent": intent},
+            )
             return {
                 "text": grounded,
                 "provider": "igris_personality",
@@ -210,6 +219,12 @@ def chat(
         routing_reason = "LLM unavailable, using deterministic fallback"
 
     latency_ms = int((time.monotonic() - t0) * 1000)
+
+    logger.info(
+        "chat_response",
+        extra={"provider": provider, "model": model, "fallback_used": fallback_used,
+               "latency_ms": latency_ms, "routing_reason": routing_reason},
+    )
 
     return {
         "text": response_text,

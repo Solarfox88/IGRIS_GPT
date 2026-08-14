@@ -12,12 +12,15 @@ Inspired by IGRIS_DEVIN diagnostics.py but adapted to IGRIS_GPT's architecture.
 
 from __future__ import annotations
 
+import logging
 import time
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
 from igris.core import decision_memory
 from igris.core.safety import redact_secrets
+
+logger = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
@@ -284,6 +287,21 @@ def run_diagnostics(
         "severities": severities,
         "healthy": len(all_findings) == 0,
     }
+
+    healthy = len(all_findings) == 0
+    if healthy:
+        logger.info(
+            "diagnostic_run",
+            extra={"finding_count": len(all_findings), "healthy": True,
+                   "total_tasks": len(tasks)},
+        )
+    else:
+        logger.warning(
+            "diagnostic_run",
+            extra={"finding_count": len(all_findings), "healthy": False,
+                   "total_tasks": len(tasks), "severities": severities,
+                   "categories": categories},
+        )
 
     return DiagnosticReport(findings=all_findings, summary=summary)
 

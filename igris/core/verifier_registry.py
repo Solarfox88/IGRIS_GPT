@@ -591,6 +591,11 @@ class VerifierRegistry:
         )
 
         verifiers = self.select_verifiers(mission_plan)
+        logger.info(
+            "verification_started",
+            extra={"mission_id": bundle.mission_id, "route": bundle.route,
+                   "risk": bundle.risk, "verifier_count": len(verifiers)},
+        )
         all_evidence: list[EvidenceItem] = []
 
         for verifier in verifiers:
@@ -635,6 +640,12 @@ class VerifierRegistry:
             if not persist_result.get("ok"):
                 bundle.warnings.append(f"persistence_degraded: {persist_result.get('reason','')}")
 
+        logger.info(
+            "verification_complete",
+            extra={"mission_id": bundle.mission_id, "status": bundle.status,
+                   "ok": bundle.ok, "result_count": len(bundle.results),
+                   "evidence_count": len(bundle.evidence)},
+        )
         return bundle
 
     def persist_bundle(self, bundle: EvidenceBundle) -> dict:
