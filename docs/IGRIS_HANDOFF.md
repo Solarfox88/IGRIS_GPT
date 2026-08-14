@@ -2,11 +2,19 @@
 
 The exact point where work resumes. Updated by every agent at the end of each task.
 
-Last updated: 2026-08-14 (Devin — post #1314 Phase 1 merge)
+Last updated: 2026-08-14 (Devin — post #1315 Phase 1 merge)
 
 ## Current next issue
 
-**#1315 — structured logging (JSON logging in igris/core/)**
+**#1316 — pyright/type checking in CI**
+
+## Completed: #1315 Phase 1 (structured logging)
+
+PR TBD (branch `fix/1315-structured-logging`). Phase 1 merged.
+- New `igris/core/structured_logging.py` with `StructuredFormatter` (JSON output)
+- `configure_structured_logging()` with env var `IGRIS_LOG_LEVEL`, file rotation (10MB, 5 files)
+- Added structured logging to 7 priority modules: task_engine, tool_runtime, model_orchestrator, chat_engine, verifier_registry, unified_memory, diagnostics
+- Phase 2 (remaining modules) pending
 
 ## Completed: #1314 Phase 1 (except Exception cleanup — logging)
 

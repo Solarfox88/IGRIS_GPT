@@ -93,6 +93,10 @@ class TaskEngine:
             "description": description,
             "source": source,
         })
+        logger.info(
+            "task_created",
+            extra={"task_id": task.id, "family": fam, "risk": risk, "source": source},
+        )
         return task
 
     # Keep old add_task as an alias
@@ -133,6 +137,10 @@ class TaskEngine:
             "result": result,
             "reason": reason,
         })
+        logger.info(
+            "task_status_changed",
+            extra={"task_id": task_id, "status": status.value, "risk": task.risk},
+        )
         return task
 
     def complete_task(self, task_id: int, result: Optional[str] = None) -> Optional[Task]:
@@ -155,6 +163,10 @@ class TaskEngine:
             "task_id": task_id,
             "error": error,
         })
+        logger.error(
+            "task_failed",
+            extra={"task_id": task_id, "risk": task.risk, "error": error or ""},
+        )
         return task
 
     def mark_running(self, task_id: int) -> Optional[Task]:
@@ -171,6 +183,10 @@ class TaskEngine:
             "task_id": task_id,
             "attempts": task.attempts,
         })
+        logger.info(
+            "task_running",
+            extra={"task_id": task_id, "attempts": task.attempts, "risk": task.risk},
+        )
         return task
 
     def process_one_pending_task(self) -> Optional[Task]:
@@ -196,6 +212,10 @@ class TaskEngine:
                 "task_id": task.id,
                 "risk": task.risk,
             })
+            logger.warning(
+                "task_approval_required",
+                extra={"task_id": task.id, "risk": task.risk},
+            )
             return task
         # Safe task: pending → running → completed
         self.mark_running(task.id)
@@ -213,6 +233,10 @@ class TaskEngine:
             "task_id": task.id,
             "result": task.result,
         })
+        logger.info(
+            "task_completed",
+            extra={"task_id": task.id, "risk": task.risk, "attempts": task.attempts},
+        )
         return task
 
     def next_task(self) -> Optional[Task]:

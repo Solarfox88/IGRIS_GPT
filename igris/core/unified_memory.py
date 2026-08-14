@@ -232,6 +232,20 @@ class UnifiedMemory:
             warnings=warnings,
         )
 
+    def _log_store(self, kind: str, ok: bool, entry_id: str,
+                   backends: dict, warnings: list) -> None:
+        """Emit a structured log for a store operation."""
+        if ok:
+            logger.info(
+                "memory_stored",
+                extra={"kind": kind, "id": entry_id, "backends": backends},
+            )
+        else:
+            logger.warning(
+                "memory_store_failed",
+                extra={"kind": kind, "backends": backends, "warnings": warnings},
+            )
+
     def store_preference(self, interlocutor_id: str, trust_level: str, text: str,
                          tags: "list | None" = None) -> StoreResult:
         """Store a user preference in synaptic/preference domain."""
@@ -264,9 +278,11 @@ class UnifiedMemory:
         else:
             backends_status["ltm"] = "unavailable"
 
-        return StoreResult(ok=any_primary_wrote, kind="preference",
+        result = StoreResult(ok=any_primary_wrote, kind="preference",
                            id=entry_id if any_primary_wrote else "",
                            backends=backends_status, warnings=warnings)
+        self._log_store("preference", result.ok, result.id, result.backends, result.warnings)
+        return result
 
     def store_decision(self, text: str, interlocutor_id: str = "unknown",
                        trust_level: str = "untrusted", project: str = "default",
@@ -301,9 +317,11 @@ class UnifiedMemory:
         else:
             backends_status["ltm"] = "unavailable"
 
-        return StoreResult(ok=any_primary_wrote, kind="decision",
+        result = StoreResult(ok=any_primary_wrote, kind="decision",
                            id=entry_id if any_primary_wrote else "",
                            backends=backends_status, warnings=warnings)
+        self._log_store("decision", result.ok, result.id, result.backends, result.warnings)
+        return result
 
     def store_correction(self, text: str, interlocutor_id: str = "unknown",
                          trust_level: str = "untrusted",
@@ -337,9 +355,11 @@ class UnifiedMemory:
         else:
             backends_status["ltm"] = "unavailable"
 
-        return StoreResult(ok=any_primary_wrote, kind="correction",
+        result = StoreResult(ok=any_primary_wrote, kind="correction",
                            id=entry_id if any_primary_wrote else "",
                            backends=backends_status, warnings=warnings)
+        self._log_store("correction", result.ok, result.id, result.backends, result.warnings)
+        return result
 
     def store_lesson(self, text: str, project: str = "default",
                      confidence: float = 0.85, tags: "list | None" = None) -> StoreResult:
@@ -372,9 +392,11 @@ class UnifiedMemory:
         else:
             backends_status["ltm"] = "unavailable"
 
-        return StoreResult(ok=any_primary_wrote, kind="lesson",
+        result = StoreResult(ok=any_primary_wrote, kind="lesson",
                            id=entry_id if any_primary_wrote else "",
                            backends=backends_status, warnings=warnings)
+        self._log_store("lesson", result.ok, result.id, result.backends, result.warnings)
+        return result
 
     def store_run_event(self, mission_id: str, action: str, status: str,
                         outcome: str = "", evidence_ref: str = "",
@@ -413,9 +435,11 @@ class UnifiedMemory:
         else:
             backends_status["ltm"] = "unavailable"
 
-        return StoreResult(ok=any_primary_wrote, kind="run_event",
+        result = StoreResult(ok=any_primary_wrote, kind="run_event",
                            id=entry_id if any_primary_wrote else "",
                            backends=backends_status, warnings=warnings)
+        self._log_store("run_event", result.ok, result.id, result.backends, result.warnings)
+        return result
 
     def store_fact(self, text: str, fact_type: str = "project_fact",
                    project: str = "default", confidence: float = 0.9) -> StoreResult:
@@ -448,9 +472,11 @@ class UnifiedMemory:
         else:
             backends_status["ltm"] = "unavailable"
 
-        return StoreResult(ok=any_primary_wrote, kind=fact_type,
+        result = StoreResult(ok=any_primary_wrote, kind=fact_type,
                            id=entry_id if any_primary_wrote else "",
                            backends=backends_status, warnings=warnings)
+        self._log_store(fact_type, result.ok, result.id, result.backends, result.warnings)
+        return result
 
     # ── Retrieve operations ───────────────────────────────────────────────────
 
@@ -466,7 +492,7 @@ class UnifiedMemory:
             conv_retriever=self._retriever,
             embedding_store=self._embedding_store,
         )
-        return retriever.retrieve(
+        result = retriever.retrieve(
             query=query,
             interlocutor_id=interlocutor_id,
             trust_level=trust_level,
@@ -474,6 +500,12 @@ class UnifiedMemory:
             context="chat",
             include_influence=include_influence,
         )
+        logger.info(
+            "memory_retrieved",
+            extra={"context": "chat", "interlocutor_id": interlocutor_id,
+                   "item_count": len(result.items), "degraded": result.degraded},
+        )
+        return result
 
     def retrieve_for_mission(self, goal: str, mission_type: "str | None" = None,
                               interlocutor_id: str = "unknown",
@@ -489,7 +521,7 @@ class UnifiedMemory:
             conv_retriever=self._retriever,
             embedding_store=self._embedding_store,
         )
-        return retriever.retrieve(
+        result = retriever.retrieve(
             query=goal,
             interlocutor_id=interlocutor_id,
             trust_level=trust_level,
@@ -498,6 +530,12 @@ class UnifiedMemory:
             project=project,
             mission_type=mission_type,
         )
+        logger.info(
+            "memory_retrieved",
+            extra={"context": "mission", "interlocutor_id": interlocutor_id,
+                   "item_count": len(result.items), "degraded": result.degraded},
+        )
+        return result
 
     # ── Feedback / lifecycle ──────────────────────────────────────────────────
 

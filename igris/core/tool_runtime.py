@@ -19,6 +19,7 @@ Tool families:
 from __future__ import annotations
 
 import json
+import logging
 import os
 import re
 import subprocess
@@ -41,6 +42,8 @@ from igris.core.safety import (
     redact_secrets,
     truncate_output,
 )
+
+logger = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
@@ -207,7 +210,7 @@ class ToolRuntime:
         mission_id: str = "", action_id: str = "", trace_id: str = "",
         risk_level: str = "low", rollback_id: str = "",
     ) -> ToolResult:
-        return ToolResult(
+        result = ToolResult(
             tool=tool, action=action,
             success=proc["returncode"] == 0,
             output=proc.get("stdout", ""),
@@ -220,6 +223,20 @@ class ToolRuntime:
             trace_id=trace_id,
             rollback_id=rollback_id,
         )
+        if result.success:
+            logger.info(
+                "tool_invoked",
+                extra={"tool": tool, "action": action, "risk_level": risk_level,
+                       "duration_ms": result.duration_ms, "mission_id": mission_id},
+            )
+        else:
+            logger.warning(
+                "tool_failed",
+                extra={"tool": tool, "action": action, "risk_level": risk_level,
+                       "duration_ms": result.duration_ms, "returncode": result.returncode,
+                       "mission_id": mission_id},
+            )
+        return result
 
     def _check_risk(self, action_id: str, desc: str = "", has_rollback: bool = False,
                     host: str = "", trace_id: str = "") -> Optional[ToolResult]:
@@ -266,6 +283,11 @@ class ToolRuntime:
                     allowed[cmd_id] = [cmd_id]
 
         if command_id not in allowed:
+            logger.warning(
+                "tool_blocked",
+                extra={"tool": "shell", "action": command_id, "reason": "not_allowed",
+                       "mission_id": mission_id},
+            )
             return ToolResult(
                 tool="shell", action=command_id,
                 success=False, error=f"Command not allowed: {command_id}",
@@ -360,6 +382,11 @@ class ToolRuntime:
 
         # Secret content check
         if detect_secret_like_content(content):
+            logger.warning(
+                "tool_blocked",
+                extra={"tool": "filesystem", "action": "write", "reason": "secret_content",
+                       "risk_level": "critical", "mission_id": mission_id},
+            )
             return ToolResult(
                 tool="filesystem", action="write",
                 success=False, error="Content contains secret-like patterns",
@@ -499,6 +526,11 @@ class ToolRuntime:
     ) -> ToolResult:
         """Gated push — never to main/master, never force push."""
         if not approval_token:
+            logger.warning(
+                "tool_blocked",
+                extra={"tool": "git", "action": "push", "reason": "no_approval_token",
+                       "risk_level": "high", "mission_id": mission_id},
+            )
             return ToolResult(
                 tool="git", action="push",
                 success=False, error="Push requires approval token: I_APPROVE_GITHUB_WRITE",
@@ -506,6 +538,11 @@ class ToolRuntime:
             )
 
         if branch in ("main", "master"):
+            logger.error(
+                "tool_blocked",
+                extra={"tool": "git", "action": "push", "reason": "protected_branch",
+                       "branch": branch, "risk_level": "critical", "mission_id": mission_id},
+            )
             return ToolResult(
                 tool="git", action="push",
                 success=False, error="Push to main/master is forbidden",
@@ -648,9 +685,16 @@ class ToolRuntime:
                     "ssl": ssl_info,
                     "body_snippet": redact_secrets(body[:200]),
                 }, indent=2)
+                success = resp.status < 400
+                logger.info(
+                    "tool_invoked",
+                    extra={"tool": "http", "action": "check", "risk_level": "low",
+                           "duration_ms": elapsed, "mission_id": mission_id,
+                           "success": success},
+                )
                 return ToolResult(
                     tool="http", action="check",
-                    success=resp.status < 400,
+                    success=success,
                     output=output,
                     risk_level="low",
                     duration_ms=elapsed,
@@ -658,6 +702,11 @@ class ToolRuntime:
                 )
         except urllib.error.HTTPError as exc:
             elapsed = int((time.time() - start) * 1000)
+            logger.warning(
+                "tool_failed",
+                extra={"tool": "http", "action": "check", "duration_ms": elapsed,
+                       "returncode": exc.code, "mission_id": mission_id},
+            )
             return ToolResult(
                 tool="http", action="check",
                 success=False, error=f"HTTP {exc.code}: {exc.reason}",
@@ -667,6 +716,11 @@ class ToolRuntime:
             )
         except Exception as exc:
             elapsed = int((time.time() - start) * 1000)
+            logger.warning(
+                "tool_failed",
+                extra={"tool": "http", "action": "check", "duration_ms": elapsed,
+                       "mission_id": mission_id},
+            )
             return ToolResult(
                 tool="http", action="check",
                 success=False, error=str(exc),

@@ -27,6 +27,7 @@ Profiles:
 from __future__ import annotations
 
 import json
+import logging
 import time
 import uuid
 from dataclasses import dataclass, field
@@ -35,6 +36,8 @@ from typing import Any, Dict, List, Optional
 from igris.core.llm_error_classifier import classify_llm_provider_error
 from igris.core.safety import redact_secrets
 from igris.models.config import CONFIG
+
+logger = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
@@ -78,6 +81,10 @@ class CircuitBreakerState:
                 self.state = _CB_CLOSED
                 self.failure_count = 0
                 self.success_count_half_open = 0
+                logger.info(
+                    "circuit_breaker_recovered",
+                    extra={"state": _CB_CLOSED},
+                )
         elif self.state == _CB_CLOSED:
             self.failure_count = 0
 
@@ -90,8 +97,17 @@ class CircuitBreakerState:
             # Failed during recovery attempt — reopen
             self.state = _CB_OPEN
             self.success_count_half_open = 0
+            logger.warning(
+                "circuit_breaker_reopened",
+                extra={"failure_count": self.failure_count, "error": error[:200]},
+            )
         elif self.failure_count >= self.failure_threshold:
             self.state = _CB_OPEN
+            logger.warning(
+                "circuit_breaker_tripped",
+                extra={"failure_count": self.failure_count,
+                       "threshold": self.failure_threshold, "error": error[:200]},
+            )
 
     def is_available(self) -> bool:
         """Check if the provider should be tried."""
@@ -470,10 +486,19 @@ class ModelOrchestrator:
                 success=True,
             )
             self._record_call(result, task_type)
+            logger.info(
+                "orchestrator_complete",
+                extra={"provider": "deterministic", "profile": profile,
+                       "task_type": task_type, "fallback_used": False},
+            )
             return result
 
         # Build provider priority chain
         chain = self._get_provider_chain(profile)
+        logger.info(
+            "orchestrator_provider_chain",
+            extra={"profile": profile, "task_type": task_type, "chain": chain},
+        )
 
         t0 = time.monotonic()
         last_error = ""
@@ -494,6 +519,11 @@ class ModelOrchestrator:
                 last_error = (
                     f"{provider_name} circuit breaker open: "
                     f"{self._circuit_breaker.get(provider_name).last_error}"
+                )
+                logger.warning(
+                    "orchestrator_circuit_breaker_open",
+                    extra={"provider": provider_name, "profile": profile,
+                           "task_type": task_type},
                 )
                 continue
 
@@ -516,6 +546,16 @@ class ModelOrchestrator:
                     # Record success in circuit breaker
                     self._circuit_breaker.record_success(provider_name)
                     self._record_call(result, task_type)
+                    logger.info(
+                        "orchestrator_complete",
+                        extra={"provider": provider_name, "model": result.model,
+                               "profile": profile, "task_type": task_type,
+                               "fallback_used": result.fallback_used,
+                               "latency_ms": elapsed,
+                               "input_tokens": result.input_tokens,
+                               "output_tokens": result.output_tokens,
+                               "estimated_cost": result.estimated_cost},
+                    )
                     return result
 
                 except Exception as e:
@@ -562,6 +602,11 @@ class ModelOrchestrator:
             error_severity=last_severity,
         )
         self._record_call(result, task_type)
+        logger.error(
+            "orchestrator_all_providers_failed",
+            extra={"profile": profile, "task_type": task_type, "latency_ms": elapsed,
+                   "error_category": last_category, "error_retryable": last_retryable},
+        )
         return result
 
     def _get_provider_chain(self, profile: str) -> List[str]:

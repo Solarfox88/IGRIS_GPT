@@ -133,9 +133,16 @@ def test_silent_catches_now_log(tmp_path, caplog):
     tasks_dir.mkdir(parents=True, exist_ok=True)
     (tasks_dir / "malformed.json").write_text("{invalid json}", encoding="utf-8")
 
-    with caplog.at_level(logging.DEBUG, logger="igris.core.task_engine"):
-        from igris.core.task_engine import TaskEngine
-        engine = TaskEngine(runtime_root=tmp_path / ".igris")
+    # Ensure propagation is enabled for caplog to capture records
+    igris_logger = logging.getLogger("igris")
+    original_propagate = igris_logger.propagate
+    igris_logger.propagate = True
+    try:
+        with caplog.at_level(logging.DEBUG, logger="igris.core.task_engine"):
+            from igris.core.task_engine import TaskEngine
+            engine = TaskEngine(runtime_root=tmp_path / ".igris")
+    finally:
+        igris_logger.propagate = original_propagate
 
     # Should have at least one debug log about the malformed file
     assert len(caplog.records) > 0, "Expected at least one log entry for malformed task file"
