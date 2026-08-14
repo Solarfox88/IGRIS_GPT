@@ -86,15 +86,24 @@ def create_router(deps) -> APIRouter:
             raise HTTPException(status_code=404, detail="Task not found")
         content = {}
         if request.headers.get("content-type", "").startswith("application/json"):
-            content = await request.json()
+            try:
+                content = await request.json()
+            except Exception:
+                raise HTTPException(status_code=400, detail="Invalid JSON body")
+            if not isinstance(content, dict):
+                raise HTTPException(status_code=400, detail="Request body must be a JSON object")
         reports = execution_report.recent_reports(limit=10)
         files_changed = content.get("files_changed", [])
         manual_reason = content.get("manual_completion_reason", "")
-        result = task_validator.validate_task_completion(
-            task, reports=reports, files_changed=files_changed,
-            manual_completion_reason=manual_reason,
-            project_root=str(CONFIG.project_root),
-        )
+        try:
+            result = task_validator.validate_task_completion(
+                task, reports=reports, files_changed=files_changed,
+                manual_completion_reason=manual_reason,
+                project_root=str(CONFIG.project_root),
+            )
+        except Exception as exc:
+            logger.warning("validate_task_completion raised: %s", exc)
+            raise HTTPException(status_code=500, detail=f"Validation error: {str(exc)[:200]}")
         task_engine.append_timeline_event({
             "type": "validation", "task_id": task_id,
             "title": f"Validation: {result.overall_status}",
@@ -301,6 +310,16 @@ def create_router(deps) -> APIRouter:
         if not task:
             raise HTTPException(status_code=404, detail="Task not found")
         return task.to_dict()
+
+    @router.post("/api/tasks/process-one")
+    async def api_process_one_pending_task(request: Request) -> Dict[str, object]:
+        """Process one pending task deterministically. Requires write_auth (#1293)."""
+        from igris.api.write_auth import require_write_auth_or_raise
+        await require_write_auth_or_raise(request)
+        task = task_engine.process_one_pending_task()
+        if task is None:
+            return {"ok": True, "processed": False, "reason": "no pending tasks"}
+        return {"ok": True, "processed": True, "task": task.to_dict()}
 
     # ---- Terminal ----
 

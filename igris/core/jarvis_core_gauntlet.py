@@ -190,6 +190,7 @@ class JarvisCoreGauntlet:
         "write_endpoint_auth_gate",
         "dangerous_intent_routing",
         "memory_cross_session",
+        "task_engine_reliability",
     )
 
     def __init__(
@@ -1303,6 +1304,136 @@ class JarvisCoreGauntlet:
             "cross-user isolation ✓, router store ✓, secret redacted ✓"
         )
 
+    def _check_task_engine_reliability(self, r: GauntletCheckResult) -> None:
+        """Verify task engine reliability (#1296).
+
+        Checks:
+        1. TaskStatus enum includes failed and approval_required
+        2. Task model has attempts and last_error fields
+        3. TaskEngine has process_one_pending_task, fail_task, mark_running methods
+        4. process_one_pending_task on empty queue returns None
+        5. Low-risk pending task transitions to terminal state
+        6. High-risk task goes to approval_required (not executed)
+        7. fail_task records error and sets status=failed
+        8. diagnostics get_diagnostic_summary includes task_engine_state
+
+        SAFE: uses isolated temp dir, no side effects on real storage.
+        """
+        import tempfile
+        from pathlib import Path as _Path
+
+        with tempfile.TemporaryDirectory() as _tmp:
+            tmp = _Path(_tmp)
+            (tmp / ".igris" / "tasks").mkdir(parents=True)
+            (tmp / ".igris" / "timeline").mkdir(parents=True)
+
+            from igris.models.task import TaskStatus
+            from igris.core.task_engine import TaskEngine
+            from igris.core.diagnostics import get_diagnostic_summary
+
+            # 1. TaskStatus enum includes new statuses
+            statuses = [s.value for s in TaskStatus]
+            if "failed" not in statuses:
+                r.errors.append("TaskStatus missing 'failed'")
+                return
+            if "approval_required" not in statuses:
+                r.errors.append("TaskStatus missing 'approval_required'")
+                return
+            r.metadata["task_status_enum_ok"] = True
+
+            # 2. Task model has attempts and last_error
+            engine = TaskEngine(runtime_root=tmp / ".igris")
+            task = engine.create_task("gauntlet test task", risk="low")
+            if not hasattr(task, "attempts"):
+                r.errors.append("Task model missing 'attempts' field")
+                return
+            if not hasattr(task, "last_error"):
+                r.errors.append("Task model missing 'last_error' field")
+                return
+            r.metadata["task_fields_ok"] = True
+
+            # 3. Engine has new methods
+            for method in ("process_one_pending_task", "fail_task", "mark_running"):
+                if not hasattr(engine, method):
+                    r.errors.append(f"TaskEngine missing method: {method}")
+                    return
+            r.metadata["engine_methods_ok"] = True
+
+            # 4. Empty queue returns None
+            engine2 = TaskEngine(runtime_root=tmp / ".igris" / "tasks_empty" / "..")
+            (tmp / ".igris" / "tasks_empty").mkdir(parents=True)
+            (tmp / ".igris" / "tasks_empty_timeline").mkdir(parents=True)
+            engine_empty = TaskEngine(runtime_root=tmp / ".igris_empty")
+            result = engine_empty.process_one_pending_task()
+            if result is not None:
+                r.errors.append(f"process_one_pending_task on empty queue should return None, got {result}")
+                return
+            r.metadata["empty_queue_safe"] = True
+
+            # 5. Low-risk task transitions to terminal state
+            engine3 = TaskEngine(runtime_root=tmp / ".igris_3")
+            t_low = engine3.create_task("low risk task", risk="low")
+            processed = engine3.process_one_pending_task()
+            if processed is None:
+                r.errors.append("process_one_pending_task returned None with pending task")
+                return
+            if processed.status == TaskStatus.pending:
+                r.errors.append("Low-risk task stuck in pending after process_one_pending_task")
+                return
+            if processed.status not in (TaskStatus.completed, TaskStatus.running, TaskStatus.failed):
+                r.errors.append(f"Low-risk task unexpected status: {processed.status}")
+                return
+            r.metadata["low_risk_transitions"] = True
+
+            # 6. High-risk task goes to approval_required
+            engine4 = TaskEngine(runtime_root=tmp / ".igris_4")
+            t_high = engine4.create_task("dangerous rm -rf /", risk="high")
+            processed_high = engine4.process_one_pending_task()
+            if processed_high is None:
+                r.errors.append("process_one_pending_task returned None for high-risk task")
+                return
+            if processed_high.status != TaskStatus.approval_required:
+                r.errors.append(f"High-risk task should be approval_required, got {processed_high.status}")
+                return
+            r.metadata["high_risk_approval_required"] = True
+
+            # 7. fail_task records error
+            engine5 = TaskEngine(runtime_root=tmp / ".igris_5")
+            t_fail = engine5.create_task("task that will fail", risk="low")
+            engine5.mark_running(t_fail.id)
+            failed = engine5.fail_task(t_fail.id, error="test error")
+            if failed is None:
+                r.errors.append("fail_task returned None")
+                return
+            if failed.status != TaskStatus.failed:
+                r.errors.append(f"fail_task should set status=failed, got {failed.status}")
+                return
+            if failed.last_error != "test error":
+                r.errors.append(f"fail_task last_error mismatch: {failed.last_error}")
+                return
+            r.metadata["fail_task_ok"] = True
+
+            # 8. diagnostics includes task_engine_state
+            tasks_dict = [t.to_dict() for t in engine3.list_tasks()]
+            summary = get_diagnostic_summary(tasks_dict, [])
+            if "task_engine_state" not in summary:
+                r.errors.append("get_diagnostic_summary missing task_engine_state")
+                return
+            state = summary["task_engine_state"]
+            for field in ("enabled", "running", "unhealthy", "starvation_detected", "pending_old_count"):
+                if field not in state:
+                    r.errors.append(f"task_engine_state missing field: {field}")
+                    return
+            r.metadata["diagnostics_task_engine_state_ok"] = True
+
+        r.passed = True
+        r.status = "passed"
+        r.summary = (
+            "Task engine reliability: enum ✓, fields ✓, methods ✓, "
+            "empty queue ✓, low-risk transitions ✓, high-risk approval ✓, "
+            "fail_task ✓, diagnostics state ✓"
+        )
+
     # ── run_all ────────────────────────────────────────────────────────────────
 
     def run_all(self) -> JarvisCoreGauntletReport:
@@ -1322,6 +1453,7 @@ class JarvisCoreGauntlet:
             "write_endpoint_auth_gate": ("Write Endpoint Auth Gate", self._check_write_endpoint_auth_gate),
             "dangerous_intent_routing": ("Dangerous Intent Routing", self._check_dangerous_intent_routing),
             "memory_cross_session": ("Memory Cross-Session", self._check_memory_cross_session),
+            "task_engine_reliability": ("Task Engine Reliability", self._check_task_engine_reliability),
         }
 
         results: list[GauntletCheckResult] = []
@@ -1381,6 +1513,7 @@ class JarvisCoreGauntlet:
             "write_endpoint_auth_gate": ("Write Endpoint Auth Gate", self._check_write_endpoint_auth_gate),
             "dangerous_intent_routing": ("Dangerous Intent Routing", self._check_dangerous_intent_routing),
             "memory_cross_session": ("Memory Cross-Session", self._check_memory_cross_session),
+            "task_engine_reliability": ("Task Engine Reliability", self._check_task_engine_reliability),
         }
         if check_id not in check_map:
             return GauntletCheckResult(

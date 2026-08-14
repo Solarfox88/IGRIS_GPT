@@ -90,4 +90,21 @@ No unpushed Codex/Claude work found on host. No stashes. No useful work to port.
 - **Other VM**: `C:\HyperV\IGRIS-UBUNTU\IGRIS-UBUNTU.vhdx` (30GB) exists on disk but is **not registered** as a Hyper-V VM (orphaned VHDX). Not inspected.
 - **VM was NOT started** — inspected via read-only VHDX mount in WSL (`wsl --mount --vhd ... --bare` + LVM activation + `mount -o ro`). No runtime state mutated. VHDX unmounted safely after audit.
 
+## Preview VM runtime (2026-08-14)
+
+VM `IGRIS-GPT` is now **running** as the mandatory runtime validation/preview environment.
+
+| Field | Value |
+|---|---|
+| Switch | IGRIS External Switch (bound to WiFi via network bridge) |
+| VM IP | 192.168.1.253 (static, netplan) |
+| URL | http://192.168.1.253:7778 |
+| Branch | main @ 553b6f0 (post-PR #1346) |
+| Service | igris.service (systemd, enabled, uvicorn 0.0.0.0:7778) |
+| SSH | igris@192.168.1.253 (password: igris) |
+| Health | DEGRADED — 3 pending tasks, starvation=1, task_engine=null in /api/os/brief (this is #1296, expected on main) |
+
+Network config: /etc/netplan/01-static.yaml with static IP 192.168.1.253/24, gateway 192.168.1.1, DNS 192.168.1.1+8.8.8.8.
+The IGRIS External Switch is bound to WiFi (Realtek RTL8822CE) via a Microsoft network bridge — VM is directly reachable on the LAN.
+
 **Conclusion**: Hyper-V VM audit performed; no newer IGRIS work found. GitHub `main` is the most advanced state. The VM's only non-main branch is PR #1345 which is already on GitHub.

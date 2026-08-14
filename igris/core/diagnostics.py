@@ -296,6 +296,39 @@ def get_diagnostic_summary(
     """Quick summary for dashboard display."""
     report = run_diagnostics(tasks, timeline_events, project_root=project_root)
     d = report.to_dict()
+    # Build honest task_engine_state (#1296)
+    pending = [t for t in tasks if t.get("status") == "pending"]
+    running = [t for t in tasks if t.get("status") == "running"]
+    completed = [t for t in tasks if t.get("status") == "completed"]
+    blocked = [t for t in tasks if t.get("status") == "blocked"]
+    failed = [t for t in tasks if t.get("status") == "failed"]
+
+    now = time.time()
+    pending_old_count = 0
+    for t in pending:
+        created = t.get("created_at", "")
+        if not created:
+            continue
+        try:
+            ct = time.mktime(time.strptime(created, "%Y-%m-%dT%H:%M:%SZ"))
+            if now - ct > STARVATION_THRESHOLD_SECONDS:
+                pending_old_count += 1
+        except (ValueError, OverflowError):
+            pass
+
+    starvation_detected = pending_old_count > 0 or len(pending) > 0 and len(running) == 0 and len(completed) == 0
+    task_engine_state = {
+        "enabled": True,
+        "running": len(running) > 0,
+        "unhealthy": starvation_detected or (len(pending) > 0 and len(running) == 0 and len(completed) == 0),
+        "starvation_detected": starvation_detected,
+        "pending_old_count": pending_old_count,
+        "pending_count": len(pending),
+        "running_count": len(running),
+        "completed_count": len(completed),
+        "blocked_count": len(blocked),
+        "failed_count": len(failed),
+    }
     return {
         "healthy": d["summary"]["healthy"],
         "finding_count": d["finding_count"],
@@ -309,6 +342,7 @@ def get_diagnostic_summary(
             "completed": d["summary"]["completed"],
             "blocked": d["summary"]["blocked"],
         },
+        "task_engine_state": task_engine_state,
     }
 
 

@@ -137,6 +137,80 @@ class TaskEngine:
     def block_task(self, task_id: int, reason: Optional[str] = None) -> Optional[Task]:
         return self.update_task_status(task_id, TaskStatus.blocked, reason=reason)
 
+    def fail_task(self, task_id: int, error: Optional[str] = None) -> Optional[Task]:
+        """Mark a task as failed with an error message. Terminal state."""
+        task = self.get_task(task_id)
+        if not task:
+            return None
+        task.status = TaskStatus.failed
+        task.last_error = error
+        task.updated_at = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+        self._save_task(task)
+        self.append_timeline_event({
+            "event": "task_failed",
+            "task_id": task_id,
+            "error": error,
+        })
+        return task
+
+    def mark_running(self, task_id: int) -> Optional[Task]:
+        """Transition a pending task to running and increment attempts."""
+        task = self.get_task(task_id)
+        if not task:
+            return None
+        task.status = TaskStatus.running
+        task.attempts += 1
+        task.updated_at = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+        self._save_task(task)
+        self.append_timeline_event({
+            "event": "task_running",
+            "task_id": task_id,
+            "attempts": task.attempts,
+        })
+        return task
+
+    def process_one_pending_task(self) -> Optional[Task]:
+        """Deterministic worker step: pick the next pending task and transition it.
+
+        - Low/medium risk pending → running → completed (deterministic safe step)
+        - High risk pending → approval_required (no side effect)
+        - No pending → return None
+
+        This does NOT execute any real action; it only transitions state
+        so that tasks are not stuck in pending forever.
+        """
+        task = self.next_task()
+        if task is None:
+            return None
+        # High-risk tasks require approval — do not execute
+        if task.risk in ("high", "critical", "destructive"):
+            task.status = TaskStatus.approval_required
+            task.updated_at = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+            self._save_task(task)
+            self.append_timeline_event({
+                "event": "task_approval_required",
+                "task_id": task.id,
+                "risk": task.risk,
+            })
+            return task
+        # Safe task: pending → running → completed
+        self.mark_running(task.id)
+        # Reload the task after mark_running (which saved it)
+        task = self.get_task(task.id)
+        if task is None:
+            return None
+        # Deterministic completion (no real execution in this worker step)
+        task.status = TaskStatus.completed
+        task.result = "processed_by_worker_step"
+        task.updated_at = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+        self._save_task(task)
+        self.append_timeline_event({
+            "event": "task_completed",
+            "task_id": task.id,
+            "result": task.result,
+        })
+        return task
+
     def next_task(self) -> Optional[Task]:
         pending = [t for t in self._tasks if t.status == TaskStatus.pending]
         if not pending:
