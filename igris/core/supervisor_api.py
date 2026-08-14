@@ -130,7 +130,7 @@ def start_supervised_rank_async(data: Dict[str, Any], project_root: str) -> Supe
                 f"MBOP Phase 2 Pre-flight: #{_mbop_issue_number} | "
                 f"deps={'checking' if _mbop_issue_number else 'skip'} env=ok"
             )
-        except Exception:
+        except (OSError, ValueError, TypeError, KeyError):
             logger.debug("MBOP Phase 2 pre-flight failed", exc_info=True)
             pass
 
@@ -142,7 +142,7 @@ def start_supervised_rank_async(data: Dict[str, Any], project_root: str) -> Supe
                 f"MBOP Phase 3 Mission Planning: #{_mbop_issue_number} | "
                 f"goal={str(config.goal)[:80]}"
             )
-        except Exception:
+        except (OSError, ValueError, TypeError, KeyError):
             logger.debug("MBOP Phase 3 planning failed", exc_info=True)
             pass
 
@@ -153,7 +153,7 @@ def start_supervised_rank_async(data: Dict[str, Any], project_root: str) -> Supe
         # --- Main supervisor run ---
         try:
             supervisor.run(config, run=run)
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001
             supervisor._transition_run_status(run, "blocked", "worker exception")
             run.outcome = "Blocked"
             run.failure_class = "supervisor_bug"
@@ -213,7 +213,7 @@ def start_supervised_rank_async(data: Dict[str, Any], project_root: str) -> Supe
                 f"MBOP Phase 8 Completion Check: #{_mbop_issue_number} | "
                 f"final_status={_run_status}"
             )
-        except Exception:
+        except (OSError, ValueError, TypeError, KeyError):
             logger.debug("MBOP Phases 4-8 post-run intermediates failed", exc_info=True)
             pass
 
@@ -262,7 +262,7 @@ def start_supervised_rank_async(data: Dict[str, Any], project_root: str) -> Supe
                         capture_output=True, text=True, cwd=project_root, timeout=10,
                     )
                     _workspace_dirty = bool(_gs.stdout.strip())
-                except Exception:
+                except (subprocess.SubprocessError, OSError, ValueError, TypeError):
                     logger.debug("git status for workspace dirty check failed", exc_info=True)
                     pass
                 audit = run.behavior_tracker.self_audit(
