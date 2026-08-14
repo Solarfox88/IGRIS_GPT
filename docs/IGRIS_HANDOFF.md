@@ -2,21 +2,21 @@
 
 The exact point where work resumes. Updated by every agent at the end of each task.
 
-Last updated: 2026-08-14 (Devin desktop handoff bootstrap)
+Last updated: 2026-08-14 (Devin — post #1296 merge)
 
 ## Current next issue
 
-**#1296 — P1: Tasks bloccate in pending — task_engine non esegue, validate restituisce 500**
+**#1291 — P2: code_change gating residual for limited users**
 
-## Symptoms (from issue)
+## Completed: #1296
 
-- `GET /api/tasks` → 3 tasks, all `pending`
-- `GET /api/os/brief` → `task_engine=null`, `mission_controller=null`
-- `GET /api/diagnostics/summary` → `healthy=false`, `starvation=1`
-- `POST /api/tasks/1/validate {}` → 500 Internal Server Error
-- `POST /api/loop/step` → 200 but stays at step 0, does not truly advance
-
-## Target
+PR #1347 merged as `8fa9d8e`. Issue closed.
+- Task engine worker step (`process_one_pending_task`)
+- Safe validate endpoint (400/404, never 500)
+- Honest diagnostics (`task_engine_state`)
+- Context aggregator wires `task_engine` from `app.state`
+- Gauntlet check `task_engine_reliability` (15th)
+- VM validated at http://192.168.1.253:7778
 
 `production-complete-task-engine-reliability`
 
