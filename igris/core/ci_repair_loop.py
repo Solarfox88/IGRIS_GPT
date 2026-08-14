@@ -22,6 +22,7 @@ Usage:
 
 from __future__ import annotations
 
+import json
 import logging
 import subprocess
 import time
@@ -191,7 +192,7 @@ class CIRepairLoop:
                     duration_seconds=round(time.monotonic() - attempt_start, 1),
                     error=result.get("final_summary", "")[:300] if not success else "",
                 )
-            except Exception as exc:
+            except (ValueError, TypeError, RuntimeError, OSError, AttributeError, KeyError) as exc:
                 attempt = CIRepairAttempt(
                     attempt=attempt_num,
                     failure_type=failure_type,
@@ -262,7 +263,7 @@ class CIRepairLoop:
                             cwd=self.project_root, capture_output=True, text=True, timeout=60,
                         )
                         return (log_fetch.stdout or "") + (log_fetch.stderr or "")
-        except Exception as exc:
+        except (subprocess.SubprocessError, json.JSONDecodeError, OSError, ValueError, TypeError, KeyError) as exc:
             _log.warning("CIRepairLoop._fetch_ci_logs: %s", exc)
         return ""
 
@@ -306,7 +307,7 @@ class CIRepairLoop:
                 cwd=self.project_root, capture_output=True, text=True, timeout=15,
             )
             current_diff = r.stdout[:3000] if r.returncode == 0 else ""
-        except Exception:
+        except (subprocess.SubprocessError, OSError, ValueError, TypeError):
             pass
 
         return {
@@ -346,7 +347,7 @@ class CIRepairLoop:
                         line.strip() for line in r.stdout.splitlines()
                         if line.strip() and not line.startswith("Found")
                     )
-            except Exception as exc:
+            except (subprocess.SubprocessError, OSError, ValueError, TypeError) as exc:
                 _log.warning("CIRepairLoop._try_deterministic_lint_fix %s: %s", cmd, exc)
 
         success = bool(files_fixed)
@@ -420,11 +421,10 @@ class CIRepairLoop:
             try:
                 status = wait_fn(self.pr_number)
                 return getattr(status, "status", "") == "green"
-            except Exception:
+            except (ValueError, TypeError, RuntimeError, OSError, AttributeError):
                 return False
 
         try:
-            import json
             r = subprocess.run(
                 ["gh", "pr", "checks", str(self.pr_number),
                  "--json", "name,state"],
@@ -439,7 +439,7 @@ class CIRepairLoop:
                 c.get("state", "") in ("SUCCESS", "success", "NEUTRAL", "neutral", "SKIPPED")
                 for c in checks
             )
-        except Exception:
+        except (subprocess.SubprocessError, json.JSONDecodeError, OSError, ValueError, TypeError, KeyError):
             return False
 
     def _push_fix_with_safety_gate(self, message: str) -> bool:
@@ -485,7 +485,7 @@ class CIRepairLoop:
                             cwd=self.project_root, capture_output=True,
                         )
                     return False
-            except Exception as exc:
+            except (ImportError, OSError, ValueError, TypeError, AttributeError, RuntimeError) as exc:
                 _log.warning("_push_fix_with_safety_gate: safety gate import failed: %s", exc)
 
             r = subprocess.run(
@@ -501,7 +501,7 @@ class CIRepairLoop:
             )
             _log.info("_push_fix_with_safety_gate: pushed %d file(s): %s", len(staged_files), staged_files[:5])
             return True
-        except Exception as exc:
+        except (subprocess.SubprocessError, OSError, ValueError, TypeError) as exc:
             _log.warning("CIRepairLoop._push_fix: %s", exc)
             return False
 

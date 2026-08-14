@@ -22,12 +22,27 @@ The benchmark can run in two modes:
 
 from __future__ import annotations
 
+import subprocess
 import time
 import uuid
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
 from igris.core.safety import redact_secrets
+
+# Exceptions caught by benchmark phase validators — broad enough to cover
+# import failures, I/O/subprocess errors, and data-parsing issues without
+# catching BaseException-level interrupts (KeyboardInterrupt, SystemExit).
+_BENCHMARK_PHASE_ERRORS = (
+    ImportError,
+    OSError,
+    subprocess.SubprocessError,
+    ValueError,
+    TypeError,
+    AttributeError,
+    RuntimeError,
+    KeyError,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -189,7 +204,7 @@ class BenchmarkRunner:
             if result.tool_runtime_ok:
                 result.phases_completed.append("tool_runtime")
 
-        except Exception as e:
+        except _BENCHMARK_PHASE_ERRORS as e:
             result.errors.append(f"Integration pipeline error: {e}")
 
         # Always run deterministic checks for remaining phases
@@ -228,7 +243,7 @@ class BenchmarkRunner:
             else:
                 result.phases_failed.append("code_navigation")
                 result.errors.append(f"Nav: server={found_server}, create_app={found_create_app}")
-        except Exception as e:
+        except _BENCHMARK_PHASE_ERRORS as e:
             result.phases_failed.append("code_navigation")
             result.errors.append(f"Code navigation error: {e}")
 
@@ -249,7 +264,7 @@ class BenchmarkRunner:
             else:
                 result.phases_failed.append("context_manager")
                 result.errors.append("Context Manager produced empty context")
-        except Exception as e:
+        except _BENCHMARK_PHASE_ERRORS as e:
             result.phases_failed.append("context_manager")
             result.errors.append(f"Context Manager error: {e}")
 
@@ -271,7 +286,7 @@ class BenchmarkRunner:
                 result.phases_completed.append("reasoning_loop")
             else:
                 result.phases_failed.append("reasoning_loop")
-        except Exception as e:
+        except _BENCHMARK_PHASE_ERRORS as e:
             result.phases_failed.append("reasoning_loop")
             result.errors.append(f"Reasoning Loop error: {e}")
 
@@ -292,7 +307,7 @@ class BenchmarkRunner:
             else:
                 result.phases_failed.append("tool_runtime")
                 result.errors.append(f"Tool Runtime git status failed: {git_result.error}")
-        except Exception as e:
+        except _BENCHMARK_PHASE_ERRORS as e:
             result.phases_failed.append("tool_runtime")
             result.errors.append(f"Tool Runtime error: {e}")
 
@@ -319,7 +334,7 @@ class BenchmarkRunner:
             else:
                 result.phases_failed.append("risk_engine")
                 result.errors.append(f"Risk engine: safe={safe_ok}, danger={danger_ok}")
-        except Exception as e:
+        except _BENCHMARK_PHASE_ERRORS as e:
             result.phases_failed.append("risk_engine")
             result.errors.append(f"Risk Engine error: {e}")
 
@@ -340,7 +355,7 @@ class BenchmarkRunner:
             else:
                 result.phases_failed.append("test_execution")
                 result.errors.append(f"Test execution: {test_result.error or test_result.output}")
-        except Exception as e:
+        except _BENCHMARK_PHASE_ERRORS as e:
             result.phases_failed.append("test_execution")
             result.errors.append(f"Test execution error: {e}")
 
@@ -366,7 +381,7 @@ class BenchmarkRunner:
                 result.phases_completed.append("memory")
             else:
                 result.phases_failed.append("memory")
-        except Exception as e:
+        except _BENCHMARK_PHASE_ERRORS as e:
             result.phases_failed.append("memory")
             result.errors.append(f"Memory error: {e}")
 
@@ -388,7 +403,7 @@ class BenchmarkRunner:
                 result.phases_completed.append("governor")
             else:
                 result.phases_failed.append("governor")
-        except Exception as e:
+        except _BENCHMARK_PHASE_ERRORS as e:
             result.phases_failed.append("governor")
             result.errors.append(f"Governor error: {e}")
 

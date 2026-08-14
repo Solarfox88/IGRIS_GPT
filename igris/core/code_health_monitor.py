@@ -82,7 +82,7 @@ def _load_coverage_history(project_root: str) -> Dict[str, float]:
         return {}
     try:
         return dict(json.loads(path.read_text()))
-    except Exception:
+    except (json.JSONDecodeError, OSError, TypeError, ValueError):
         return {}
 
 
@@ -174,7 +174,7 @@ def _git_blame_first_line_date(project_root: str, filepath: str, lineno: int) ->
             line = line.strip()
             if line.isdigit():
                 return float(line)
-    except Exception:
+    except (subprocess.SubprocessError, OSError, ValueError, TypeError):
         pass
     return None
 
@@ -239,7 +239,7 @@ def _load_loc_history(project_root: str) -> Dict[str, int]:
         return {}
     try:
         return dict(json.loads(path.read_text()))
-    except Exception:
+    except (json.JSONDecodeError, OSError, TypeError, ValueError):
         return {}
 
 
@@ -348,7 +348,7 @@ def _open_github_issue(project_root: str, finding: HealthFinding) -> Optional[st
         )
         if result.returncode == 0:
             return result.stdout.strip()
-    except Exception:
+    except (subprocess.SubprocessError, OSError, ValueError, TypeError):
         pass
     return None
 
@@ -402,13 +402,13 @@ class CodeHealthMonitor:
                 all_findings.extend(_detect_coverage_drops(current_cov, history_cov))
                 all_findings.extend(_detect_coverage_gaps(current_cov))
                 _save_coverage_history(self._root, current_cov)
-        except Exception as exc:
+        except (OSError, json.JSONDecodeError, subprocess.SubprocessError, ValueError, TypeError, KeyError) as exc:
             report.errors.append(f"coverage analysis: {exc}")
 
         # --- TODO/FIXME age ---
         try:
             all_findings.extend(_detect_old_todos(self._root))
-        except Exception as exc:
+        except (OSError, subprocess.SubprocessError, ValueError, TypeError) as exc:
             report.errors.append(f"todo scanner: {exc}")
 
         # --- Complexity growth ---
@@ -416,13 +416,13 @@ class CodeHealthMonitor:
             complexity_findings, new_loc = _detect_complexity_growth(self._root)
             all_findings.extend(complexity_findings)
             _save_loc_history(self._root, new_loc)
-        except Exception as exc:
+        except (OSError, json.JSONDecodeError, ValueError, TypeError, KeyError) as exc:
             report.errors.append(f"complexity analysis: {exc}")
 
         # --- Anti-spam + issue opening ---
         try:
             open_issues = _load_open_proactive_issues(self._root)
-        except Exception:
+        except (subprocess.SubprocessError, json.JSONDecodeError, OSError, TypeError, ValueError):
             open_issues = []
 
         for finding in all_findings:
