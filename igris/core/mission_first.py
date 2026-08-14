@@ -169,7 +169,7 @@ class MissionFirstController:
             try:
                 from igris.models.config import CONFIG
                 project_root = CONFIG.project_root
-            except Exception:
+            except (ImportError, AttributeError):
                 project_root = Path.home()
         self.project_root = Path(project_root)
         self._memory = unified_memory

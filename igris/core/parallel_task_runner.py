@@ -86,7 +86,7 @@ class FileLock:
             try:
                 fcntl.flock(self._fd, fcntl.LOCK_UN)  # type: ignore[union-attr]  # Unix-only fcntl
                 os.close(self._fd)
-            except Exception:
+            except (OSError, PermissionError):
                 pass
             finally:
                 self._fd = None

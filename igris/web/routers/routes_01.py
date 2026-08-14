@@ -486,7 +486,7 @@ def create_router(deps) -> APIRouter:
                     "Readability violations in response (words=%d): %s",
                     _rdx.word_count, _rdx.violations,
                 )
-        except Exception:
+        except (ImportError, AttributeError, TypeError, ValueError):
             pass
 
         # Record routing decision

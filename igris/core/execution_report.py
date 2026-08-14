@@ -79,6 +79,6 @@ def recent_reports(limit: int = 20) -> List[Dict]:
     for fp in files[-limit:]:
         try:
             reports.append(json.loads(fp.read_text(encoding="utf-8")))
-        except Exception:
+        except (json.JSONDecodeError, OSError, TypeError, ValueError):
             continue
     return reports

@@ -1,6 +1,7 @@
 """Shadow ML API routes (#1248) — shadow/evaluation only, no operational changes."""
 # NOTE: do NOT use `from __future__ import annotations` here —
 # FastAPI uses runtime annotation inspection.
+import json
 import logging
 import re
 
@@ -23,7 +24,7 @@ def _make_router():
     async def shadow_evaluate(request: Request):
         try:
             body = await request.json()
-        except Exception:
+        except (json.JSONDecodeError, TypeError, ValueError):
             body = {}
 
         message = _redact(str(body.get("message", "") or "")[:500])

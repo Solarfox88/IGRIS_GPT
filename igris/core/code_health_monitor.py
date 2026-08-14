@@ -71,7 +71,7 @@ def _run_coverage_json(project_root: str) -> Optional[Dict[str, Any]]:
     if json_path.exists():
         try:
             return json.loads(json_path.read_text())
-        except Exception:
+        except (json.JSONDecodeError, OSError, TypeError, ValueError):
             pass
     return None
 
@@ -310,7 +310,7 @@ def _load_open_proactive_issues(project_root: str) -> List[Dict[str, str]]:
         )
         if result.returncode == 0:
             return list(json.loads(result.stdout or "[]"))
-    except Exception:
+    except (subprocess.SubprocessError, json.JSONDecodeError, OSError, TypeError, ValueError):
         pass
     return []
 
@@ -393,7 +393,7 @@ class CodeHealthMonitor:
                 if json_path.exists():
                     try:
                         cov_data = json.loads(json_path.read_text())
-                    except Exception:
+                    except (json.JSONDecodeError, OSError, TypeError, ValueError):
                         pass
 
             if cov_data:

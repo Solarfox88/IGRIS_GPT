@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import sqlite3
 import time
 import uuid
 from dataclasses import dataclass, field
@@ -89,11 +90,11 @@ class MemoryGarbageCollector:
     def _safe_importance(self, row: Dict[str, Any]) -> float:
         try:
             conf = float(row.get("confidence", 0.0) or 0.0)
-        except Exception:
+        except (ValueError, TypeError):
             conf = 0.0
         try:
             sr = float(row.get("success_rate", 0.0) or 0.0)
-        except Exception:
+        except (ValueError, TypeError):
             sr = 0.0
         content = row.get("content")
         if isinstance(content, dict):
@@ -101,7 +102,7 @@ class MemoryGarbageCollector:
             if raw is not None:
                 try:
                     return max(0.0, min(1.0, float(raw)))
-                except Exception:
+                except (ValueError, TypeError):
                     pass
         score = (max(0.0, min(1.0, conf)) + max(0.0, min(1.0, sr))) / 2.0
         return max(0.0, min(1.0, score))
@@ -113,19 +114,19 @@ class MemoryGarbageCollector:
         try:
             age_days = (now - float(updated_at)) / 86400.0
             return age_days < float(max_age_days)
-        except Exception:
+        except (ValueError, TypeError):
             return True
 
     def _age_days(self, row: Dict[str, Any], now: float) -> float:
         try:
             return max(0.0, (now - float(row.get("updated_at", now))) / 86400.0)
-        except Exception:
+        except (ValueError, TypeError):
             return 0.0
 
     def _safe_updated_at(self, row: Dict[str, Any], now: float) -> float:
         try:
             return float(row.get("updated_at", now) or now)
-        except Exception:
+        except (ValueError, TypeError):
             return now
 
     def _load_rows(self) -> tuple[List[Dict[str, Any]], List[str]]:
@@ -146,12 +147,12 @@ class MemoryGarbageCollector:
                 item = dict(r)
                 try:
                     item["content"] = json.loads(item.get("content") or "{}")
-                except Exception:
+                except (json.JSONDecodeError, TypeError, ValueError):
                     warnings.append(f"corrupt_content:{item.get('node_id')}")
                     item["content"] = None
                 try:
                     item["tags"] = json.loads(item.get("tags") or "[]")
-                except Exception:
+                except (json.JSONDecodeError, TypeError, ValueError):
                     warnings.append(f"corrupt_tags:{item.get('node_id')}")
                     item["tags"] = []
                 rows.append(item)
@@ -261,7 +262,7 @@ class MemoryGarbageCollector:
                     "report_id": report.report_id,
                 },
             )
-        except Exception:
+        except (OSError, TypeError, ValueError):
             report.warnings.append("audit_write_failed")
         return report
 
@@ -285,7 +286,7 @@ class MemoryGarbageCollector:
                     },
                 )
             return True
-        except Exception:
+        except (OSError, json.JSONDecodeError, TypeError, ValueError):
             return False
 
     def apply(self, report: MemoryGCReport, confirmation_token: str) -> MemoryGCApplyResult:
@@ -336,7 +337,7 @@ class MemoryGarbageCollector:
                     else:
                         skipped += 1
             state["consumed"] = True
-        except Exception:
+        except (sqlite3.Error, OSError, TypeError, ValueError):
             warnings.append("delete_failed")
         finally:
             conn.close()
@@ -355,7 +356,7 @@ class MemoryGarbageCollector:
                     "warnings": warnings,
                 },
             )
-        except Exception:
+        except (OSError, TypeError, ValueError):
             warnings.append("audit_write_failed")
 
         return MemoryGCApplyResult(

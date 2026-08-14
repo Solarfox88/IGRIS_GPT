@@ -423,7 +423,7 @@ def _compute_profile_stats(
             avg_q = avg_quality_for_profile(matching, profile, scores, min_history=3)
             if avg_q is not None:
                 quality_weighted = success_rate * avg_q
-        except Exception:
+        except (OSError, KeyError, ValueError, TypeError, json.JSONDecodeError):
             pass  # quality tracking is best-effort, never blocks routing
 
     return {

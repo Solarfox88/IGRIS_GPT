@@ -20,9 +20,9 @@ Skipping this process is not allowed.
 
 ## Current next issue
 
-**#1355 — pyright Phase 2 in progress on branch `chore/1355-pyright-phase-2`.**
+**#1353 — except Exception cleanup Phase 2 in progress on branch `chore/1353-except-exception-phase-2`.**
 
-Pyright errors reduced from 174 to 91 (48% reduction). 91 errors remain — mostly `reportAttributeAccessIssue` (29) and `reportArgumentType` (27) in core modules. CI `|| true` kept until 0 errors. Next: fix remaining 91 errors, then remove `|| true`, then progress to standard mode.
+`except Exception` count reduced from 627 to 535 (92 narrowed). 535 remain — target is <50 (only top-level handlers). No bare `except Exception: pass` remaining. Top-level safety boundaries kept as `except Exception`. Next: continue narrowing remaining catches, then move to #1354.
 
 **Roadmap primary items addressed in Phase 1/2. Follow-up issues open: #1353, #1354, #1355, #1356.**
 

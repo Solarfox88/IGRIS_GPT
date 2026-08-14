@@ -499,7 +499,7 @@ def _get_modified_files(project_root: str, base_branch: str = "main") -> List[st
             proc = subprocess.run(cmd, capture_output=True, text=True, timeout=10, cwd=project_root)
             if proc.returncode == 0:
                 return [f.strip() for f in proc.stdout.splitlines() if f.strip()]
-        except Exception:  # noqa: BLE001
+        except (subprocess.SubprocessError, OSError, FileNotFoundError):  # noqa: BLE001
             pass
     return []
 
@@ -513,7 +513,7 @@ def _get_diff_text(project_root: str, base_branch: str = "main") -> str:
         )
         if proc.returncode == 0:
             return proc.stdout[:10000]
-    except Exception:  # noqa: BLE001
+    except (subprocess.SubprocessError, OSError, FileNotFoundError):  # noqa: BLE001
         pass
     return ""
 
@@ -527,7 +527,7 @@ def _get_last_commit_message(project_root: str) -> str:
         )
         if proc.returncode == 0:
             return proc.stdout.strip()
-    except Exception:  # noqa: BLE001
+    except (subprocess.SubprocessError, OSError, FileNotFoundError):  # noqa: BLE001
         pass
     return ""
 
@@ -576,7 +576,7 @@ def _persist_event(
         with _persist_event._lock:  # type: ignore[attr-defined]
             with open(log_path, "a", encoding="utf-8") as f:
                 f.write(line)
-    except Exception:  # noqa: BLE001
+    except (OSError, PermissionError, TypeError):  # noqa: BLE001
         pass
 
 
@@ -808,7 +808,7 @@ def mbop_post_run(
             })
             # Keep last 500 records
             _qs_path.write_text(_json.dumps(_existing[-500:], indent=2))
-        except Exception:  # noqa: BLE001
+        except (OSError, json.JSONDecodeError, TypeError, ValueError):  # noqa: BLE001
             pass  # never block
 
         # ---- Phase 12: Next-Step ----

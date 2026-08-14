@@ -90,7 +90,7 @@ def create_router(deps) -> APIRouter:
         if request.headers.get("content-type", "").startswith("application/json"):
             try:
                 content = await request.json()
-            except Exception:
+            except (json.JSONDecodeError, TypeError, ValueError):
                 raise HTTPException(status_code=400, detail="Invalid JSON body")
             if not isinstance(content, dict):
                 raise HTTPException(status_code=400, detail="Request body must be a JSON object")

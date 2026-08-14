@@ -766,7 +766,7 @@ class LocalSupervisorBackend:
             primary_result.helper_alt_cost_usd = alt_cost
             primary_result.helper_alt_latency_ms = alt_latency_ms
             primary_result.helper_switch_recommendation = safe
-        except Exception:
+        except (ValueError, TypeError, KeyError, OSError, AttributeError):
             pass  # shadow mode is non-fatal
 
     def api_helper_is_configured(self) -> bool:

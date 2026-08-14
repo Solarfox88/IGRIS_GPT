@@ -60,7 +60,7 @@ class ProactiveEngine:
         try:
             loaded = json.loads(path.read_text(encoding="utf-8"))
             self._cooldowns = loaded if isinstance(loaded, dict) else {}
-        except Exception:
+        except (OSError, json.JSONDecodeError, TypeError):
             self._cooldowns = {}
         return self._cooldowns or {}
 
@@ -71,8 +71,8 @@ class ProactiveEngine:
             path.write_text(
                 json.dumps(self._cooldowns or {}, indent=2), encoding="utf-8"
             )
-        except Exception:
-            pass
+        except (OSError, TypeError, ValueError):
+            logger.debug("Failed to save cooldowns", exc_info=True)
 
     def _is_on_cooldown(self, event_type: str) -> bool:
         cooldowns = self._load_cooldowns()

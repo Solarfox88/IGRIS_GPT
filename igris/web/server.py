@@ -154,7 +154,7 @@ def _pick_next_roadmap_issue(
         if result.returncode != 0:
             return None
         issues = json.loads(result.stdout or "[]")
-    except Exception:
+    except (subprocess.SubprocessError, json.JSONDecodeError, OSError, TypeError, ValueError):
         return None
 
     _EPIC_SKIP_KEYWORDS = ("epic", "phase", "milestone", "overview", "arch", "design")
@@ -460,10 +460,10 @@ async def _watchdog_loop(project_root: str) -> None:
                         if _hint_num and _hint_num not in _skipped_issues:
                             _hint_issue = {"number": _hint_num, "title": _hint_data.get("issue_title", ""), "body": ""}
                         _hint_path.unlink()
-                    except Exception:
+                    except (json.JSONDecodeError, OSError, TypeError, ValueError, KeyError):
                         try:
                             _hint_path.unlink()
-                        except Exception:
+                        except OSError:
                             pass
                 issue = _hint_issue or _pick_next_roadmap_issue(project_root, skip_issues=_skipped_issues)
                 if issue:
@@ -560,7 +560,7 @@ async def _lifespan(app: FastAPI):
                 _nav_logger.info(
                     "Nav hierarchy invariant: OK (%d top-level tabs)", len(_report.top_level_tabs)
                 )
-    except Exception:
+    except (ImportError, OSError, ValueError, TypeError, AttributeError):
         pass
     try:
         yield

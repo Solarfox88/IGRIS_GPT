@@ -634,7 +634,7 @@ class VastAIFleet:
         try:
             urllib.request.urlopen(f"http://{inst.host}:{inst.port}/api/tags", timeout=5)
             return True
-        except Exception:
+        except (urllib.error.URLError, ConnectionError, TimeoutError, OSError):
             return False
 
 

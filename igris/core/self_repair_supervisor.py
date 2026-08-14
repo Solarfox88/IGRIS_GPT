@@ -332,7 +332,7 @@ class SelfRepairSupervisor:
             try:
                 from igris.core.file_rotation import rotate_if_needed
                 rotate_if_needed(self._runs_path)
-            except Exception:
+            except (ImportError, OSError, ValueError, TypeError):
                 pass
             payload = {"runs": self._runs_index}
             self._runs_path.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
@@ -2807,7 +2807,7 @@ class SelfRepairSupervisor:
             if result.returncode != 0:
                 return None
             issues = json.loads(result.stdout or "[]")
-        except Exception:
+        except (subprocess.SubprocessError, json.JSONDecodeError, OSError, TypeError, ValueError):
             return None
 
         EPIC_SKIP = ("epic", "phase", "milestone", "overview", "arch", "design")
@@ -4148,12 +4148,12 @@ class SelfRepairSupervisor:
                         )
                     try:
                         _patch_path.unlink(missing_ok=True)
-                    except Exception:
+                    except OSError:
                         pass
             elif commit.success:
                 try:
                     (Path(self.project_root) / ".igris" / "rank_pending.patch").unlink(missing_ok=True)
-                except Exception:
+                except OSError:
                     pass
             if not commit.success:
                 return self._blocked(
@@ -5493,7 +5493,7 @@ class SelfRepairSupervisor:
                 import json as _json
                 for _issue in _json.loads(_existing.stdout or "[]"):
                     existing_open_titles.add((_issue.get("title") or "").lower().strip())
-        except Exception:
+        except (subprocess.SubprocessError, json.JSONDecodeError, OSError, TypeError, ValueError):
             pass  # Dedup is best-effort; if it fails, allow creation to proceed
 
         # Epic #1078 — Enforce max sub-issue count to prevent noisy decompositions.
@@ -5717,7 +5717,7 @@ class SelfRepairSupervisor:
                         capture_output=True, text=True,
                         cwd=self.project_root, timeout=20,
                     )
-                except Exception:
+                except (subprocess.SubprocessError, OSError):
                     pass  # Label application is best-effort
             else:
                 run.add(
@@ -6210,7 +6210,7 @@ class SelfRepairSupervisor:
             if _stale_patch.exists():
                 _stale_patch.unlink(missing_ok=True)
                 run.add("patch_cleanup", "success", "rank_pending.patch removed on blocked run")
-        except Exception:
+        except (OSError, PermissionError):
             pass
         # Record capability-related failures so future runs can learn from history.
         # Skip infrastructure/baseline failures — they're environment issues, not

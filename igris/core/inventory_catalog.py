@@ -163,7 +163,7 @@ class InventoryCatalog:
 
         try:
             raw = self.storage_path.read_text(encoding="utf-8")
-        except Exception as exc:
+        except (OSError, PermissionError, UnicodeDecodeError) as exc:
             msg = f"read failed: {exc}"
             result.errors.append(msg)
             logger.warning("InventoryCatalog.reload: %s", msg)
