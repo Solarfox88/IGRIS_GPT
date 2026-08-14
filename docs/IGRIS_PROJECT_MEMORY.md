@@ -2,13 +2,13 @@
 
 Stable project state — source of truth for all agents.
 
-Last updated: 2026-08-14 (Devin desktop handoff bootstrap)
+Last updated: 2026-08-14 (roadmap alignment checkpoint)
 
 ## Repository
 
 - repo: `Solarfox88/IGRIS_GPT` (public)
 - default branch: `main`
-- current `main` commit: `7878a7c` (Merge PR #1344 — root consistency guard, EPIC #1301 PR4A)
+- current `main` commit: `84b39ef` (docs: update worklog with #1312 Phase 2 merge commit)
 
 ## Completed
 
@@ -20,6 +20,14 @@ Last updated: 2026-08-14 (Devin desktop handoff bootstrap)
 | Security — centralized redaction | #1313 / PR #1334 | done | `7d8d4c0` | secret redaction centralized (19 files touched) |
 | Reliability — memory cross-session | #1294 / PR #1335 | done | `e716f68` | memory/preferences persist across sessions (23 files touched) |
 | Refactor — supervisor C1 | #1312 / PR #1331 | **PARTIAL** | `ea3d70b` | extracted 4 sub-modules but `self_repair_supervisor.py` still 6208 lines (target <2000) |
+| Task engine reliability | #1296 / PR #1347 | done | `8fa9d8e` | worker step, safe validate, honest diagnostics, gauntlet check |
+| Code change gating | #1291 / PR #1348 | done | `19a1dc4` | /api/chat/intent gates code_change for limited users |
+| Auth contract guard | #1301-PR5A / PR #1345 | done | `54b6b60` | 13 guard tests + docs/auth-contract.md |
+| Except Exception cleanup | #1314 / PR #1349 | **PARTIAL** (Phase 1) | `0ac7a7b` | logging added to 46 silent catches; Phase 2 pending (follow-up #1353) |
+| Structured logging | #1315 / PR #1350 | **PARTIAL** (Phase 1) | `79fe072` | StructuredFormatter + 7 priority modules; Phase 2 pending (follow-up #1354) |
+| Pyright type checking | #1316 / PR #1351 | **PARTIAL** (Phase 1) | `9866bf5` | basic mode config + CI job; Phase 2 pending (follow-up #1355) |
+| Supervisor split Phase 2 | #1312 / PR #1352 | **PARTIAL** (Phase 2) | `67c3783` | 36 static methods extracted to supervisor_helpers.py; still 6,013 lines (follow-up #1356) |
+| Gauntlet mkdir fix | — | done | (pending merge) | fix `exist_ok=True` in gauntlet task_engine_reliability check |
 | Auth — project root | #1286 | done | `914a665` | project_root mismatch fix |
 | Auth — auth-first onboarding | #1278 | done | `a18b32b` | unauthenticated users gated before LLM |
 | Auth — browser auth gate | #1285 | done | `59a90ed` | real browser auth gate |
@@ -46,17 +54,21 @@ Last updated: 2026-08-14 (Devin desktop handoff bootstrap)
 
 ## Current gauntlet
 
-Expected gauntlet count after #1294: **14/14 jarvis-core-ready**.
+Expected gauntlet count: **15/15 jarvis-core-ready** (after gauntlet mkdir fix).
 
-If `task_engine_reliability` is added as a mandatory check (planned for #1296), update expected count to **15/15**.
+- On **Linux (VM)**: 15/15 PASSED via `.venv/bin/python -m igris.core.jarvis_core_gauntlet`
+- On **Windows (host)**: 14/15 — `memory_cross_session` fails with `[WinError 32]` SQLite graph.db file lock (pre-existing, Windows-only, NOT a regression)
 
 Run: `python -m igris.core.jarvis_core_gauntlet`
 
 ## Known caveats
 
-- **#1312 is only partially complete** — `self_repair_supervisor.py` is still 6208 lines (target <2000). PR #1331 extracted 4 sub-modules but the main file was not reduced enough. Issue is closed on GitHub but the criterion is NOT met. A follow-up issue or reopen is needed.
+- **#1312 is only partially complete** — `self_repair_supervisor.py` is still 6,013 lines (target <2000). Follow-up issue #1356 tracks Phase 3.
+- **#1314, #1315, #1316 are open** — Phase 1 merged but Phase 2 pending. Follow-up issues: #1353, #1354, #1355.
+- **`memory_cross_session` gauntlet check fails on Windows** with `[WinError 32]` SQLite graph.db file lock — pre-existing, NOT a regression. Passes on Linux VM.
 - CI may have pre-existing auth/server failures; prove on clean `origin/main` before claiming regression.
 - `gh` CLI may not be installed/authenticated on all agent machines — verify before PR operations.
+- VM Python environment: `/home/igris/IGRIS_GPT/.venv/bin/python` (Python 3.12.3, fastapi 0.136.1). NOT system `python3`.
 - The `.local/` directory is used for local-only agent reports (e.g. `DEVIN_IGRIS_HANDOFF_CONTEXT.md`) and should NOT be committed.
 
 ## Local clones audited (2026-08-14)

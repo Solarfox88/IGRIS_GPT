@@ -30,7 +30,31 @@ Architecture, security, and process decisions for IGRIS_GPT. Append a new ADR wh
 **Date**: 2026-08-14
 **Status**: accepted
 
-**Decision**: PR #1331 did not fully close the C1 monolith criterion because `igris/core/self_repair_supervisor.py` remained 6208 lines (target <2000). Issue #1312 is closed on GitHub, but the work is incomplete. A follow-up issue should be filed to finish the split.
+**Decision**: PR #1331 did not fully close the C1 monolith criterion because `igris/core/self_repair_supervisor.py` remained 6208 lines (target <2000). Issue #1312 is closed on GitHub, but the work is incomplete. Follow-up issue #1356 tracks Phase 3.
+
+## ADR-IGRIS-0006 — Phase-merged ≠ complete; follow-up issues required
+
+**Date**: 2026-08-14
+**Status**: accepted
+
+**Decision**: When a large issue (#1314, #1315, #1316, #1312) is addressed in phases, merging a Phase 1 or Phase 2 PR does NOT close the parent issue. The parent issue remains open (or a follow-up issue is created) until ALL acceptance criteria are met.
+
+**Rationale**: Declaring "roadmap complete" when only Phase 1 is merged is misleading. The original issues have specific acceptance criteria (e.g., <50 `except Exception`, all modules with structured logging, pyright standard mode, <2,000 lines) that are NOT met by Phase 1 alone.
+
+**Current follow-up issues**:
+- #1353 → #1314 Phase 2 (except Exception → specific types)
+- #1354 → #1315 Phase 2 (structured logging rollout)
+- #1355 → #1316 Phase 2 (pyright enforcement + standard mode)
+- #1356 → #1312 Phase 3 (supervisor split <2,000 lines)
+
+## ADR-IGRIS-0007 — VM gauntlet must use .venv Python, not system python3
+
+**Date**: 2026-08-14
+**Status**: accepted
+
+**Decision**: The IGRIS VM gauntlet must be run with `/home/igris/IGRIS_GPT/.venv/bin/python -m igris.core.jarvis_core_gauntlet`, not system `python3`. The `igris.service` systemd unit uses `.venv/bin/python` (Python 3.12.3 with fastapi 0.136.1). System `python3` lacks fastapi and cannot import `igris.web.server`.
+
+**Rationale**: Running the gauntlet with the wrong Python produces false failures (ModuleNotFoundError: No module named 'fastapi') that do not reflect the actual runtime state. The service's venv is the authoritative environment.
 
 **Rationale**: The handoff explicitly required the file to be split below 2000 lines. The merge only extracted 4 sub-modules but did not reduce the main file enough. Calling it "done" would hide real tech debt.
 
