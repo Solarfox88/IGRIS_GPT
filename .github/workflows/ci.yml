@@ -44,4 +44,6 @@ jobs:
           python -m pip install -U pip
           python -m pip install -e ".[dev]"
       - name: Run pyright (basic mode)
+        # Phase 2 (#1355): || true kept until 0 errors in basic mode.
+        # Once all type errors are fixed, remove || true to make CI blocking.
         run: python -m pyright igris/ --outputjson || true

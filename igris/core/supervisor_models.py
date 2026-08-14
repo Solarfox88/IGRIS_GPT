@@ -590,6 +590,8 @@ class SupervisorRun:
     update_hook: Any = None
     cancel_requested: bool = False
     cancel_reason: str = ""
+    blocked_reason: str = ""
+    created_at: float = 0.0
     # Capability-limit tracking: maps signal name → count across all attempts/repairs.
     capability_signals: Dict[str, int] = field(default_factory=dict)
     # Decomposition produced by IGRIS when capability_limit is detected.

@@ -121,8 +121,8 @@ def create_router(deps) -> APIRouter:
             stderr = _redact(result.get("stderr", ""))
             report = execution_report.create_report(
                 command_id="run_tests", capability_id="validation.run_tests",
-                returncode=result["returncode"], stdout=result.get("stdout", ""),
-                stderr=result.get("stderr", ""),
+                returncode=int(result["returncode"]), stdout=str(result.get("stdout", "")),
+                stderr=str(result.get("stderr", "")),
                 started_at=started, finished_at=finished, duration_ms=duration_ms,
             )
             # Route outcome

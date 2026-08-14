@@ -34,42 +34,40 @@ def _make_router():
         try:
             from igris.core.shadow_ml import ShadowMLCoordinator
             from igris.models.config import CONFIG
+            from types import SimpleNamespace
 
             # Route decision proxy
             route_data = body.get("route_decision") or {}
             route_decision_proxy = None
             if route_data:
-                class _RD:
-                    pass
-                rd = _RD()
-                rd.route = route_data.get("route", "")
-                rd.risk = route_data.get("risk", "low")
+                rd = SimpleNamespace(
+                    route=route_data.get("route", ""),
+                    risk=route_data.get("risk", "low"),
+                )
                 route_decision_proxy = rd
 
             # Mission plan proxy
             mission_data = body.get("mission") or {}
             mission_proxy = None
             if mission_data:
-                class _MP:
-                    pass
-                mp = _MP()
-                mp.route = mission_data.get("route", "")
-                mp.risk = mission_data.get("risk", "low")
-                mp.blocked = mission_data.get("blocked", False)
-                mp.requires_approval = mission_data.get("requires_approval", False)
-                mp.status = mission_data.get("status", "planned")
+                mp = SimpleNamespace(
+                    route=mission_data.get("route", ""),
+                    risk=mission_data.get("risk", "low"),
+                    blocked=mission_data.get("blocked", False),
+                    requires_approval=mission_data.get("requires_approval", False),
+                    status=mission_data.get("status", "planned"),
+                )
                 mission_proxy = mp
 
             # Bundle proxy
             bundle_data = body.get("bundle") or {}
             bundle_proxy = None
             if bundle_data:
-                class _BP:
-                    pass
-                bp = _BP()
-                bp.status = bundle_data.get("status", "inconclusive")
-                bp.ok = bundle_data.get("ok", False)
-                bp.results = []
+                bp = SimpleNamespace(
+                    status=bundle_data.get("status", "inconclusive"),
+                    ok=bundle_data.get("ok", False),
+                    results=[],
+                )
                 bundle_proxy = bp
 
             memory_items = body.get("memory_items") or []

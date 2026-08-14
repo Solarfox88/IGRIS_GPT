@@ -351,7 +351,7 @@ def create_router(deps) -> APIRouter:
         warn = body.get("warn_threshold")
         return provider_router.set_budget_config(
             max_session_cost=float(max_cost) if max_cost is not None else None,
-            warn_threshold=float(warn) if warn is not None else None,
+            warn_threshold=float(str(warn)) if warn is not None else None,
         )
 
     # ---- Files ----

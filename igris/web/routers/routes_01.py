@@ -55,6 +55,8 @@ from igris.agents import build_default_registry
 from igris.a2a.agent_card import build_agent_card
 from igris.a2a import task_store as a2a_store
 
+logger = logging.getLogger(__name__)
+
 
 def create_router(deps) -> APIRouter:
     """Router module 1/10 — _create_app_impl chunk 1."""
@@ -881,9 +883,11 @@ def create_router(deps) -> APIRouter:
         except Exception:
             pass
 
-        loop_info = {}
+        loop_info: dict = {}
         try:
-            loop_info = loop_engine.get_status()
+            from igris.core.autonomous_loop import get_loop_status as _get_loop_status
+            _ls = _get_loop_status()
+            loop_info = _ls.to_dict() if hasattr(_ls, "to_dict") else {}
         except Exception:
             pass
 
@@ -1065,7 +1069,7 @@ def create_router(deps) -> APIRouter:
                 elif trust_level in ("admin", "owner", "trusted"):
                     approval_required = True
         except Exception as _pf_exc:
-            _pf_logger.error("chat/intent router failed: %s", _pf_exc)
+            logger.error("chat/intent router failed: %s", _pf_exc)
             # Fail-closed for sensitive intents
             if intent in ("patching", "code_change", "deploy"):
                 blocked = True

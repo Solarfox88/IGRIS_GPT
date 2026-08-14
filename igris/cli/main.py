@@ -33,7 +33,7 @@ def main(argv: Optional[list[str]] = None) -> None:
 
     if args.command == "serve" or args.command is None:
         app = create_app()
-        run_app(app=app, host=args.host, port=args.port)
+        run_app(app, host=args.host, port=args.port)
 
 
 if __name__ == "__main__":  # pragma: no cover

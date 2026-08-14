@@ -167,11 +167,11 @@ class UnifiedMemory:
 
         # TopicTree (optional)
         try:
-            from igris.core.memory_topic_tree import MemoryTopicTree
+            from igris.core.memory_topic_tree import TopicTree as MemoryTopicTree
             self._topic_tree = MemoryTopicTree(str(self.project_root))
             self._backends["topic_tree"] = "ok"
         except Exception:
-            logger.debug("MemoryTopicTree unavailable", exc_info=True)
+            logger.debug("TopicTree unavailable", exc_info=True)
             self._backends["topic_tree"] = "unavailable"
 
         # EmbeddingStore (optional — best-effort only)

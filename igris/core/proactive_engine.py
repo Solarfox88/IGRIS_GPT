@@ -58,10 +58,11 @@ class ProactiveEngine:
             self._cooldowns = {}
             return self._cooldowns
         try:
-            self._cooldowns = json.loads(path.read_text(encoding="utf-8"))
+            loaded = json.loads(path.read_text(encoding="utf-8"))
+            self._cooldowns = loaded if isinstance(loaded, dict) else {}
         except Exception:
             self._cooldowns = {}
-        return self._cooldowns
+        return self._cooldowns or {}
 
     def _save_cooldowns(self) -> None:
         path = self._cooldown_path()

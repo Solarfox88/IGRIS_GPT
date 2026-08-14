@@ -67,6 +67,7 @@ class AssignmentRequest:
     provider_circuit_breaker_state: Dict[str, bool] = field(default_factory=dict)
     is_repair: bool = False
     outcomes_path: str = ""
+    project_root: Optional[str] = None
 
 
 @dataclass

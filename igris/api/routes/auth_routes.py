@@ -336,7 +336,7 @@ def _make_router():
     # ── POST /api/auth/logout ─────────────────────────────────────────────────
 
     @router.post("/logout")
-    async def logout(request: Request, body: LogoutRequest = None):
+    async def logout(request: Request, body: Optional[LogoutRequest] = None):
         token = _extract_bearer_token(request)
         if not token and body and body.session_token:
             token = body.session_token

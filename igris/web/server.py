@@ -26,7 +26,7 @@ try:
 except ImportError:  # pragma: no cover
     uvicorn = None  # type: ignore
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
 from fastapi import Body, FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
@@ -685,7 +685,7 @@ def run_app(application: FastAPI, host: str = "0.0.0.0", port: int = 7778) -> No
                 # function called BEFORE uvicorn starts the event loop, so blocking
                 # sleep is safe. Do NOT replace with asyncio.sleep (#728).
                 _time.sleep(2)
-                os.kill(stale_pid, _sig.SIGKILL)
+                os.kill(stale_pid, _sig.SIGKILL)  # type: ignore[attr-defined]  # Unix-only: SIGKILL not on Windows
             except ProcessLookupError:
                 pass
         _time.sleep(1)  # Wait for port release — sync context, safe
@@ -708,4 +708,6 @@ def run_app(application: FastAPI, host: str = "0.0.0.0", port: int = 7778) -> No
         except Exception as exc:
             startup_logger.error("Unable to open diagnostic GitHub issue: %s", exc)
         raise SystemExit(1)
+    if uvicorn is None:
+        raise RuntimeError("uvicorn is not installed")
     uvicorn.run(application, host=host, port=port, log_level="info")

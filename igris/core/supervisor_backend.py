@@ -237,7 +237,7 @@ class LocalSupervisorBackend:
 
         if kill_reason:
             try:
-                os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+                os.killpg(os.getpgid(proc.pid), signal.SIGKILL)  # type: ignore[attr-defined]  # Unix-only: killpg/getpgid/SIGKILL not on Windows
             except OSError:
                 try:
                     proc.kill()
@@ -330,7 +330,7 @@ class LocalSupervisorBackend:
             nonlocal kill_reason
             kill_reason = reason
             try:
-                os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+                os.killpg(os.getpgid(proc.pid), signal.SIGKILL)  # type: ignore[attr-defined]  # Unix-only: killpg/getpgid/SIGKILL not on Windows
             except OSError:
                 try:
                     proc.kill()

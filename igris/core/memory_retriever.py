@@ -39,7 +39,7 @@ class MemoryRetriever:
         Returns:
             List of MemoryEntry objects sorted by relevance score.
         """
-        entries = self._ltm.get_entries(domain=domain)
+        entries = self._ltm.get_entries(domain=domain or "")
         if not entries:
             return []
 
@@ -53,14 +53,14 @@ class MemoryRetriever:
         scored.sort(key=lambda x: x[1], reverse=True)
         return [entry for entry, _ in scored[:top_k]]
 
-    def get_rolling_summary(self, domain: str) -> str:
+    def get_rolling_summary(self, domain: str) -> List[MemoryEntry]:
         """Retrieve the rolling summary for a given domain.
 
         Args:
             domain: Domain to fetch summary for.
 
         Returns:
-            Summary string, or empty string if not found.
+            List of MemoryEntry, or empty list if not found.
         """
         return self._ltm.get_rolling_summary(domain)
 

@@ -420,8 +420,8 @@ class JarvisRequestRouter:
             matched_mission = False
             matched_confidence = 0.6
 
-        route_val = matched_route.value if hasattr(matched_route, "value") else str(matched_route)
-        risk_val = matched_risk.value if hasattr(matched_risk, "value") else str(matched_risk)
+        route_val = getattr(matched_route, "value", str(matched_route))
+        risk_val = getattr(matched_risk, "value", str(matched_risk))
 
         # ── Step 7: Security policy enforcement ─────────────────────────────
         is_untrusted = tl in _UNTRUSTED_LEVELS

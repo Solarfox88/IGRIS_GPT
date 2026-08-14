@@ -17,7 +17,7 @@ class CompactorConfig:
     tail_lines: int = 50
     stack_head: int = 10
     stack_tail: int = 5
-    collapse_patterns: List[Dict[str, Any]] = None
+    collapse_patterns: Optional[List[Dict[str, Any]]] = None
 
     def __post_init__(self):
         if self.collapse_patterns is None:

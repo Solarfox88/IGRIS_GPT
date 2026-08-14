@@ -5,6 +5,7 @@ import logging
 import os
 import re
 import sqlite3
+import sys
 import threading
 import time
 import uuid
@@ -244,7 +245,7 @@ CREATE INDEX IF NOT EXISTS idx_edges_dst  ON memory_edges(dst_node);
             if str(c.get("risk", "low")).lower() in ("high", "destructive"):
                 continue
             guard = str(c.get("os_guard", "")).strip().lower()
-            if guard and guard not in os.sys.platform.lower() and guard not in os.name.lower():
+            if guard and guard not in sys.platform.lower() and guard not in os.name.lower():
                 continue
             return node
         return None

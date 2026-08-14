@@ -536,7 +536,8 @@ def _detect_capability_limit(run: SupervisorRun) -> Optional[str]:
         if count >= CAPABILITY_LIMIT_THRESHOLD:
             return signal
     if sum(run.capability_signals.values()) >= CAPABILITY_LIMIT_THRESHOLD:
-        return max(run.capability_signals, key=run.capability_signals.get)
+        _get = run.capability_signals.get
+        return max(run.capability_signals, key=lambda k: _get(k, 0) or 0)
     return None
 
 

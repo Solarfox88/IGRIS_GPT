@@ -14,9 +14,12 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from igris.core.redaction import redact as _redact, redact_nested as _redact_dict  # noqa: F401
+
+if TYPE_CHECKING:
+    from igris.core.verifier_registry import EvidenceBundle
 
 logger = logging.getLogger(__name__)
 
@@ -199,8 +202,7 @@ class MissionFirstController:
         if route_decision is None:
             return False
         route = getattr(route_decision, "route", "")
-        if hasattr(route, "value"):
-            route = route.value
+        route = getattr(route, "value", route)
         return str(route) in _MISSION_ROUTES
 
     def build_plan(

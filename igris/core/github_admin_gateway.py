@@ -77,7 +77,7 @@ class GitHubAdminGateway:
         self.audit_log: list[dict] = []
         self.audit_path = Path(audit_path)
 
-    def _log(self, action: str, target: str, status: str, details: dict = None):
+    def _log(self, action: str, target: str, status: str, details: Optional[dict] = None):
         """Record an audit entry for every attempt."""
         entry = {
             "id": str(uuid4())[:8],

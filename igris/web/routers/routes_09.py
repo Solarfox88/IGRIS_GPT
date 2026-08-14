@@ -14,7 +14,7 @@ import re
 import subprocess
 import time
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Body, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
@@ -338,7 +338,7 @@ def create_router(deps) -> APIRouter:
         }
 
     @router.post("/api/context/score-files")
-    async def api_context_score_files(request: Request) -> Dict[str, object]:
+    async def api_context_score_files(request: Request) -> Any:
         """Score file relevance for a given task."""
         from igris.core.context_manager import score_file_relevance
         content = await request.json()

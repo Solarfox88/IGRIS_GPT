@@ -53,7 +53,7 @@ def enrich_report(
                 or ""
             )
 
-        bridge_result = bridge(run_status, goal_status)
+        bridge_result = bridge(run_status or "", goal_status or "")
         elapsed_ms = round((time.monotonic() - t0) * 1000, 2)
 
         if elapsed_ms > config.max_latency_budget_ms:
