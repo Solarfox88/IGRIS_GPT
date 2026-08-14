@@ -586,6 +586,10 @@ def create_app() -> FastAPI:
     import urllib.error
     from igris.web.security import apply_security_middleware
 
+    # Wire structured logging at app startup (#1354 Phase 2)
+    from igris.core.structured_logging import configure_structured_logging
+    configure_structured_logging()
+
     app = FastAPI(title="IGRIS_GPT", version="0.1.0", lifespan=_lifespan)
     apply_security_middleware(app)
 
