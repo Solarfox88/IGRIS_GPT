@@ -75,3 +75,22 @@ Architecture, security, and process decisions for IGRIS_GPT. Append a new ADR wh
 **Decision**: The `.local/` directory holds agent-local handoff/context reports (e.g. `DEVIN_IGRIS_HANDOFF_CONTEXT.md`) and must never be committed to the repository. Persistent memory lives in `AGENTS.md` and `docs/IGRIS_*.md` (which ARE committed).
 
 **Rationale**: Local reports are agent-specific and may contain transient state. The repo memory files are the shared, versioned source of truth.
+
+## ADR-IGRIS-0008 — Mandatory 5-pass completion rule
+
+**Date**: 2026-08-14
+**Status**: accepted
+
+**Decision**: Every IGRIS task must follow the mandatory 5-pass completion rule before being declared complete, ready to merge, ready to close, or production-ready.
+
+The rule applies to all work types: issues, PRs, bugfixes, refactors, tests, docs affecting operations, CI, VM validation, security hardening, and roadmap items.
+
+**Rationale**: Previous autonomous work sometimes marked roadmap items as complete after a single phase even when follow-up work remained. The 5-pass rule forces rereading the issue, reviewing the diff, checking edge cases, validating safety/VM/memory, and making an honest final acceptance decision.
+
+**Consequences**:
+
+- Agents must read memory files before starting any task.
+- Agents must explicitly report that memory files were read.
+- Every non-trivial PR must include a 5-pass completion review.
+- Parent issues cannot be closed when only a phase is complete.
+- Follow-up issues must be created when acceptance criteria remain unmet.
