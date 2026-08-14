@@ -40,7 +40,7 @@ Phase complete, follow-up pending.
 | Priority | Issue | Status | Next action |
 |---|---|---|---|
 | Critical | #1314 | **open** — Phase 1 merged (PR #1349 `0ac7a7b`), Phase 2 in progress | Follow-up: **#1353** — except Exception count reduced 627→535 (92 narrowed), target <50 |
-| Critical | #1315 | **open** — Phase 1 merged (PR #1350 `79fe072`), Phase 2 pending | Follow-up: **#1354** — rollout structured logging to remaining ~30 modules, wire into server startup |
+| Critical | #1315 | **open** — Phase 1 merged (PR #1350 `79fe072`), Phase 2 in progress | Follow-up: **#1354** — structured logging wired into server startup, redaction added to StructuredFormatter, 12 new tests |
 | Critical | #1316 | **open** — Phase 1 merged (PR #1351 `9866bf5`), Phase 2 in progress | Follow-up: **#1355** — pyright errors reduced 174→91 (48%), 91 remain; CI `|| true` kept until 0 errors |
 | Tech debt | #1312 | **closed on GitHub but incomplete** — Phase 2 merged (PR #1352 `67c3783`) | Follow-up: **#1356** — `self_repair_supervisor.py` still 6,013 lines (target <2,000), extract ~4,000 more lines |
 | Refactor | #1317 (I1) | open | router anonymous routes `routes_01..10` — rename by domain |

@@ -15,10 +15,45 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 import time
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 from typing import Any, Dict, Optional
+
+
+# Redaction patterns for secrets that might appear in log messages
+_SECRET_PATTERNS = [
+    re.compile(r'(token|passphrase|password|secret|api[_\s]?key|bearer)\s*[=:]\s*\S+', re.IGNORECASE),
+    re.compile(r'Authorization:\s*Bearer\s+\S+', re.IGNORECASE),
+    re.compile(r'Authorization:\s*Basic\s+\S+', re.IGNORECASE),
+    re.compile(r'gh[ps]_[A-Za-z0-9]{20,}'),  # GitHub tokens
+    re.compile(r'sk-[A-Za-z0-9_-]{20,}'),  # OpenAI-style API keys
+]
+_REDACTED = '<REDACTED>'
+
+
+def _redact_message(msg: str) -> str:
+    """Redact secrets from a log message string."""
+    if not msg:
+        return msg
+    for pattern in _SECRET_PATTERNS:
+        msg = pattern.sub(_REDACTED, msg)
+    return msg
+
+
+def _redact_extra(extra: Dict[str, Any]) -> Dict[str, Any]:
+    """Redact secrets from extra fields."""
+    redacted: Dict[str, Any] = {}
+    for k, v in extra.items():
+        key_lower = k.lower()
+        if any(s in key_lower for s in ('token', 'password', 'secret', 'api_key', 'apikey', 'authorization', 'cookie', 'bearer')):
+            redacted[k] = _REDACTED
+        elif isinstance(v, str):
+            redacted[k] = _redact_message(v)
+        else:
+            redacted[k] = v
+    return redacted
 
 
 class StructuredFormatter(logging.Formatter):
@@ -43,7 +78,7 @@ class StructuredFormatter(logging.Formatter):
             "module": record.module,
             "func": record.funcName,
             "line": record.lineno,
-            "message": record.getMessage(),
+            "message": _redact_message(record.getMessage()),
         }
 
         # Add extra fields (anything not in standard LogRecord attributes)
@@ -60,13 +95,15 @@ class StructuredFormatter(logging.Formatter):
             for k, v in extra.items():
                 if not isinstance(v, (str, int, float, bool, type(None), list, dict)):
                     extra[k] = str(v)
+            # Redact secrets from extra fields
+            extra = _redact_extra(extra)
             log_entry["extra"] = extra
 
-        # Add exception info if present
+        # Add exception info if present (with redaction)
         if record.exc_info and record.exc_info[1] is not None:
             log_entry["exception"] = {
                 "type": record.exc_info[0].__name__ if record.exc_info[0] else None,
-                "message": str(record.exc_info[1]),
+                "message": _redact_message(str(record.exc_info[1])),
             }
 
         return json.dumps(log_entry, ensure_ascii=False, default=str)
@@ -83,9 +120,9 @@ def configure_structured_logging(
     Args:
         level: Log level (DEBUG, INFO, WARNING, ERROR). Defaults to env
             IGRIS_LOG_LEVEL or "INFO".
-        log_file: Path to JSON log file. Defaults to
-            .igris/logs/igris.jsonl under project root. Set to None to
-            disable file logging.
+        log_file: Path to JSON log file. If None (default), file logging is
+            disabled unless IGRIS_LOG_FILE env var is set. Set
+            IGRIS_LOG_FILE=none to explicitly disable file logging.
         use_json: If True, use JSON formatter. If False, use plain text.
 
     Returns:
@@ -97,7 +134,9 @@ def configure_structured_logging(
     logger = logging.getLogger("igris")
     logger.setLevel(getattr(logging, level.upper(), logging.INFO))
 
-    # Remove existing handlers to avoid duplicates on re-configure
+    # Close and remove existing handlers to avoid duplicates and file handle leaks
+    for handler in logger.handlers:
+        handler.close()
     logger.handlers.clear()
 
     # Console handler (plain text for readability)
@@ -111,14 +150,15 @@ def configure_structured_logging(
         )
     logger.addHandler(console_handler)
 
-    # File handler (JSON, with rotation)
-    if log_file is None:
-        project_root = os.environ.get("IGRIS_PROJECT_ROOT") or os.environ.get("PROJECT_ROOT") or "."
-        log_dir = Path(project_root) / ".igris" / "logs"
-        log_dir.mkdir(parents=True, exist_ok=True)
-        log_file = str(log_dir / "igris.jsonl")
+    # File handler (JSON, with rotation) — opt-in via IGRIS_LOG_FILE env var
+    # or explicit log_file parameter. Default: console-only (no file handler)
+    # to avoid Windows file-lock issues in tests. Production deployments should
+    # set IGRIS_LOG_FILE=/path/to/igris.jsonl or pass log_file= explicitly.
+    env_log_file = os.environ.get("IGRIS_LOG_FILE")
+    if log_file is None and env_log_file and env_log_file.lower() not in ("none", "off", "disabled"):
+        log_file = env_log_file
 
-    if log_file:
+    if log_file and (not env_log_file or env_log_file.lower() not in ("none", "off", "disabled")):
         try:
             file_handler = RotatingFileHandler(
                 log_file,

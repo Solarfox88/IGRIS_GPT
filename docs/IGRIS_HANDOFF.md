@@ -20,9 +20,9 @@ Skipping this process is not allowed.
 
 ## Current next issue
 
-**#1353 — except Exception cleanup Phase 2 in progress on branch `chore/1353-except-exception-phase-2`.**
+**#1354 — structured logging Phase 2 in progress on branch `chore/1354-structured-logging-phase-2`.**
 
-`except Exception` count reduced from 627 to 535 (92 narrowed). 535 remain — target is <50 (only top-level handlers). No bare `except Exception: pass` remaining. Top-level safety boundaries kept as `except Exception`. Next: continue narrowing remaining catches, then move to #1354.
+Structured logging wired into server startup (`create_app()` now calls `configure_structured_logging()`). Redaction added to `StructuredFormatter` — secrets in log messages, extra fields, and exception messages are all redacted. File logging is now opt-in via `IGRIS_LOG_FILE` env var to avoid Windows file lock issues. 12 new tests added (22 total). Next: merge, validate on VM, then move to #1356.
 
 **Roadmap primary items addressed in Phase 1/2. Follow-up issues open: #1353, #1354, #1355, #1356.**
 
