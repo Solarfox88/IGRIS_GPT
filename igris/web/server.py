@@ -639,6 +639,9 @@ def create_app() -> FastAPI:
         redact=_redact,
     )
 
+    # Expose task_engine on app.state for optional API routers (#1296)
+    app.state.task_engine = task_engine
+
     # ---- Register route modules ----
     include_core_routers(app, deps)
 

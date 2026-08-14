@@ -24,6 +24,9 @@ Chronological worklog of all agent work on IGRIS_GPT. Append a row after every t
 | 2026-?? | #1301-PR4A / PR #1344 | Codex/Claude | root consistency guard tests + auth-root-model.md | — | `f65210e` / `7878a7c` |
 | 2026-08-14 | — | Devin | handoff bootstrap — synced main, verified PRs #1311/#1331/#1332/#1334/#1335, audited local clones, created persistent memory files | — | (not merged — docs PR pending) |
 | 2026-08-14 | — | Devin | Hyper-V VM audit — inspected `IGRIS-GPT` VM (Off) via read-only VHDX mount in WSL; found repo at `/home/igris/IGRIS_GPT` on branch `fix/1301-pr5a-auth-contract-guard` @ `b7c7e74` (= PR #1345, already pushed); 119 worktrees (prunable), 3 old stashes, no unpushed work; gauntlet 14/14 PASSED | — | (audit only, no changes) |
+| 2026-08-14 | #1346 / PR #1346 | Devin | docs: add persistent IGRIS project memory (AGENTS.md + 5 memory files) | — | `553b6f0` |
+| 2026-08-14 | — | Devin | VM restore — started IGRIS-GPT VM, configured static IP 192.168.1.253 via netplan, switched to IGRIS External Switch, SSH via paramiko, updated repo to main @ 553b6f0, restarted igris.service, verified http://192.168.1.253:7778 reachable; confirmed #1296 symptoms live (3 pending tasks, starvation=1, task_engine=null) | — | (infra, no code) |
+| 2026-08-14 | #1296 / PR TBD | Devin | fix(#1296): task engine reliability — add failed/approval_required statuses, attempts/last_error fields, process_one_pending_task worker, mark_running/fail_task methods, validate endpoint safe (400/404 no 500), process-one endpoint with write_auth, context_routes wires task_engine via app.state, diagnostics task_engine_state, gauntlet task_engine_reliability check (15th) | `tests/test_task_engine_reliability.py` (16/16), gauntlet 14/15 (memory_cross_session pre-existing WinError 32), regression 89/89 | (pending merge) |
 
 ## Test commands reference
 

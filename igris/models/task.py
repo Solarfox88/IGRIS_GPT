@@ -16,6 +16,8 @@ class TaskStatus(str, Enum):
     running = "running"
     completed = "completed"
     blocked = "blocked"
+    failed = "failed"
+    approval_required = "approval_required"
 
 
 @dataclass
@@ -37,6 +39,8 @@ class Task:
     blocked_reason: Optional[str] = None
     semantic_fingerprint: Optional[str] = None
     uuid: str = field(default_factory=lambda: str(uuid.uuid4()))
+    attempts: int = 0
+    last_error: Optional[str] = None
 
     def to_dict(self) -> dict:
         return {
@@ -55,6 +59,8 @@ class Task:
             "result": self.result,
             "blocked_reason": self.blocked_reason,
             "semantic_fingerprint": self.semantic_fingerprint,
+            "attempts": self.attempts,
+            "last_error": self.last_error,
         }
 
     @classmethod
@@ -78,4 +84,6 @@ class Task:
             blocked_reason=data.get("blocked_reason"),
             semantic_fingerprint=data.get("semantic_fingerprint"),
             uuid=data.get("uuid", str(uuid.uuid4())),
+            attempts=data.get("attempts", 0),
+            last_error=data.get("last_error"),
         )

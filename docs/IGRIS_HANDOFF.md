@@ -54,3 +54,20 @@ Last updated: 2026-08-14 (Devin desktop handoff bootstrap)
 | `IGRIS-GPT` (Hyper-V Gen2) | Off (inspected read-only) | `/home/igris/IGRIS_GPT` | `fix/1301-pr5a-auth-contract-guard` @ `b7c7e74` | aligned with `origin/main` @ `7878a7c`; HEAD = PR #1345 (already pushed) | none — no unpushed work |
 
 Most advanced state found in Hyper-V VM: `IGRIS-GPT`, repo `/home/igris/IGRIS_GPT`, branch `fix/1301-pr5a-auth-contract-guard` @ `b7c7e74` — **equal to GitHub, no newer work**.
+
+## Preview VM status
+
+| Field | Value |
+|---|---|
+| VM | IGRIS-GPT |
+| IP | 192.168.1.253 (static, on IGRIS External Switch) |
+| URL | http://192.168.1.253:7778 |
+| Branch | main |
+| Commit | 553b6f0 |
+| Service | igris.service (systemd, enabled, uvicorn on 0.0.0.0:7778) |
+| Last updated | 2026-08-14T11:26Z |
+| Health | DEGRADED — 3 pending tasks, starvation detected, task_engine=null in /api/os/brief (this is #1296) |
+
+VM access: SSH (user=igris, password=igris) to 192.168.1.253, or WMI keyboard via Hyper-V console.
+Network: VM on IGRIS External Switch with static IP 192.168.1.253/24, gateway 192.168.1.1, DNS 192.168.1.1+8.8.8.8.
+Netplan: /etc/netplan/01-static.yaml (static, no DHCP).

@@ -48,7 +48,16 @@ def _make_router():
         try:
             from igris.core.context_aggregator import ContextAggregator
             from igris.models.config import CONFIG
-            agg = ContextAggregator(project_root=str(CONFIG.project_root))
+            # Wire task_engine and mission_controller from app.state (#1296)
+            # so /api/os/brief reports them as available instead of null.
+            kwargs = {"project_root": str(CONFIG.project_root)}
+            task_engine = getattr(request.app.state, "task_engine", None)
+            if task_engine is not None:
+                kwargs["task_engine"] = task_engine
+            mission_controller = getattr(request.app.state, "mission_controller", None)
+            if mission_controller is not None:
+                kwargs["mission_controller"] = mission_controller
+            agg = ContextAggregator(**kwargs)
             brief = agg.build_context(
                 query=query,
                 interlocutor_id=interlocutor_id,
