@@ -2,7 +2,7 @@
 
 The exact point where work resumes. Updated by every agent at the end of each task.
 
-Last updated: 2026-08-14 (mandatory 10-pass rule + quality hardening added)
+Last updated: 2026-08-14 (mandatory 20-pass quality gate + quality hardening added)
 
 ## Mandatory process before next task
 
@@ -12,7 +12,7 @@ Before starting any next task, every agent must:
 2. read `AGENTS.md`
 3. read all `docs/IGRIS_*.md` memory files
 4. read the GitHub issue/PR and comments
-5. apply the **mandatory 10-pass completion rule** (see `AGENTS.md`)
+5. apply the **mandatory 20-pass quality gate** (see `AGENTS.md`)
 6. follow the quality hardening rules (GitHub-state verification, no fake "no behavior change", centralized-logic reuse, VM validation, measurable before/after, memory consistency, traceable validation evidence)
 7. update memory files before PR/merge/close
 8. validate on VM when runtime-impacting — include traceable evidence (VM commit, branch, service status, gauntlet command+result, diagnostics/os-brief endpoints, post-merge proof)

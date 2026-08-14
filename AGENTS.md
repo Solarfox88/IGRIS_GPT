@@ -23,9 +23,9 @@ Local working directories (including clones from previous Codex/Claude sessions)
 7. never trust stale local context — verify the current `main` commit
 8. never work directly on `main` — create a feature/fix branch
 
-## Mandatory 10-pass completion rule
+## Mandatory 20-pass quality gate
 
-Every IGRIS task must follow the mandatory 10-pass completion rule before it can be called complete, ready to merge, ready to close, production-ready, or fully resolved.
+Every IGRIS task must follow the mandatory 20-pass quality gate before it can be called complete, ready to merge, ready to close, production-ready, or fully resolved.
 
 This applies to every type of work:
 
@@ -46,6 +46,8 @@ This applies to every type of work:
 
 No agent may mark work as complete after one narrow implementation pass.
 
+## The 20 mandatory passes
+
 ### Pass 1 — Memory and task intake
 
 Before coding:
@@ -61,112 +63,234 @@ Required report:
 
 ```text
 Memory files read before task: yes
-10-pass completion rule loaded: yes
+20-pass quality gate loaded: yes
 Issue/PR read: yes
 Current main commit: <commit>
 ```
 
-### Pass 2 — Acceptance criteria extraction
+### Pass 2 — GitHub reality check
+
+Verify GitHub state before trusting local memory.
+
+Check when relevant:
+
+```bash
+gh pr list --state open --repo Solarfox88/IGRIS_GPT
+gh issue list --state open --repo Solarfox88/IGRIS_GPT
+gh issue view <ISSUE> --repo Solarfox88/IGRIS_GPT --comments
+gh pr view <PR> --repo Solarfox88/IGRIS_GPT --json state,mergedAt,mergeCommit,files,title,body
+```
+
+If `gh` is unavailable, use GitHub API.
+
+GitHub reality beats local claims.
+
+### Pass 3 — Acceptance criteria extraction
 
 Extract the issue into explicit acceptance criteria.
 
 For each criterion define:
 
-- what would prove it complete
-- what tests or runtime checks are required
-- what would make it only phase-complete
-- what must not be changed
-- what related prior decisions/ADRs apply
+- what proves completion
+- required tests
+- required runtime/VM evidence
+- non-goals
+- safety constraints
+- what makes the work only phase-complete
 
-Do not rely on vague wording like "looks good" or "should be fine".
+### Pass 4 — Prior decisions and architecture check
 
-### Pass 3 — Baseline and evidence collection
+Read relevant ADRs and existing architecture.
 
-Before modifying code:
+Check:
 
-- establish current baseline
-- capture counts, failures, endpoint behavior, tests, config, file sizes, or other measurable evidence
-- identify whether failures are pre-existing
-- identify runtime/VM state when applicable
+- centralized redaction
+- auth/write guardrails
+- dangerous intent routing
+- memory isolation
+- task engine behavior
+- diagnostics
+- logging
+- VM validation rules
+- existing helper modules
+
+Do not duplicate central logic without a documented reason.
+
+### Pass 5 — Baseline and measurable evidence
+
+Before modifying code, record measurable baseline.
 
 Examples:
 
-- type errors count
-- except Exception count
-- structured logging coverage
-- gauntlet result
-- endpoint smoke result
-- VM commit and health
 - file line counts
+- method counts
+- error counts
+- failing tests
+- gauntlet state
+- endpoint behavior
+- VM commit
+- current issue state
+- current PR state
+- current open-items state
 
-### Pass 4 — First focused implementation
+### Pass 6 — Risk classification
+
+Classify the work as:
+
+- docs-only
+- test-only
+- config-only
+- low-risk runtime
+- medium-risk runtime
+- high-risk runtime
+- security-impacting
+- architecture/refactor-impacting
+
+Define required validation level.
+
+Runtime, security, startup, API, memory, supervisor, auth, task engine, diagnostics, and logging changes require VM validation.
+
+### Pass 7 — Minimal implementation plan
+
+Write a small plan before editing.
+
+Include:
+
+- files to touch
+- expected diff shape
+- tests to add
+- what will not be touched
+- rollback idea
+- expected honest status
+
+Do not start broad rewrites without this plan.
+
+### Pass 8 — First focused implementation
 
 Implement the smallest safe improvement.
 
 Rules:
 
-- keep scope focused
-- do not rewrite unrelated systems
-- do not weaken safety guardrails
-- add or update tests
-- do not declare completion
+- one cohesive scope
+- no unrelated cleanup
+- no broad rewrite
+- no hidden behavior change
+- no guardrail weakening
+- tests added or updated
 
-### Pass 5 — Self-review against issue and diff
+### Pass 9 — Local smoke and import check
+
+Run fast local checks immediately after first implementation.
+
+At minimum when relevant:
+
+```bash
+python -m compileall igris
+pytest <targeted-tests> -q
+```
+
+Fix import/circular/dependency errors before continuing.
+
+### Pass 10 — Self-review against issue and diff
 
 Reread:
 
-- the original issue
+- original issue
 - acceptance criteria
-- your full diff
-- changed tests
-- related memory files
+- full diff
+- tests
+- memory files
 
-Find gaps.
+Find gaps. Apply at least one improvement or explicitly justify why no improvement exists.
 
-You must apply at least one improvement or explicitly justify why no improvement exists.
+### Pass 11 — Existing-pattern and duplication review
 
-### Pass 6 — Architecture and existing-pattern review
-
-Check whether the work duplicates or violates existing architecture.
+Search for existing canonical implementation.
 
 Mandatory checks:
 
-- is there already a centralized helper/module for this?
-- am I duplicating security, redaction, auth, routing, logging, memory, or config logic?
-- am I bypassing an existing guardrail?
-- am I introducing a parallel implementation instead of using the canonical one?
-- do I need an ADR if I intentionally diverge?
+- am I duplicating redaction?
+- am I duplicating auth?
+- am I duplicating logging?
+- am I duplicating routing?
+- am I duplicating memory behavior?
+- am I bypassing guardrails?
+- am I creating a parallel API?
 
-If the project already has a central implementation, use it unless there is a documented reason not to.
+If a central module exists, use it.
 
-### Pass 7 — Edge cases, negative paths, and regression review
+### Pass 12 — Edge cases and negative paths
 
 Check:
 
-- happy path
-- negative path
-- missing/invalid input
-- auth/session/trust-level interaction
-- filesystem and OS differences
+- invalid input
+- missing files
+- empty state
+- stale state
 - Windows/Linux differences
-- stale data
-- concurrency/locking
-- logging/redaction
-- failure modes
+- locked files
+- permission errors
+- subprocess failures
+- JSON parse failures
+- network failures
+- auth/session/trust failures
 - unexpected exceptions
 
-Add or update regression tests.
+Add regression tests.
 
-### Pass 8 — Runtime, VM, and integration validation
+### Pass 13 — Security and privacy review
 
-If the change affects runtime, API, UI, auth, memory, diagnostics, task engine, logging, startup, routing, tool execution, or service behavior, validate on VM.
+Verify:
 
-VM:
+- no secrets in logs
+- no token/cookie/header leakage
+- redaction uses central logic where possible
+- write endpoints still gated
+- dangerous operations still require approval
+- limited users remain blocked where required
+- no new unsafe default
+- no weakening of safety checks
 
-- URL: http://192.168.1.253:7778
-- Gauntlet Python: /home/igris/IGRIS_GPT/.venv/bin/python
+Run relevant safety tests.
 
-Required VM flow:
+### Pass 14 — Behavior-change honesty check
+
+Do not say "no behavior change" unless literally true.
+
+Use accurate wording:
+
+```text
+Behavior intentionally hardened.
+Expected failures are still handled; unexpected failures now surface.
+Operational behavior changed and documented.
+Runtime bug fixed.
+Docs-only change.
+```
+
+If behavior changes, document it.
+
+### Pass 15 — Test expansion and full local validation
+
+Run targeted tests and broader regression.
+
+Use relevant commands, for example:
+
+```bash
+pytest tests/test_supervisor_split.py -q
+pytest tests/test_task_engine_reliability.py -q
+pytest tests/test_write_endpoint_auth_gate.py -q
+pytest tests/test_dangerous_intent_routing.py -q
+pytest tests/test_redaction_centralized.py -q
+python -m igris.core.jarvis_core_gauntlet
+```
+
+Record exact results.
+
+### Pass 16 — VM branch validation
+
+For runtime-impacting work, validate the branch on VM before merge.
+
+Required VM evidence:
 
 ```bash
 ssh <VM_USER>@192.168.1.253
@@ -174,54 +298,78 @@ cd /home/igris/IGRIS_GPT
 git fetch origin
 git checkout <branch>
 git pull --ff-only origin <branch> || true
+git rev-parse HEAD
+git branch --show-current
 sudo systemctl restart igris.service
+systemctl status igris.service --no-pager
 /home/igris/IGRIS_GPT/.venv/bin/python -m igris.core.jarvis_core_gauntlet
+curl -s http://127.0.0.1:7778/api/diagnostics/summary
+curl -s http://127.0.0.1:7778/api/os/brief
 ```
 
-Then from host:
+From host:
 
 ```bash
+Test-NetConnection 192.168.1.253 -Port 7778
 curl.exe -s http://192.168.1.253:7778/api/diagnostics/summary
 curl.exe -s http://192.168.1.253:7778/api/os/brief
 ```
 
-Docs-only changes may skip runtime VM validation, but after merge the VM must still be updated to latest main.
+### Pass 17 — Memory and open-items update
 
-### Pass 9 — GitHub state and closure verification
+Update memory files before PR/merge:
 
-Before saying complete or parent issue complete:
+- `docs/IGRIS_PROJECT_MEMORY.md`
+- `docs/IGRIS_HANDOFF.md`
+- `docs/IGRIS_OPEN_ITEMS.md`
+- `docs/IGRIS_WORKLOG.md`
+- `docs/IGRIS_DECISIONS.md` if architecture/process changed
 
-- verify PR state on GitHub
+Memory must be internally consistent.
+
+Do not leave "pending merge" after merge.
+
+### Pass 18 — PR creation with proof
+
+Every non-trivial PR must include:
+
+- acceptance criteria table
+- before/after metrics
+- 20-pass review
+- tests with exact commands/results
+- VM evidence when runtime-impacting
+- GitHub issue state
+- honest status
+- follow-up needed yes/no
+
+### Pass 19 — Post-merge GitHub and VM verification
+
+After merge:
+
+- verify PR merged on GitHub
 - verify issue state on GitHub
-- verify linked parent issue/follow-up issue
-- verify whether the issue is actually closed if you claim closed
-- verify whether acceptance criteria are truly met, not just partially addressed
-- verify whether follow-up is needed
+- sync local main
+- update VM to latest main
+- restart service when relevant
+- run VM gauntlet
+- run diagnostics/os brief
 
-Do not say "parent issue complete" if:
+Required post-merge VM evidence:
 
-- GitHub issue remains open
-- acceptance criteria remain unmet
-- you only completed a phase
-- tests are incomplete
-- VM validation is missing when required
-- memory files still say pending
-- follow-up work is known
+```text
+Post-merge main commit:
+VM commit:
+VM branch:
+Service status:
+Gauntlet command:
+Gauntlet result:
+diagnostics/summary:
+os/brief:
+```
 
-### Pass 10 — Final honesty gate and memory update
+### Pass 20 — Final honesty gate
 
-Final review:
-
-- reread the issue one final time
-- reread the diff one final time
-- compare against acceptance criteria
-- update memory files
-- update worklog
-- update open-items
-- update ADRs if needed
-- decide honest status
-
-Allowed statuses:
+Final status must be one of:
 
 - Complete
 - Phase completed, parent issue not complete
@@ -238,11 +386,11 @@ Forbidden unless fully true:
 - done
 - fully resolved
 
-If anything remains, create or update follow-up issue before moving on.
+If anything remains, create or update follow-up before moving on.
 
-### Forbidden before pass 10
+### Forbidden before pass 20
 
-Before completing Pass 10, agents must not say or write:
+Before completing Pass 20, agents must not say or write:
 
 - done
 - completed
@@ -253,11 +401,11 @@ Before completing Pass 10, agents must not say or write:
 - roadmap complete
 - parent issue complete
 
-unless explicitly marked as a temporary note inside the 10-pass checklist.
+unless explicitly marked as a temporary note inside the 20-pass checklist.
 
 ### Honest completion rule
 
-If after 10 passes the full acceptance criteria are not satisfied, the correct status is:
+If after 20 passes the full acceptance criteria are not satisfied, the correct status is:
 
 ```text
 Phase completed, parent issue not complete.
@@ -274,56 +422,28 @@ In that case, create or update a follow-up issue and record it in:
 Every non-trivial PR must include:
 
 ```markdown
-## 10-pass completion review
+## 20-pass quality gate review
 
 ### Pass 1 — Memory and task intake
-- Memory files read:
-- Issue/PR read:
-- Current main commit:
-
-### Pass 2 — Acceptance criteria extraction
-- Criteria:
-- Proof required:
-- Non-goals:
-
-### Pass 3 — Baseline and evidence
-- Baseline:
-- Pre-existing failures:
-- Metrics:
-
-### Pass 4 — First focused implementation
-- Work done:
-- Tests added:
-
-### Pass 5 — Self-review against issue and diff
-- Diff reread:
-- Gaps found:
-- Improvements made:
-
-### Pass 6 — Architecture and existing-pattern review
-- Central modules checked:
-- Duplication avoided:
-- ADR needed:
-
-### Pass 7 — Edge cases and regressions
-- Edge cases:
-- Negative paths:
-- Regression tests:
-
-### Pass 8 — Runtime, VM, and integration validation
-- VM required:
-- VM result:
-- Integration checks:
-
-### Pass 9 — GitHub state and closure verification
-- PR state:
-- Issue state:
-- Parent/follow-up state:
-
-### Pass 10 — Final honesty gate
-- Acceptance criteria met:
-- Honest status:
-- Follow-up needed:
+### Pass 2 — GitHub reality check
+### Pass 3 — Acceptance criteria extraction
+### Pass 4 — Prior decisions and architecture check
+### Pass 5 — Baseline and measurable evidence
+### Pass 6 — Risk classification
+### Pass 7 — Minimal implementation plan
+### Pass 8 — First focused implementation
+### Pass 9 — Local smoke and import check
+### Pass 10 — Self-review against issue and diff
+### Pass 11 — Existing-pattern and duplication review
+### Pass 12 — Edge cases and negative paths
+### Pass 13 — Security and privacy review
+### Pass 14 — Behavior-change honesty check
+### Pass 15 — Test expansion and full local validation
+### Pass 16 — VM branch validation
+### Pass 17 — Memory and open-items update
+### Pass 18 — PR creation with proof
+### Pass 19 — Post-merge GitHub and VM verification
+### Pass 20 — Final honesty gate
 ```
 
 ### Memory-first requirement

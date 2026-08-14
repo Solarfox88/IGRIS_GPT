@@ -2,7 +2,7 @@
 
 Stable project state — source of truth for all agents.
 
-Last updated: 2026-08-14 (mandatory 10-pass rule + quality hardening added)
+Last updated: 2026-08-14 (mandatory 20-pass quality gate + quality hardening added)
 
 ## Repository
 
@@ -12,26 +12,36 @@ Last updated: 2026-08-14 (mandatory 10-pass rule + quality hardening added)
 
 ## Mandatory operating method
 
-IGRIS uses a mandatory 10-pass completion rule for all tasks.
+IGRIS uses a mandatory 20-pass quality gate for all tasks.
 
-No task, issue, PR, refactor, test change, CI change, runtime fix, VM validation, or security hardening may be declared complete before ten review/improvement passes.
+No task, issue, PR, refactor, test change, CI change, runtime fix, VM validation, or security hardening may be declared complete before twenty review/improvement passes.
 
 The full rule is canonical in `AGENTS.md`.
 
 Summary:
 
 1. memory and task intake
-2. acceptance criteria extraction
-3. baseline and evidence collection
-4. first focused implementation
-5. self-review against issue and diff
-6. architecture and existing-pattern review
-7. edge cases, negative paths, and regression review
-8. runtime, VM, and integration validation
-9. GitHub state and closure verification
-10. final honesty gate and memory update
+2. GitHub reality check
+3. acceptance criteria extraction
+4. prior decisions and architecture check
+5. baseline and measurable evidence
+6. risk classification
+7. minimal implementation plan
+8. first focused implementation
+9. local smoke and import check
+10. self-review against issue and diff
+11. existing-pattern and duplication review
+12. edge cases and negative paths
+13. security and privacy review
+14. behavior-change honesty check
+15. test expansion and full local validation
+16. VM branch validation
+17. memory and open-items update
+18. PR creation with proof
+19. post-merge GitHub and VM verification
+20. final honesty gate
 
-If full acceptance criteria are not satisfied after ten passes, the task must be marked:
+If full acceptance criteria are not satisfied after twenty passes, the task must be marked:
 
 ```text
 Phase completed, parent issue not complete.

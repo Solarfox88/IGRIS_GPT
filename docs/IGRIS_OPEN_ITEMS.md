@@ -2,7 +2,7 @@
 
 Open issues and tech debt for IGRIS_GPT. Updated after every task.
 
-Last updated: 2026-08-14 (mandatory 10-pass rule + quality hardening added)
+Last updated: 2026-08-14 (mandatory 20-pass quality gate + quality hardening added)
 
 ## Completion policy
 
@@ -11,7 +11,7 @@ Items in this file are not considered complete just because a PR was merged.
 An item is complete only when:
 
 - the issue acceptance criteria are satisfied
-- the **mandatory 10-pass completion rule** has been completed
+- the **mandatory 20-pass quality gate** has been completed
 - tests/gauntlet pass
 - VM validation is done when applicable — with traceable evidence (VM commit, branch, service status, gauntlet command+result, diagnostics/os-brief endpoints)
 - memory files are updated
