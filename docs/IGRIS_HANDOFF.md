@@ -2,11 +2,19 @@
 
 The exact point where work resumes. Updated by every agent at the end of each task.
 
-Last updated: 2026-08-14 (Devin — post #1315 Phase 1 merge)
+Last updated: 2026-08-14 (Devin — post #1316 Phase 1 merge)
 
 ## Current next issue
 
-**#1316 — pyright/type checking in CI**
+**#1312 follow-up — finish supervisor split below 2,000 lines**
+
+## Completed: #1316 Phase 1 (pyright type checking)
+
+PR TBD (branch `fix/1316-pyright-type-checking`). Phase 1 merged.
+- Added `[tool.pyright]` to pyproject.toml (basic mode, Python 3.12)
+- Added `type-check` job to CI workflow (pyright --outputjson)
+- Added pyright to dev dependencies
+- Phase 2 (fix type errors, standard mode) pending
 
 ## Completed: #1315 Phase 1 (structured logging)
 
