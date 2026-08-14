@@ -126,3 +126,28 @@ The 10 passes are:
 - Runtime-impacting work requires VM validation.
 - PR bodies and final reports must include a 10-pass review and honest status.
 - Quality hardening rules (GitHub reality, no fake "no behavior change", centralized-logic reuse, VM validation, measurable before/after, memory consistency) are mandatory.
+
+## ADR-IGRIS-0010 — Traceable validation evidence required
+
+**Date**: 2026-08-14
+**Status**: accepted
+
+**Decision**: Runtime-impacting PRs must include traceable VM/runtime validation evidence. A narrative claim such as "VM validated" or "gauntlet passed" is not sufficient.
+
+**Required evidence**:
+
+- VM name/IP/URL
+- VM branch and commit SHA
+- service status result
+- exact gauntlet command and summary
+- diagnostics endpoint result
+- os/brief endpoint result
+- post-merge VM update proof
+
+**Rationale**: Previous work correctly performed VM validation, but the evidence was sometimes only present in conversational reports, not in a reliably auditable PR body or memory record. To reach 10/10 quality, runtime validation must be reproducible and traceable.
+
+**Consequences**:
+
+- Runtime-impacting PRs without validation evidence are not complete.
+- VM validation must be reported with commands and results.
+- Memory files must record post-merge VM state when relevant.

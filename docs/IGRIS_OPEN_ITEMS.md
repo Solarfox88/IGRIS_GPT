@@ -13,7 +13,7 @@ An item is complete only when:
 - the issue acceptance criteria are satisfied
 - the **mandatory 10-pass completion rule** has been completed
 - tests/gauntlet pass
-- VM validation is done when applicable
+- VM validation is done when applicable — with traceable evidence (VM commit, branch, service status, gauntlet command+result, diagnostics/os-brief endpoints)
 - memory files are updated
 - no hidden follow-up remains
 - GitHub issue state verified (open issue = not complete unless explicitly explained)

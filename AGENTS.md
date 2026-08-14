@@ -475,6 +475,50 @@ VM must be updated and checked when touching:
 - file operations
 - integrations
 
+### 7a. Traceable validation evidence is required
+
+A report saying "VM validated" or "gauntlet passed" is not enough.
+
+Every runtime-impacting PR must include traceable validation evidence in the PR body and final report.
+
+Required evidence:
+
+- VM hostname/name
+- VM IP/URL
+- VM branch
+- VM commit SHA
+- service status command and result summary
+- exact gauntlet command
+- gauntlet result summary
+- `diagnostics/summary` HTTP result
+- `os/brief` HTTP result
+- post-merge VM commit SHA
+- post-merge gauntlet result
+
+Required command examples:
+
+```bash
+# On VM
+git rev-parse HEAD
+git branch --show-current
+systemctl status igris.service --no-pager
+/home/igris/IGRIS_GPT/.venv/bin/python -m igris.core.jarvis_core_gauntlet
+curl -s http://127.0.0.1:7778/api/diagnostics/summary
+curl -s http://127.0.0.1:7778/api/os/brief
+```
+
+From host:
+
+```bash
+Test-NetConnection 192.168.1.253 -Port 7778
+curl.exe -s http://192.168.1.253:7778/api/diagnostics/summary
+curl.exe -s http://192.168.1.253:7778/api/os/brief
+```
+
+For docs-only PRs, VM runtime validation may be skipped, but the VM repository should still be updated to latest main after merge when practical.
+
+If validation evidence is missing, the work cannot receive a 10/10 quality rating.
+
 ### 8. Tests must prove the actual claim
 
 A test that only checks a string exists in source is weak.
