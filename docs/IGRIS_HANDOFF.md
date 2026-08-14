@@ -13,9 +13,9 @@ Before starting any next task, every agent must:
 3. read all `docs/IGRIS_*.md` memory files
 4. read the GitHub issue/PR and comments
 5. apply the **mandatory 10-pass completion rule** (see `AGENTS.md`)
-6. follow the quality hardening rules (GitHub-state verification, no fake "no behavior change", centralized-logic reuse, VM validation, measurable before/after, memory consistency)
+6. follow the quality hardening rules (GitHub-state verification, no fake "no behavior change", centralized-logic reuse, VM validation, measurable before/after, memory consistency, traceable validation evidence)
 7. update memory files before PR/merge/close
-8. validate on VM when runtime-impacting
+8. validate on VM when runtime-impacting — include traceable evidence (VM commit, branch, service status, gauntlet command+result, diagnostics/os-brief endpoints, post-merge proof)
 
 Skipping this process is not allowed.
 

@@ -50,11 +50,29 @@ The following quality hardening rules are mandatory (full text in `AGENTS.md`):
 5. Do not duplicate centralized logic — reuse canonical modules
 6. No fake "no behavior change" — use accurate wording for behavior-impacting changes
 7. VM is the runtime truth for runtime-impacting changes
+7a. Traceable validation evidence is required — VM commit, branch, service status, gauntlet command+result, diagnostics/os-brief endpoints, post-merge VM proof
 8. Tests must prove the actual claim — prefer behavioral tests over source-string checks
 9. Record measurable before/after evidence
 10. Update VM after every merge
 11. PR body must include proof, not only narrative
 12. Memory files must be internally consistent before merge
+
+## Traceable validation evidence
+
+Runtime-impacting work must include traceable VM evidence, not only narrative claims.
+
+Required evidence includes:
+
+- VM commit
+- branch
+- service status
+- exact gauntlet command
+- gauntlet result
+- diagnostics endpoint result
+- os/brief endpoint result
+- post-merge VM update proof
+
+A task cannot be considered production-complete if VM evidence is missing.
 
 ## Completed
 
