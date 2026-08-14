@@ -2,6 +2,21 @@
 
 Chronological worklog of all agent work on IGRIS_GPT. Append a row after every task.
 
+## Worklog policy
+
+Every worklog entry for a non-trivial PR must mention:
+
+- issue/PR
+- pass 1 summary
+- pass 2 summary
+- pass 3 summary
+- pass 4 summary
+- pass 5 summary
+- tests
+- gauntlet
+- VM validation if applicable
+- honest status: complete / phase-complete / blocked
+
 | Date | Issue/PR | Agent | Summary | Tests | Merge commit |
 |---|---|---|---|---|---|
 | 2026-?? | #1278 | Codex/Claude | auth-first onboarding gate | — | `a18b32b` |

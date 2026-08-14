@@ -2,7 +2,26 @@
 
 Open issues and tech debt for IGRIS_GPT. Updated after every task.
 
-Last updated: 2026-08-14 (roadmap alignment checkpoint)
+Last updated: 2026-08-14 (mandatory 5-pass rule added)
+
+## Completion policy
+
+Items in this file are not considered complete just because a PR was merged.
+
+An item is complete only when:
+
+- the issue acceptance criteria are satisfied
+- the 5-pass completion rule has been completed
+- tests/gauntlet pass
+- VM validation is done when applicable
+- memory files are updated
+- no hidden follow-up remains
+
+If only part of the work was done, mark the item as:
+
+```text
+Phase complete, follow-up pending.
+```
 
 ## Priority issues
 

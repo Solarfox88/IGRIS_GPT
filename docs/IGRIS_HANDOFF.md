@@ -2,7 +2,21 @@
 
 The exact point where work resumes. Updated by every agent at the end of each task.
 
-Last updated: 2026-08-14 (Devin — roadmap alignment checkpoint)
+Last updated: 2026-08-14 (mandatory 5-pass rule added)
+
+## Mandatory process before next task
+
+Before starting any next task, every agent must:
+
+1. sync `main`
+2. read `AGENTS.md`
+3. read all `docs/IGRIS_*.md` memory files
+4. read the GitHub issue/PR and comments
+5. apply the 5-pass completion rule
+6. update memory files before PR/merge/close
+7. validate on VM when runtime-impacting
+
+Skipping this process is not allowed.
 
 ## Current next issue
 

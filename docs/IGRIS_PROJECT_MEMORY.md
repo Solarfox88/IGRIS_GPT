@@ -2,13 +2,37 @@
 
 Stable project state — source of truth for all agents.
 
-Last updated: 2026-08-14 (roadmap alignment checkpoint)
+Last updated: 2026-08-14 (mandatory 5-pass rule added)
 
 ## Repository
 
 - repo: `Solarfox88/IGRIS_GPT` (public)
 - default branch: `main`
-- current `main` commit: `84b39ef` (docs: update worklog with #1312 Phase 2 merge commit)
+- current `main` commit: `bac942c` (docs: align roadmap and VM validation status + fix gauntlet mkdir)
+
+## Mandatory operating method
+
+IGRIS uses a mandatory 5-pass completion rule for all tasks.
+
+No task, issue, PR, refactor, test change, CI change, runtime fix, VM validation, or security hardening may be declared complete before five review/improvement passes.
+
+The full rule is canonical in `AGENTS.md`.
+
+Summary:
+
+1. understand and implement first version
+2. reread issue and review own diff
+3. check edge cases and regressions
+4. verify safety, VM, integration, and memory
+5. final acceptance review
+
+If full acceptance criteria are not satisfied after five passes, the task must be marked:
+
+```text
+Phase completed, parent issue not complete.
+```
+
+and a follow-up issue must be created or updated.
 
 ## Completed
 
