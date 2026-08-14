@@ -94,7 +94,8 @@ A task cannot be considered production-complete if VM evidence is missing.
 | Security — centralized redaction | #1313 / PR #1334 | done | `7d8d4c0` | secret redaction centralized (19 files touched) |
 | Reliability — memory cross-session | #1294 / PR #1335 | done | `e716f68` | memory/preferences persist across sessions (23 files touched) |
 | Refactor — supervisor C1 | #1312 / PR #1331 | **PARTIAL** | `ea3d70b` | extracted 4 sub-modules but `self_repair_supervisor.py` still 6208 lines (target <2000) |
-| Supervisor split Phase 3 | #1356 / PR #1364 | **PARTIAL** (Phase 3) | (pending merge) | extracted mission planning to `supervisor_mission_planning.py` (523 lines); `self_repair_supervisor.py` 6327→6011 lines; still >2000 (target <2000) |
+| Supervisor split Phase 3 | #1356 / PR #1364 | **PARTIAL** (Phase 3) | `18bc8d8` | extracted mission planning to `supervisor_mission_planning.py` (523 lines); 6327→6011 lines |
+| Supervisor split Phase 4 | #1356 / PRs #1366-#1370 | **PARTIAL** (Phase 4) | `235d5e7` | extracted completion/cleanup, repair helpers, decomposition (part 1+2), audit/persistence; 6011→4874 lines; still >2000 (target <2000); follow-up #1371 |
 | Task engine reliability | #1296 / PR #1347 | done | `8fa9d8e` | worker step, safe validate, honest diagnostics, gauntlet check |
 | Code change gating | #1291 / PR #1348 | done | `19a1dc4` | /api/chat/intent gates code_change for limited users |
 | Auth contract guard | #1301-PR5A / PR #1345 | done | `54b6b60` | 13 guard tests + docs/auth-contract.md |
