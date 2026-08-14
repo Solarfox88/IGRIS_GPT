@@ -168,8 +168,8 @@ def execute_step(
         from igris.layers.execution.runner import run_safe_command
         cmd_result = run_safe_command(command_id)
         success = cmd_result.get("returncode", 1) == 0
-        stdout = redact_secrets(cmd_result.get("stdout", ""))
-        stderr = redact_secrets(cmd_result.get("stderr", ""))
+        stdout = redact_secrets(str(cmd_result.get("stdout", "")))
+        stderr = redact_secrets(str(cmd_result.get("stderr", "")))
 
         report = {
             "command_id": command_id,

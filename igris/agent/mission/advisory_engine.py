@@ -74,8 +74,8 @@ class AdvisoryEngine:
             )
         return enrich_report_selected(
             report,
-            run_status=run_status,
-            goal_status=goal_status,
+            run_status=run_status or "",
+            goal_status=goal_status or "",
             cycle=cycle,
             report_type=report_type,
             config=self.config.selected or SelectedAdvisoryConfig(),

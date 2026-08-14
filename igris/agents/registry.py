@@ -17,7 +17,7 @@ from __future__ import annotations
 
 from typing import Dict, List, Optional
 
-from .base import AgentCapability, BaseAgent
+from .base import AgentCapability, AgentResult, BaseAgent
 
 _agents: List[BaseAgent] = []
 

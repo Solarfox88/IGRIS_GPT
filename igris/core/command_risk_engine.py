@@ -156,6 +156,14 @@ class ParsedCommand:
     has_find_delete: bool = False    # find -delete / find -exec rm
     flags: List[str] = field(default_factory=list)
 
+    def flags_list(self) -> List[str]:
+        """List all detected flags."""
+        flags = []
+        for attr in dir(self):
+            if attr.startswith("has_") and getattr(self, attr, False):
+                flags.append(attr.replace("has_", ""))
+        return flags
+
     def to_dict(self) -> Dict[str, Any]:
         return {
             "raw": redact_secrets(self.raw),
@@ -250,9 +258,6 @@ def _flags_list(self) -> List[str]:
         if attr.startswith("has_") and getattr(self, attr, False):
             flags.append(attr.replace("has_", ""))
     return flags
-
-
-ParsedCommand.flags_list = _flags_list
 
 
 # ---------------------------------------------------------------------------

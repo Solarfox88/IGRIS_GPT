@@ -55,6 +55,8 @@ from igris.agents import build_default_registry
 from igris.a2a.agent_card import build_agent_card
 from igris.a2a import task_store as a2a_store
 
+logger = logging.getLogger(__name__)
+
 
 def create_router(deps) -> APIRouter:
     """Router module 4/10 — _create_app_impl chunk 4."""
@@ -353,8 +355,8 @@ def create_router(deps) -> APIRouter:
             stderr = _redact(result.get("stderr", ""))
             report = execution_report.create_report(
                 command_id=cmd_id, capability_id="execution.run_safe_command",
-                returncode=result.get("returncode", 1),
-                stdout=result.get("stdout", ""), stderr=result.get("stderr", ""),
+                returncode=int(result.get("returncode", 1)),
+                stdout=str(result.get("stdout", "")), stderr=str(result.get("stderr", "")),
                 started_at=started, finished_at=finished, duration_ms=duration_ms,
             )
             # Route outcome

@@ -170,7 +170,8 @@ class MemoryGarbageCollector:
             node_id = str(row.get("node_id", ""))
             node_type = str(row.get("node_type", "unknown"))
             content = row.get("content")
-            tags = row.get("tags") if isinstance(row.get("tags"), list) else []
+            _raw_tags = row.get("tags")
+            tags: list = _raw_tags if isinstance(_raw_tags, list) else []
             if not node_id:
                 kept_count += 1
                 continue

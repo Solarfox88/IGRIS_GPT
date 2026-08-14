@@ -241,7 +241,7 @@ async def trigger_workflow(request: ActionTriggerRequest, http_request: Request)
         result = gw.trigger_action(
             workflow=request.workflow_id,
             ref=request.ref,
-            inputs=request.inputs,
+            inputs=request.inputs or {},
             context={"mission_id": request.mission_id, "run_id": request.run_id},
         )
         return ActionTriggerResponse(**_result_to_response(result))

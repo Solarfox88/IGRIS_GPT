@@ -123,7 +123,7 @@ def _get_disk_info(project_root: Optional[str] = None) -> Dict[str, Any]:
     disk: Dict[str, Any] = {}
     try:
         path = project_root or "."
-        usage = os.statvfs(path) if hasattr(os, "statvfs") else None
+        usage = os.statvfs(path) if hasattr(os, "statvfs") else None  # type: ignore[attr-defined]  # Unix-only: statvfs not on Windows
         if usage:
             total = usage.f_frsize * usage.f_blocks
             free = usage.f_frsize * usage.f_bavail

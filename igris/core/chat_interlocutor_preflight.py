@@ -247,13 +247,13 @@ def run_preflight(
     _token_present = bool(session_token and session_token.strip())
 
     if _token_present:
-        _session_result = resolve_session_identity(session_token, project_root=project_root)
+        _session_result = resolve_session_identity(session_token or "", project_root=project_root)
         _session_authenticated = _session_result.authenticated
         _session_valid = _session_result.session_valid
         _session_reason = _session_result.reason or None
 
     # ── 1. Resolve identity — session token is source of truth ────────────────
-    if _token_present and _session_authenticated:
+    if _token_present and _session_authenticated and _session_result is not None:
         # Valid session: use server-side profile_id, ignore client-claimed id
         raw_id = _session_result.profile_id
         _id = raw_id  # no anti-spoofing needed; server-verified
@@ -458,7 +458,7 @@ def run_preflight(
             )
             if _events:
                 _event_summary = "; ".join(
-                    f"{e.event_type}:{e.resource}" for e in _events[:3]
+                    f"{e.event_type}:{e.relevant_resource}" for e in _events[:3]
                 )
                 proactive_hint = f"[Proactive] {_event_summary}"
                 advisory = f"{advisory}\n{proactive_hint}" if advisory else proactive_hint

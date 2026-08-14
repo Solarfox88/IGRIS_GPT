@@ -1,10 +1,14 @@
 from __future__ import annotations
 
 import asyncio
-import fcntl
 import logging
 import os
 import time
+
+try:
+    import fcntl  # type: ignore[import-not-found]  # Unix-only
+except ImportError:
+    fcntl = None  # type: ignore[assignment]  # Windows fallback
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set
@@ -65,7 +69,7 @@ class FileLock:
         deadline = time.monotonic() + self._timeout
         while True:
             try:
-                fcntl.flock(self._fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                fcntl.flock(self._fd, fcntl.LOCK_EX | fcntl.LOCK_NB)  # type: ignore[union-attr]  # Unix-only fcntl
                 return
             except BlockingIOError:
                 if time.monotonic() >= deadline:
@@ -80,7 +84,7 @@ class FileLock:
     def release(self) -> None:
         if self._fd is not None:
             try:
-                fcntl.flock(self._fd, fcntl.LOCK_UN)
+                fcntl.flock(self._fd, fcntl.LOCK_UN)  # type: ignore[union-attr]  # Unix-only fcntl
                 os.close(self._fd)
             except Exception:
                 pass

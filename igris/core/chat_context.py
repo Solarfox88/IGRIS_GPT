@@ -149,8 +149,8 @@ def get_context_summary(
 def _build_missions_context() -> Dict[str, Any]:
     try:
         missions = mission_planner.list_missions()
-        active = [m for m in missions if m.get("status") in ("active", "planning", "executing")]
-        completed = [m for m in missions if m.get("status") == "completed"]
+        active = [m for m in missions if m.status in ("active", "planning", "executing")]
+        completed = [m for m in missions if m.status == "completed"]
         return {
             "total": len(missions),
             "active": len(active),
@@ -209,7 +209,7 @@ def _build_git_context() -> Dict[str, Any]:
 
 def _build_patches_context() -> Dict[str, Any]:
     try:
-        patches = patch_mod.list_proposals()
+        patches = patch_mod.list_patch_proposals()
         pending = sum(1 for p in patches if p.get("status") == "pending")
         applied = sum(1 for p in patches if p.get("status") == "applied")
         return {

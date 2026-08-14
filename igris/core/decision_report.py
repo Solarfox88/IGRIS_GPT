@@ -102,10 +102,12 @@ def save_decision_report(
 
     # Also maintain an index file for quick listing
     index_path = d / "_index.json"
-    index: List[Dict[str, str]] = []
+    index: List[Dict[str, Any]] = []
     if index_path.exists():
         try:
-            index = json.loads(index_path.read_text(encoding="utf-8"))
+            _loaded = json.loads(index_path.read_text(encoding="utf-8"))
+            if isinstance(_loaded, list):
+                index = _loaded
         except (json.JSONDecodeError, TypeError):
             index = []
 

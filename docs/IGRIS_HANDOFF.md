@@ -20,6 +20,10 @@ Skipping this process is not allowed.
 
 ## Current next issue
 
+**#1355 — pyright Phase 2 in progress on branch `chore/1355-pyright-phase-2`.**
+
+Pyright errors reduced from 174 to 91 (48% reduction). 91 errors remain — mostly `reportAttributeAccessIssue` (29) and `reportArgumentType` (27) in core modules. CI `|| true` kept until 0 errors. Next: fix remaining 91 errors, then remove `|| true`, then progress to standard mode.
+
 **Roadmap primary items addressed in Phase 1/2. Follow-up issues open: #1353, #1354, #1355, #1356.**
 
 The roadmap is NOT "complete" — it is "primary phases merged, follow-up phases pending":

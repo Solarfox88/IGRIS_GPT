@@ -366,8 +366,7 @@ class ContextAggregator:
         route_str = ""
         if route_decision is not None:
             route_str = getattr(route_decision, "route", "") or ""
-            if hasattr(route_str, "value"):
-                route_str = route_str.value
+            route_str = getattr(route_str, "value", route_str)
 
         is_blocked = getattr(route_decision, "blocked", False) if route_decision else False
         requires_approval = getattr(route_decision, "requires_approval", False) if route_decision else False

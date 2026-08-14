@@ -536,7 +536,7 @@ class VastAIManager:
         # Real destroy via Vast.ai API
         old_id = self._instance.instance_id
         try:
-            _vastai_request("DELETE", f"/instances/{old_id}/", cfg.api_key)
+            _vastai_request("DELETE", f"/instances/{old_id}/", cfg.api_key or "")
         except Exception as e:
             return {"success": False, "error": f"Destroy API call failed: {e}"}
 
@@ -859,7 +859,7 @@ class VastAIManager:
 
         def _cleanup() -> None:
             try:
-                data = _vastai_request("GET", "/instances/", cfg.api_key)
+                data = _vastai_request("GET", "/instances/", cfg.api_key or "")
                 instances = data.get("instances", [])
                 for inst in instances:
                     label = inst.get("label", "") or ""
@@ -892,7 +892,7 @@ class VastAIManager:
                     )
                     if is_terminal:
                         try:
-                            _vastai_request("DELETE", f"/instances/{inst_id}/", cfg.api_key)
+                            _vastai_request("DELETE", f"/instances/{inst_id}/", cfg.api_key or "")
                             _log.info("vastai startup: deleted orphaned instance %s (status=%s)", inst_id, actual_status)
                         except Exception as exc:
                             _log.warning("vastai startup: DELETE %s failed: %s", inst_id, exc)

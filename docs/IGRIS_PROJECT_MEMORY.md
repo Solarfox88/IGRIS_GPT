@@ -9,6 +9,7 @@ Last updated: 2026-08-14 (mandatory 5-pass rule added)
 - repo: `Solarfox88/IGRIS_GPT` (public)
 - default branch: `main`
 - current `main` commit: `bac942c` (docs: align roadmap and VM validation status + fix gauntlet mkdir)
+  - **Note**: #1355 Phase 2 in progress on branch `chore/1355-pyright-phase-2` — pyright errors reduced from 174 to 91 (48% reduction)
 
 ## Mandatory operating method
 
@@ -49,7 +50,7 @@ and a follow-up issue must be created or updated.
 | Auth contract guard | #1301-PR5A / PR #1345 | done | `54b6b60` | 13 guard tests + docs/auth-contract.md |
 | Except Exception cleanup | #1314 / PR #1349 | **PARTIAL** (Phase 1) | `0ac7a7b` | logging added to 46 silent catches; Phase 2 pending (follow-up #1353) |
 | Structured logging | #1315 / PR #1350 | **PARTIAL** (Phase 1) | `79fe072` | StructuredFormatter + 7 priority modules; Phase 2 pending (follow-up #1354) |
-| Pyright type checking | #1316 / PR #1351 | **PARTIAL** (Phase 1) | `9866bf5` | basic mode config + CI job; Phase 2 pending (follow-up #1355) |
+| Pyright type checking | #1316 / PR #1351 | **PARTIAL** (Phase 1) | `9866bf5` | basic mode config + CI job; Phase 2 in progress (#1355: 174→91 errors, 48% reduction) |
 | Supervisor split Phase 2 | #1312 / PR #1352 | **PARTIAL** (Phase 2) | `67c3783` | 36 static methods extracted to supervisor_helpers.py; still 6,013 lines (follow-up #1356) |
 | Gauntlet mkdir fix | — | done | (pending merge) | fix `exist_ok=True` in gauntlet task_engine_reliability check |
 | Auth — project root | #1286 | done | `914a665` | project_root mismatch fix |
