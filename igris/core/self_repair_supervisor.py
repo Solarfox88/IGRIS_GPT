@@ -224,6 +224,15 @@ from igris.core.supervisor_repair_helpers import (  # noqa: F401
     scaffold_missing_tests_target as _scaffold_missing_tests_helper,
     synthetic_missing_tests_diff as _synthetic_missing_tests_diff_helper,
 )
+from igris.core.supervisor_audit import (  # noqa: F401
+    load_audit_index as _load_audit_index_helper,
+    persist_audit_index as _persist_audit_index_helper,
+    load_runs_index as _load_runs_index_helper,
+    persist_runs_index as _persist_runs_index_helper,
+    persist_run_snapshot as _persist_run_snapshot_helper,
+    resolve_event_audit as _resolve_event_audit_helper,
+    record_audit_checkpoint as _record_audit_checkpoint_helper,
+)
 from igris.core.supervisor_decomposition import (  # noqa: F401
     DECOMP_SHORT_PROMPT as _DECOMP_SHORT_PROMPT,
     api_helper_decompose as _api_helper_decompose_fn,
@@ -333,53 +342,16 @@ class SelfRepairSupervisor:
                 _logger.warning("Startup cleanup: could not remove stale patch: %s", exc)
 
     def _load_audit_index(self) -> Dict[str, Dict[str, Any]]:
-        try:
-            if not self._audit_path.exists():
-                return {}
-            payload = json.loads(self._audit_path.read_text(encoding="utf-8"))
-            records = payload.get("records", {}) if isinstance(payload, dict) else {}
-            if not isinstance(records, dict):
-                return {}
-            return {str(k): dict(v) for k, v in records.items() if isinstance(k, str) and isinstance(v, dict)}
-        except (OSError, json.JSONDecodeError):
-            return {}
+        return _load_audit_index_helper(self)
 
     def _persist_audit_index(self) -> None:
-        try:
-            self._audit_path.parent.mkdir(parents=True, exist_ok=True)
-            self._audit_path.write_text(json.dumps({"records": self._audit_index}, indent=2, sort_keys=True), encoding="utf-8")
-        except OSError:
-            return
+        _persist_audit_index_helper(self)
 
     def _load_runs_index(self) -> Dict[str, Dict[str, Any]]:
-        try:
-            if not self._runs_path.exists():
-                return {}
-            payload = json.loads(self._runs_path.read_text(encoding="utf-8"))
-            runs = payload.get("runs", {}) if isinstance(payload, dict) else {}
-            if not isinstance(runs, dict):
-                return {}
-            return {
-                str(k): dict(v)
-                for k, v in runs.items()
-                if isinstance(k, str) and isinstance(v, dict)
-            }
-        except (OSError, json.JSONDecodeError):
-            return {}
+        return _load_runs_index_helper(self)
 
     def _persist_runs_index(self) -> None:
-        try:
-            self._runs_path.parent.mkdir(parents=True, exist_ok=True)
-            # Issue #729 — rotate supervisor_runs.json if it exceeds size cap
-            try:
-                from igris.core.file_rotation import rotate_if_needed
-                rotate_if_needed(self._runs_path)
-            except (ImportError, OSError, ValueError, TypeError):
-                pass
-            payload = {"runs": self._runs_index}
-            self._runs_path.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
-        except OSError:
-            return
+        _persist_runs_index_helper(self)
 
     @staticmethod
     def _timestamp_to_iso(ts: Optional[float]) -> str:
@@ -438,10 +410,7 @@ class SelfRepairSupervisor:
         return _enforce_completion_failure_invariant(record)
 
     def _persist_run_snapshot(self, run: SupervisorRun) -> None:
-        record = self._persisted_run_record(run)
-        with self._runs_lock:
-            self._runs_index[str(run.run_id)] = record
-            self._persist_runs_index()
+        _persist_run_snapshot_helper(self, run)
 
     def _configure_run_tracking(self, run: SupervisorRun, config: RankSupervisorConfig) -> None:
         _lifecycle_configure_run_tracking(
@@ -500,22 +469,7 @@ class SelfRepairSupervisor:
         return _timestamp_is_due_helper(next_review_after)
 
     def _resolve_event_audit(self, event: SupervisorEvent) -> None:
-        scope_hash = self._event_scope_hash(event)
-        event.audit_scope_hash = scope_hash
-        entry = self._audit_index.get(scope_hash, {})
-        prior = str(entry.get("audit_status", "")).strip()
-        if prior in {"audit-reviewed", "audit-fixed", "audit-false-positive"}:
-            event.audit_status = prior
-        elif prior == "audit-deferred" and not self._timestamp_is_due(str(entry.get("audit_next_review_after", ""))):
-            event.audit_status = "audit-deferred"
-        else:
-            event.audit_status = "audit-new"
-        event.audit_reviewed_by = str(entry.get("audit_reviewed_by", ""))
-        event.audit_reviewed_at = str(entry.get("audit_reviewed_at", ""))
-        event.audit_review_id = str(entry.get("audit_review_id", "")) or scope_hash[:12]
-        event.audit_next_review_after = str(entry.get("audit_next_review_after", ""))
-        event.audit_resolution_pr = str(entry.get("audit_resolution_pr", ""))
-        event.audit_notes = str(entry.get("audit_notes", ""))
+        _resolve_event_audit_helper(self, event)
 
     def record_audit_checkpoint(
         self,
@@ -528,22 +482,16 @@ class SelfRepairSupervisor:
         resolution_pr: str = "",
         notes: str = "",
     ) -> None:
-        if audit_status not in AUDIT_STATUSES:
-            raise ValueError(f"Unsupported audit status: {audit_status}")
-        normalized_hash = str(scope_hash or "").strip()
-        if not normalized_hash:
-            raise ValueError("scope_hash is required")
-        self._audit_index[normalized_hash] = {
-            "audit_status": audit_status,
-            "audit_reviewed_by": str(reviewed_by or ""),
-            "audit_reviewed_at": self._timestamp_now_iso(),
-            "audit_review_id": str(review_id or normalized_hash[:12]),
-            "audit_scope_hash": normalized_hash,
-            "audit_next_review_after": str(next_review_after or ""),
-            "audit_resolution_pr": str(resolution_pr or ""),
-            "audit_notes": _safe_redact(notes or ""),
-        }
-        self._persist_audit_index()
+        _record_audit_checkpoint_helper(
+            self,
+            scope_hash,
+            audit_status=audit_status,
+            reviewed_by=reviewed_by,
+            review_id=review_id,
+            next_review_after=next_review_after,
+            resolution_pr=resolution_pr,
+            notes=notes,
+        )
 
     def _build_api_escalation_packet(
         self,
