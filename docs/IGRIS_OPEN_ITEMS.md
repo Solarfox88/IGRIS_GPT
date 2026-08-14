@@ -20,7 +20,7 @@ Last updated: 2026-08-14
 
 | Priority | Issue | Status | Next action |
 |---|---|---|---|
-| Critical | #1314 | open | 476 generic `except Exception` — audit and replace with specific exceptions |
+| Critical | #1314 | **partial** (Phase 1 merged) | 476 generic `except Exception` — Phase 1: added logging to 46 silent catches in `igris/core/`; Phase 2: replace with specific exceptions (pending) |
 | Critical | #1315 | open | zero structured logging in `igris/core/` — add JSON logging |
 | Critical | #1316 | open | no mypy/pyright type checking in CI — add type-check job |
 | Tech debt | #1312 | **partial** (closed on GitHub but incomplete) | finish supervisor split — `self_repair_supervisor.py` still 6208 lines (target <2000). File follow-up issue or reopen. |

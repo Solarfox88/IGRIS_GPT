@@ -174,6 +174,7 @@ async def review_pr(request: PRReviewRequest, project_root: str) -> PRReviewResu
                     "source": "smw_pr_review",
                 })
         except Exception:
+            logger.debug("Self-mod gate check failed (best-effort)", exc_info=True)
             pass  # self-mod gate is best-effort, never blocks the review
 
         return PRReviewResult(request.pr_number, approved, confidence, model_used, merged.get("concerns", []), merged.get("suggestion", ""), time.time(), tiebreaker_used)

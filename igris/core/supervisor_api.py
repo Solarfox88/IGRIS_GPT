@@ -32,6 +32,8 @@ from igris.core.supervisor_lifecycle import (
     is_terminal_status as _lifecycle_is_terminal_status,
 )
 
+logger = logging.getLogger(__name__)
+
 
 def _timestamp_is_due_check(next_review_after: str) -> bool:
     """Standalone version of SelfRepairSupervisor._timestamp_is_due."""
@@ -99,6 +101,7 @@ def start_supervised_rank_async(data: Dict[str, Any], project_root: str) -> Supe
                 issue_number=config.issue_number,
             )
         except Exception:  # noqa: BLE001
+            logger.debug("BehaviorTracker init failed", exc_info=True)
             pass  # best-effort — never block the run
 
         # --- MBOP Phase 1: Intake (pre-run) ---
@@ -115,6 +118,7 @@ def start_supervised_rank_async(data: Dict[str, Any], project_root: str) -> Supe
                 run_id=run.run_id,
             )
         except Exception:  # noqa: BLE001
+            logger.debug("MBOP Phase 1 intake failed", exc_info=True)
             pass  # best-effort — never block the run
 
         # --- MBOP Phase 2: Pre-flight ---
@@ -127,6 +131,7 @@ def start_supervised_rank_async(data: Dict[str, Any], project_root: str) -> Supe
                 f"deps={'checking' if _mbop_issue_number else 'skip'} env=ok"
             )
         except Exception:
+            logger.debug("MBOP Phase 2 pre-flight failed", exc_info=True)
             pass
 
         # --- MBOP Phase 3: Mission Planning ---
@@ -138,6 +143,7 @@ def start_supervised_rank_async(data: Dict[str, Any], project_root: str) -> Supe
                 f"goal={str(config.goal)[:80]}"
             )
         except Exception:
+            logger.debug("MBOP Phase 3 planning failed", exc_info=True)
             pass
 
         # --- Store MBOP intake on run so _rank_initial_context can inject it (#1040) ---
@@ -208,6 +214,7 @@ def start_supervised_rank_async(data: Dict[str, Any], project_root: str) -> Supe
                 f"final_status={_run_status}"
             )
         except Exception:
+            logger.debug("MBOP Phases 4-8 post-run intermediates failed", exc_info=True)
             pass
 
         # --- MBOP Phases 9–12: post-run hooks ---
@@ -225,6 +232,7 @@ def start_supervised_rank_async(data: Dict[str, Any], project_root: str) -> Supe
                 run_id=run.run_id,
             )
         except Exception:  # noqa: BLE001
+            logger.debug("MBOP Phases 9-12 post-run hooks failed", exc_info=True)
             pass  # best-effort — never crash after supervisor completed
 
         # --- (#147) Supervisor self-audit post-run ---
@@ -255,6 +263,7 @@ def start_supervised_rank_async(data: Dict[str, Any], project_root: str) -> Supe
                     )
                     _workspace_dirty = bool(_gs.stdout.strip())
                 except Exception:
+                    logger.debug("git status for workspace dirty check failed", exc_info=True)
                     pass
                 audit = run.behavior_tracker.self_audit(
                     run_status=_run_status,
@@ -278,6 +287,7 @@ def start_supervised_rank_async(data: Dict[str, Any], project_root: str) -> Supe
                     behavior_log=run.behavior_tracker.to_dict(),
                 )
         except Exception:  # noqa: BLE001
+            logger.debug("Supervisor self-audit post-run failed", exc_info=True)
             pass  # best-effort — never crash after supervisor completed
 
     thread = threading.Thread(
