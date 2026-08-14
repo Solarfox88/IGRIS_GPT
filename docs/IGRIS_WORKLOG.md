@@ -1,0 +1,39 @@
+# IGRIS Worklog
+
+Chronological worklog of all agent work on IGRIS_GPT. Append a row after every task.
+
+| Date | Issue/PR | Agent | Summary | Tests | Merge commit |
+|---|---|---|---|---|---|
+| 2026-?? | #1278 | Codex/Claude | auth-first onboarding gate | — | `a18b32b` |
+| 2026-?? | #1280 | Codex/Claude | debug registration — normalize FastAPI errors | — | `2d6fc3a` |
+| 2026-?? | #1281 | Codex/Claude | rate limiter on static assets/LAN fix | — | `f8da9d7` |
+| 2026-?? | #1283/#1284 | Codex/Claude | post-login state mismatch fix | — | `e881ab5` |
+| 2026-?? | #1285 | Codex/Claude | real browser auth gate | — | `59a90ed` |
+| 2026-?? | #1286 | Codex/Claude | project_root mismatch fix | — | `914a665` |
+| 2026-?? | #1293 | Codex/Claude | P0 auth gate on all write/side-effect endpoints | `tests/test_write_endpoint_auth_gate.py` | `359df90` |
+| 2026-06-09 | #1311 / PR #1311 | Codex/Claude | gate POST /api/tools/git/commit and /api/git/commit with write auth | `tests/test_write_endpoint_auth_gate.py` (+119) | `f603e04` |
+| 2026-06-09 | #1312 / PR #1331 | Codex/Claude | refactor(C1): modularize self_repair_supervisor.py — extract 4 sub-modules (PARTIAL, file still 6208 lines) | — | `ea3d70b` |
+| 2026-06-09 | #1295 / PR #1332 | Codex/Claude | dangerous intent routing — never chat_only for rm -rf, issue create, sudo | `tests/test_dangerous_intent_routing.py` (+354) | `d453add` |
+| 2026-06-11 | #1313 / PR #1334 | Codex/Claude | centralize secret redaction helpers (19 files) | existing redaction tests | `7d8d4c0` |
+| 2026-06-11 | #1294 / PR #1335 | Codex/Claude | implement memory cross-session persistence (23 files) | `tests/test_memory_cross_session.py` | `e716f68` |
+| 2026-?? | #1337 Cat-B | Codex/Claude | detect `<REDACTED>` marker in secret check | — | `5094626` |
+| 2026-?? | #1337-A / PR #1339 | Codex/Claude | bypass write-auth gate in integration tests — 401 → 200 | — | `cad25e4` |
+| 2026-?? | #1301-PR1 / PR #1340 | Codex/Claude | auth root lazy — eliminate import-time IGRIS_PROJECT_ROOT | — | `8cfc172` |
+| 2026-?? | #1301-PR2 / PR #1341 | Codex/Claude | add Config.igris_dir property | — | `07a6885` |
+| 2026-?? | #1301-PR3 / PR #1342-1343 | Codex/Claude | replace CONFIG.project_root / ".igris" with CONFIG.igris_dir; InterlocutorAudit accepts project_root | — | `659adda` / `f1402ee` |
+| 2026-?? | #1301-PR4A / PR #1344 | Codex/Claude | root consistency guard tests + auth-root-model.md | — | `f65210e` / `7878a7c` |
+| 2026-08-14 | — | Devin | handoff bootstrap — synced main, verified PRs #1311/#1331/#1332/#1334/#1335, audited local clones, created persistent memory files | — | (not merged — docs PR pending) |
+| 2026-08-14 | — | Devin | Hyper-V VM audit — inspected `IGRIS-GPT` VM (Off) via read-only VHDX mount in WSL; found repo at `/home/igris/IGRIS_GPT` on branch `fix/1301-pr5a-auth-contract-guard` @ `b7c7e74` (= PR #1345, already pushed); 119 worktrees (prunable), 3 old stashes, no unpushed work; gauntlet 14/14 PASSED | — | (audit only, no changes) |
+
+## Test commands reference
+
+```
+pytest tests/test_task_engine_reliability.py -q
+pytest tests/test_mission_first_execution.py -q
+pytest tests/test_dangerous_intent_routing.py -q
+pytest tests/test_write_endpoint_auth_gate.py -q
+pytest tests/test_memory_cross_session.py -q
+pytest tests/test_redaction_centralized.py -q
+pytest tests/test_jarvis_core_gauntlet.py -q
+python -m igris.core.jarvis_core_gauntlet
+```
