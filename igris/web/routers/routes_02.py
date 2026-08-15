@@ -14,7 +14,7 @@ import re
 import subprocess
 import time
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Body, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
@@ -346,7 +346,7 @@ def create_router(deps) -> APIRouter:
         return provider_router.get_budget_status()
 
     @router.post("/api/cost/budget")
-    async def api_cost_budget_update(body: Dict[str, object] = Body(...)) -> Dict[str, object]:
+    async def api_cost_budget_update(body: Dict[str, Any] = Body(...)) -> Dict[str, object]:
         max_cost = body.get("max_session_cost")
         warn = body.get("warn_threshold")
         return provider_router.set_budget_config(

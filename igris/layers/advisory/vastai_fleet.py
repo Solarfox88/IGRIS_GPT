@@ -630,6 +630,7 @@ class VastAIFleet:
         _log.info("VastAIFleet._terminate: %s", instance_id)
 
     def _restart_ollama(self, inst: FleetInstance) -> bool:  # pragma: no cover
+        import urllib.error
         import urllib.request
         try:
             urllib.request.urlopen(f"http://{inst.host}:{inst.port}/api/tags", timeout=5)

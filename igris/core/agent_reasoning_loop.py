@@ -41,7 +41,7 @@ import re
 import time
 import uuid
 from dataclasses import dataclass, field
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional, cast
 
 from igris.core.micro_step_planner import MicroStepPlanner
 from igris.core.safety import redact_secrets
@@ -263,7 +263,7 @@ class AgentReasoningLoop:
         self._steps_without_write: int = 0  # no_diff_repair guard
         self._fleet_tokens_total: int = 0
         self._stop_reason = ""
-        self._coord: object = None  # lazy AgentCoordinator, reused across steps
+        self._coord: Any = None  # lazy AgentCoordinator, reused across steps
         # Orchestrator observability — updated on first successful LLM call
         self._reasoning_provider: str = ""
         self._reasoning_model: str = ""
@@ -510,7 +510,7 @@ class AgentReasoningLoop:
         import urllib.request
         import urllib.error
         from igris.models.config import CONFIG
-        url = f"{CONFIG.local_llm.base_url.rstrip('/')}/api/tags"
+        url = f"{(CONFIG.local_llm.base_url or '').rstrip('/')}/api/tags"
         try:
             with urllib.request.urlopen(url, timeout=2.0):
                 return True
@@ -951,8 +951,9 @@ class AgentReasoningLoop:
             from igris.core.reflection_hook import ReflectionHook as _ReflectionHook
             if not hasattr(self, "_reflection_hook"):
                 self._reflection_hook = _ReflectionHook(self.project_root or ".")
+            _local_action: Any = locals().get("action")
             _step_result = {
-                "action_type": action.action_type if "action" in dir() else "unknown",
+                "action_type": _local_action.action_type if _local_action else "unknown",
                 "outcome": step.outcome,
                 "summary": step.result_summary or "",
                 "error": step.error or "",
@@ -1691,7 +1692,7 @@ class AgentReasoningLoop:
                 results = []
                 for f in files:
                     tr = rt._run_subprocess(["git", "add", f], timeout=10)
-                    results.append(f"{f}: {'ok' if tr.returncode == 0 else tr.stderr[:80]}")
+                    results.append(f"{f}: {'ok' if cast(Any, tr).returncode == 0 else cast(Any, tr).stderr[:80]}")
                 return {
                     "success": all("ok" in r for r in results),
                     "summary": "; ".join(results),

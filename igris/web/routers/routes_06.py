@@ -14,7 +14,7 @@ import re
 import subprocess
 import time
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Body, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
@@ -298,7 +298,7 @@ def create_router(deps) -> APIRouter:
         return report
 
 
-    _WORK_SESSIONS: Dict[str, object] = {}
+    _WORK_SESSIONS: Dict[str, Any] = {}
 
     @router.post("/api/work-session/start")
     async def api_work_session_start(request: Request) -> Dict[str, str]:

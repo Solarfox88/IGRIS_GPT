@@ -14,7 +14,7 @@ import re
 import subprocess
 import time
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Union
 
 from fastapi import APIRouter, Body, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
@@ -357,8 +357,8 @@ def create_router(deps) -> APIRouter:
     # Agent Reasoning Loop — Epic #61
     # ------------------------------------------------------------------
 
-    @router.post("/api/reasoning/run")
-    async def api_reasoning_run(request: Request) -> Dict[str, object]:
+    @router.post("/api/reasoning/run", response_model=None)
+    async def api_reasoning_run(request: Request) -> Union[Dict[str, object], JSONResponse]:
         """Run the agent reasoning loop for a goal."""
         from igris.core.agent_reasoning_loop import AgentReasoningLoop
         content = await request.json()

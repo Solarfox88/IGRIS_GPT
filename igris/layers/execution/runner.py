@@ -7,7 +7,7 @@ import platform
 import subprocess
 import sys
 from pathlib import Path
-from typing import Dict, List
+from typing import Any, Dict, List
 
 from igris.layers.execution.safe_commands import ALLOWED_COMMANDS
 from igris.models.config import CONFIG
@@ -23,7 +23,7 @@ def _project_root() -> Path:
     return Path.cwd()
 
 
-def _run_command(command: List[str], cwd: Path, timeout: int = 30) -> Dict[str, object]:
+def _run_command(command: List[str], cwd: Path, timeout: int = 30) -> Dict[str, Any]:
     try:
         result = subprocess.run(
             command,
@@ -65,7 +65,7 @@ def _windows_command_for(command_id: str, command: List[str]) -> List[str]:
     return command
 
 
-def run_safe_command(command_id: str) -> Dict[str, object]:
+def run_safe_command(command_id: str) -> Dict[str, Any]:
     """Run an allowlisted command by ID.
 
     This is intentionally not a free shell. Only commands listed in
@@ -85,7 +85,7 @@ def run_safe_command(command_id: str) -> Dict[str, object]:
     return _run_command(command, cwd=_project_root(), timeout=30)
 
 
-def run_tests() -> Dict[str, object]:
+def run_tests() -> Dict[str, Any]:
     """Run the project test suite with pytest."""
     return _run_command([sys.executable, "-m", "pytest", "-q"], cwd=Path.cwd(), timeout=120)
 

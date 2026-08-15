@@ -14,7 +14,7 @@ import re
 import subprocess
 import time
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional, cast
 
 from fastapi import APIRouter, Body, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
@@ -270,17 +270,17 @@ def create_router(deps) -> APIRouter:
             current_phase = run.events[-1].phase if hasattr(run.events[-1], "phase") else "unknown"
             recent_events = [
                 {
-                    "phase": e.phase if hasattr(e, "phase") else str(e.get("phase", "")),
-                    "status": e.status if hasattr(e, "status") else str(e.get("status", "")),
-                    "detail": (e.detail if hasattr(e, "detail") else str(e.get("detail", "")))[:200],
-                    "ts": e.ts if hasattr(e, "ts") else e.get("ts", 0),
+                    "phase": e.phase if hasattr(e, "phase") else str(cast(Any, e).get("phase", "")),
+                    "status": e.status if hasattr(e, "status") else str(cast(Any, e).get("status", "")),
+                    "detail": (e.detail if hasattr(e, "detail") else str(cast(Any, e).get("detail", "")))[:200],
+                    "ts": cast(Any, e).ts if hasattr(e, "ts") else cast(Any, e).get("ts", 0),
                 }
                 for e in run.events[-10:]
             ]
 
         # Elapsed time
         start_ts = getattr(run, "start_ts", None) or (
-            run.events[0].ts if run.events and hasattr(run.events[0], "ts") else 0
+            cast(Any, run.events[0]).ts if run.events and hasattr(run.events[0], "ts") else 0
         )
         elapsed = round(_time.time() - start_ts, 1) if start_ts else None
 
@@ -386,10 +386,10 @@ def create_router(deps) -> APIRouter:
         # 2. Test results from latest targeted_tests / full_tests event
         test_results: Dict[str, object] = {"available": False}
         for evt in reversed(run.events):
-            phase = evt.phase if hasattr(evt, "phase") else evt.get("phase", "")
+            phase = evt.phase if hasattr(evt, "phase") else cast(Any, evt).get("phase", "")
             if phase in ("targeted_tests", "full_tests", "run_tests"):
-                detail = evt.detail if hasattr(evt, "detail") else str(evt.get("detail", ""))
-                status = evt.status if hasattr(evt, "status") else str(evt.get("status", ""))
+                detail = evt.detail if hasattr(evt, "detail") else str(cast(Any, evt).get("detail", ""))
+                status = evt.status if hasattr(evt, "status") else str(cast(Any, evt).get("status", ""))
                 test_results = {
                     "available": True,
                     "phase": phase,
@@ -403,7 +403,7 @@ def create_router(deps) -> APIRouter:
         total_cost = 0.0
         for evt in run.events:
             data = evt.data if hasattr(evt, "data") else {}
-            phase = evt.phase if hasattr(evt, "phase") else str(evt.get("phase", ""))
+            phase = evt.phase if hasattr(evt, "phase") else str(cast(Any, evt).get("phase", ""))
             cost = float(data.get("estimated_cost", 0) or 0)
             if cost > 0:
                 cost_breakdown[phase] = cost_breakdown.get(phase, 0.0) + cost
@@ -412,8 +412,8 @@ def create_router(deps) -> APIRouter:
         # 4. Key events snapshot
         key_events = [
             {
-                "phase": e.phase if hasattr(e, "phase") else str(e.get("phase", "")),
-                "status": e.status if hasattr(e, "status") else str(e.get("status", "")),
+                "phase": e.phase if hasattr(e, "phase") else str(cast(Any, e).get("phase", "")),
+                "status": e.status if hasattr(e, "status") else str(cast(Any, e).get("status", "")),
             }
             for e in run.events
         ]
@@ -507,10 +507,10 @@ def create_router(deps) -> APIRouter:
 
         test_results: Dict[str, object] = {"available": False}
         for evt in reversed(run.events or []):
-            phase = evt.phase if hasattr(evt, "phase") else evt.get("phase", "")
+            phase = evt.phase if hasattr(evt, "phase") else cast(Any, evt).get("phase", "")
             if phase in ("targeted_tests", "full_tests", "run_tests"):
-                detail = evt.detail if hasattr(evt, "detail") else str(evt.get("detail", ""))
-                status = evt.status if hasattr(evt, "status") else str(evt.get("status", ""))
+                detail = evt.detail if hasattr(evt, "detail") else str(cast(Any, evt).get("detail", ""))
+                status = evt.status if hasattr(evt, "status") else str(cast(Any, evt).get("status", ""))
                 test_results = {"available": True, "phase": phase, "status": status, "detail": detail[:500]}
                 break
 
@@ -610,7 +610,7 @@ def create_router(deps) -> APIRouter:
 
         # Compute duration per phase
         for group in timeline:
-            evs = group["events"]
+            evs = cast(List[Dict[str, Any]], group["events"])
             if len(evs) >= 2:
                 first_ts = evs[0].get("ts") or 0
                 last_ts = evs[-1].get("ts") or 0
@@ -657,7 +657,7 @@ def create_router(deps) -> APIRouter:
                     "status": status,
                     "detail": str(detail)[:200],
                     "ts": ts,
-                    "same_failure_count": ev.same_failure_count if hasattr(ev, "same_failure_count") else None,
+                    "same_failure_count": cast(Any, ev).same_failure_count if hasattr(ev, "same_failure_count") else None,
                 })
             # Risk trajectory: phase → success/failure
             if status in ("success", "failure", "blocked", "running"):

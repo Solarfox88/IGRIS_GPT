@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, List, Tuple
+from typing import Any, Dict, List, Tuple
 
 from igris.agent.mission import (
     Mission,
@@ -73,7 +73,7 @@ def run_validation_suite(project_root: str = ".") -> Tuple[Path, Path]:
     out_dir = Path(project_root) / ".igris" / "mission_brain" / "validation" / "768"
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    scenarios_output: List[Dict[str, object]] = []
+    scenarios_output: List[Dict[str, Any]] = []
     semantic_key_ref: str | None = None
 
     for case in _scenario_cases():
