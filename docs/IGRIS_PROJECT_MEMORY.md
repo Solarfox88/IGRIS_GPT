@@ -2,7 +2,7 @@
 
 Stable project state — source of truth for all agents.
 
-Last updated: 2026-08-15 (process correction hardening added — ADR-IGRIS-0012)
+Last updated: 2026-08-15 (import graph validation hardening added — ADR-IGRIS-0013)
 
 ## Repository
 
@@ -69,6 +69,17 @@ The following quality hardening rules are mandatory (full text in `AGENTS.md`):
 13. Never commit directly on `main` — verify branch before every commit (ADR-IGRIS-0012)
 14. VM branch validation is mandatory for runtime-impacting work and cannot be replaced by post-merge validation (ADR-IGRIS-0012)
 15. Final roadmap reports must use a per-block compliance matrix with complete/partial/missing/not applicable/blocked (ADR-IGRIS-0012)
+16. Import graph validation required for core refactors — compileall + import smoke tests + supervisor module imports (ADR-IGRIS-0013)
+
+## Import graph validation
+
+Core refactors must include compile/import graph validation before merge.
+
+Required for supervisor, task engine, memory, routing, diagnostics, auth/security, logging, and shared helper/model modules.
+
+Supervisor refactors must import every `igris.core.supervisor*.py` module before merge.
+
+A runtime refactor with missing import graph evidence is not complete.
 
 ## Process correction hardening
 
