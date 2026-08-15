@@ -851,6 +851,75 @@ If any required column is `partial` or `missing`, the roadmap cannot receive a 1
 
 The final report must explicitly list all process deviations.
 
+### 16. Import graph and circular import check required for core refactors
+
+For any refactor that moves code between modules, especially under `igris/core/`, import safety must be checked before merge.
+
+This applies to changes involving:
+
+- `self_repair_supervisor.py`
+- `supervisor_*.py`
+- task engine
+- memory modules
+- routing modules
+- diagnostics
+- auth/security
+- logging
+- shared models/helpers
+
+Required checks before merge:
+
+```bash
+python -m compileall igris
+python - <<'PY'
+import importlib
+
+modules = [
+    "igris.core.self_repair_supervisor",
+    "igris.core.supervisor_models",
+    "igris.core.supervisor_backend",
+    "igris.core.supervisor_helpers",
+    "igris.core.supervisor_analysis",
+    "igris.core.task_engine",
+    "igris.core.unified_memory",
+    "igris.web.server",
+]
+
+for m in modules:
+    print("IMPORT", m)
+    importlib.import_module(m)
+
+print("IMPORT_GRAPH_SMOKE_OK")
+PY
+```
+
+For supervisor refactors, also import all supervisor modules:
+
+```bash
+python - <<'PY'
+import importlib
+from pathlib import Path
+
+for p in sorted(Path("igris/core").glob("supervisor*.py")):
+    mod = "igris.core." + p.stem
+    print("IMPORT", mod)
+    importlib.import_module(mod)
+
+print("SUPERVISOR_IMPORT_GRAPH_OK")
+PY
+```
+
+If a circular import appears:
+
+- do not merge
+- fix with deferred imports only if safe
+- prefer moving shared types/constants to lower-level modules
+- document the dependency direction
+- rerun import graph checks
+- rerun tests and VM branch validation
+
+A core refactor cannot receive a 10/10 quality rating without import graph evidence.
+
 ## Hard guardrails — non-regression constraints
 
 These must NEVER be weakened by any agent:

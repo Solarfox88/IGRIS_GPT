@@ -195,3 +195,19 @@ The new hard rules are:
 - Runtime-impacting PRs without branch VM validation are incomplete unless explicitly approved as exceptions.
 - Final reports must distinguish full compliance from partial compliance.
 - Roadmap progress must remain honest even when useful code was merged.
+
+## ADR-IGRIS-0013 — Import graph validation required for core refactors
+
+**Date**: 2026-08-15
+**Status**: accepted
+
+**Decision**: Core refactors must include import graph validation before merge. This is mandatory for supervisor, memory, task engine, routing, diagnostics, auth/security, logging, and shared helper/model modules.
+
+**Rationale**: A previous supervisor extraction introduced a circular import that was caught and fixed in a follow-up PR. Future refactors must detect this class of error before merge.
+
+**Consequences**:
+
+- Runtime-impacting refactors must run compileall and import graph smoke tests.
+- Supervisor refactors must import every `igris.core.supervisor*.py` module before merge.
+- Circular import fixes must be documented and validated on VM.
+- A PR missing import graph evidence is not complete.

@@ -2,7 +2,7 @@
 
 The exact point where work resumes. Updated by every agent at the end of each task.
 
-Last updated: 2026-08-15 (Blocks 11-20 complete — final audit)
+Last updated: 2026-08-15 (import graph validation hardening added — ADR-IGRIS-0013)
 
 ## Mandatory process before next task
 
@@ -29,6 +29,16 @@ The 20-pass quality gate now includes hard correction rules (ADR-IGRIS-0012):
 - post-merge VM validation does not replace branch validation
 - if VM/SSH validation is unavailable, runtime-impacting work is blocked unless the user explicitly approves an exception
 - final roadmap reports must include a per-block compliance matrix
+
+## Import graph validation
+
+Core refactors must include compile/import graph validation before merge (ADR-IGRIS-0013).
+
+Required for supervisor, task engine, memory, routing, diagnostics, auth/security, logging, and shared helper/model modules.
+
+Supervisor refactors must import every `igris.core.supervisor*.py` module before merge.
+
+A runtime refactor with missing import graph evidence is not complete.
 
 ## Current next issue
 
