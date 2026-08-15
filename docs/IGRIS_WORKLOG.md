@@ -78,3 +78,8 @@ python -m igris.core.jarvis_core_gauntlet
 | 2026-08-15 | #1371/#1379+#1380 | Devin | Block 12: extract _repair_cycle → supervisor_repair_cycle.py + circular import fix | 352/352 VM | ef1f178+4754f8a |
 | 2026-08-15 | #1371/#1381 | Devin | Block 13: extract _run_preflight_phase → supervisor_preflight.py | 352/352 VM | 68b4aed |
 | 2026-08-15 | #1371 | Devin | Block 14: Phase 5 size check — 3125 lines remain, progress comment on #1371 | — | — |
+| 2026-08-15 | #1355/#1383 | Devin | Block 15: pyright Phase 4 — 102→0 errors | 352/352 VM | 8cce462 |
+| 2026-08-15 | #1355/#1384 | Devin | Block 16: pyright CI blocking, issue #1355 closed | — | bc435e5 |
+| 2026-08-15 | #1353/#1385 | Devin | Block 17: narrow 42 except Exception in routes (506→464) | 15/15 VM | 52f50a5 |
+| 2026-08-15 | #1353/#1386 | Devin | Block 18: narrow 76 except Exception in core (464→347) | 15/15 VM | 96be5a2 |
+| 2026-08-15 | #1315/#1354 | Devin | Block 19: #1315 closed (foundation complete), #1354 updated | 22/22 tests | — |
