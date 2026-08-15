@@ -151,28 +151,10 @@ def update_same_failure_tracking(run: Any, failure: str) -> int:
 
 
 # --- repair_cycle extraction (#1371) -----------------------------------------
-# These imports are placed after the helper functions above so that
-# ``supervisor_models`` (which imports ``collect_repair_diagnostics`` and
-# ``update_same_failure_tracking`` from this module) does not hit a circular
-# import error during module initialization.
-from igris.core.supervisor_models import (  # noqa: E402
-    CommandResult,
-    RankSupervisorConfig,
-    SupervisorRun,
-    RETRYABLE_REPAIR_FAILURES,
-    _command_detail,
-    _failure_error_code,
-)
-from igris.core.supervisor_analysis import (  # noqa: E402
-    _has_destructive_diff,
-    _has_flask_test_client_in_diff,
-    _has_invalid_fastapi_bootstrap_diff,
-    _has_ui_surface_change,
-    _is_product_only_ui_task_diff,
-    _is_valid_missing_tests_repair_diff,
-    _is_valid_ui_test_diff,
-    _parse_pytest_collection_error,
-)
+# NOTE: ``supervisor_models`` imports ``collect_repair_diagnostics`` and
+# ``update_same_failure_tracking`` from this module, so we cannot import
+# ``supervisor_models`` at module level here without creating a circular
+# import.  The imports are deferred to function scope inside ``repair_cycle``.
 
 
 def repair_cycle(
@@ -192,6 +174,25 @@ def repair_cycle(
     receives the original ``self`` so all ``self.<attr>`` / ``self.<method>``
     references continue to resolve on the supervisor instance.
     """
+    # Deferred imports to avoid circular import: supervisor_models imports
+    # collect_repair_diagnostics/update_same_failure_tracking from this module.
+    from igris.core.supervisor_models import (
+        CommandResult,
+        RETRYABLE_REPAIR_FAILURES,
+        _command_detail,
+        _failure_error_code,
+    )
+    from igris.core.supervisor_analysis import (
+        _has_destructive_diff,
+        _has_flask_test_client_in_diff,
+        _has_invalid_fastapi_bootstrap_diff,
+        _has_ui_surface_change,
+        _is_product_only_ui_task_diff,
+        _is_valid_missing_tests_repair_diff,
+        _is_valid_ui_test_diff,
+        _parse_pytest_collection_error,
+    )
+
     title = f"{config.rank_id}: supervised repair for {failure}"
     body = f"Supervisor detected {failure} during run {run.run_id}."
 
