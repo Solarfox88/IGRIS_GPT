@@ -126,7 +126,7 @@ def _vastai_request(
         except (OSError, UnicodeDecodeError, TypeError):
             pass
         raise RuntimeError(f"Vast.ai API {method} {path} → HTTP {e.code}: {body}") from e
-    except Exception as e:
+    except (OSError, ConnectionError, TimeoutError, json.JSONDecodeError, ValueError, UnicodeDecodeError) as e:
         raise RuntimeError(f"Vast.ai API {method} {path} error: {e}") from e
 
 
@@ -222,7 +222,7 @@ class VastAIManager:
                 if ids:
                     _log.info("vastai: loaded %d bad host(s) from %s", len(ids), self._BAD_HOSTS_FILE)
                 return ids
-        except Exception as exc:
+        except (OSError, json.JSONDecodeError, ValueError, TypeError, KeyError) as exc:
             _log.warning("vastai: could not load bad hosts file: %s", exc)
         return set()
 
@@ -233,7 +233,7 @@ class VastAIManager:
             self._BAD_HOSTS_FILE.write_text(
                 json.dumps({"host_ids": sorted(self._failed_host_ids)}, indent=2)
             )
-        except Exception as exc:
+        except (OSError, TypeError, ValueError) as exc:
             _log.warning("vastai: could not save bad hosts file: %s", exc)
 
     # -- Config --
@@ -389,7 +389,7 @@ class VastAIManager:
                 min_vram_gb=info["vram_gb"],
                 max_cost_hr=max_cost,
             )
-        except Exception as e:
+        except (RuntimeError, OSError, ConnectionError, TimeoutError, json.JSONDecodeError, ValueError, TypeError, KeyError) as e:
             return OfferResult(model=model, error=str(e))
 
     # -- Provision (gated) --
@@ -509,7 +509,7 @@ class VastAIManager:
             })
             return {"success": True, "instance": instance.to_dict(), "gated": True}
 
-        except Exception as e:
+        except (RuntimeError, OSError, KeyError, TypeError, ValueError) as e:
             return {"success": False, "error": str(e), "gated": True}
 
     # -- Destroy (gated) --
@@ -537,7 +537,7 @@ class VastAIManager:
         old_id = self._instance.instance_id
         try:
             _vastai_request("DELETE", f"/instances/{old_id}/", cfg.api_key or "")
-        except Exception as e:
+        except (RuntimeError, OSError, ConnectionError, TimeoutError) as e:
             return {"success": False, "error": f"Destroy API call failed: {e}"}
 
         self._instance.status = "destroyed"
@@ -669,7 +669,7 @@ class VastAIManager:
             t.start()
             return True
 
-        except Exception as exc:
+        except (RuntimeError, OSError, KeyError, TypeError, ValueError) as exc:
             _log.warning("vastai auto_provision failed: %s", exc)
             return False
 
@@ -730,7 +730,7 @@ class VastAIManager:
                         )
                         try:
                             _vastai_request("DELETE", f"/instances/{instance_id}/", api_key)
-                        except Exception as _del_exc:
+                        except (RuntimeError, OSError, ConnectionError, TimeoutError) as _del_exc:
                             _log.warning("vastai poll: DELETE failed for %s: %s", instance_id, _del_exc)
                         if self._instance and self._instance.instance_id == instance_id:
                             self._instance.status = "destroyed"
@@ -789,7 +789,7 @@ class VastAIManager:
                     try:
                         _vastai_request("DELETE", f"/instances/{instance_id}/", api_key)
                         _log.info("vastai poll: deleted failed instance %s", instance_id)
-                    except Exception as _del_exc:
+                    except (RuntimeError, OSError, ConnectionError, TimeoutError) as _del_exc:
                         _log.warning("vastai poll: DELETE failed for %s: %s", instance_id, _del_exc)
                     if self._instance and self._instance.instance_id == instance_id:
                         self._instance.status = "destroyed"
@@ -833,7 +833,7 @@ class VastAIManager:
                         try:
                             _vastai_request("DELETE", f"/instances/{instance_id}/", api_key)
                             _log.info("vastai poll: deleted stuck-loading instance %s", instance_id)
-                        except Exception as _del_exc:
+                        except (RuntimeError, OSError, ConnectionError, TimeoutError) as _del_exc:
                             _log.warning(
                                 "vastai poll: DELETE failed for %s: %s", instance_id, _del_exc
                             )
@@ -841,7 +841,7 @@ class VastAIManager:
                             self._instance.status = "destroyed"
                         return
 
-            except Exception as exc:
+            except (RuntimeError, OSError, KeyError, TypeError, ValueError, ConnectionError, TimeoutError) as exc:
                 _log.debug("vastai poll error: %s", exc)
 
         _log.warning("vastai poll timed out after %ds: instance_id=%s", max_wait, instance_id)
@@ -894,7 +894,7 @@ class VastAIManager:
                         try:
                             _vastai_request("DELETE", f"/instances/{inst_id}/", cfg.api_key or "")
                             _log.info("vastai startup: deleted orphaned instance %s (status=%s)", inst_id, actual_status)
-                        except Exception as exc:
+                        except (RuntimeError, OSError, ConnectionError, TimeoutError) as exc:
                             _log.warning("vastai startup: DELETE %s failed: %s", inst_id, exc)
                     elif actual_status == "running" and self._instance is None:
                         # Adopt a running instance so we don't re-provision needlessly
@@ -915,7 +915,7 @@ class VastAIManager:
                             "vastai startup: adopted running instance %s at %s",
                             inst_id, ssh_host,
                         )
-            except Exception as exc:
+            except (RuntimeError, OSError, KeyError, TypeError, ValueError, ConnectionError, TimeoutError) as exc:
                 _log.debug("vastai startup cleanup error: %s", exc)
 
         t = threading.Thread(target=_cleanup, daemon=True, name="vastai-startup-cleanup")

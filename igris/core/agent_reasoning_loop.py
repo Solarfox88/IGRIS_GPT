@@ -417,14 +417,14 @@ class AgentReasoningLoop:
                                 e for e in self._recent_errors
                                 if "READ LOOP" not in str(e.get("error", ""))
                             ]
-                except Exception:
+                except (subprocess.SubprocessError, OSError):
                     pass  # never crash the reasoning loop over auto-commit
 
             self._steps.append(step)
             if step_callback is not None:
                 try:
                     step_callback(step_num, step.action_type or "unknown")
-                except Exception:
+                except (TypeError, ValueError, AttributeError, KeyError):
                     pass
             result.steps.append(step)
 
@@ -502,7 +502,7 @@ class AgentReasoningLoop:
                 self.project_root, policy
             )
             result.mission_brain_wrapper_policy = policy
-        except Exception as exc:
+        except (ValueError, TypeError, KeyError, AttributeError, OSError) as exc:
             result.mission_brain_shadow_error = str(exc)
 
     def _local_model_available(self) -> bool:
@@ -514,7 +514,7 @@ class AgentReasoningLoop:
         try:
             with urllib.request.urlopen(url, timeout=2.0):
                 return True
-        except Exception:
+        except (OSError, ConnectionError, TimeoutError, ValueError):
             return False
 
     def _suppress_human_gate(self) -> bool:
@@ -636,7 +636,7 @@ class AgentReasoningLoop:
         p = pathlib.Path(self.project_root or ".") / ".igris" / "context_config.json"
         try:
             return json.loads(p.read_text()) if p.exists() else {}
-        except Exception:
+        except (OSError, json.JSONDecodeError, ValueError):
             return {}
 
     def _tool_result_budget_bytes(self) -> int:
@@ -687,7 +687,7 @@ class AgentReasoningLoop:
                 tokens_generated=self._fleet_tokens_total,
                 tokens_per_sec=0.0,
             ))
-        except Exception:
+        except (ImportError, TypeError, ValueError, AttributeError, KeyError):
             pass  # fleet errors must never break reasoning
 
     def _ensure_micro_step_state(self, goal: str) -> None:
@@ -813,7 +813,7 @@ class AgentReasoningLoop:
                     action_type=action.action_type,
                     goal=goal,
                 )
-            except Exception:
+            except (ImportError, ValueError, TypeError, KeyError, AttributeError):
                 pass
 
             if not _contract_allowed:
@@ -858,7 +858,7 @@ class AgentReasoningLoop:
                     duration_ms=_tool_duration_ms,
                     error_snippet=_error_snippet,
                 )
-            except Exception:
+            except (ImportError, OSError, TypeError, ValueError, AttributeError):
                 pass  # ToolTracker is best-effort, never crashes the step
 
             # 4b. Store structured result data (apply 16KB byte-cap before injection)
@@ -870,7 +870,7 @@ class AgentReasoningLoop:
                         from igris.core.tool_output_compactor import ToolOutputCompactor
                         _compact = ToolOutputCompactor()
                         result_data = _compact.compress(result_data, source_type=action.action_type)
-                    except Exception:
+                    except (ImportError, TypeError, ValueError, AttributeError):
                         pass  # compactor is best-effort
                     _budget = self._tool_result_budget_bytes()
                     result_data, _bout = apply_tool_result_budget(result_data, _budget)
@@ -940,7 +940,7 @@ class AgentReasoningLoop:
             )
             self._refresh_micro_step_context()
 
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             step.outcome = "error"
             step.error = str(e)
 
@@ -960,7 +960,7 @@ class AgentReasoningLoop:
                 "tool_count": 1,  # each _execute_step is one tool call
             }
             self._reflection_hook.on_step_complete(_step_result, goal=goal, project_root=self.project_root or ".")
-        except Exception:
+        except (ImportError, TypeError, ValueError, KeyError, AttributeError, OSError):
             pass  # ReflectionHook is best-effort
 
         return step
@@ -1009,7 +1009,7 @@ class AgentReasoningLoop:
             storage_dir = os.path.join(self.project_root, ".igris", "memory", "long_term")
             self._ltm = LongTermMemory(storage_dir=storage_dir)
             self._ltm_retriever = MemoryRetriever(self._ltm)
-        except Exception:
+        except (ImportError, OSError, ValueError, TypeError):
             self._ltm = None
             self._ltm_retriever = None
 
@@ -1033,7 +1033,7 @@ class AgentReasoningLoop:
                 })
             self._world_state["ltm_hydrated"] = True
             self._world_state["ltm_items_loaded"] = len(hits)
-        except Exception:
+        except (OSError, ValueError, TypeError, AttributeError, KeyError):
             pass
 
     def _persist_long_term_memory_outcome(self, goal: str, result: LoopResult) -> None:
@@ -1058,7 +1058,7 @@ class AgentReasoningLoop:
                 tags=["reasoning_loop", result.status or "unknown"],
                 importance=0.7 if result.status == "finished" else 0.5,
             )
-        except Exception:
+        except (OSError, ValueError, TypeError):
             pass
 
     # Token budget thresholds for local profiles (#1044)
@@ -1157,7 +1157,7 @@ class AgentReasoningLoop:
                     )
                     lines.append(f"  → Result: {result}\n")
             return "\n".join(lines)
-        except Exception:
+        except (KeyError, TypeError, ValueError, AttributeError):
             return ""
 
     def _decide_action(self, context_packet):
@@ -1498,7 +1498,7 @@ class AgentReasoningLoop:
                 "error": result.error or "",
                 "result_data": result_data,
             }
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             return {"success": False, "error": str(e)}
 
     def _get_tool_runtime(self):
@@ -1714,7 +1714,7 @@ class AgentReasoningLoop:
                     "error": f"Tool runtime action not yet integrated: "
                              f"{action.action_type}",
                 }
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             return {"success": False, "error": str(e)}
 
     # ------------------------------------------------------------------

@@ -163,7 +163,7 @@ def _make_router():
             from igris.core.identity_resolver import BUILTIN_PROFILES
             if username in existing or username in BUILTIN_PROFILES:
                 return {"ok": False, "error": "username_taken"}
-        except Exception as exc:
+        except (OSError, ValueError, KeyError, TypeError, AttributeError) as exc:
             logger.warning("enroll_start: identity check failed: %s", exc)
             return {"ok": False, "error": "internal_error"}
 
@@ -172,7 +172,7 @@ def _make_router():
             cs = _cred_store()
             if cs.get_credential(username) is not None:
                 return {"ok": False, "error": "username_taken"}
-        except Exception as exc:
+        except (OSError, ValueError, KeyError, TypeError, AttributeError) as exc:
             logger.warning("enroll_start: credential check failed: %s", exc)
             return {"ok": False, "error": "internal_error"}
 
@@ -187,7 +187,7 @@ def _make_router():
                     and e.expires_at > datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None).isoformat()
                 ):
                     return {"ok": False, "error": "username_taken"}
-        except Exception as exc:
+        except (OSError, ValueError, KeyError, TypeError, AttributeError) as exc:
             logger.warning("enroll_start: pending enrollment check failed: %s", exc)
 
         # Create pending enrollment
@@ -200,7 +200,7 @@ def _make_router():
                 email=req.email,
                 mobile_phone=req.mobile_phone,
             )
-        except Exception as exc:
+        except (OSError, ValueError, KeyError, TypeError, AttributeError) as exc:
             logger.warning("enroll_start: create_pending failed: %s", exc)
             return {"ok": False, "error": "internal_error"}
 
@@ -232,7 +232,7 @@ def _make_router():
         try:
             es = _enroll_store()
             enrollment, resolve_r = es.resolve_token(raw_enrollment_token)
-        except Exception as exc:
+        except (OSError, ValueError, KeyError, TypeError, AttributeError) as exc:
             logger.warning("enroll_complete: resolve_token failed: %s", exc)
             return {"ok": False, "error": "invalid_enrollment_token"}
 
@@ -252,7 +252,7 @@ def _make_router():
                 first_name=enrollment.first_name,
                 last_name=enrollment.last_name,
             )
-        except Exception as exc:
+        except (OSError, ValueError, KeyError, TypeError, AttributeError) as exc:
             logger.warning("enroll_complete: create_profile failed for %s: %s", profile_id, exc)
             return {"ok": False, "error": "create_failed"}
 
@@ -265,7 +265,7 @@ def _make_router():
                 mobile_phone=enrollment.mobile_phone,
                 raw_password=raw_password,
             )
-        except Exception as exc:
+        except (OSError, ValueError, KeyError, TypeError, AttributeError) as exc:
             logger.warning("enroll_complete: create_credential failed for %s: %s", profile_id, exc)
             return {"ok": False, "error": "create_failed"}
 
@@ -276,14 +276,14 @@ def _make_router():
         # Mark enrollment token as used (best-effort; token expires naturally too)
         try:
             es.mark_used(raw_enrollment_token)
-        except Exception as exc:
+        except (OSError, ValueError, KeyError, TypeError, AttributeError) as exc:
             logger.debug("enroll_complete: mark_used best-effort failed: %s", exc)
 
         # Create session
         try:
             sm = _sess_mgr()
             sess_r = sm.create_session(profile_id=profile_id)
-        except Exception as exc:
+        except (OSError, ValueError, KeyError, TypeError, AttributeError) as exc:
             logger.warning("enroll_complete: create_session failed for %s: %s", profile_id, exc)
             return {"ok": False, "error": "session_create_failed"}
 
@@ -308,7 +308,7 @@ def _make_router():
         try:
             cs = _cred_store()
             verify_r = cs.verify_login(username, req.password)
-        except Exception as exc:
+        except (OSError, ValueError, KeyError, TypeError, AttributeError) as exc:
             logger.warning("login: verify_login error for %s: %s", username, exc)
             return {"ok": False, "error": "invalid_credentials"}
 
@@ -318,7 +318,7 @@ def _make_router():
         try:
             sm = _sess_mgr()
             sess_r = sm.create_session(profile_id=username)
-        except Exception as exc:
+        except (OSError, ValueError, KeyError, TypeError, AttributeError) as exc:
             logger.warning("login: create_session failed for %s: %s", username, exc)
             return {"ok": False, "error": "session_create_failed"}
 
@@ -346,7 +346,7 @@ def _make_router():
         try:
             sm = _sess_mgr()
             r = sm.revoke_session(token)
-        except Exception as exc:
+        except (OSError, ValueError, KeyError, TypeError, AttributeError) as exc:
             logger.warning("logout: revoke_session failed: %s", exc)
             return {"ok": False, "error": "invalid_session"}
 
@@ -365,7 +365,7 @@ def _make_router():
         try:
             sm = _sess_mgr()
             session, resolve_r = sm.resolve_session(token)
-        except Exception as exc:
+        except (OSError, ValueError, KeyError, TypeError, AttributeError) as exc:
             logger.warning("me: resolve_session failed: %s", exc)
             return {"ok": False, "error": "invalid_session"}
 
@@ -375,7 +375,7 @@ def _make_router():
         try:
             ir = _resolver()
             profile = ir.resolve(session.profile_id)
-        except Exception as exc:
+        except (OSError, ValueError, KeyError, TypeError, AttributeError) as exc:
             logger.warning("me: resolve profile failed for %s: %s", session.profile_id, exc)
             return {"ok": False, "error": "profile_not_found"}
 
@@ -407,7 +407,7 @@ def _make_router():
                 "sessions": sm.healthcheck(),
                 "enrollments": es.healthcheck(),
             }
-        except Exception as exc:
+        except (OSError, ValueError, KeyError, TypeError, AttributeError) as exc:
             logger.warning("auth_health failed: %s", exc)
             return {"ok": False, "error": str(exc)}
 
