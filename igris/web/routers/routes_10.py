@@ -206,7 +206,7 @@ def create_router(deps) -> APIRouter:
                 if _record and isinstance(_record, dict):
                     # Return the archived snapshot with an explicit archived flag
                     return {**_record, "archived": True, "run_id": run_id}
-        except Exception:
+        except (OSError, json.JSONDecodeError, KeyError, TypeError, ValueError):
             pass
         raise HTTPException(status_code=404, detail="rank run not found")
 
@@ -380,7 +380,7 @@ def create_router(deps) -> APIRouter:
                 }
             else:
                 diff_summary = {"available": True, "files_changed": [], "summary": "no changes"}
-        except Exception as exc:
+        except (OSError, subprocess.SubprocessError, IndexError, ValueError) as exc:
             diff_summary = {"available": False, "error": str(exc)[:200]}
 
         # 2. Test results from latest targeted_tests / full_tests event
@@ -502,7 +502,7 @@ def create_router(deps) -> APIRouter:
                 }
             else:
                 diff_summary = {"available": True, "files_changed": [], "summary": "no changes"}
-        except Exception as exc:
+        except (OSError, subprocess.SubprocessError, IndexError, ValueError) as exc:
             diff_summary = {"available": False, "error": str(exc)[:200]}
 
         test_results: Dict[str, object] = {"available": False}
@@ -777,7 +777,7 @@ def create_router(deps) -> APIRouter:
                         "affects_loop_decision": False,
                         "approval_required": True,
                     }
-        except Exception:
+        except (ImportError, AttributeError, TypeError, ValueError, KeyError):
             advisory_card = None
 
         return {
@@ -854,7 +854,7 @@ def create_router(deps) -> APIRouter:
                 }
                 for review in reviews
             ]
-        except Exception:
+        except (AttributeError, KeyError, TypeError, ValueError):
             report["evidence_card_edge_states"] = {"ok": 0, "warning": 0, "error": 0, "empty": 0}
             report["operator_review_actions"] = []
         return report
@@ -925,7 +925,7 @@ def create_router(deps) -> APIRouter:
                         "approval_required": True,
                         "generated_at": proposal.timestamp,
                     }
-            except Exception:
+            except (ImportError, AttributeError, TypeError, ValueError, KeyError):
                 advisory_card = None
 
         return {
@@ -968,7 +968,7 @@ def create_router(deps) -> APIRouter:
                     "available": parts[3] if len(parts) > 3 else "?",
                     "use_pct": parts[4] if len(parts) > 4 else "?",
                 }
-        except Exception as exc:
+        except (OSError, subprocess.SubprocessError, IndexError, ValueError) as exc:
             checks["disk"] = {"status": "error", "error": str(exc)[:200]}
 
         # Memory usage
@@ -983,7 +983,7 @@ def create_router(deps) -> APIRouter:
                     "used": mem_parts[2] if len(mem_parts) > 2 else "?",
                     "free": mem_parts[3] if len(mem_parts) > 3 else "?",
                 }
-        except Exception as exc:
+        except (OSError, subprocess.SubprocessError, IndexError, ValueError) as exc:
             checks["memory"] = {"status": "error", "error": str(exc)[:200]}
 
         # IGRIS service (port 7778)
@@ -996,7 +996,7 @@ def create_router(deps) -> APIRouter:
                 "status": "ok" if _nc.returncode == 0 else "down",
                 "port": 7778,
             }
-        except Exception as exc:
+        except (OSError, subprocess.SubprocessError, IndexError, ValueError) as exc:
             checks["igris_service"] = {"status": "error", "error": str(exc)[:200]}
 
         overall = "healthy" if all(
@@ -1034,7 +1034,7 @@ def create_router(deps) -> APIRouter:
                 cwd=str(CONFIG.project_root),
             )
             result["is_dirty"] = bool(_status.stdout.strip()) if _status.returncode == 0 else None
-        except Exception as exc:
+        except (OSError, subprocess.SubprocessError, IndexError, ValueError) as exc:
             result["error"] = str(exc)[:200]
 
         return result
@@ -1078,7 +1078,7 @@ def create_router(deps) -> APIRouter:
                         k, _, v = line.partition("=")
                         props[k.strip()] = v.strip()
                 services[svc] = {"status": status, **props}
-            except Exception as exc:
+            except (OSError, subprocess.SubprocessError, IndexError, ValueError) as exc:
                 services[svc] = {"status": "unknown", "error": str(exc)[:100]}
         report["services"] = services
 
@@ -1096,7 +1096,7 @@ def create_router(deps) -> APIRouter:
             }
         except FileNotFoundError:
             nginx_config = {"available": False, "reason": "nginx not installed"}
-        except Exception as exc:
+        except (OSError, subprocess.SubprocessError, IndexError, ValueError) as exc:
             nginx_config = {"available": False, "error": str(exc)[:100]}
         report["nginx_config"] = nginx_config
 
@@ -1118,7 +1118,7 @@ def create_router(deps) -> APIRouter:
                 docker_containers = {"available": False, "error": _dk.stderr.strip()[:200]}
         except FileNotFoundError:
             docker_containers = {"available": False, "reason": "docker not installed"}
-        except Exception as exc:
+        except (OSError, subprocess.SubprocessError, IndexError, ValueError) as exc:
             docker_containers = {"available": False, "error": str(exc)[:100]}
         report["docker"] = docker_containers
 
@@ -1143,7 +1143,7 @@ def create_router(deps) -> APIRouter:
                     if "notBefore" in line:
                         _exp["valid_from"] = line.split("=", 1)[1].strip()
                 ssl_info = {"available": True, "domain": _domain, **_exp}
-            except Exception as exc:
+            except (OSError, subprocess.SubprocessError, IndexError, ValueError) as exc:
                 ssl_info = {"available": False, "domain": _domain, "error": str(exc)[:100]}
         report["ssl"] = ssl_info
 
@@ -1160,7 +1160,7 @@ def create_router(deps) -> APIRouter:
                 ports = {"available": True, "listening_ports": sorted(int(p) for p in _ports_found if p.isdigit())}
             else:
                 ports = {"available": False, "error": _ss.stderr.strip()[:100]}
-        except Exception as exc:
+        except (OSError, subprocess.SubprocessError, IndexError, ValueError) as exc:
             ports = {"available": False, "error": str(exc)[:100]}
         report["ports"] = ports
 

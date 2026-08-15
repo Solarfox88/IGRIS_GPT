@@ -98,7 +98,7 @@ def create_router(deps) -> APIRouter:
             from igris.core.rank_gauntlet import RankGauntlet
             result = RankGauntlet().run(project_root=str(CONFIG.project_root))
             return result.to_dict()
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             return {"passed": False, "blocked": True, "error": str(e)}
 
     @router.get('/api/rank/ui-card')
@@ -208,7 +208,7 @@ def create_router(deps) -> APIRouter:
                     "interlocutor_id": preflight.interlocutor_id,
                 }
             system_enrichment = preflight.system_prompt_enrichment
-        except Exception as _pf_exc:
+        except (ImportError, AttributeError, KeyError, TypeError, ValueError, OSError) as _pf_exc:
             _pf_logger.error("Preflight failed: %s", _pf_exc)
             # Fail-closed for sensitive requests
             if any(kw in message.lower() for kw in _sensitive_keywords):
@@ -287,7 +287,7 @@ def create_router(deps) -> APIRouter:
                     )
                     _mfc_block = _MFC_BLOCK(project_root=str(CONFIG.project_root))
                     _mfc_block.persist_mission_plan(_blocked_mission)
-                except Exception as _bm_exc:
+                except (ImportError, AttributeError, TypeError, ValueError, OSError) as _bm_exc:
                     logging.getLogger(__name__).debug("Blocked mission audit failed (non-blocking): %s", _bm_exc)
                 return {
                     "response": _route_decision.reason or "Request blocked by security policy.",
@@ -303,7 +303,7 @@ def create_router(deps) -> APIRouter:
                     if not _MFC_GATE(project_root=str(CONFIG.project_root)).should_create_mission(_route_decision):
                         raise ValueError("not_mission_route")
                     # mission route — fall through to mission-first block
-                except Exception:
+                except (ImportError, AttributeError, TypeError, ValueError):
                     return {
                         "response": (
                             f"Questa operazione ({_route_decision.route}) richiede approvazione esplicita. "
@@ -323,7 +323,7 @@ def create_router(deps) -> APIRouter:
             # Use memory context from router if available (enriches system prompt)
             if _route_decision and _route_decision.metadata.get("memory_context"):
                 system_enrichment = (system_enrichment or "") + "\n" + _route_decision.metadata["memory_context"]
-        except Exception as _router_exc:
+        except (ImportError, AttributeError, KeyError, TypeError, ValueError, OSError) as _router_exc:
             logging.getLogger(__name__).debug("JarvisRequestRouter unavailable (non-blocking): %s", _router_exc)
         # --- end Jarvis Request Router ---
 
@@ -360,7 +360,7 @@ def create_router(deps) -> APIRouter:
                     )
                     _mem_ok = _sr.ok
                     _mem_store_warnings = _sr.warnings
-                except Exception as _mem_exc:
+                except (ImportError, AttributeError, TypeError, ValueError, OSError) as _mem_exc:
                     logging.getLogger(__name__).warning("Memory update store failed: %s", _mem_exc)
                     _mem_store_warnings = [str(_mem_exc)]
 
@@ -421,7 +421,7 @@ def create_router(deps) -> APIRouter:
                     _ap = _mfc.to_response_payload(_mission_plan_appr)
                     _ap["route"] = _route_decision.to_dict() if _route_decision else None
                     return _ap
-        except Exception as _mf_exc:
+        except (ImportError, AttributeError, TypeError, ValueError, OSError) as _mf_exc:
             logging.getLogger(__name__).debug("MissionFirstController unavailable (non-blocking): %s", _mf_exc)
         # --- end mission-first execution path ---
 
@@ -435,7 +435,7 @@ def create_router(deps) -> APIRouter:
             _pid = preflight.interlocutor_id if 'preflight' in dir() else "unknown"
             _tl = preflight.trust_level if 'preflight' in dir() else "untrusted"
             _memory_context = _retriever.retrieve_for_context(_pid, _tl)
-        except Exception as _mem_ret_exc:
+        except (ImportError, AttributeError, TypeError, ValueError, OSError) as _mem_ret_exc:
             import logging as _log_r; _log_r.getLogger(__name__).warning("Conversation memory retrieval failed (degraded): %s", _mem_ret_exc)
         # --- end memory retrieval ---
 
@@ -471,7 +471,7 @@ def create_router(deps) -> APIRouter:
             )
             _store = ConversationMemoryStore(project_root=str(CONFIG.project_root))
             _store.persist(_episode)
-        except Exception as _mem_exc:
+        except (ImportError, AttributeError, TypeError, ValueError, OSError) as _mem_exc:
             import logging as _ml; _ml.getLogger(__name__).warning("Memory persistence failed (degraded): %s", _mem_exc)
         # --- end memory persistence ---
 
@@ -572,7 +572,7 @@ def create_router(deps) -> APIRouter:
                 preflight_block = preflight.clarification_question or "Please clarify your request."
             else:
                 system_enrichment = preflight.system_prompt_enrichment
-        except Exception as _pf_exc2:
+        except (ImportError, AttributeError, KeyError, TypeError, ValueError, OSError) as _pf_exc2:
             _pf_logger2.error("Stream preflight failed: %s", _pf_exc2)
             # Fail-closed for sensitive requests
             if any(kw in message.lower() for kw in _sensitive_keywords_s):
@@ -654,7 +654,7 @@ def create_router(deps) -> APIRouter:
                     if not _MFC_SGT(project_root=str(CONFIG.project_root)).should_create_mission(_stream_route_decision):
                         raise ValueError("not_mission_route")
                     # fall through to mission-first stream block
-                except Exception:
+                except (ImportError, AttributeError, TypeError, ValueError):
                     _approval_msg = (
                         f"Questa operazione ({_stream_route_decision.route}) richiede approvazione esplicita. "
                         f"Rischio: {_stream_route_decision.risk}."
@@ -672,7 +672,7 @@ def create_router(deps) -> APIRouter:
             # --- end stream approval gate ---
             if _stream_route_decision and _stream_route_decision.metadata.get("memory_context"):
                 system_enrichment = (system_enrichment or "") + "\n" + _stream_route_decision.metadata["memory_context"]
-        except Exception as _sr_exc:
+        except (ImportError, AttributeError, KeyError, TypeError, ValueError, OSError) as _sr_exc:
             logging.getLogger(__name__).debug("JarvisRequestRouter stream unavailable (non-blocking): %s", _sr_exc)
         # --- end Jarvis Request Router stream ---
 
@@ -697,7 +697,7 @@ def create_router(deps) -> APIRouter:
                         text=message, tags=["memory_update"],
                     )
                     _smem_ok = _smem_r.ok
-                except Exception as _smem_exc:
+                except (ImportError, AttributeError, TypeError, ValueError, OSError) as _smem_exc:
                     logging.getLogger(__name__).warning("Stream memory update store failed: %s", _smem_exc)
 
             if _smem_iid == "unknown":
@@ -741,7 +741,7 @@ def create_router(deps) -> APIRouter:
                         media_type="text/event-stream",
                         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
                     )
-        except Exception as _mf_s_exc:
+        except (ImportError, AttributeError, TypeError, ValueError, OSError) as _mf_s_exc:
             logging.getLogger(__name__).debug("MissionFirst stream unavailable (non-blocking): %s", _mf_s_exc)
         # --- end mission-first stream path ---
 
@@ -757,7 +757,7 @@ def create_router(deps) -> APIRouter:
             _s_pid = preflight.interlocutor_id if 'preflight' in dir() else "unknown"
             _s_tl = preflight.trust_level if 'preflight' in dir() else "untrusted"
             _stream_memory_context = _s_retriever.retrieve_for_context(_s_pid, _s_tl)
-        except Exception as _s_mem_ret_exc:
+        except (ImportError, AttributeError, TypeError, ValueError, OSError) as _s_mem_ret_exc:
             import logging as _log_sr; _log_sr.getLogger(__name__).debug("Stream memory retrieval failed (degraded): %s", _s_mem_ret_exc)
         # --- end memory retrieval ---
 
@@ -809,7 +809,7 @@ def create_router(deps) -> APIRouter:
                 )
                 _s_store = ConversationMemoryStore(project_root=str(CONFIG.project_root))
                 _s_store.persist(_s_episode)
-            except Exception as _s_mem_exc:
+            except (ImportError, AttributeError, TypeError, ValueError, OSError) as _s_mem_exc:
                 import logging as _s_ml; _s_ml.getLogger(__name__).warning("Stream memory persistence failed (degraded): %s", _s_mem_exc)
             # --- end stream memory persistence ---
 
@@ -880,7 +880,7 @@ def create_router(deps) -> APIRouter:
             diag = diagnostics_dash.get_diagnostic_summary(
                 tasks, timeline, project_root=str(CONFIG.project_root),
             )
-        except Exception:
+        except (AttributeError, KeyError, TypeError, ValueError, OSError):
             pass
 
         loop_info: dict = {}
@@ -888,7 +888,7 @@ def create_router(deps) -> APIRouter:
             from igris.core.autonomous_loop import get_loop_status as _get_loop_status
             _ls = _get_loop_status()
             loop_info = _ls.to_dict() if hasattr(_ls, "to_dict") else {}
-        except Exception:
+        except (ImportError, AttributeError, TypeError, ValueError, OSError):
             pass
 
         mission_overview = {
@@ -905,7 +905,7 @@ def create_router(deps) -> APIRouter:
             if running:
                 mission_overview["running_task_id"] = str(running[0].get("task_id", "") or "")
                 mission_overview["running_task_title"] = str(running[0].get("description", "") or "")
-        except Exception:
+        except (AttributeError, KeyError, TypeError, ValueError):
             pass
 
         risk_snapshot = {
@@ -920,7 +920,7 @@ def create_router(deps) -> APIRouter:
             elif mission_overview["pending_task_count"] > 15:
                 risk_snapshot["level"] = "medium"
                 risk_snapshot["reason"] = "task_backlog_high"
-        except Exception:
+        except (AttributeError, KeyError, TypeError, ValueError):
             pass
 
         warnings = []
@@ -977,9 +977,9 @@ def create_router(deps) -> APIRouter:
                         "last_intent": _last.get("action_type"),
                         "decision": _last.get("decision"),
                     }
-            except Exception:
+            except (AttributeError, KeyError, TypeError, ValueError):
                 pass
-        except Exception as _e:
+        except (ImportError, AttributeError, TypeError, ValueError, OSError) as _e:
             interlocutor_section["error"] = str(_e)
 
         # Memory status (#1240)
@@ -987,7 +987,7 @@ def create_router(deps) -> APIRouter:
             from igris.core.conversation_memory import ConversationMemoryStore
             _ = ConversationMemoryStore
             interlocutor_section["memory_status"] = {"enabled": True, "last_error": None}
-        except Exception as _ms_exc:
+        except (ImportError, AttributeError) as _ms_exc:
             interlocutor_section["memory_status"] = {"enabled": False, "last_error": str(_ms_exc)}
 
         return {
@@ -1068,7 +1068,7 @@ def create_router(deps) -> APIRouter:
                     )
                 elif trust_level in ("admin", "owner", "trusted"):
                     approval_required = True
-        except Exception as _pf_exc:
+        except (ImportError, AttributeError, KeyError, TypeError, ValueError, OSError) as _pf_exc:
             logger.error("chat/intent router failed: %s", _pf_exc)
             # Fail-closed for sensitive intents
             if intent in ("patching", "code_change", "deploy"):
