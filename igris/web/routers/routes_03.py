@@ -322,7 +322,7 @@ def create_router(deps) -> APIRouter:
             _ltm = LongTermMemory()
             _entries = _ltm.get_entries("__health_probe__", limit=1)
             checks["long_term"] = {"status": "ok", "reachable": True}
-        except Exception as exc:
+        except (ImportError, AttributeError, TypeError, ValueError, OSError) as exc:
             _logger = logging.getLogger("igris.memory.health")
             _logger.warning("Memory health: long_term check failed: %s", exc)
             checks["long_term"] = {"status": "degraded", "error": str(exc)[:200]}
@@ -334,7 +334,7 @@ def create_router(deps) -> APIRouter:
             _node_count = _g.conn.execute("SELECT COUNT(*) FROM memory_nodes").fetchone()[0]
             _edge_count = _g.conn.execute("SELECT COUNT(*) FROM memory_edges").fetchone()[0]
             checks["memory_graph"] = {"status": "ok", "nodes": _node_count, "edges": _edge_count}
-        except Exception as exc:
+        except (AttributeError, TypeError, ValueError, OSError) as exc:
             _logger = logging.getLogger("igris.memory.health")
             _logger.warning("Memory health: memory_graph check failed: %s", exc)
             checks["memory_graph"] = {"status": "degraded", "error": str(exc)[:200]}
@@ -344,7 +344,7 @@ def create_router(deps) -> APIRouter:
         try:
             _failures = decision_memory.get_recent_failures(1, project_root=str(CONFIG.project_root))
             checks["decision_memory"] = {"status": "ok", "reachable": True}
-        except Exception as exc:
+        except (AttributeError, TypeError, ValueError, OSError) as exc:
             _logger = logging.getLogger("igris.memory.health")
             _logger.warning("Memory health: decision_memory check failed: %s", exc)
             checks["decision_memory"] = {"status": "degraded", "error": str(exc)[:200]}

@@ -103,7 +103,7 @@ def create_router(deps) -> APIRouter:
                 manual_completion_reason=manual_reason,
                 project_root=str(CONFIG.project_root),
             )
-        except Exception as exc:
+        except (AttributeError, KeyError, TypeError, ValueError, OSError) as exc:
             logger.warning("validate_task_completion raised: %s", exc)
             raise HTTPException(status_code=500, detail=f"Validation error: {str(exc)[:200]}")
         task_engine.append_timeline_event({
