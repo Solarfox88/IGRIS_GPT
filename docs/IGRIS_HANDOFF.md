@@ -32,15 +32,20 @@ The 20-pass quality gate now includes hard correction rules (ADR-IGRIS-0012):
 
 ## Current next issue
 
-**#1356 — supervisor split Phase 3 in progress on branch `refactor/1356-supervisor-split-phase3`.**
+**#1371 — supervisor Phase 5 split in progress. 3,125 lines remain (target <2,000).**
 
-10-block roadmap complete. All 10 blocks executed:
-- #1356 Phase 4: supervisor 6011→4874 lines (5 PRs #1366-#1370); follow-up #1371 for Phase 5
+Phase 5 progress (Blocks 11-13 of 10-block roadmap #2):
+- Block 11: extracted _run_rank_loop → supervisor_rank_loop.py (PR #1378, 4874→4169)
+- Block 12: extracted _repair_cycle → supervisor_repair_cycle.py (PR #1379+#1380, 4169→3515)
+- Block 13: extracted _run_preflight_phase → supervisor_preflight.py (PR #1381, 3515→3125)
+- VM: commit 68b4aed, gauntlet 15/15, service active
+- Open: #1356 (3125>2000), #1355 (70>0), #1353 (506>50), #1315/#1354 (broader scope), #1371 (Phase 5)
+
+Previous 10-block roadmap (#1) complete:
+- #1356 Phase 4: supervisor 6011→4874 lines (5 PRs #1366-#1370)
 - #1355 Phase 3: pyright 94→70 errors (PR #1373); supervisor errors 19→0
 - #1353 Phase 3: except Exception 535→506 (PR #1374)
 - #1315/#1354: StructuredFormatter aligned with centralized redaction (PR #1375)
-- VM: commit 4877168, gauntlet 15/15, service active
-- Open: #1356 (4874>2000), #1355 (70>0), #1353 (506>50), #1315/#1354 (broader scope), #1371 (Phase 5)
 
 **Roadmap primary items addressed in Phase 1/2/3. Follow-up issues open: #1353, #1355, #1356.**
 

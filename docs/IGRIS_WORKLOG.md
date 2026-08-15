@@ -74,3 +74,7 @@ python -m igris.core.jarvis_core_gauntlet
 | 2026-08-14 | #1315 closure | Devin | fix(#1315): aligned StructuredFormatter redaction with centralized safety.redact_secrets; defense-in-depth maintained | PR #1375 | merged (4877168) |
 | 2026-08-14 | 10-block roadmap | Devin | Final audit: all 10 blocks complete; VM at 4877168, gauntlet 15/15, service active; 5 issues remain open (#1356, #1355, #1353, #1315, #1354) + follow-up #1371 | — | — |
 | 2026-08-15 | ADR-IGRIS-0012 | Devin | docs: process correction hardening — never commit on main, VM branch validation mandatory, per-block compliance matrix | — | pending |
+| 2026-08-15 | #1371/#1378 | Devin | Block 11: extract _run_rank_loop → supervisor_rank_loop.py | 352/352 VM | 7235d11 |
+| 2026-08-15 | #1371/#1379+#1380 | Devin | Block 12: extract _repair_cycle → supervisor_repair_cycle.py + circular import fix | 352/352 VM | ef1f178+4754f8a |
+| 2026-08-15 | #1371/#1381 | Devin | Block 13: extract _run_preflight_phase → supervisor_preflight.py | 352/352 VM | 68b4aed |
+| 2026-08-15 | #1371 | Devin | Block 14: Phase 5 size check — 3125 lines remain, progress comment on #1371 | — | — |
