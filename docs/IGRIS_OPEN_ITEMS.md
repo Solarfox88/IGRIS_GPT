@@ -2,7 +2,7 @@
 
 Open issues and tech debt for IGRIS_GPT. Updated after every task.
 
-Last updated: 2026-08-14 (mandatory 20-pass quality gate + quality hardening added)
+Last updated: 2026-08-15 (process correction hardening added — ADR-IGRIS-0012)
 
 ## Completion policy
 
@@ -23,6 +23,17 @@ If only part of the work was done, mark the item as:
 ```text
 Phase complete, follow-up pending.
 ```
+
+## Process correction hardening
+
+The 20-pass quality gate now includes hard correction rules (ADR-IGRIS-0012):
+
+- never commit directly on `main`
+- verify branch before every commit
+- runtime-impacting work requires VM branch validation before merge
+- post-merge VM validation does not replace branch validation
+- if VM/SSH validation is unavailable, runtime-impacting work is blocked unless the user explicitly approves an exception
+- final roadmap reports must include a per-block compliance matrix
 
 ## Priority issues
 

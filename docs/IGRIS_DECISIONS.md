@@ -171,3 +171,27 @@ The 20-pass gate expands the previous process with explicit GitHub reality check
 - Memory files must remain internally consistent.
 - Every block in a roadmap must have measurable before/after evidence.
 - Parent issues cannot be closed when only a phase is complete.
+
+## ADR-IGRIS-0012 — Process correction hardening
+
+**Date**: 2026-08-15
+**Status**: accepted
+
+**Decision**: The 20-pass quality gate is extended with hard process-correction rules.
+
+The new hard rules are:
+
+1. Never commit directly on `main`.
+2. Runtime-impacting work must complete VM branch validation before merge.
+3. Post-merge VM validation does not replace branch validation.
+4. If VM branch validation is unavailable, the block must be marked `Blocked`, not merged.
+5. Final roadmap reports must use a per-block compliance matrix with `complete`, `partial`, `missing`, `not applicable`, or `blocked`.
+
+**Rationale**: The previous roadmap produced useful work, but it included process deviations: an accidental direct commit to `main` and at least one runtime-impacting merge after SSH/VM branch-validation timeout. These deviations must be prevented before continuing autonomous multi-block work.
+
+**Consequences**:
+
+- Direct commits to `main` prevent a 10/10 quality rating.
+- Runtime-impacting PRs without branch VM validation are incomplete unless explicitly approved as exceptions.
+- Final reports must distinguish full compliance from partial compliance.
+- Roadmap progress must remain honest even when useful code was merged.

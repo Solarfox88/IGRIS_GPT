@@ -2,7 +2,7 @@
 
 The exact point where work resumes. Updated by every agent at the end of each task.
 
-Last updated: 2026-08-14 (mandatory 20-pass quality gate + quality hardening added)
+Last updated: 2026-08-15 (process correction hardening added — ADR-IGRIS-0012)
 
 ## Mandatory process before next task
 
@@ -18,6 +18,17 @@ Before starting any next task, every agent must:
 8. validate on VM when runtime-impacting — include traceable evidence (VM commit, branch, service status, gauntlet command+result, diagnostics/os-brief endpoints, post-merge proof)
 
 Skipping this process is not allowed.
+
+## Process correction hardening
+
+The 20-pass quality gate now includes hard correction rules (ADR-IGRIS-0012):
+
+- never commit directly on `main`
+- verify branch before every commit
+- runtime-impacting work requires VM branch validation before merge
+- post-merge VM validation does not replace branch validation
+- if VM/SSH validation is unavailable, runtime-impacting work is blocked unless the user explicitly approves an exception
+- final roadmap reports must include a per-block compliance matrix
 
 ## Current next issue
 

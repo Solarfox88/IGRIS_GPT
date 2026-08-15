@@ -73,3 +73,4 @@ python -m igris.core.jarvis_core_gauntlet
 | 2026-08-14 | #1353 Phase 3 | Devin | fix(#1353): narrowed 29 broad except Exception catches (535→506) across benchmark_ping, code_health_monitor, ci_repair_loop, supervisor_api | PR #1374 | merged (be88695) |
 | 2026-08-14 | #1315 closure | Devin | fix(#1315): aligned StructuredFormatter redaction with centralized safety.redact_secrets; defense-in-depth maintained | PR #1375 | merged (4877168) |
 | 2026-08-14 | 10-block roadmap | Devin | Final audit: all 10 blocks complete; VM at 4877168, gauntlet 15/15, service active; 5 issues remain open (#1356, #1355, #1353, #1315, #1354) + follow-up #1371 | — | — |
+| 2026-08-15 | ADR-IGRIS-0012 | Devin | docs: process correction hardening — never commit on main, VM branch validation mandatory, per-block compliance matrix | — | pending |

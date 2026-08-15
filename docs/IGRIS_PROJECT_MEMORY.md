@@ -2,7 +2,7 @@
 
 Stable project state — source of truth for all agents.
 
-Last updated: 2026-08-14 (mandatory 20-pass quality gate + quality hardening added)
+Last updated: 2026-08-15 (process correction hardening added — ADR-IGRIS-0012)
 
 ## Repository
 
@@ -66,6 +66,20 @@ The following quality hardening rules are mandatory (full text in `AGENTS.md`):
 10. Update VM after every merge
 11. PR body must include proof, not only narrative
 12. Memory files must be internally consistent before merge
+13. Never commit directly on `main` — verify branch before every commit (ADR-IGRIS-0012)
+14. VM branch validation is mandatory for runtime-impacting work and cannot be replaced by post-merge validation (ADR-IGRIS-0012)
+15. Final roadmap reports must use a per-block compliance matrix with complete/partial/missing/not applicable/blocked (ADR-IGRIS-0012)
+
+## Process correction hardening
+
+The 20-pass quality gate now includes hard correction rules (ADR-IGRIS-0012):
+
+- never commit directly on `main`
+- verify branch before every commit
+- runtime-impacting work requires VM branch validation before merge
+- post-merge VM validation does not replace branch validation
+- if VM/SSH validation is unavailable, runtime-impacting work is blocked unless the user explicitly approves an exception
+- final roadmap reports must include a per-block compliance matrix
 
 ## Traceable validation evidence
 

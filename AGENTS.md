@@ -714,6 +714,143 @@ do not contradict each other.
 
 If a PR says an issue is complete but `OPEN_ITEMS` still says pending, fix the inconsistency before merge.
 
+### 13. Never commit directly on main
+
+Direct commits to `main` are forbidden.
+
+Before every commit, run:
+
+```bash
+git branch --show-current
+git status --short
+```
+
+If the current branch is `main`, stop immediately.
+
+Required commit guard:
+
+```bash
+current_branch="$(git branch --show-current)"
+if [ "$current_branch" = "main" ]; then
+  echo "ERROR: refusing to commit directly on main"
+  exit 1
+fi
+```
+
+No task may continue after an accidental direct commit to `main` until it is repaired.
+
+Required repair flow:
+
+```bash
+# identify accidental commit
+git log --oneline -5
+
+# create a branch at the accidental commit
+git branch recovery/<short-description> HEAD
+
+# reset main back to origin/main
+git fetch origin
+git checkout main
+git reset --hard origin/main
+
+# switch to recovery branch and open PR from it
+git checkout recovery/<short-description>
+git status
+```
+
+The final report must explicitly state:
+
+```text
+Direct main commit check: passed
+Current branch before commit: <branch>
+```
+
+If a direct commit occurred, the report must state:
+
+```text
+Direct main commit occurred: yes
+Repair performed: yes
+Main reset to origin/main: yes
+Recovery branch: <branch>
+```
+
+A direct commit to `main` prevents a 10/10 quality rating for that block.
+
+### 14. VM branch validation cannot be replaced by post-merge validation
+
+For runtime-impacting work, VM branch validation is mandatory before merge.
+
+Post-merge validation is required too, but it does not replace branch validation.
+
+Runtime-impacting work includes changes to:
+
+- core supervisor
+- API
+- startup
+- service behavior
+- auth/session
+- task engine
+- diagnostics
+- memory
+- routing
+- logging
+- file operations
+- integrations
+
+If SSH or VM validation fails before merge, the block must not be merged.
+
+Allowed status:
+
+```text
+Blocked — VM branch validation unavailable.
+```
+
+Required blocked report:
+
+```text
+VM branch validation required: yes
+VM branch validation completed: no
+Reason: <reason>
+Action taken: <action>
+PR merged: no
+Honest status: Blocked
+```
+
+A runtime-impacting PR may be merged without branch VM validation only if:
+
+1. the user explicitly approves the exception, or
+2. the change is an emergency safety fix, and
+3. the exception is documented in PR body, memory files, and final report.
+
+Otherwise, merging after skipped VM branch validation is a process violation.
+
+### 15. Quality gate compliance must not be summarized as yes/no only
+
+Final roadmap reports must not say "20-pass used: yes" or "VM validation: yes" if some blocks were partial.
+
+Use a compliance matrix with one row per block.
+
+Allowed values:
+
+```text
+complete
+partial
+missing
+not applicable
+blocked
+```
+
+Required final report table:
+
+```text
+| Block | PR | Runtime-impacting | Branch VM validation | Post-merge VM validation | GitHub state verified | Direct-main guard | Honest status |
+|---|---|---|---|---|---|---|---|
+```
+
+If any required column is `partial` or `missing`, the roadmap cannot receive a 10/10 process rating.
+
+The final report must explicitly list all process deviations.
+
 ## Hard guardrails — non-regression constraints
 
 These must NEVER be weakened by any agent:
