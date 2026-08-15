@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import re
-from typing import Dict, Iterable, List, Optional
+from typing import Any, Dict, Iterable, List, Optional
 
 from igris.agent.mission.mission_schema import (
     Mission,
@@ -49,7 +49,7 @@ def _extract_unknown_safe_summary(user_input: str) -> str:
     return text[:240]
 
 
-def _extract_where_candidates(user_input: str, repo_view: Optional[Dict[str, object]]) -> List[str]:
+def _extract_where_candidates(user_input: str, repo_view: Optional[Dict[str, Any]]) -> List[str]:
     candidates: List[str] = []
     for match in re.findall(r"[A-Za-z0-9_./-]+\.(?:py|md|json|yaml|yml|toml)", user_input):
         candidates.append(match)
@@ -96,9 +96,9 @@ def _extract_why_summary(user_input: str) -> str:
 
 def _decompose_intent(
     user_input: str,
-    repo_view: Optional[Dict[str, object]],
+    repo_view: Optional[Dict[str, Any]],
     intent_type: str,
-) -> Dict[str, object]:
+) -> Dict[str, Any]:
     what = _extract_unknown_safe_summary(user_input) or "unknown"
     where = _extract_where_candidates(user_input, repo_view)
     why = _extract_why_summary(user_input)
@@ -134,8 +134,8 @@ def _verification_method_for_intent(intent_type: str) -> str:
 def _build_requirements(
     intent_type: str,
     summary: str,
-    repo_view: Optional[Dict[str, object]],
-    decomposition: Dict[str, object],
+    repo_view: Optional[Dict[str, Any]],
+    decomposition: Dict[str, Any],
 ) -> List[MissionRequirement]:
     requirements: List[MissionRequirement] = []
     base_desc = summary if summary != "unknown" else "User intent is partially unknown"
@@ -248,7 +248,7 @@ def _build_checklist(requirements: Iterable[MissionRequirement], simple_request:
 def understand_and_plan(
     user_input: str,
     project: str,
-    repo_view: Optional[Dict[str, object]] = None,
+    repo_view: Optional[Dict[str, Any]] = None,
     mission: Optional[Mission] = None,
 ) -> Mission:
     """Build/augment a mission with deterministic Understand&Plan output."""

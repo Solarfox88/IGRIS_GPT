@@ -119,7 +119,7 @@ class ToolOutputCompactor:
 
     def _collapse_repeated_patterns(self, text: str) -> str:
         """Collapse repeated patterns like ...... to [Nx '.']"""
-        for pattern_def in self.config.collapse_patterns:
+        for pattern_def in (self.config.collapse_patterns or []):
             pattern = pattern_def["pattern"]
             name = pattern_def.get("name", pattern_def["pattern"])
             # We need to replace each run of the same character with a marker

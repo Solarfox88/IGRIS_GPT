@@ -16,14 +16,17 @@ from __future__ import annotations
 import os
 import uuid
 from pathlib import Path
-from typing import Any, Dict, Optional, Tuple
+from typing import TYPE_CHECKING, Any, Dict, Optional, Tuple
+
+if TYPE_CHECKING:
+    from igris.core.supervisor_models import RankSupervisorConfig, SupervisorRun
 
 
 def run_preflight_phase(
     supervisor: Any,
-    run: Optional[Any],
-    config: Any,
-) -> Tuple[Any, Optional[Dict[str, Any]]]:
+    run: Optional["SupervisorRun"],
+    config: "RankSupervisorConfig",
+) -> Tuple["SupervisorRun", Optional[Dict[str, Any]]]:
     """Phase 1: init, git, baseline, smoke, assignment routing, mission plan.
 
     Returns (run, None) when blocked or cancelled, (run, ctx) on success.
@@ -51,8 +54,8 @@ def run_preflight_phase(
 
     # AssignmentRouter — lazy import to avoid circular deps at module load.
     _assignment_router_available = False
-    AssignmentRouter: Optional[Any] = None
-    AssignmentRequest: Optional[Any] = None
+    AssignmentRouter: Any = None
+    AssignmentRequest: Any = None
     try:
         from igris.core.assignment_router import (
             AssignmentRequest as _AssignmentRequest,

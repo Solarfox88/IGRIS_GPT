@@ -12,7 +12,7 @@ import re
 import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
 from igris.core.safety import (
     detect_secret_like_content,
@@ -284,7 +284,7 @@ def generate_commit_message(title: str, changes_summary: str = "") -> str:
     return msg
 
 
-def pre_commit_safety_check() -> Dict[str, object]:
+def pre_commit_safety_check() -> Dict[str, Any]:
     """Run safety checks before committing."""
     if not is_git_repo():
         return {"safe": False, "error": "Not a git repository", "warnings": []}
@@ -391,7 +391,7 @@ def execute_commit(message: str, gate_override: bool = False) -> Dict[str, objec
 # PR summary generation
 # ---------------------------------------------------------------------------
 
-def generate_pr_summary(base_branch: str = "main") -> Dict[str, object]:
+def generate_pr_summary(base_branch: str = "main") -> Dict[str, Any]:
     """Generate a PR summary comparing current branch to base."""
     if not is_git_repo():
         return {"error": "Not a git repository"}

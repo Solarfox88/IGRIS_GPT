@@ -248,7 +248,7 @@ class GitHubWriteGateway:
 
     # --- Public operations ---
 
-    def comment(self, issue_url: str, body: str, context: dict = None) -> GitHubWriteResult:
+    def comment(self, issue_url: str, body: str, context: Optional[dict] = None) -> GitHubWriteResult:
         """Add a comment to an issue or PR."""
         return self._execute(
             "comment", "github_write_comment", issue_url,
@@ -256,12 +256,12 @@ class GitHubWriteGateway:
             context=context,
         )
 
-    def add_label(self, issue_url: str, labels: List[str], context: dict = None) -> GitHubWriteResult:
+    def add_label(self, issue_url: str, labels: List[str], context: Optional[dict] = None) -> GitHubWriteResult:
         """Add labels to an issue/PR."""
         args = ["issue", "edit", issue_url] + [f"--add-label={lbl}" for lbl in labels]
         return self._execute("label", "github_write_label", issue_url, args, context=context)
 
-    def remove_label(self, issue_url: str, labels: List[str], context: dict = None) -> GitHubWriteResult:
+    def remove_label(self, issue_url: str, labels: List[str], context: Optional[dict] = None) -> GitHubWriteResult:
         """Remove labels from an issue/PR."""
         args = ["issue", "edit", issue_url] + [f"--remove-label={lbl}" for lbl in labels]
         return self._execute("label", "github_write_label", issue_url, args, context=context)
@@ -270,7 +270,7 @@ class GitHubWriteGateway:
         self,
         issue_url: str,
         comment: str = "",
-        context: dict = None,
+        context: Optional[dict] = None,
         approval: Optional[GitHubWriteApproval] = None,
     ) -> GitHubWriteResult:
         """Close an issue with optional comment (destructive — requires approval)."""
@@ -291,9 +291,9 @@ class GitHubWriteGateway:
         self,
         title: str,
         body: str,
-        labels: List[str] = None,
-        assignees: List[str] = None,
-        context: dict = None,
+        labels: Optional[List[str]] = None,
+        assignees: Optional[List[str]] = None,
+        context: Optional[dict] = None,
     ) -> GitHubWriteResult:
         """Create a new issue."""
         args = ["issue", "create", "--title", title, "--body", body]
@@ -307,7 +307,7 @@ class GitHubWriteGateway:
         self,
         pr_url: str,
         method: str = "merge",
-        context: dict = None,
+        context: Optional[dict] = None,
         approval: Optional[GitHubWriteApproval] = None,
         ci_status: Optional[str] = None,
         expected_head_sha: Optional[str] = None,
@@ -364,8 +364,8 @@ class GitHubWriteGateway:
         self,
         workflow: str,
         ref: str = "main",
-        inputs: dict = None,
-        context: dict = None,
+        inputs: Optional[dict] = None,
+        context: Optional[dict] = None,
     ) -> GitHubWriteResult:
         """Trigger a GitHub Actions workflow."""
         args = ["workflow", "run", workflow, "--ref", ref]

@@ -13,7 +13,7 @@ import subprocess
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from igris.core.redaction import redact as _redact, redact_nested as _redact_dict  # noqa: F401
 
@@ -221,9 +221,10 @@ class ContextAggregator:
                     timeline = te.timeline_events
 
             if timeline:
-                recent = list(timeline)[-max_items:]
+                _timeline: Any = cast(Any, timeline)
+                recent = list(_timeline)[-max_items:]
                 sec.items = [_redact_dict(e) if isinstance(e, dict) else {"event": _redact(str(e))} for e in recent]
-                sec.summary = f"{len(list(timeline))} events, showing last {len(sec.items)}"
+                sec.summary = f"{len(list(_timeline))} events, showing last {len(sec.items)}"
                 sec.status = "ok"
             else:
                 sec.status = "empty"
@@ -254,13 +255,14 @@ class ContextAggregator:
                     break
 
             if missions:
-                items = list(missions)[:max_items]
+                _missions: Any = cast(Any, missions)
+                items = list(_missions)[:max_items]
                 sec.items = [
                     _redact_dict(m.__dict__) if hasattr(m, "__dict__") and not isinstance(m, dict)
                     else (_redact_dict(m) if isinstance(m, dict) else {"mission": _redact(str(m))})
                     for m in items
                 ]
-                sec.summary = f"{len(list(missions))} active mission(s)"
+                sec.summary = f"{len(list(_missions))} active mission(s)"
                 sec.status = "ok"
             else:
                 sec.status = "empty"

@@ -12,7 +12,10 @@ contains the full repair-cycle orchestration logic previously inlined in
 from __future__ import annotations
 
 import os
-from typing import Any, Dict, List, Optional, Tuple
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple
+
+if TYPE_CHECKING:
+    from igris.core.supervisor_models import RankSupervisorConfig, SupervisorRun
 
 
 def _event_fields(event: Any) -> Tuple[str, str, str, Dict[str, Any]]:
