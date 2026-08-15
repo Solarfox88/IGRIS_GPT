@@ -89,3 +89,6 @@ Phase complete, follow-up pending.
 | #527 | open | IGRIS as Personal OS paradigm |
 | #352 | open | evaluate candidate reasoning models |
 | #1271 | open | People Catalog / Person Registry — separate from identity/auth |
+| #1355 | Pyright Phase 3 complete (94→70 errors); 70 errors remain (target 0); CI still non-blocking with `|| true` | Continue fixing remaining errors in routes_*.py, github_write_gateway.py, validation_runner.py |
+| #1353 | Except Exception Phase 3 complete (535→506); 506 remain (target <50) | Continue narrowing in routes_*.py, self_repair_supervisor.py, mbop_runner.py, agent_reasoning_loop.py |
+| #1371 | Supervisor split Phase 5 — self_repair_supervisor.py 4874 lines (target <2000) | Extract _run_rank_loop (~732), _repair_cycle (~675), _run_preflight_phase (~403) |

@@ -23,7 +23,13 @@ Skipping this process is not allowed.
 
 **#1356 — supervisor split Phase 3 in progress on branch `refactor/1356-supervisor-split-phase3`.**
 
-Phase 4 complete: extracted 5 clusters (completion/cleanup, repair helpers, decomposition part 1+2, audit/persistence). `self_repair_supervisor.py` reduced from 6,011 to 4,874 lines. Still above 2,000 line target. Status: **Phase completed, parent issue not complete.** Follow-up: **#1371** — Phase 5 extraction of remaining large methods (_run_rank_loop, _repair_cycle, _run_preflight_phase, etc.).
+10-block roadmap complete. All 10 blocks executed:
+- #1356 Phase 4: supervisor 6011→4874 lines (5 PRs #1366-#1370); follow-up #1371 for Phase 5
+- #1355 Phase 3: pyright 94→70 errors (PR #1373); supervisor errors 19→0
+- #1353 Phase 3: except Exception 535→506 (PR #1374)
+- #1315/#1354: StructuredFormatter aligned with centralized redaction (PR #1375)
+- VM: commit 4877168, gauntlet 15/15, service active
+- Open: #1356 (4874>2000), #1355 (70>0), #1353 (506>50), #1315/#1354 (broader scope), #1371 (Phase 5)
 
 **Roadmap primary items addressed in Phase 1/2/3. Follow-up issues open: #1353, #1355, #1356.**
 
