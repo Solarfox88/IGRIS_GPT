@@ -83,3 +83,4 @@ python -m igris.core.jarvis_core_gauntlet
 | 2026-08-15 | #1353/#1385 | Devin | Block 17: narrow 42 except Exception in routes (506→464) | 15/15 VM | 52f50a5 |
 | 2026-08-15 | #1353/#1386 | Devin | Block 18: narrow 76 except Exception in core (464→347) | 15/15 VM | 96be5a2 |
 | 2026-08-15 | #1315/#1354 | Devin | Block 19: #1315 closed (foundation complete), #1354 updated | 22/22 tests | — |
+| 2026-08-15 | #1371-#1354 | Devin | Block 20: final audit — VM 281f72b, gauntlet 15/15, 33/33 tests | 33/33 VM | 281f72b |

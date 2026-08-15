@@ -2,7 +2,7 @@
 
 The exact point where work resumes. Updated by every agent at the end of each task.
 
-Last updated: 2026-08-15 (process correction hardening added — ADR-IGRIS-0012)
+Last updated: 2026-08-15 (Blocks 11-20 complete — final audit)
 
 ## Mandatory process before next task
 
@@ -34,12 +34,20 @@ The 20-pass quality gate now includes hard correction rules (ADR-IGRIS-0012):
 
 **#1371 — supervisor Phase 5 split in progress. 3,125 lines remain (target <2,000).**
 
-Phase 5 progress (Blocks 11-13 of 10-block roadmap #2):
+10-block roadmap #2 (Blocks 11-20) complete:
 - Block 11: extracted _run_rank_loop → supervisor_rank_loop.py (PR #1378, 4874→4169)
 - Block 12: extracted _repair_cycle → supervisor_repair_cycle.py (PR #1379+#1380, 4169→3515)
 - Block 13: extracted _run_preflight_phase → supervisor_preflight.py (PR #1381, 3515→3125)
-- VM: commit 68b4aed, gauntlet 15/15, service active
-- Open: #1356 (3125>2000), #1355 (70>0), #1353 (506>50), #1315/#1354 (broader scope), #1371 (Phase 5)
+- Block 14: Phase 5 size check — 3125 lines remain (PR #1382)
+- Block 15: pyright Phase 4 — 102→0 errors (PR #1383)
+- Block 16: pyright CI blocking, #1355 closed (PR #1384)
+- Block 17: except Exception routes 506→464 (PR #1385)
+- Block 18: except Exception core 464→347 (PR #1386)
+- Block 19: #1315 closed, #1354 updated (PR #1387)
+- Block 20: final audit (this PR)
+- VM: commit 281f72b, gauntlet 15/15, service active
+- Open: #1356 (3125>2000), #1353 (347>50), #1354 (broader scope), #1371 (Phase 5)
+- Closed: #1355 (0 errors, CI blocking), #1315 (foundation complete)
 
 Previous 10-block roadmap (#1) complete:
 - #1356 Phase 4: supervisor 6011→4874 lines (5 PRs #1366-#1370)
