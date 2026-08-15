@@ -1262,7 +1262,7 @@ class SelfRepairSupervisor:
                     unsatisfied_deps=_dep_unsat,
                 )
                 return
-        except Exception as _dep_exc:
+        except (ImportError, OSError, ValueError, KeyError) as _dep_exc:
             # Best-effort — never block roadmap autoselect on dep check error
             run.add("watchdog_dependency_skip", "error",
                     f"dep check error (non-fatal): {_dep_exc}", issue_number=_next["number"])
@@ -1289,7 +1289,7 @@ class SelfRepairSupervisor:
                 ),
                 encoding="utf-8",
             )
-        except Exception as _e:
+        except (OSError, TypeError, ValueError) as _e:
             run.add("roadmap_next_target", "write_failed", str(_e))
 
 
@@ -1517,7 +1517,7 @@ class SelfRepairSupervisor:
                     context["mbop_constraints"] = list(_intake.constraints[:5])
                 if getattr(_intake, "extraction_ok", False):
                     context["mbop_intake_ok"] = True
-            except Exception:
+            except (TypeError, AttributeError, ValueError):
                 pass  # best-effort — never block the run
 
         # --- Inject MBOP Phase 10-11 prior-run lessons for the same issue (BUG2 fix) ---
@@ -1545,7 +1545,7 @@ class SelfRepairSupervisor:
                     context["mbop_prior_lessons"] = prior_lessons
                 if prior_criteria_missing:
                     context["mbop_prior_criteria_missing"] = prior_criteria_missing
-            except Exception:
+            except (ImportError, OSError, ValueError, KeyError, TypeError):
                 pass  # best-effort — never block the run
 
         return context
@@ -1576,7 +1576,7 @@ class SelfRepairSupervisor:
                 {"name": name, "files": count}
                 for name, count in sorted(counts.items(), key=lambda x: (-x[1], x[0]))[:8]
             ]
-        except Exception:
+        except (subprocess.SubprocessError, OSError):
             return snapshot
         return snapshot
 
@@ -1620,7 +1620,7 @@ class SelfRepairSupervisor:
                 _logging.getLogger(__name__).warning(
                     "SelfModificationGate unavailable for non-core file(s) (degraded): %s", _exc
                 )
-        except Exception as _exc:
+        except (OSError, ValueError, TypeError, AttributeError) as _exc:
             import logging as _logging
             if has_core_file:
                 _logging.getLogger(__name__).error(
@@ -1653,7 +1653,7 @@ class SelfRepairSupervisor:
                     "SelfModificationGate unavailable for non-core file %s (degraded): %s", file_path, e
                 )
                 return True, "gate_degraded_non_core"
-        except Exception as e:
+        except (OSError, ValueError, TypeError, AttributeError) as e:
             if is_core:
                 return False, f"SelfModificationGate error for core file '{file_path}' — blocked: {e}"
             else:
@@ -1809,7 +1809,7 @@ class SelfRepairSupervisor:
         try:
             from igris.core.work_session import WorkSession as _WS
             _work_session = _WS.create(goal=config.goal, mission_id=None)
-        except Exception:
+        except (ImportError, OSError, ValueError, TypeError):
             pass
 
         run, ctx = self._run_preflight_phase(run, config)
@@ -1817,7 +1817,7 @@ class SelfRepairSupervisor:
             if _work_session is not None:
                 try:
                     _work_session.remember(str(self.project_root))
-                except Exception:
+                except (OSError, TypeError, ValueError):
                     pass
             return run
 
@@ -1831,7 +1831,7 @@ class SelfRepairSupervisor:
                     if e.phase not in {"start", "queued"}
                 ]
                 _work_session.remember(str(self.project_root), commands_run=_commands)
-            except Exception:
+            except (OSError, TypeError, ValueError):
                 pass
 
         return result
@@ -2404,7 +2404,7 @@ class SelfRepairSupervisor:
                         _n = (_lbl.get("name") or "").lower()
                         if _n in ("roadmap", "created-by:igris") or _n.startswith("p") and len(_n) == 2 and _n[1].isdigit() or _n.startswith("phase-"):
                             _parent_inherit_labels.append(_lbl.get("name", _n))
-        except Exception:
+        except (subprocess.SubprocessError, OSError, json.JSONDecodeError, ValueError, TypeError, KeyError):
             pass  # Label propagation is best-effort
 
         # Epic #1075 — Dependency-order scheduling: build execution waves and log
@@ -2432,7 +2432,7 @@ class SelfRepairSupervisor:
                 wave_count=len(_waves),
                 waves=_wave_summary,
             )
-        except Exception as _dep_exc:
+        except (ImportError, TypeError, ValueError, KeyError, AttributeError) as _dep_exc:
             run.add(
                 "subissue_dependency_order",
                 "skipped",
@@ -2503,7 +2503,7 @@ class SelfRepairSupervisor:
                     ),
                     conflicts=_scope_conflicts,
                 )
-        except Exception as _sc_exc:
+        except (ImportError, TypeError, ValueError, KeyError, AttributeError) as _sc_exc:
             run.add(
                 "subissue_scope_conflict",
                 "skipped",
@@ -2615,11 +2615,9 @@ class SelfRepairSupervisor:
                                     reason="dedup:title_match",
                                 )
                                 break
-                except Exception:
+                except (subprocess.SubprocessError, OSError, json.JSONDecodeError, ValueError, TypeError, KeyError):
                     pass
                 continue
-
-            # Epic #1078 — Extract full schema fields from sub-mission dict
             out_of_scope = sub.get("out_of_scope") or []
             success_signal = str(sub.get("success_signal", "")).strip()
             failure_fallback = str(sub.get("failure_fallback", "")).strip()
@@ -2891,7 +2889,7 @@ class SelfRepairSupervisor:
         try:
             child_run = _self_mod.start_supervised_rank_async(child_data, project_root=str(self.project_root))
             child_run_id = child_run.run_id
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001
             reason = f"child_run_start_failed: {_safe_redact(str(exc))[:120]}"
             run.add("submission_autorun_skipped", "failure", reason, sub_issue_url=_safe_redact(first_url))
             run.autorun_skipped_reason = reason
@@ -3070,7 +3068,7 @@ class SelfRepairSupervisor:
                     capability_signals=dict(run.capability_signals),
                     repair_cycles=run.repair_cycles_used,
                 )
-            except Exception:
+            except Exception:  # noqa: BLE001
                 pass
         # Issue #914 — MissionBrain Advisory diagnostic (monitoring-only).
         # Computes a recovery recommendation for failed/blocked runs without
@@ -3099,7 +3097,7 @@ class SelfRepairSupervisor:
                     template_used=_adv_result.get("_advisory_template_used", "none"),
                     advisory_surfaced=False,
                 )
-            except Exception:
+            except Exception:  # noqa: BLE001
                 pass  # advisory monitoring must never block or alter run outcome
         return run
 

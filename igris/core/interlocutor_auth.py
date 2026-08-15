@@ -65,7 +65,7 @@ def is_expired(expires_at: str) -> bool:
     try:
         exp = parse_iso(expires_at)
         return datetime.now(tz=timezone.utc) >= exp
-    except Exception:
+    except (ValueError, TypeError):
         return True  # conservative: treat parse failure as expired
 
 
@@ -331,7 +331,7 @@ class AuthCredentialStore:
             )
             result.ok = True
             result.metadata["saved_count"] = len(self._credentials)
-        except Exception as exc:
+        except (OSError, TypeError, ValueError) as exc:
             msg = f"credentials save failed: {exc}"
             result.errors.append(msg)
             logger.warning("AuthCredentialStore.save: %s", msg)
@@ -348,7 +348,7 @@ class AuthCredentialStore:
 
         try:
             raw = self.storage_path.read_text(encoding="utf-8")
-        except Exception as exc:
+        except OSError as exc:
             msg = f"read failed: {exc}"
             result.errors.append(msg)
             logger.warning("AuthCredentialStore.reload: %s", msg)
@@ -383,7 +383,7 @@ class AuthCredentialStore:
                 continue
             try:
                 loaded[pid] = AuthCredential.from_dict(raw_cred)
-            except Exception as exc:
+            except (KeyError, ValueError, TypeError, AttributeError) as exc:
                 skipped += 1
                 logger.debug("AuthCredentialStore.reload: skip %s: %s", pid, exc)
 
@@ -419,7 +419,7 @@ class AuthCredentialStore:
 
         try:
             ph = hash_password(raw_password)
-        except Exception as exc:
+        except (ValueError, TypeError, OSError) as exc:
             result.errors.append(f"hashing_failed: {exc}")
             logger.warning("AuthCredentialStore.create_credential: hashing error for %s: %s", profile_id, exc)
             return result
@@ -469,7 +469,7 @@ class AuthCredentialStore:
                 _dummy_salt = secrets.token_hex(PASSWORD_SALT_BYTES)
                 hashlib.pbkdf2_hmac("sha256", raw_password.encode("utf-8"),
                                      _dummy_salt.encode("utf-8"), PASSWORD_ITERATIONS)
-            except Exception:
+            except (ValueError, TypeError):
                 pass
             finally:
                 del raw_password
@@ -479,7 +479,7 @@ class AuthCredentialStore:
         if cred.locked:
             try:
                 del raw_password
-            except Exception:
+            except NameError:
                 pass
             result.errors.append("account_locked")
             return result
@@ -491,7 +491,7 @@ class AuthCredentialStore:
                 cred.password_hash,
                 cred.password_iterations,
             )
-        except Exception as exc:
+        except (ValueError, TypeError, KeyError, AttributeError) as exc:
             logger.warning("AuthCredentialStore.verify_login: hash error for %s: %s", profile_id, exc)
             result.errors.append(_GENERIC_ERROR)
             return result
@@ -624,7 +624,7 @@ class AuthSessionManager:
             )
             result.ok = True
             result.metadata["saved_count"] = len(self._sessions)
-        except Exception as exc:
+        except (OSError, TypeError, ValueError) as exc:
             msg = f"sessions save failed: {exc}"
             result.errors.append(msg)
             logger.warning("AuthSessionManager.save: %s", msg)
@@ -641,7 +641,7 @@ class AuthSessionManager:
 
         try:
             raw = self.storage_path.read_text(encoding="utf-8")
-        except Exception as exc:
+        except OSError as exc:
             msg = f"read failed: {exc}"
             result.errors.append(msg)
             logger.warning("AuthSessionManager.reload: %s", msg)
@@ -676,7 +676,7 @@ class AuthSessionManager:
                 continue
             try:
                 loaded[token_hash] = AuthSession.from_dict(raw_sess)
-            except Exception as exc:
+            except (KeyError, ValueError, TypeError, AttributeError) as exc:
                 skipped += 1
                 logger.debug("AuthSessionManager.reload: skip session %s: %s", token_hash[:8], exc)
 
@@ -964,7 +964,7 @@ class EnrollmentStore:
             )
             result.ok = True
             result.metadata["saved_count"] = len(self._enrollments)
-        except Exception as exc:
+        except (OSError, TypeError, ValueError) as exc:
             msg = f"enrollments save failed: {exc}"
             result.errors.append(msg)
             logger.warning("EnrollmentStore.save: %s", msg)
@@ -981,7 +981,7 @@ class EnrollmentStore:
 
         try:
             raw = self.storage_path.read_text(encoding="utf-8")
-        except Exception as exc:
+        except OSError as exc:
             msg = f"read failed: {exc}"
             result.errors.append(msg)
             logger.warning("EnrollmentStore.reload: %s", msg)
@@ -1015,7 +1015,7 @@ class EnrollmentStore:
                 continue
             try:
                 loaded[token_hash] = PendingEnrollment.from_dict(raw_e)
-            except Exception as exc:
+            except (KeyError, ValueError, TypeError, AttributeError) as exc:
                 skipped += 1
                 logger.debug("EnrollmentStore.reload: skip %s: %s", token_hash[:8], exc)
 
