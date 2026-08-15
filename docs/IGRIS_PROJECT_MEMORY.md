@@ -96,6 +96,9 @@ A task cannot be considered production-complete if VM evidence is missing.
 | Refactor — supervisor C1 | #1312 / PR #1331 | **PARTIAL** | `ea3d70b` | extracted 4 sub-modules but `self_repair_supervisor.py` still 6208 lines (target <2000) |
 | Supervisor split Phase 3 | #1356 / PR #1364 | **PARTIAL** (Phase 3) | `18bc8d8` | extracted mission planning to `supervisor_mission_planning.py` (523 lines); 6327→6011 lines |
 | Supervisor split Phase 4 | #1356 / PRs #1366-#1370 | **PARTIAL** (Phase 4) | `235d5e7` | extracted completion/cleanup, repair helpers, decomposition (part 1+2), audit/persistence; 6011→4874 lines; still >2000 (target <2000); follow-up #1371 |
+| Pyright Phase 3 | #1355 / PR #1373 | **PARTIAL** (Phase 3) | `08d44a4` | fixed 24 type errors (94→70); supervisor errors 19→0; 70 remain (target 0) |
+| Except Exception Phase 3 | #1353 / PR #1374 | **PARTIAL** (Phase 3) | `be88695` | narrowed 29 broad catches (535→506); 506 remain (target <50) |
+| Structured logging closure | #1315 / PR #1375 | **PARTIAL** | `4877168` | aligned StructuredFormatter with centralized safety.redact_secrets; #1315 and #1354 remain open |
 | Task engine reliability | #1296 / PR #1347 | done | `8fa9d8e` | worker step, safe validate, honest diagnostics, gauntlet check |
 | Code change gating | #1291 / PR #1348 | done | `19a1dc4` | /api/chat/intent gates code_change for limited users |
 | Auth contract guard | #1301-PR5A / PR #1345 | done | `54b6b60` | 13 guard tests + docs/auth-contract.md |
