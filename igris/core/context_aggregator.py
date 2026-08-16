@@ -121,7 +121,7 @@ class ContextAggregator:
             try:
                 from igris.core.unified_memory import UnifiedMemory
                 self._memory = UnifiedMemory(project_root=self.project_root)
-            except Exception as e:
+            except (ImportError, OSError, TypeError, ValueError, AttributeError) as e:
                 logger.debug("ContextAggregator: UnifiedMemory unavailable: %s", e)
         return self._memory
 
@@ -148,7 +148,7 @@ class ContextAggregator:
                                    "requires_clarification", "memory_mode",
                                    "mission_required", "reason")})]
             sec.status = "ok"
-        except Exception as e:
+        except (AttributeError, TypeError, KeyError, ValueError) as e:
             sec.status = "degraded"
             sec.warnings.append(f"route section error: {e}")
             logger.warning("ContextAggregator: route section failed: %s", e)
@@ -189,7 +189,7 @@ class ContextAggregator:
             sec.safe_for_prompt = True
             if result.influence_report:
                 sec.items.append({"influence_report": _redact(result.influence_report)})
-        except Exception as e:
+        except (AttributeError, TypeError, KeyError, ValueError, OSError) as e:
             sec.status = "degraded"
             sec.warnings.append(f"memory section error: {e}")
             logger.warning("ContextAggregator: memory section failed: %s", e)
@@ -229,7 +229,7 @@ class ContextAggregator:
             else:
                 sec.status = "empty"
                 sec.summary = "No timeline events."
-        except Exception as e:
+        except (AttributeError, TypeError, KeyError, ValueError, IndexError) as e:
             sec.status = "degraded"
             sec.warnings.append(f"tasks section error: {e}")
             logger.warning("ContextAggregator: tasks section failed: %s", e)
@@ -267,7 +267,7 @@ class ContextAggregator:
             else:
                 sec.status = "empty"
                 sec.summary = "No active missions."
-        except Exception as e:
+        except (AttributeError, TypeError, KeyError, ValueError, IndexError) as e:
             sec.status = "degraded"
             sec.warnings.append(f"missions section error: {e}")
             logger.warning("ContextAggregator: missions section failed: %s", e)
@@ -286,13 +286,13 @@ class ContextAggregator:
                 safe = CONFIG.safe_dict()
                 info.update({k: v for k, v in safe.items()
                               if k in ("app_name", "version", "environment", "log_level")})
-            except Exception as e:
+            except (AttributeError, TypeError, KeyError, ValueError) as e:
                 sec.warnings.append(f"safe_dict error: {e}")
                 logger.warning("ContextAggregator: _section_project_state safe_dict failed: %s", e)
             sec.items = [_redact_dict(info)]
             sec.summary = f"Project: {info.get('app', 'IGRIS_GPT')} at {info.get('project_root', '?')}"
             sec.status = "ok"
-        except Exception as e:
+        except (ImportError, AttributeError, TypeError, KeyError, ValueError, OSError) as e:
             sec.status = "degraded"
             sec.warnings.append(f"project_state error: {e}")
             logger.warning("ContextAggregator: project_state section failed: %s", e)
@@ -319,7 +319,7 @@ class ContextAggregator:
             })]
             sec.summary = f"Branch: {branch} | SHA: {sha} | {'dirty' if dirty else 'clean'} ({changed_count} changes)"
             sec.status = "ok" if branch else "degraded"
-        except Exception as e:
+        except (subprocess.SubprocessError, OSError, ValueError, AttributeError) as e:
             sec.status = "degraded"
             sec.warnings.append(f"git_state error: {e}")
             logger.debug("ContextAggregator: git_state section failed: %s", e)
@@ -339,7 +339,7 @@ class ContextAggregator:
             })]
             sec.summary = f"Rank: {result.rank} | Score: {result.score:.0%} | {'PASSED' if result.passed else 'FAILED'}"
             sec.status = "ok"
-        except Exception as e:
+        except (ImportError, AttributeError, TypeError, ValueError, KeyError, OSError) as e:
             sec.status = "unavailable"
             sec.warnings.append(f"rank_gauntlet unavailable: {e}")
             logger.debug("ContextAggregator: rank section failed: %s", e)

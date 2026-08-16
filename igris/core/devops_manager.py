@@ -86,7 +86,7 @@ class LocalCommandRunner(CommandRunner):
             )
         except subprocess.TimeoutExpired:
             return CommandResult(returncode=124, stderr=f"command timed out after {timeout}s")
-        except Exception as exc:
+        except (subprocess.SubprocessError, OSError) as exc:
             return CommandResult(returncode=1, stderr=str(exc)[:300])
 
 
@@ -139,7 +139,7 @@ class SSHCommandRunner(CommandRunner):
             )
         except subprocess.TimeoutExpired:
             return CommandResult(returncode=124, stderr=f"ssh command timed out after {timeout}s")
-        except Exception as exc:
+        except (subprocess.SubprocessError, OSError) as exc:
             return CommandResult(returncode=1, stderr=str(exc)[:300])
 
 
@@ -300,7 +300,7 @@ class DevOpsManager:
                 else json.dumps(row, ensure_ascii=False) + "\n",
                 encoding="utf-8",
             )
-        except Exception:
+        except (OSError, TypeError, ValueError, AttributeError):
             # Audit write failures must never break operator flows.
             pass
 
@@ -339,7 +339,7 @@ class DevOpsManager:
                 for entry in raw.get("hosts", []):
                     h = HostConfig.from_dict(entry)
                     self._hosts[h.hostname] = h
-            except Exception:
+            except (OSError, json.JSONDecodeError, KeyError, ValueError, TypeError, AttributeError):
                 pass  # corrupt file → start with empty registry
 
     def _save_registry(self) -> None:
@@ -443,7 +443,7 @@ class DevOpsManager:
                     checks["disk"] = {"ok": False, "error": "could not parse df output"}
             else:
                 checks["disk"] = {"ok": False, "error": _r.stderr.strip()[:200]}
-        except Exception as exc:
+        except (subprocess.SubprocessError, OSError, ValueError, IndexError, AttributeError) as exc:
             checks["disk"] = {"ok": False, "error": str(exc)[:200]}
 
         # 2. Git working-tree state
@@ -455,7 +455,7 @@ class DevOpsManager:
             )
             is_clean = _g.ok and not _g.stdout.strip()
             checks["git"] = {"ok": True, "clean": is_clean, "dirty": not is_clean}
-        except Exception as exc:
+        except (subprocess.SubprocessError, OSError) as exc:
             checks["git"] = {"ok": False, "error": str(exc)[:200]}
 
         # 3. IGRIS service reachability
@@ -470,7 +470,7 @@ class DevOpsManager:
                 "reachable": reachable,
                 "port": 7778,
             }
-        except Exception as exc:
+        except (subprocess.SubprocessError, OSError) as exc:
             checks["service"] = {"ok": True, "reachable": False, "error": str(exc)[:200]}
 
         overall_ok = all(c.get("ok", False) for c in checks.values())
@@ -515,7 +515,7 @@ class DevOpsManager:
                 "port": 7778,
                 "reachable": _nc.ok,
             }
-        except Exception as exc:
+        except (subprocess.SubprocessError, OSError) as exc:
             checks["service"] = {"ok": False, "error": str(exc)[:200]}
 
         # HTTP health endpoint
@@ -1276,7 +1276,7 @@ class DevOpsManager:
                 response_time_ms=elapsed_ms,
                 error=str(exc)[:200],
             )
-        except Exception as exc:
+        except (OSError, ValueError, TypeError) as exc:
             elapsed_ms = int((time.time() - start) * 1000)
             result.update(
                 ok=False,

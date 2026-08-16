@@ -203,7 +203,7 @@ class JarvisCoreGauntlet:
             try:
                 from igris.models.config import CONFIG
                 project_root = CONFIG.project_root
-            except Exception:
+            except (ImportError, AttributeError):
                 project_root = Path.home()
         self.project_root = Path(project_root)
         self.output_dir = Path(output_dir) if output_dir else self.project_root / "reports" / "jarvis_core"
@@ -214,7 +214,7 @@ class JarvisCoreGauntlet:
             try:
                 from igris.core.unified_memory import UnifiedMemory
                 self._memory = UnifiedMemory(project_root=self.project_root)
-            except Exception as e:
+            except (ImportError, AttributeError, TypeError, OSError) as e:
                 logger.warning("JarvisCoreGauntlet: UnifiedMemory unavailable: %s", e)
         return self._memory
 
@@ -229,7 +229,7 @@ class JarvisCoreGauntlet:
                 result.status = GauntletStatus.PASSED.value
             elif result.passed and not result.errors:
                 result.status = GauntletStatus.PASSED.value
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 — top-level gauntlet boundary: catches any check failure
             logger.warning("GauntletCheck %s raised: %s", check_id, e)
             result.passed = False
             result.status = GauntletStatus.FAILED.value
@@ -949,7 +949,7 @@ class JarvisCoreGauntlet:
                 f"no-raw-secrets ✓"
             )
 
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 — top-level gauntlet check boundary
             r.errors.append(f"Auth flow check exception: {exc}")
         finally:
             # Cleanup temp dir
@@ -957,7 +957,7 @@ class JarvisCoreGauntlet:
                 try:
                     import shutil
                     shutil.rmtree(temp_dir, ignore_errors=True)
-                except Exception:
+                except OSError:
                     pass
 
     def _check_write_endpoint_auth_gate(self, r: GauntletCheckResult) -> None:
@@ -1109,13 +1109,13 @@ class JarvisCoreGauntlet:
                 "git/commit blocked ✓, no token echo ✓"
             )
 
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 — top-level gauntlet check boundary
             r.errors.append(f"Write auth gate check exception: {_redact(str(exc))}")
         finally:
             try:
                 import shutil
                 shutil.rmtree(temp_dir, ignore_errors=True)
-            except Exception:
+            except OSError:
                 pass
 
     def _check_dangerous_intent_routing(self, r: GauntletCheckResult) -> None:
@@ -1539,7 +1539,7 @@ class JarvisCoreGauntlet:
 
             logger.info("Gauntlet report written to %s", self.output_dir)
             return {"ok": True, "json": str(json_path), "md": str(md_path)}
-        except Exception as e:
+        except (OSError, TypeError, ValueError, KeyError) as e:
             logger.warning("write_report failed: %s", e)
             return {"ok": False, "error": _redact(str(e))}
 
