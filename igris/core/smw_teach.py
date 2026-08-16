@@ -103,7 +103,7 @@ async def teach_back(incident: Incident, project_root: str, outcome_label: str =
             },
             confidence=confidence,
         )
-    except (ImportError, OSError, TypeError, ValueError, RuntimeError):
+    except Exception:  # noqa: BLE001  teach-back must never crash on arbitrary errors
         logger.debug("teach_back: MemoryGraph lesson persist failed", exc_info=True)
         pass
     if should_open_igris_issue(incident.pattern_name, project_root):

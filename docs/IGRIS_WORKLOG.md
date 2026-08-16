@@ -88,4 +88,4 @@ python -m igris.core.jarvis_core_gauntlet
 | 2026-08-15 | #1371/#1356 | Devin | Supervisor split complete: 3125→1844 lines (below 2000). #1371 closed, #1356 closed, follow-up #1395 created | 352/352 VM | 1d51957 |
 | 2026-08-15 | #1353/#1397 | Devin | Block 27: except Exception Phase 6 — narrow 41 in 5 core files (394→353) | 102/102 VM | a547a8e |
 | 2026-08-15 | #1353/#1398 | Devin | Block 28: except Exception Phase 7 — narrow 67 in 8 memory/task/diagnostics files (353→286) | 15/15 VM | 8f2ff1e |
-| 2026-08-16 | #1353 | Devin | Block 29: except Exception Phase 8 — narrow 108 in 27 core/api/web/agent files (286→178). VM branch validation: commit 07c8e70, gauntlet 15/15, 135 safety tests passed | 15/15 VM | (pending merge) |
+| 2026-08-16 | #1353 | Devin | Block 29: except Exception Phase 8 — narrow 107 in 27 core/api/web/agent files (286→179). Fixed 4 regressions (json import, AttributeError, Exception skip). VM branch validation: commit 07c8e70, gauntlet 15/15, 135 safety tests passed | 15/15 VM | (pending merge) |

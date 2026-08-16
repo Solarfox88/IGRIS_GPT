@@ -1298,7 +1298,8 @@ class CommandRiskEngine:
             if result.success and result.text:
                 return self._parse_review_response(result.text)
 
-        except (ImportError, TypeError, ValueError, KeyError, AttributeError, RuntimeError, OSError, json.JSONDecodeError):
+        except (ImportError, TypeError, ValueError, KeyError, AttributeError, RuntimeError, OSError):
+            # json.JSONDecodeError is a ValueError subclass and is covered above.
             pass
 
         # Fallback: conservative review

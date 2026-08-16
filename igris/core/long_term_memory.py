@@ -156,7 +156,7 @@ class LongTermMemory:
                     raw = json.load(f)
                     for k, v in raw.items():
                         self._summaries[k] = RollingSummary(**v)
-            except (OSError, json.JSONDecodeError, TypeError, ValueError, KeyError) as exc:
+            except (OSError, json.JSONDecodeError, TypeError, ValueError, KeyError, AttributeError) as exc:
                 _log.warning("LongTermMemory: failed to load summaries from %s: %s", self._summary_file, exc)
                 self._summaries = {}
 
