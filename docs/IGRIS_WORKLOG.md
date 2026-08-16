@@ -85,3 +85,4 @@ python -m igris.core.jarvis_core_gauntlet
 | 2026-08-15 | #1315/#1354 | Devin | Block 19: #1315 closed (foundation complete), #1354 updated | 22/22 tests | — |
 | 2026-08-15 | #1371-#1354 | Devin | Block 20: final audit — VM 281f72b, gauntlet 15/15, 33/33 tests | 33/33 VM | 281f72b |
 | 2026-08-15 | ADR-IGRIS-0013 | Devin | Part A: import graph validation hardening for core refactors | — | (pending merge) |
+| 2026-08-15 | #1371/#1356 | Devin | Supervisor split complete: 3125→1844 lines (below 2000). #1371 closed, #1356 closed, follow-up #1395 created | 352/352 VM | 1d51957 |

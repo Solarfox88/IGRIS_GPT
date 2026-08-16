@@ -64,7 +64,7 @@ A runtime refactor with missing import graph evidence is not complete.
 | Critical | #1314 | **open** — Phase 1 merged (PR #1349 `0ac7a7b`), Phase 2 merged (PR #1360 `8ed5ac0`) | Follow-up: **#1353** — except Exception count reduced 627→535 (92 narrowed), target <50; 535 remain |
 | Critical | #1315 | **open** — Phase 1 merged (PR #1350 `79fe072`), Phase 2 merged (PR #1361 `6131bb9`) | Follow-up: **#1354** — structured logging wired into server startup, redaction added to StructuredFormatter, 22 tests; acceptance criteria met |
 | Critical | #1316 | **open** — Phase 1 merged (PR #1351 `9866bf5`), Phase 2 in progress | Follow-up: **#1355** — pyright errors reduced 174→91 (48%), 91 remain; CI `|| true` kept until 0 errors |
-| Tech debt | #1312 | **closed on GitHub but incomplete** — Phase 2 merged (PR #1352 `67c3783`), Phase 3 in progress | Follow-up: **#1371** — `self_repair_supervisor.py` 4,874 lines (target <2,000); Phase 5 extraction of remaining large methods (_run_rank_loop ~732, _repair_cycle ~675, _run_preflight_phase ~403, _auto_create_subissues ~366, _execute_staged_reasoning ~330, _complete_rank ~251) |
+| Tech debt | #1312 | **closed** — Phase 2 merged (PR #1352 `67c3783`), Phase 3-6 complete | Follow-up: **#1371** CLOSED — `self_repair_supervisor.py` 1,844 lines (below 2,000 target); #1356 CLOSED; follow-up **#1395** for `agent_reasoning_loop.py` (2,477 lines) |
 | Refactor | #1317 (I1) | open | router anonymous routes `routes_01..10` — rename by domain |
 | Refactor | #1318 (I2) | open | `app.js` monolithic 2401 lines — modularize into ES modules |
 | Feature | #1319 (I4) | open | SQLite migration system / schema versioning |
@@ -112,4 +112,5 @@ A runtime refactor with missing import graph evidence is not complete.
 | #1271 | open | People Catalog / Person Registry — separate from identity/auth |
 | #1355 | Pyright Phase 3 complete (94→70 errors); 70 errors remain (target 0); CI still non-blocking with `|| true` | Continue fixing remaining errors in routes_*.py, github_write_gateway.py, validation_runner.py |
 | #1353 | Except Exception Phase 3 complete (535→506); 506 remain (target <50) | Continue narrowing in routes_*.py, self_repair_supervisor.py, mbop_runner.py, agent_reasoning_loop.py |
-| #1371 | Supervisor split Phase 5 — self_repair_supervisor.py 4874 lines (target <2000) | Extract _run_rank_loop (~732), _repair_cycle (~675), _run_preflight_phase (~403) |
+| #1371 | **CLOSED** — supervisor split complete, 1,844 lines (below 2,000) | Closed 2026-08-15 |
+| #1395 | `agent_reasoning_loop.py` 2,477 lines (target <2,000) | Split agent_reasoning_loop.py |
