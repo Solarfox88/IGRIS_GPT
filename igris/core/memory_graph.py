@@ -159,7 +159,7 @@ CREATE INDEX IF NOT EXISTS idx_edges_dst  ON memory_edges(dst_node);
             # Write succeeded — tell the breaker so it can close from half-open.
             if _breaker is not None:
                 _breaker.record_success()
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 — complex: import + ContentStore + Scorer + sqlite + file I/O
             # Epic #1073 — non-silent failure: log warning so memory tree failures
             # are observable (they previously swallowed all errors silently).
             # We still don't raise to avoid blocking the main write path.
@@ -571,7 +571,7 @@ CREATE INDEX IF NOT EXISTS idx_edges_dst  ON memory_edges(dst_node);
             report["db_ok"] = True
             report["node_count"] = total
             report["node_counts_by_type"] = counts
-        except Exception as exc:
+        except (sqlite3.Error, OSError, TypeError, KeyError) as exc:
             errors.append(f"db_read_error: {exc}")
 
         # 2. Circuit breaker state
@@ -579,7 +579,7 @@ CREATE INDEX IF NOT EXISTS idx_edges_dst  ON memory_edges(dst_node);
             from igris.core.memory_circuit_breaker import MemoryCircuitBreaker
             breaker = MemoryCircuitBreaker.get("memory_tree")
             report["circuit_breaker_state"] = breaker.state
-        except Exception as exc:
+        except (ImportError, AttributeError, RuntimeError, OSError) as exc:
             errors.append(f"circuit_breaker_error: {exc}")
 
         # 3. ContentStore availability
@@ -704,7 +704,7 @@ CREATE INDEX IF NOT EXISTS idx_edges_dst  ON memory_edges(dst_node);
             else:
                 report["overall_health"] = "healthy"
 
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 — complex: sqlite + json + float + many ops
             report["errors"].append(f"consistency_check_error: {exc}")
             report["overall_health"] = "failing"
 
@@ -749,13 +749,13 @@ CREATE INDEX IF NOT EXISTS idx_edges_dst  ON memory_edges(dst_node);
         try:
             lessons = self.get_lessons_for_goal(goal, limit=lesson_limit)
             packet["lessons"] = lessons
-        except Exception as exc:
+        except (sqlite3.Error, json.JSONDecodeError, TypeError, KeyError, ValueError, OSError) as exc:
             packet["health"]["lessons_error"] = str(exc)[:100]
 
         try:
             facts = self.query_by_intent(goal, node_type="project_fact", limit=fact_limit)
             packet["project_facts"] = facts
-        except Exception as exc:
+        except (sqlite3.Error, json.JSONDecodeError, TypeError, KeyError, ValueError, OSError) as exc:
             packet["health"]["facts_error"] = str(exc)[:100]
 
         try:
@@ -768,17 +768,17 @@ CREATE INDEX IF NOT EXISTS idx_edges_dst  ON memory_edges(dst_node);
         if include_health:
             try:
                 packet["health"] = {**packet.get("health", {}), **self.memory_healthcheck()}
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001 — complex: delegates to memory_healthcheck
                 packet["health"]["healthcheck_error"] = str(exc)[:100]
 
             try:
                 packet["consistency"] = self.check_consistency()
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001 — complex: delegates to check_consistency
                 packet["consistency"] = {"overall_health": "unknown", "error": str(exc)[:100]}
 
         try:
             packet["pipeline"] = self.build_memory_tree_pipeline_report(goal)
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 — complex: delegates to build_memory_tree_pipeline_report
             packet["pipeline"] = {
                 "degraded": True,
                 "reason": f"pipeline_report_error: {str(exc)[:120]}",
@@ -787,7 +787,7 @@ CREATE INDEX IF NOT EXISTS idx_edges_dst  ON memory_edges(dst_node);
 
         try:
             packet["reindex"] = self.get_memory_reindex_report()
-        except Exception as exc:
+        except (sqlite3.Error, OSError, TypeError, KeyError) as exc:
             packet["reindex"] = {
                 "safe": False,
                 "degraded": True,

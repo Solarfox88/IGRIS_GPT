@@ -209,7 +209,6 @@ def _get_ollama_status() -> Dict[str, Any]:
         with urllib.request.urlopen(req, timeout=1) as resp:
             if resp.status == 200:
                 status["reachable"] = True
-                import json
                 data = json.loads(resp.read())
                 models = [m.get("name", "") for m in data.get("models", [])]
                 configured = status.get("model_configured")
