@@ -50,7 +50,7 @@ async def _smw_loop(project_root: str) -> None:
                 if d.requires_llm:
                     try:
                         d = await diagnose_with_llm(detected, snapshot, project_root)
-                    except Exception as _llm_exc:
+                    except (TypeError, ValueError, KeyError, AttributeError, RuntimeError, OSError) as _llm_exc:
                         logger.warning("SMW LLM diagnosis failed: %s", _llm_exc)
                 actions_applied = []
                 for action_name in d.recommended_actions:
@@ -91,9 +91,9 @@ async def _smw_loop(project_root: str) -> None:
                     try:
                         from igris.api.routes.code_health import update_code_health_cache
                         update_code_health_cache(_health_report)
-                    except Exception as _cache_exc:
+                    except (ImportError, TypeError, ValueError, KeyError, AttributeError) as _cache_exc:
                         logger.debug("code health cache update skipped: %s", _cache_exc)
-                except Exception as _chm_exc:
+                except Exception as _chm_exc:  # noqa: BLE001  code health monitor boundary
                     logger.warning("SMW code health monitor error (non-fatal): %s", _chm_exc)
 
                 # Issue #522 — OutcomeQualityTracker: update fix quality scores (24h interval)
@@ -109,7 +109,7 @@ async def _smw_loop(project_root: str) -> None:
                             _qr.updated, _qr.skipped, len(_qr.errors),
                         )
                         _last_quality_run = _time_mod.time()
-                    except Exception as _oqt_exc:
+                    except (ImportError, OSError, TypeError, ValueError, KeyError, RuntimeError) as _oqt_exc:
                         logger.warning("SMW quality tracker error (non-fatal): %s", _oqt_exc)
 
             try:
@@ -155,9 +155,9 @@ async def _smw_loop(project_root: str) -> None:
                             await execute_action("open_diagnostic_issue", tier=2, dry_run=False, project_root=project_root, pattern_name="pr_review_blocked", evidence=f"pr#{number}", actions_tried=[])
                         elif rr.tiebreaker_used and rr.confidence < 0.6:
                             await execute_action("open_diagnostic_issue", tier=2, dry_run=False, project_root=project_root, pattern_name="pr_review_discordance", evidence=f"pr#{number}", actions_tried=[])
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001  PR review pass boundary
                 logger.warning("SMW PR review pass failed: %s", exc)
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001  top-level SMW loop boundary
             logger.warning("SMW error: %s", exc)
         await asyncio.sleep(_SMW_POLL_SECONDS)
 

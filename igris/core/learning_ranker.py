@@ -69,7 +69,7 @@ def _recency_score(metadata: dict) -> float:
         age_seconds = time.time() - float(stored_at)
         half_life = 14 * 24 * 3600  # 14 days
         return math.exp(-math.log(2) * age_seconds / half_life)
-    except Exception:
+    except (TypeError, ValueError, OverflowError):
         return 0.5
 
 
@@ -92,7 +92,7 @@ class LearningRanker:
             try:
                 from igris.models.config import CONFIG
                 project_root = CONFIG.project_root
-            except Exception:
+            except (ImportError, AttributeError):
                 project_root = Path.home()
         self.project_root = Path(project_root)
         self._memory = unified_memory
@@ -106,7 +106,7 @@ class LearningRanker:
                 from igris.core.unified_memory import UnifiedMemory
                 mem = UnifiedMemory(project_root=self.project_root)
                 self._memory = mem
-            except Exception as e:
+            except (ImportError, OSError, TypeError, ValueError, RuntimeError) as e:
                 logger.debug("LearningRanker: UnifiedMemory unavailable: %s", e)
                 return {}
 
@@ -129,7 +129,7 @@ class LearningRanker:
                                 "success_rate": 1.0 if outcome == "success" else 0.0,
                             }
                     return stats
-        except Exception as e:
+        except (TypeError, KeyError, ValueError, AttributeError) as e:
             logger.debug("LearningRanker.load_feedback_stats failed: %s", e)
         return {}
 
@@ -259,7 +259,7 @@ class LearningRanker:
                     ss = self.score_item(query, item, feedback_stats=feedback_stats)
                     scored.append(ss)
                     all_warnings.update(ss.warnings)
-                except Exception as e:
+                except (TypeError, ValueError, KeyError, AttributeError) as e:
                     logger.warning("LearningRanker.score_item failed: %s", e)
                     all_warnings.add(f"score_failed: {_redact(str(e))}")
 
@@ -288,7 +288,7 @@ class LearningRanker:
             report.changed_decision = False
             report.ok = True
 
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001  top-level ranking boundary
             logger.warning("LearningRanker.rank_items failed: %s", e)
             report.ok = False
             report.warnings.append(f"ranking_failed: {_redact(str(e))}")
@@ -303,7 +303,7 @@ class LearningRanker:
                 from igris.core.unified_memory import UnifiedMemory
                 mem = UnifiedMemory(project_root=self.project_root)
             mem_status = "ok" if mem else "unavailable"
-        except Exception as e:
+        except (ImportError, OSError, TypeError, ValueError, RuntimeError) as e:
             logger.warning("LearningRanker.healthcheck: UnifiedMemory unavailable: %s", e)
             return {"ok": False, "unified_memory": "unavailable", "error": str(e)}
         return {"ok": True, "unified_memory": mem_status}

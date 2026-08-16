@@ -124,7 +124,7 @@ class DeliveryWorkflow:
                 "lesson",
                 {"event_type": "ci_fix_success", "pr_number": pr_number, "attempts": attempts, "failed_jobs": failed_jobs},
             )
-        except Exception:  # noqa: BLE001 — complex: import + sqlite3 + file I/O
+        except (ImportError, OSError, TypeError, ValueError, RuntimeError):  # noqa: BLE001
             pass
 
     def _record_weak_signals(self) -> None:
@@ -209,7 +209,7 @@ class DeliveryWorkflow:
                             },
                             confidence=0.8 if ci_result.resolved else 0.5,
                         )
-                    except Exception:  # noqa: BLE001 — complex: import + sqlite3 + file I/O
+                    except (ImportError, OSError, TypeError, ValueError, RuntimeError):  # noqa: BLE001
                         pass
                     return ci_result.resolved
                 except Exception as exc:  # noqa: BLE001 — CIRepairLoop is complex external code
@@ -226,7 +226,7 @@ class DeliveryWorkflow:
                     },
                     confidence=0.7,
                 )
-            except Exception:  # noqa: BLE001 — complex: import + sqlite3 + file I/O
+            except (ImportError, OSError, TypeError, ValueError, RuntimeError):  # noqa: BLE001
                 pass
             return False
         return False
@@ -255,7 +255,7 @@ class DeliveryWorkflow:
         try:
             from igris.core.memory_graph import MemoryGraph
             MemoryGraph(self.project_root).unsaturate_family(family)
-        except Exception:  # noqa: BLE001 — complex: import + sqlite3 + file I/O
+        except (ImportError, OSError, TypeError, ValueError, RuntimeError):  # noqa: BLE001
             pass
 
     # ------------------------------------------------------------------

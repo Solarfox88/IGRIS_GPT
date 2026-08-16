@@ -138,7 +138,7 @@ class LongTermMemory:
                     raw = json.load(f)
                     for k, v in raw.items():
                         self._entries[k] = MemoryEntry(**v)
-            except Exception as exc:
+            except (OSError, json.JSONDecodeError, TypeError, ValueError, KeyError) as exc:
                 _log.warning("LongTermMemory: failed to load entries from %s: %s", self._entries_file, exc)
                 self._entries = {}  # return empty rather than crash
         if self._index_file.exists():
@@ -147,7 +147,7 @@ class LongTermMemory:
                     raw = json.load(f)
                     for k, v in raw.items():
                         self._index[k] = DomainIndex(**v)
-            except Exception as exc:
+            except (OSError, json.JSONDecodeError, TypeError, ValueError, KeyError) as exc:
                 _log.warning("LongTermMemory: failed to load index from %s: %s", self._index_file, exc)
                 self._index = {}
         if self._summary_file.exists():
@@ -156,7 +156,7 @@ class LongTermMemory:
                     raw = json.load(f)
                     for k, v in raw.items():
                         self._summaries[k] = RollingSummary(**v)
-            except Exception as exc:
+            except (OSError, json.JSONDecodeError, TypeError, ValueError, KeyError) as exc:
                 _log.warning("LongTermMemory: failed to load summaries from %s: %s", self._summary_file, exc)
                 self._summaries = {}
 
@@ -484,7 +484,7 @@ class LongTermMemory:
             report["entry_count"] = len(self._entries)
             report["domain_count"] = len(self._index)
             report["summary_count"] = len(self._summaries)
-        except Exception as exc:
+        except (TypeError, AttributeError) as exc:
             _log.warning("LongTermMemory.healthcheck: failed to count entries: %s", exc)
             report["status"] = "degraded"
             report["error"] = str(exc)
@@ -500,7 +500,7 @@ class LongTermMemory:
                 try:
                     with open(file_path, "r") as f:
                         json.load(f)
-                except Exception as exc:
+                except (OSError, json.JSONDecodeError, TypeError, ValueError) as exc:
                     _log.warning("LongTermMemory.healthcheck: %s file corrupt: %s", label, exc)
                     report["files_ok"] = False
                     report["status"] = "degraded"

@@ -41,7 +41,7 @@ def _safe_run(cmd: list[str], cwd: Optional[str] = None) -> str:
     try:
         p = subprocess.run(cmd, capture_output=True, text=True, cwd=cwd, timeout=10)
         return p.stdout if p.returncode == 0 else ""
-    except Exception:
+    except (subprocess.SubprocessError, OSError):
         logger.debug("_safe_run failed for cmd=%s", cmd, exc_info=True)
         return ""
 
@@ -66,7 +66,7 @@ async def take_snapshot(project_root: str) -> SystemSnapshot:
                 try:
                     pid = int(line.split("pid=")[1].split(",")[0].split(")")[0])
                     pids.append(pid)
-                except Exception:
+                except (IndexError, ValueError):
                     logger.debug("Failed to parse pid from ss output line", exc_info=True)
                     pass
         return (pids[0] if pids else None, bool(lines), len(set(pids)) > 1)
@@ -93,7 +93,7 @@ async def take_snapshot(project_root: str) -> SystemSnapshot:
                 fc = str(getattr(r, "failure_class", "") or "none")
                 dist[fc] = dist.get(fc, 0) + 1
             return active_ids, getattr(last, "run_id", None), getattr(last, "status", None), getattr(last, "failure_class", None), getattr(last, "started_at", None), since, avg_repair, escal, dist
-        except Exception:
+        except (TypeError, ValueError, AttributeError, KeyError, ImportError):
             logger.debug("runs_data collection failed", exc_info=True)
             return [], None, None, None, None, None, 0.0, 0.0, {}
 
@@ -105,7 +105,7 @@ async def take_snapshot(project_root: str) -> SystemSnapshot:
             lines = logf.read_text(encoding="utf-8", errors="replace").splitlines()
             filtered = [l for l in lines if "watchdog" in l.lower() and "HTTP" not in l][-20:]
             return filtered
-        except Exception:
+        except (OSError, UnicodeDecodeError):
             logger.debug("Failed to read log lines", exc_info=True)
             return []
 
@@ -115,7 +115,7 @@ async def take_snapshot(project_root: str) -> SystemSnapshot:
             if p.exists():
                 raw = json.loads(p.read_text(encoding="utf-8"))
                 return [int(x) for x in raw if isinstance(x, int) or str(x).isdigit()]
-        except Exception:
+        except (json.JSONDecodeError, OSError, TypeError, ValueError):
             logger.debug("Failed to load skipped issues", exc_info=True)
             pass
         return []

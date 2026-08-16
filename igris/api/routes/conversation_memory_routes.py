@@ -17,7 +17,7 @@ def _project_root() -> str:
     try:
         from igris.models.config import CONFIG
         return str(CONFIG.project_root)
-    except Exception:
+    except (ImportError, AttributeError):
         return os.environ.get("IGRIS_PROJECT_ROOT", ".")
 
 
@@ -62,7 +62,7 @@ def _effective_trust_level(interlocutor_id: str, request: Request | None = None)
         profile = ir.resolve(interlocutor_id)
         if profile:
             return str(getattr(profile, "trust_level", "untrusted")).lower()
-    except Exception as _exc:
+    except (ImportError, AttributeError, TypeError, ValueError, OSError) as _exc:
         _logger.debug(
             "Memory API identity lookup failed; falling back to untrusted for "
             "interlocutor_id=%r: %s",
@@ -84,7 +84,7 @@ def get_recent_episodes(
         ret = _retriever()
         tl = _effective_trust_level(interlocutor_id, request=request)
         return ret.get_recent_episodes_safe(interlocutor_id, tl, limit=limit)
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001  API endpoint boundary
         raise HTTPException(status_code=500, detail=str(exc))
 
 
@@ -99,7 +99,7 @@ def get_conversation_summary(
         tl = _effective_trust_level(interlocutor_id, request=request)
         summary = mgr.get_summary(interlocutor_id, tl)
         return {"interlocutor_id": interlocutor_id, "summary": summary}
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001  API endpoint boundary
         raise HTTPException(status_code=500, detail=str(exc))
 
 
@@ -122,7 +122,7 @@ def get_memory_status() -> Dict[str, Any]:
             "ConversationRetriever": "ok",
             "ConversationSummaryManager": "ok",
         }
-    except Exception as exc:
+    except (ImportError, OSError, TypeError, ValueError, AttributeError, RuntimeError) as exc:
         status["enabled"] = False
         status["status"] = "error"
         status["error"] = str(exc)

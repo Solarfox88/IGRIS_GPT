@@ -35,7 +35,7 @@ def _safe_str(v: Any) -> str:
     try:
         s = json.dumps(v) if not isinstance(v, str) else v
         return _redact(s)
-    except Exception:
+    except (TypeError, ValueError, json.JSONDecodeError):
         return "<unserializable>"
 
 
@@ -52,7 +52,7 @@ class InterlocutorAudit:
                 try:
                     from igris.models.config import CONFIG
                     path = CONFIG.igris_dir / "interlocutor_audit.jsonl"
-                except Exception:
+                except (ImportError, AttributeError):
                     path = Path(".igris") / "interlocutor_audit.jsonl"
         self.path = Path(path)
         self.path.parent.mkdir(parents=True, exist_ok=True)
@@ -92,7 +92,7 @@ class InterlocutorAudit:
         try:
             with self.path.open("a") as f:
                 f.write(json.dumps(entry) + "\n")
-        except Exception as _write_exc:
+        except (OSError, TypeError, ValueError, json.JSONDecodeError) as _write_exc:
             _audit_logger.warning("Audit write failed (degraded): %s", _write_exc)
             return ""  # not None — callers can check truthiness
         return event_id
@@ -105,5 +105,5 @@ class InterlocutorAudit:
                 else []
             )
             return [json.loads(ln) for ln in lines[-n:] if ln.strip()]
-        except Exception:
+        except (OSError, json.JSONDecodeError, TypeError, ValueError, IndexError):
             return []

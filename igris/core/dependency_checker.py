@@ -68,7 +68,7 @@ def load_dep_file(project_root: str) -> Dict[str, List[int]]:
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
         return {str(k): [int(d) for d in v] for k, v in data.items()}
-    except Exception:
+    except (json.JSONDecodeError, OSError, TypeError, ValueError, KeyError, AttributeError):
         return {}
 
 
@@ -96,7 +96,7 @@ def _gh_issue_state(project_root: str, issue_number: int) -> Optional[str]:
         if r.returncode == 0:
             data = json.loads(r.stdout)
             return str(data.get("state", "")).lower()
-    except Exception:
+    except (subprocess.SubprocessError, OSError, json.JSONDecodeError, KeyError, ValueError, TypeError):
         pass
     return None
 
@@ -112,7 +112,7 @@ def _gh_pr_merged(project_root: str, issue_number: int) -> Optional[bool]:
         if r.returncode == 0:
             data = json.loads(r.stdout)
             return bool(data.get("merged", False))
-    except Exception:
+    except (subprocess.SubprocessError, OSError, json.JSONDecodeError, KeyError, ValueError, TypeError):
         pass
     return None
 
@@ -174,7 +174,7 @@ class DependencyChecker:
         if self._gh_labels_fn is not None:
             try:
                 return list(self._gh_labels_fn(issue_number))
-            except Exception:
+            except (TypeError, ValueError, KeyError, AttributeError):
                 return []
         try:
             r = subprocess.run(
@@ -184,7 +184,7 @@ class DependencyChecker:
             if r.returncode == 0:
                 data = json.loads(r.stdout)
                 return data.get("labels", [])
-        except Exception:
+        except (subprocess.SubprocessError, OSError, json.JSONDecodeError, KeyError, ValueError, TypeError):
             pass
         return []
 

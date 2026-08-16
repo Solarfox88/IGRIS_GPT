@@ -304,7 +304,7 @@ def _build_bridge_diagnostics(
     try:
         bridge_result = bridge(run_status, goal_status)
         combined = bridge_result.get("combined_status", "unknown_status")
-    except Exception:
+    except (TypeError, ValueError, KeyError, AttributeError):
         combined = "unknown_status"
     return {
         "combined_status": combined,
@@ -377,7 +377,7 @@ def enrich_report_selected(
         if config.log_template_usage:
             result["_advisory_template_used"] = template_key
         return result
-    except Exception:
+    except (TypeError, ValueError, KeyError, AttributeError):
         return report
 
 
@@ -401,7 +401,7 @@ def enrich_cycle_selected(
             report_type=rt,
             cycle=cycle,
         )
-    except Exception:
+    except (TypeError, ValueError, KeyError, AttributeError):
         return cycle
 
 
@@ -481,7 +481,7 @@ def compute_selected_metrics(
             conf = rec.get("confidence", "unknown")
             confidence_dist[conf] = confidence_dist.get(conf, 0) + 1
 
-        except Exception:
+        except (TypeError, ValueError, KeyError, AttributeError, IndexError):
             pass
 
     for c in cycles_list:

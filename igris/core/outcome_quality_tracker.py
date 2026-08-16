@@ -92,7 +92,7 @@ def load_quality_scores(project_root: str) -> Dict[str, QualityRecord]:
                 rollback_detected=bool(d.get("rollback_detected", False)),
             )
         return result
-    except Exception:
+    except (json.JSONDecodeError, OSError, TypeError, ValueError, KeyError, AttributeError):
         return {}
 
 
@@ -130,7 +130,7 @@ def _get_issue_state(project_root: str, issue_number: int) -> Optional[str]:
         if r.returncode == 0:
             data = json.loads(r.stdout)
             return str(data.get("state", "")).lower()
-    except Exception:
+    except (subprocess.SubprocessError, OSError, json.JSONDecodeError, KeyError, ValueError, TypeError):
         pass
     return None
 
@@ -146,7 +146,7 @@ def _get_issue_events(project_root: str, issue_number: int) -> List[Dict]:
         if r.returncode == 0:
             events = [line.strip() for line in r.stdout.splitlines() if line.strip()]
             return [{"event": e} for e in events]
-    except Exception:
+    except (subprocess.SubprocessError, OSError, IndexError, TypeError):
         pass
     return []
 
@@ -258,7 +258,7 @@ class OutcomeQualityTracker:
 
         try:
             outcomes = load_assignment_outcomes(self._outcomes_path)
-        except Exception as exc:
+        except (ImportError, OSError, json.JSONDecodeError, TypeError, ValueError, KeyError) as exc:
             report.errors.append(f"load outcomes: {exc}")
             return report
 
@@ -307,12 +307,12 @@ class OutcomeQualityTracker:
                 rec.rollback_detected = new_score == QUALITY_ROLLBACK
                 scores[oid] = rec
                 report.updated += 1
-            except Exception as exc:
+            except (subprocess.SubprocessError, OSError, json.JSONDecodeError, TypeError, ValueError, KeyError, AttributeError) as exc:
                 report.errors.append(f"outcome {oid}: {exc}")
 
         try:
             save_quality_scores(self._root, scores)
-        except Exception as exc:
+        except (OSError, TypeError, ValueError, json.JSONDecodeError) as exc:
             report.errors.append(f"save scores: {exc}")
 
         return report

@@ -199,7 +199,7 @@ class AfterActionReviewer:
             try:
                 from igris.models.config import CONFIG
                 project_root = CONFIG.project_root
-            except Exception:
+            except (ImportError, AttributeError):
                 project_root = Path.home()
         self.project_root = Path(project_root)
         self._memory = unified_memory
@@ -369,7 +369,7 @@ class AfterActionReviewer:
 
         try:
             report.outcome = self.infer_outcome(mission_plan, evidence_bundle)
-        except Exception as e:
+        except (TypeError, ValueError, KeyError, AttributeError) as e:
             report.warnings.append(f"infer_outcome failed: {e}")
             logger.warning("AfterActionReviewer.infer_outcome failed: %s", e)
             report.outcome = ReflectionOutcome.INCONCLUSIVE.value
@@ -383,7 +383,7 @@ class AfterActionReviewer:
                         report.what_worked.append(_redact(r.summary)[:100])
                     else:
                         report.what_failed.append(_redact(r.summary)[:100])
-        except Exception as e:
+        except (TypeError, AttributeError, KeyError) as e:
             report.warnings.append(f"bundle analysis failed: {e}")
             logger.warning("AfterActionReviewer: bundle analysis failed: %s", e)
 
@@ -406,7 +406,7 @@ class AfterActionReviewer:
                     report.memory_feedback.append(sig)
                 elif kind == LearningSignalKind.POLICY_RECOMMENDATION.value:
                     report.policy_recommendations.append(sig)
-        except Exception as e:
+        except (TypeError, ValueError, KeyError, AttributeError) as e:
             report.warnings.append(f"signal extraction failed: {e}")
             logger.warning("AfterActionReviewer: signal extraction failed: %s", e)
 
@@ -429,7 +429,7 @@ class AfterActionReviewer:
             try:
                 from igris.core.unified_memory import UnifiedMemory
                 mem = UnifiedMemory(project_root=self.project_root)
-            except Exception as e:
+            except (ImportError, OSError, TypeError, ValueError, RuntimeError) as e:
                 logger.warning("AfterActionReviewer.healthcheck: UnifiedMemory unavailable: %s", e)
                 return {"ok": False, "unified_memory": "unavailable", "error": str(e)}
         return {

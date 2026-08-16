@@ -100,7 +100,7 @@ def start_supervised_rank_async(data: Dict[str, Any], project_root: str) -> Supe
                 run_id=run.run_id,
                 issue_number=config.issue_number,
             )
-        except Exception:  # noqa: BLE001
+        except (ImportError, TypeError, ValueError, RuntimeError):  # noqa: BLE001
             logger.debug("BehaviorTracker init failed", exc_info=True)
             pass  # best-effort — never block the run
 

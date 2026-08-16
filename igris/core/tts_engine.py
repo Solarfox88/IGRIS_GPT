@@ -172,7 +172,7 @@ class TTSEngine:
             self._loaded = True
             logger.info("TTS: model loaded successfully.")
             return True
-        except Exception as exc:
+        except (ImportError, OSError, RuntimeError, ValueError, TypeError, KeyError) as exc:
             logger.warning("TTS: model load failed (%s). Using silent fallback.", exc)
             self._loaded = True
             return False
@@ -205,7 +205,7 @@ class TTSEngine:
             # This is a simplified interface — real integration would use model-specific decode
             # Return WAV bytes as fallback since actual model isn't installed in CI
             return _generate_silent_wav()
-        except Exception as exc:
+        except (RuntimeError, OSError, ValueError, TypeError, KeyError, AttributeError) as exc:
             logger.warning("TTS synthesis failed: %s", exc)
             return _generate_silent_wav()
 
@@ -270,7 +270,7 @@ class TTSEngine:
         try:
             data = json.loads(manifest.read_text(encoding="utf-8"))
             return VoiceProfile.from_dict(data)
-        except Exception:
+        except (json.JSONDecodeError, OSError, TypeError, ValueError, KeyError, AttributeError):
             logger.debug("Failed to load voice profile %s", name, exc_info=True)
             return None
 
@@ -287,7 +287,7 @@ class TTSEngine:
                     try:
                         data = json.loads(manifest.read_text(encoding="utf-8"))
                         result.append(VoiceProfile.from_dict(data))
-                    except Exception:
+                    except (json.JSONDecodeError, OSError, TypeError, ValueError, KeyError, AttributeError):
                         logger.debug("Failed to load voice profile from %s", profile_dir.name, exc_info=True)
                         pass
         return result

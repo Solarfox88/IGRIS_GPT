@@ -232,7 +232,7 @@ class MissionStructureVerifier(BaseVerifier):
             plan_str = json.dumps(plan_dict)
             if _SECRET_RE.search(plan_str):
                 errors.append("Raw secret detected in mission plan — redaction failed")
-        except Exception as e:
+        except (TypeError, ValueError, AttributeError) as e:
             warnings.append(f"Could not serialize plan for secret check: {e}")
 
         # Create evidence snapshot
@@ -244,7 +244,7 @@ class MissionStructureVerifier(BaseVerifier):
                 kind=EvidenceKind.MISSION_PLAN,
             )
             evidence_items.append(ev)
-        except Exception as e:
+        except (TypeError, ValueError, AttributeError, KeyError) as e:
             warnings.append(f"Evidence creation failed: {e}")
             logger.warning("MissionStructureVerifier: evidence creation failed: %s", e)
 
@@ -386,7 +386,7 @@ class EvidencePresenceVerifier(BaseVerifier):
                 source="mission_first",
             )
             evidence_items.append(ev1)
-        except Exception as e:
+        except (TypeError, ValueError, AttributeError, KeyError) as e:
             logger.warning("EvidencePresenceVerifier: plan evidence failed: %s", e)
 
         # Add context summary if available
@@ -454,7 +454,7 @@ class SecurityVerifier(BaseVerifier):
             plan_str = json.dumps(plan_dict)
             if _SECRET_RE.search(plan_str):
                 errors.append("Security: raw secret detected in mission plan output")
-        except Exception as e:
+        except (TypeError, ValueError, AttributeError) as e:
             warnings.append(f"Secret check failed: {e}")
             logger.warning("SecurityVerifier: secret check failed: %s", e)
 
@@ -571,7 +571,7 @@ class VerifierRegistry:
             try:
                 from igris.core.unified_memory import UnifiedMemory
                 self._memory = UnifiedMemory(project_root=self.project_root)
-            except Exception as e:
+            except (ImportError, OSError, TypeError, ValueError, RuntimeError) as e:
                 logger.debug("VerifierRegistry: UnifiedMemory unavailable: %s", e)
         return self._memory
 
@@ -603,7 +603,7 @@ class VerifierRegistry:
                 result, evidence_items = verifier.verify(mission_plan, context=context)
                 bundle.results.append(result)
                 all_evidence.extend(evidence_items)
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001  plugin boundary — arbitrary verifier
                 logger.warning("VerifierRegistry: verifier %s raised: %s", verifier.verifier_id, e)
                 bundle.warnings.append(f"{verifier.verifier_id} failed: {e}")
                 bundle.results.append(VerificationResult(
@@ -668,7 +668,7 @@ class VerifierRegistry:
                 logger.warning("VerifierRegistry: persist_bundle store_run_event ok=False: %s", result.warnings)
                 return {"ok": False, "reason": "store_run_event returned ok=False",
                         "persistence_degraded": True, "warnings": result.warnings}
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001  external memory boundary
             logger.warning("VerifierRegistry: persist_bundle failed: %s", e)
             return {"ok": False, "reason": str(e), "persistence_degraded": True}
 

@@ -69,7 +69,7 @@ class ReflectionConfig:
                 min_response_chars=int(data.get("min_response_chars", 500)),
                 model_profile=str(data.get("model_profile", "local_light")),
             )
-        except Exception:
+        except (OSError, json.JSONDecodeError, TypeError, ValueError, KeyError):
             return cls()
 
 
@@ -149,7 +149,7 @@ class ReflectionHook:
             self._reflections_this_session += 1
             self._persist(output, goal, project_root or self.project_root)
             return output
-        except Exception:
+        except Exception:  # noqa: BLE001  top-level reflection boundary
             return None
 
     def _call_llm(
@@ -175,7 +175,7 @@ class ReflectionHook:
                 return None
 
             return self._parse_llm_output(result.text)
-        except Exception:
+        except (ImportError, TypeError, ValueError, KeyError, AttributeError, RuntimeError, OSError):
             return None
 
     def _build_step_summary(self, step_result: Dict[str, Any], goal: str) -> str:
@@ -211,7 +211,7 @@ class ReflectionHook:
                 patterns=[str(x)[:120] for x in data.get("patterns", []) if x],
                 user_preferences=[str(x)[:120] for x in data.get("user_preferences", []) if x],
             )
-        except Exception:
+        except (json.JSONDecodeError, TypeError, ValueError, KeyError, AttributeError):
             return None
 
     def _persist(self, output: ReflectionOutput, goal: str, project_root: str) -> None:
@@ -245,5 +245,5 @@ class ReflectionHook:
                     },
                     confidence=0.65,
                 )
-        except Exception:
+        except (ImportError, OSError, TypeError, ValueError, RuntimeError):
             pass

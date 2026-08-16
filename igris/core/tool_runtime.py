@@ -202,7 +202,7 @@ class ToolRuntime:
             return {"returncode": 124, "stdout": "", "stderr": "Command timed out", "duration_ms": timeout * 1000}
         except FileNotFoundError:
             return {"returncode": 127, "stdout": "", "stderr": f"Command not found: {cmd[0]}", "duration_ms": 0}
-        except Exception as exc:
+        except (subprocess.SubprocessError, OSError) as exc:
             return {"returncode": 1, "stdout": "", "stderr": str(exc), "duration_ms": 0}
 
     def _make_result(
@@ -346,7 +346,7 @@ class ToolRuntime:
                 success=True, output=truncate_output(content, max_chars),
                 risk_level="low", trace_id=trace_id, mission_id=mission_id,
             )
-        except Exception as exc:
+        except (OSError, UnicodeDecodeError) as exc:
             return ToolResult(
                 tool="filesystem", action="read",
                 success=False, error=str(exc),
@@ -411,7 +411,7 @@ class ToolRuntime:
                 risk_level="medium", trace_id=trace_id, mission_id=mission_id,
                 rollback_id=rollback_id,
             )
-        except Exception as exc:
+        except (OSError, TypeError, ValueError) as exc:
             return ToolResult(
                 tool="filesystem", action="write",
                 success=False, error=str(exc),
@@ -451,7 +451,7 @@ class ToolRuntime:
                 success=True, output=truncate_output(diff),
                 trace_id=trace_id, mission_id=mission_id,
             )
-        except Exception as exc:
+        except (OSError, UnicodeDecodeError, TypeError) as exc:
             return ToolResult(
                 tool="filesystem", action="diff",
                 success=False, error=str(exc),
@@ -714,7 +714,7 @@ class ToolRuntime:
                 duration_ms=elapsed,
                 trace_id=trace_id, mission_id=mission_id,
             )
-        except Exception as exc:
+        except (urllib.error.URLError, OSError, ValueError, TypeError) as exc:
             elapsed = int((time.time() - start) * 1000)
             logger.warning(
                 "tool_failed",
