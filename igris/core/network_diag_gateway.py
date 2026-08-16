@@ -108,7 +108,7 @@ class LocalNetworkDiagRunner:
                     }
             except FileNotFoundError:
                 continue
-            except Exception as exc:  # noqa: BLE001
+            except (subprocess.SubprocessError, OSError) as exc:  # noqa: BLE001
                 return {"available": False, "status": "degraded", "reason": str(exc)}
         return {"available": False, "status": "degraded", "reason": "traceroute unavailable"}
 
@@ -180,7 +180,7 @@ class NetworkDiagGateway:
             path.parent.mkdir(parents=True, exist_ok=True)
             with path.open("a", encoding="utf-8") as fh:
                 fh.write(json.dumps(entry, ensure_ascii=False) + "\n")
-        except Exception:  # noqa: BLE001
+        except (OSError, TypeError, ValueError):  # noqa: BLE001
             logger.warning("NetworkDiagGateway audit write failed for %s", action)
         logger.info("NetworkDiagGateway audit: %s", entry)
         return entry
@@ -227,7 +227,7 @@ class NetworkDiagGateway:
             result = {"host": host, "addresses": addresses}
             self._audit(action, host, "OK", result)
             return {"success": True, "dry_run": False, "status": "ok", "result": result}
-        except Exception as exc:  # noqa: BLE001
+        except (OSError, TypeError, ValueError) as exc:  # noqa: BLE001
             self._audit(action, host, "FAILED", {"error": str(exc)})
             return {"success": False, "dry_run": False, "status": "failed", "reason": str(exc)}
 
@@ -252,7 +252,7 @@ class NetworkDiagGateway:
             result = self._runner().tcp_connect(host, port, timeout)
             self._audit(action, f"{host}:{port}", "OK", result)
             return {"success": True, "dry_run": False, "status": "ok", "result": self._redact(result)}
-        except Exception as exc:  # noqa: BLE001
+        except (OSError, TypeError, ValueError) as exc:  # noqa: BLE001
             self._audit(action, f"{host}:{port}", "FAILED", {"error": str(exc)})
             return {"success": False, "dry_run": False, "status": "failed", "reason": str(exc)}
 
@@ -275,7 +275,7 @@ class NetworkDiagGateway:
             result = self._runner().http_latency(url, timeout)
             self._audit(action, url, "OK", result)
             return {"success": True, "dry_run": False, "status": "ok", "result": self._redact(result)}
-        except Exception as exc:  # noqa: BLE001
+        except (OSError, TypeError, ValueError) as exc:  # noqa: BLE001
             self._audit(action, url, "FAILED", {"error": str(exc)})
             return {"success": False, "dry_run": False, "status": "failed", "reason": str(exc)}
 
@@ -315,7 +315,7 @@ class NetworkDiagGateway:
                 return {"success": True, "dry_run": False, "status": "degraded", "result": self._redact(result)}
             self._audit(action, host, "OK", result)
             return {"success": True, "dry_run": False, "status": "ok", "result": self._redact(result)}
-        except Exception as exc:  # noqa: BLE001
+        except (OSError, TypeError, ValueError, subprocess.SubprocessError) as exc:  # noqa: BLE001
             self._audit(action, host, "FAILED", {"error": str(exc)})
             return {"success": False, "dry_run": False, "status": "failed", "reason": str(exc)}
 
@@ -396,7 +396,7 @@ class NetworkDiagGateway:
                         allowed_domains=allowed_domains_list,
                     )
                 )
-            except Exception as exc:  # noqa: BLE001
+            except (AttributeError, TypeError, ValueError, KeyError, OSError) as exc:  # noqa: BLE001
                 inventory["backend_inventory"] = {"status": "degraded", "reason": str(exc)}
         else:
             inventory["backend_inventory"] = {"status": "dry_run", "reason": "backend not configured"}
@@ -440,7 +440,7 @@ class NetworkDiagGateway:
                 )
                 self._audit(action, target, "BACKEND_PLANNED", result)
                 return {"success": True, "dry_run": False, "status": "backend_planned", "result": self._redact(result)}
-            except Exception as exc:  # noqa: BLE001
+            except (AttributeError, TypeError, ValueError, KeyError, OSError) as exc:  # noqa: BLE001
                 self._audit(action, target, "FAILED", {"reason": str(exc), "proposal": proposal})
                 return {"success": False, "dry_run": False, "status": "failed", "reason": str(exc)}
         self._audit(action, target, "BLOCKED", {"reason": "provisioning backend not configured", "proposal": proposal})

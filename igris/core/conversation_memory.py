@@ -263,11 +263,11 @@ class ConversationMemoryStore:
             try:
                 _summary_mgr = ConversationSummaryManager(self.project_root)
                 _summary_mgr.update_summary(episode.interlocutor_id, episode.trust_level, episode)
-            except Exception as _sum_exc:
+            except (OSError, TypeError, ValueError, AttributeError, KeyError) as _sum_exc:
                 logger.debug("Summary update skipped: %s", _sum_exc)
 
             return True
-        except Exception as e:
+        except (ImportError, OSError, TypeError, ValueError, KeyError, AttributeError) as e:
             logger.warning("ConversationMemoryStore: persist failed (degraded): %s", e)
             return False
 
@@ -284,7 +284,7 @@ class ConversationMemoryStore:
                     "interlocutor_id": episode.interlocutor_id,
                 },
             )
-        except Exception as e:
+        except (ImportError, OSError, TypeError, ValueError, KeyError, AttributeError) as e:
             logger.debug("MemoryGraph integration skipped: %s", e)
 
 
@@ -333,7 +333,7 @@ class ConversationRetriever:
                         if len(text) > 150:
                             text = text[:150] + "..."
                         results.append(f"- {text}")
-            except Exception:
+            except (OSError, TypeError, ValueError, KeyError, AttributeError):
                 pass
 
             if not results:
@@ -346,7 +346,7 @@ class ConversationRetriever:
 
             return f"\n[MEMORY CONTEXT]\n{text}\n"
 
-        except Exception as e:
+        except (ImportError, OSError, TypeError, ValueError, KeyError, AttributeError) as e:
             logger.debug("ConversationRetriever: retrieval failed: %s", e)
             return ""
 
@@ -372,7 +372,7 @@ class ConversationRetriever:
                     "timestamp": meta.get("timestamp", entry.timestamp),
                 })
             return safe
-        except Exception as e:
+        except (ImportError, OSError, TypeError, ValueError, KeyError, AttributeError) as e:
             logger.debug("get_recent_episodes_safe failed: %s", e)
             return []
 
@@ -402,7 +402,7 @@ class ConversationSummaryManager:
                 if isinstance(content, dict):
                     return content.get("text", str(content))
                 return str(content)
-        except Exception as e:
+        except (ImportError, OSError, TypeError, ValueError, KeyError, AttributeError) as e:
             logger.debug("Summary retrieval failed: %s", e)
         return None
 
@@ -437,6 +437,6 @@ class ConversationSummaryManager:
                 importance=0.6,
             )
             return True
-        except Exception as e:
+        except (ImportError, OSError, TypeError, ValueError, KeyError, AttributeError) as e:
             logger.warning("ConversationSummaryManager.update_summary failed (degraded): %s", e)
             return False

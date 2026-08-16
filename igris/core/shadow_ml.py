@@ -180,7 +180,7 @@ class IntentRiskShadowModel:
             try:
                 from igris.models.config import CONFIG
                 project_root = CONFIG.project_root
-            except Exception:
+            except (ImportError, AttributeError):
                 logger.debug("CONFIG.project_root unavailable, falling back to home dir", exc_info=True)
                 project_root = Path.home()
         self.project_root = Path(project_root)
@@ -242,7 +242,7 @@ class IntentRiskShadowModel:
             report.metrics["trust_level"] = trust_level
             report.ok = True
 
-        except Exception as e:
+        except (AttributeError, TypeError, ValueError, KeyError) as e:
             logger.warning("IntentRiskShadowModel.evaluate failed: %s", e)
             report.ok = False
             report.warnings.append(f"evaluation_failed: {_redact(str(e))}")
@@ -274,7 +274,7 @@ class StrategySelectorShadow:
             try:
                 from igris.models.config import CONFIG
                 project_root = CONFIG.project_root
-            except Exception:
+            except (ImportError, AttributeError):
                 logger.debug("CONFIG.project_root unavailable, falling back to home dir", exc_info=True)
                 project_root = Path.home()
         self.project_root = Path(project_root)
@@ -341,7 +341,7 @@ class StrategySelectorShadow:
             report.changed_decision = False  # NEVER changes real plan
             report.ok = True
 
-        except Exception as e:
+        except (AttributeError, TypeError, ValueError, KeyError) as e:
             logger.warning("StrategySelectorShadow.suggest_strategy failed: %s", e)
             report.ok = False
             report.warnings.append(f"strategy_selection_failed: {_redact(str(e))}")
@@ -370,7 +370,7 @@ class ShadowMLCoordinator:
             try:
                 from igris.models.config import CONFIG
                 project_root = CONFIG.project_root
-            except Exception:
+            except (ImportError, AttributeError):
                 logger.debug("CONFIG.project_root unavailable, falling back to home dir", exc_info=True)
                 project_root = Path.home()
         self.project_root = Path(project_root)
@@ -408,7 +408,7 @@ class ShadowMLCoordinator:
             )
             sub_reports["intent_risk"] = intent_report.to_dict()
             sub_warnings.extend(intent_report.warnings)
-        except Exception as e:
+        except (AttributeError, TypeError, ValueError, KeyError) as e:
             logger.warning("ShadowMLCoordinator: intent_model failed: %s", e)
             sub_warnings.append(f"intent_risk_degraded: {_redact(str(e))}")
             sub_reports["intent_risk"] = {"ok": False, "error": _redact(str(e))}
@@ -420,7 +420,7 @@ class ShadowMLCoordinator:
             )
             sub_reports["strategy"] = strategy_report.to_dict()
             sub_warnings.extend(strategy_report.warnings)
-        except Exception as e:
+        except (AttributeError, TypeError, ValueError, KeyError) as e:
             logger.warning("ShadowMLCoordinator: strategy_selector failed: %s", e)
             sub_warnings.append(f"strategy_selector_degraded: {_redact(str(e))}")
             sub_reports["strategy"] = {"ok": False, "error": _redact(str(e))}
@@ -437,7 +437,7 @@ class ShadowMLCoordinator:
                 sub_reports["ranking"] = rank_report.to_dict()
                 report.scores.extend(rank_report.scores)
                 sub_warnings.extend(rank_report.warnings)
-            except Exception as e:
+            except (ImportError, AttributeError, TypeError, ValueError, KeyError, OSError) as e:
                 logger.warning("ShadowMLCoordinator: ranker failed: %s", e)
                 sub_warnings.append(f"ranking_degraded: {_redact(str(e))}")
                 sub_reports["ranking"] = {"ok": False, "error": _redact(str(e))}

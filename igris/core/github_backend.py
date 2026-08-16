@@ -162,7 +162,8 @@ class SubprocessGitHubBackend(GitHubBackend):
             if failed:
                 return PRCheckResult(status="red", failed_jobs=failed, succeeded_jobs=succeeded)
             return PRCheckResult(status="green", succeeded_jobs=succeeded)
-        except Exception as exc:
+        except (subprocess.SubprocessError, OSError, json.JSONDecodeError,
+                KeyError, ValueError, TypeError, AttributeError) as exc:
             _log.warning("list_pr_checks(%d): %s", pr_number, exc)
             return PRCheckResult(status="unknown")
 
@@ -186,7 +187,8 @@ class SubprocessGitHubBackend(GitHubBackend):
             )
             text = (log_r.stdout or "") + (log_r.stderr or "")
             return text[:max_chars]
-        except Exception as exc:
+        except (subprocess.SubprocessError, OSError, json.JSONDecodeError,
+                KeyError, ValueError, TypeError, AttributeError) as exc:
             _log.warning("fetch_failed_logs(%d): %s", pr_number, exc)
             return ""
 
@@ -203,14 +205,14 @@ class SubprocessGitHubBackend(GitHubBackend):
             sha_r = self._run(["git", "rev-parse", "HEAD"])
             sha = sha_r.stdout.strip() if sha_r.returncode == 0 else ""
             return CommitResult(committed=True, pushed=False, sha=sha)
-        except Exception as exc:
+        except (subprocess.SubprocessError, OSError) as exc:
             return CommitResult(committed=False, pushed=False, error=str(exc)[:200])
 
     def push_branch(self) -> bool:
         try:
             r = self._run(["git", "push"], timeout=60)
             return r.returncode == 0
-        except Exception as exc:
+        except (subprocess.SubprocessError, OSError) as exc:
             _log.warning("push_branch: %s", exc)
             return False
 
@@ -235,7 +237,7 @@ class SubprocessGitHubBackend(GitHubBackend):
             url = r.stdout.strip()
             parts = url.rstrip("/").split("/")
             return int(parts[-1]) if parts and parts[-1].isdigit() else 0
-        except Exception as exc:
+        except (subprocess.SubprocessError, OSError, ValueError, IndexError) as exc:
             _log.warning("create_pr: %s", exc)
             return 0
 
@@ -246,7 +248,7 @@ class SubprocessGitHubBackend(GitHubBackend):
                 timeout=30,
             )
             return r.returncode == 0
-        except Exception as exc:
+        except (subprocess.SubprocessError, OSError) as exc:
             _log.warning("merge_pr(%d): %s", pr_number, exc)
             return False
 
@@ -259,7 +261,7 @@ class SubprocessGitHubBackend(GitHubBackend):
             if r.returncode != 0:
                 return []
             return [f.strip() for f in r.stdout.splitlines() if f.strip()]
-        except Exception as exc:
+        except (subprocess.SubprocessError, OSError) as exc:
             _log.warning("fetch_changed_files(%s): %s", branch, exc)
             return []
 
@@ -281,7 +283,8 @@ class SubprocessGitHubBackend(GitHubBackend):
                 base=d.get("baseRefName", "main"),
                 branch=d.get("headRefName", ""),
             )
-        except Exception as exc:
+        except (subprocess.SubprocessError, OSError, json.JSONDecodeError,
+                KeyError, ValueError, TypeError, AttributeError) as exc:
             _log.warning("get_pr_info(%d): %s", pr_number, exc)
             return None
 
@@ -292,11 +295,11 @@ class SubprocessGitHubBackend(GitHubBackend):
                 r = self._run(["git", "push", "origin", "--delete", branch], timeout=30)
                 if r.returncode != 0 and "remote ref does not exist" not in r.stderr:
                     ok = False
-            except Exception:
+            except (subprocess.SubprocessError, OSError):
                 ok = False
         try:
             self._run(["git", "branch", "-d", branch], timeout=10)
-        except Exception:
+        except (subprocess.SubprocessError, OSError):
             pass
         return ok
 

@@ -130,7 +130,7 @@ def resolve_session_identity(
         root = project_root or "."
         sm = AuthSessionManager(project_root=root)
         session, result = sm.resolve_session(session_token)
-    except Exception as exc:
+    except (ImportError, AttributeError, TypeError, ValueError, KeyError, OSError) as exc:
         logger.warning("resolve_session_identity: AuthSessionManager error: %s", exc)
         return SessionIdentityResult(
             profile_id="unknown",
@@ -291,9 +291,9 @@ def run_preflight(
         if profile.profile_id not in _BUILTIN:
             try:
                 ir.update(profile)
-            except Exception as _upd_exc:
+            except (OSError, TypeError, ValueError, AttributeError) as _upd_exc:
                 logger.debug("Profile update skipped: %s", _upd_exc)
-    except Exception as _id_exc:
+    except (ImportError, AttributeError, TypeError, ValueError, KeyError, OSError) as _id_exc:
         logger.debug("Identity resolution failed for '%s': %s", _id, _id_exc)
 
     # 2. Detect state
@@ -318,7 +318,7 @@ def run_preflight(
             "use_bullet_points": mode.use_bullet_points,
             "simplify_language": mode.simplify_language,
         }
-    except Exception as _sc_exc:
+    except (ImportError, AttributeError, TypeError, ValueError, KeyError) as _sc_exc:
         logger.debug("State calibration skipped: %s", _sc_exc)
 
     # 3. Resolve intent
@@ -335,7 +335,7 @@ def run_preflight(
         intent_risk = intent.risk_hint
         ambiguous = intent.ambiguous
         clarification_question = intent.clarification_question
-    except Exception as _ir_exc:
+    except (ImportError, AttributeError, TypeError, ValueError, KeyError) as _ir_exc:
         logger.debug("Intent resolution failed: %s", _ir_exc)
 
     # 4. Authorization for action-like intents
@@ -383,7 +383,7 @@ def run_preflight(
                         "Delegation key rejected for interlocutor '%s': %s",
                         _id, _dk_reason,
                     )
-            except Exception as _dk_exc:
+            except (ImportError, AttributeError, TypeError, ValueError, KeyError, OSError) as _dk_exc:
                 logger.warning("Delegation key verify error for '%s': %s", _id, _dk_exc)
                 blocked = True
                 block_reason = "Delegation key verification failed — sensitive action blocked for safety."
@@ -419,7 +419,7 @@ def run_preflight(
                 )
             elif getattr(_auth_result, "requires_delegation_key", False):
                 advisory = f"Action may require a delegation key: {getattr(_auth_result, 'message', '')}"
-        except Exception as _ag_exc:
+        except (ImportError, AttributeError, TypeError, ValueError, KeyError) as _ag_exc:
             logger.warning("AuthorizationGate unavailable: %s", _ag_exc)
             if is_sensitive:
                 blocked = True
@@ -441,7 +441,7 @@ def run_preflight(
                 advisory = _adv.message
             elif _adv and _adv.message:
                 advisory = _adv.message
-        except Exception as _jl_exc:
+        except (ImportError, AttributeError, TypeError, ValueError, KeyError) as _jl_exc:
             logger.debug("JudgmentLayer skipped: %s", _jl_exc)
 
     # 4d. Proactive Engine scan (Layer 7) — appended to advisory if events found
@@ -462,7 +462,7 @@ def run_preflight(
                 )
                 proactive_hint = f"[Proactive] {_event_summary}"
                 advisory = f"{advisory}\n{proactive_hint}" if advisory else proactive_hint
-        except Exception as _pe_exc:
+        except (ImportError, AttributeError, TypeError, ValueError, KeyError, OSError) as _pe_exc:
             logger.debug("ProactiveEngine skipped: %s", _pe_exc)
 
     # 5. Build system prompt enrichment — behavioral instructions, not just context
@@ -553,7 +553,7 @@ def run_preflight(
         )
         if not audit_event_id:
             logger.warning("Audit write may have failed (degraded): no event_id returned")
-    except Exception as _audit_exc:
+    except (ImportError, AttributeError, TypeError, ValueError, KeyError, OSError) as _audit_exc:
         logger.warning("Audit write failed (degraded): %s", _audit_exc)
         audit_event_id = None
 
