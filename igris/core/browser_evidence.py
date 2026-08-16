@@ -164,7 +164,7 @@ class PlaywrightBrowserRunner(BrowserRunner):
     def __init__(self) -> None:
         try:
             from playwright.sync_api import sync_playwright  # type: ignore
-        except Exception as exc:  # noqa: BLE001
+        except ImportError as exc:  # noqa: BLE001
             raise RuntimeError(f"playwright_unavailable: {exc}") from exc
         self._sync_playwright = sync_playwright
 
@@ -233,7 +233,7 @@ def run_browser_smoke_with_fallback(
     if effective is None:
         try:
             effective = PlaywrightBrowserRunner()
-        except Exception as exc:  # noqa: BLE001
+        except RuntimeError as exc:  # noqa: BLE001
             return BrowserSmokeResult(
                 ok=False,
                 degraded=True,

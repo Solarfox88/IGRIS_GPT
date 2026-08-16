@@ -335,7 +335,7 @@ class GOAPPlanner:
                 cwd=str(self.project_root), capture_output=True, text=True, timeout=5,
             )
             state.set(WorldState.REPO_CLEAN, result.stdout.strip() == "")
-        except Exception:
+        except (subprocess.SubprocessError, OSError):
             state.set(WorldState.REPO_CLEAN, "unknown")
 
         return state
@@ -419,7 +419,7 @@ class GOAPPlanner:
                     failed_count = sum(1 for h in history if h.get("content", {}).get("outcome") == "failure")
                     if failed_count >= 2:
                         action.cost = action.cost * 1.5
-            except Exception:
+            except (ImportError, OSError, TypeError, ValueError, KeyError, AttributeError):
                 pass
 
             # Score and select best action
@@ -596,7 +596,7 @@ class GOAPPlanner:
         try:
             data = json.loads(path.read_text(encoding="utf-8"))
             return GOAPPlan.from_dict(data)
-        except Exception:
+        except (json.JSONDecodeError, OSError, TypeError, ValueError, KeyError, AttributeError):
             return None
 
     def list_plans(self, mission_id: str = "") -> List[Dict[str, Any]]:
@@ -610,6 +610,6 @@ class GOAPPlanner:
                 if mission_id and data.get("mission_id") != mission_id:
                     continue
                 plans.append(data)
-            except Exception:
+            except (json.JSONDecodeError, OSError, TypeError, ValueError, KeyError):
                 continue
         return plans

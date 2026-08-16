@@ -737,7 +737,7 @@ class CommandRiskEngine:
                 allowed_path = Path(allowed)
                 if str(target_path).startswith(str(allowed_path)):
                     return True
-            except Exception:
+            except (TypeError, ValueError, OSError):
                 continue
         return False
 
@@ -858,7 +858,7 @@ class CommandRiskEngine:
                 reason = hook(command)
                 if reason is not None:
                     return str(reason)
-            except Exception as exc:
+            except (TypeError, ValueError, KeyError, AttributeError, RuntimeError) as exc:
                 import logging as _logging
                 _logging.getLogger("igris.risk.precheck").warning(
                     "precheck hook %r raised: %s", hook, exc
@@ -872,7 +872,7 @@ class CommandRiskEngine:
                 reason = hook(command, event)
                 if reason is not None:
                     return str(reason)
-            except Exception as exc:
+            except (TypeError, ValueError, KeyError, AttributeError, RuntimeError) as exc:
                 import logging as _logging
                 _logging.getLogger("igris.risk.postcheck").warning(
                     "postcheck hook %r raised: %s", hook, exc
@@ -1298,7 +1298,8 @@ class CommandRiskEngine:
             if result.success and result.text:
                 return self._parse_review_response(result.text)
 
-        except Exception:
+        except (ImportError, TypeError, ValueError, KeyError, AttributeError, RuntimeError, OSError):
+            # json.JSONDecodeError is a ValueError subclass and is covered above.
             pass
 
         # Fallback: conservative review

@@ -149,7 +149,7 @@ async def add_comment(request: CommentRequest, http_request: Request):
             "mission_id": request.mission_id, "run_id": request.run_id,
         })
         return CommentResponse(**_result_to_response(result))
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001  API endpoint boundary
         logger.exception("Failed to add comment")
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -170,7 +170,7 @@ async def manage_label(request: LabelRequest, http_request: Request):
                 "mission_id": request.mission_id, "run_id": request.run_id,
             })
         return LabelResponse(**_result_to_response(result))
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001  API endpoint boundary
         logger.exception("Failed to manage labels")
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -186,7 +186,7 @@ async def close_issue(request: IssueCloseRequest, http_request: Request):
             "mission_id": request.mission_id, "run_id": request.run_id,
         })
         return IssueCloseResponse(**_result_to_response(result))
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001  API endpoint boundary
         logger.exception("Failed to close issue")
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -207,7 +207,7 @@ async def create_issue(request: IssueCreateRequest, http_request: Request):
         r = _result_to_response(result)
         r["issue_url"] = result.output if result.success and not result.dry_run else None
         return IssueCreateResponse(**r)
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001  API endpoint boundary
         logger.exception("Failed to create issue")
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -227,7 +227,7 @@ async def merge_pr(request: PrMergeRequest, http_request: Request):
         return PrMergeResponse(**_result_to_response(result))
     except HTTPException:
         raise
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001  API endpoint boundary
         logger.exception("Failed to merge PR")
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -245,6 +245,6 @@ async def trigger_workflow(request: ActionTriggerRequest, http_request: Request)
             context={"mission_id": request.mission_id, "run_id": request.run_id},
         )
         return ActionTriggerResponse(**_result_to_response(result))
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001  API endpoint boundary
         logger.exception("Failed to trigger workflow")
         raise HTTPException(status_code=500, detail=str(e))

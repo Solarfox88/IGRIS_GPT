@@ -181,7 +181,7 @@ class MissionFirstController:
             try:
                 from igris.core.unified_memory import UnifiedMemory
                 self._memory = UnifiedMemory(project_root=self.project_root)
-            except Exception as e:
+            except (ImportError, OSError, TypeError, ValueError, RuntimeError) as e:
                 logger.debug("MissionFirstController: UnifiedMemory unavailable: %s", e)
         return self._memory
 
@@ -193,7 +193,7 @@ class MissionFirstController:
                     project_root=self.project_root,
                     unified_memory=self._get_memory(),
                 )
-            except Exception as e:
+            except (ImportError, OSError, TypeError, ValueError, RuntimeError) as e:
                 logger.debug("MissionFirstController: ContextAggregator unavailable: %s", e)
         return self._context_aggregator
 
@@ -267,7 +267,7 @@ class MissionFirstController:
                     )
                     context_summary = _redact(brief.brief_text[:500] if hasattr(brief, "brief_text") else "")
                     warnings.extend(brief.warnings[:3] if hasattr(brief, "warnings") else [])
-                except Exception as e:
+                except (TypeError, ValueError, KeyError, AttributeError, RuntimeError) as e:
                     warnings.append(f"context_aggregation_degraded: {e}")
                     logger.warning("MissionFirstController: context aggregation failed: %s", e)
 
@@ -420,7 +420,7 @@ class MissionFirstController:
                 )
                 return {"ok": False, "reason": "store_run_event returned ok=False",
                         "persistence_degraded": True, "warnings": result.warnings}
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001  external memory boundary
             plan.warnings.append(f"persistence_failed: {e}")
             logger.warning("MissionFirstController: persist_mission_plan failed: %s", e)
             return {"ok": False, "reason": str(e), "persistence_degraded": True}
@@ -488,7 +488,7 @@ class MissionFirstController:
                 unified_memory=self._get_memory(),
             )
             return reviewer.review(plan, evidence_bundle, user_feedback=user_feedback)
-        except Exception as e:
+        except (ImportError, TypeError, ValueError, KeyError, AttributeError, RuntimeError) as e:
             import logging as _log
             _log.getLogger(__name__).warning("reflect_plan failed: %s", e)
             return None
@@ -505,7 +505,7 @@ class MissionFirstController:
                 unified_memory=self._get_memory(),
             )
             return applier.apply_report(report)
-        except Exception as e:
+        except (ImportError, TypeError, ValueError, KeyError, AttributeError, RuntimeError) as e:
             import logging as _log
             _log.getLogger(__name__).warning("learn_from_plan failed: %s", e)
             return None

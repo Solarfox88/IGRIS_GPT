@@ -172,7 +172,7 @@ def run_smoke_check(project_root: str, timeout: int = _SMOKE_TIMEOUT) -> bool:
             return False
         payload = json.loads(result.stdout)
         return payload.get("status") == "ok"
-    except Exception:
+    except (subprocess.SubprocessError, OSError, json.JSONDecodeError, ValueError, TypeError, KeyError):
         return False
 
 
@@ -204,7 +204,7 @@ def append_audit_record(project_root: str, record: Dict[str, Any]) -> None:
     if path.exists():
         try:
             records = json.loads(path.read_text(encoding="utf-8"))
-        except Exception:
+        except (json.JSONDecodeError, OSError, TypeError, ValueError):
             records = []
     records.append(record)
     tmp = str(path) + ".tmp"
@@ -218,7 +218,7 @@ def load_audit_records(project_root: str) -> List[Dict[str, Any]]:
         return []
     try:
         return list(json.loads(path.read_text(encoding="utf-8")))
-    except Exception:
+    except (json.JSONDecodeError, OSError, TypeError, ValueError):
         return []
 
 
@@ -290,7 +290,7 @@ class SelfModificationGate:
         # 2. Targeted tests
         try:
             test_ok = run_targeted_tests(touched, self._root)
-        except Exception as exc:
+        except (subprocess.SubprocessError, OSError, json.JSONDecodeError, ValueError, TypeError, KeyError) as exc:
             test_ok = False
             result.reason = f"targeted test error: {exc}"
         result.test_passed = test_ok
@@ -305,7 +305,7 @@ class SelfModificationGate:
         if run_smoke:
             try:
                 smoke_ok = run_smoke_check(self._root, self._smoke_timeout)
-            except Exception:
+            except (subprocess.SubprocessError, OSError, json.JSONDecodeError, ValueError, TypeError, KeyError):
                 smoke_ok = False
             result.smoke_passed = smoke_ok
 
@@ -346,5 +346,5 @@ class SelfModificationGate:
                 "outcome": outcome,
                 "checked_at": result.checked_at,
             })
-        except Exception:
+        except (OSError, json.JSONDecodeError, TypeError, ValueError):
             pass  # audit must never raise

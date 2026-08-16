@@ -32,14 +32,14 @@ def record_incident(incident: Incident, project_root: str) -> None:
     try:
         from igris.core.file_rotation import rotate_if_needed
         rotate_if_needed(p)
-    except Exception:
+    except (ImportError, OSError, TypeError, ValueError, RuntimeError):
         logger.debug("rotate_if_needed failed for KB file", exc_info=True)
         pass
     arr = []
     if p.exists():
         try:
             arr = json.loads(p.read_text(encoding="utf-8"))
-        except Exception:
+        except (json.JSONDecodeError, OSError, TypeError, ValueError):
             logger.debug("Failed to parse KB JSON, resetting to empty list", exc_info=True)
             arr = []
     arr.append(asdict(incident))
@@ -53,7 +53,7 @@ def load_incidents(project_root: str) -> List[Incident]:
     try:
         data = json.loads(p.read_text(encoding="utf-8"))
         return [Incident(**x) for x in data]
-    except Exception:
+    except (json.JSONDecodeError, OSError, TypeError, ValueError, KeyError):
         logger.debug("Failed to load incidents from KB", exc_info=True)
         return []
 
@@ -103,7 +103,7 @@ async def teach_back(incident: Incident, project_root: str, outcome_label: str =
             },
             confidence=confidence,
         )
-    except Exception:
+    except Exception:  # noqa: BLE001  teach-back must never crash on arbitrary errors
         logger.debug("teach_back: MemoryGraph lesson persist failed", exc_info=True)
         pass
     if should_open_igris_issue(incident.pattern_name, project_root):

@@ -20,7 +20,7 @@ def _make_router():
     async def get_brief(request: Request) -> dict:
         try:
             body = await request.json()
-        except Exception:
+        except (json.JSONDecodeError, TypeError, ValueError):
             body = {}
 
         query = body.get("query", "")
@@ -42,7 +42,7 @@ def _make_router():
                 if interlocutor_id in PRIVILEGED_IDS:
                     interlocutor_id = "unknown"
                     trust_level = "untrusted"
-        except Exception as e:
+        except (ImportError, AttributeError, TypeError, ValueError, KeyError) as e:
             logger.debug("Context API: preflight check skipped: %s", e)
 
         try:
@@ -65,7 +65,7 @@ def _make_router():
                 include_rank=False,
             )
             return brief.to_dict()
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001  API endpoint boundary
             logger.warning("Context API error: %s", e)
             return {
                 "ok": False,
@@ -85,7 +85,7 @@ def _make_router():
             agg = ContextAggregator(project_root=str(CONFIG.project_root))
             h = agg.healthcheck()
             return {"ok": h.get("ok"), "backends": h.get("backends", {}), "warnings": h.get("warnings", [])}
-        except Exception as e:
+        except (ImportError, OSError, TypeError, ValueError, KeyError, AttributeError, RuntimeError) as e:
             return {"ok": False, "error": str(e)}
 
     return router

@@ -2,7 +2,7 @@
 
 The exact point where work resumes. Updated by every agent at the end of each task.
 
-Last updated: 2026-08-15 (import graph validation hardening added — ADR-IGRIS-0013)
+Last updated: 2026-08-16 (Block 29 — except Exception Phase 8, 286→178)
 
 ## Mandatory process before next task
 
@@ -42,18 +42,31 @@ A runtime refactor with missing import graph evidence is not complete.
 
 ## Current next issue
 
-**#1371 and #1356 CLOSED — supervisor split complete (1,844 lines, below 2,000 target).**
+**Block 29 complete (pending merge) — except Exception Phase 8, 286→178 in igris/.**
 
-10-block roadmap #3 (Blocks 21-30) in progress:
-- Block 21: extracted _auto_create_subissues → supervisor_subissues.py (PR #1390, 3125→2775)
-- Block 22: extracted _execute_staged_reasoning → supervisor_staged_reasoning.py (PR #1391, 2775→2455)
-- Block 23: extracted _complete_rank → supervisor_complete_rank.py (PR #1392, 2455→2228)
-- Block 24: extracted _rank_initial_context → supervisor_initial_context.py (PR #1393, 2228→2101)
-- Block 25: extracted autorun/escalation helpers → supervisor_autorun_escalation.py (PR #1394, 2101→1844, below 2000)
-- Block 26: final size check, #1371 closed, #1356 closed, follow-up #1395 created
-- VM: commit 1d51957, gauntlet 15/15, service active
-- Open: #1353 (347>50), #1354 (broader scope), #1395 (agent_reasoning_loop.py 2477>2000)
-- Closed: #1371 (1844<2000), #1356 (1844<2000), #1355 (0 errors, CI blocking), #1315 (foundation complete)
+20-block roadmap (Blocks 21-40) progress:
+- Blocks 21-26: supervisor extraction complete (3125→1844 lines). #1371 closed, #1356 closed, #1395 created.
+- Block 27: except Exception Phase 6 (394→353, PR #1397 merged `a547a8e`)
+- Block 28: except Exception Phase 7 (353→286, PR #1398 merged `8f2ff1e`)
+- Block 29: except Exception Phase 8 (286→178, branch `fix/1353-except-exception-phase8`, commit `07c8e70`, VM validated 15/15 gauntlet + 135 safety tests) — **pending merge**
+- Block 30: except Exception Phase 9 — final count and follow-up
+- Blocks 31-34: #1354 structured logging rollout
+- Block 35: post-pyright standard mode assessment
+- Block 36: CI health and workflow audit
+- Block 37: VM diagnostics starvation investigation
+- Block 38: task starvation remediation if safe
+- Block 39: final repo health audit
+- Block 40: final 20-block audit and memory consolidation
+
+**Open issues:**
+- #1353: except Exception cleanup — 178 remain (target <50). Phase 8 complete, Phase 9 pending.
+- #1354: structured logging rollout — broader scope, foundation complete.
+- #1395: agent_reasoning_loop.py 2,477 lines (target <2,000).
+- #1290: diagnostics starvation — deferred to Block 37.
+- #1300, #1301: EPICs still open.
+
+**Closed issues:**
+- #1371 (supervisor split, 1844<2000), #1356 (same), #1355 (pyright 0 errors, CI blocking), #1315 (structured logging foundation complete), #1296 (task engine), #1291 (chat intent auth).
 
 Previous 10-block roadmap (#1) complete:
 - #1356 Phase 4: supervisor 6011→4874 lines (5 PRs #1366-#1370)
@@ -158,6 +171,13 @@ Network: IGRIS External Switch, static IP 192.168.1.253/24, gateway 192.168.1.1.
 
 ## Do next
 
-1. Pick a follow-up issue (#1353, #1354, #1355, or #1356)
-2. Follow the standard procedure: sync main, read memory files, create branch, diagnose, fix, test, gauntlet, VM validate, PR, merge
-3. Do NOT declare issues complete until acceptance criteria are fully met
+1. Merge Block 29 PR (pending) — except Exception Phase 8, 286→178
+2. Block 30: final except Exception count and follow-up issue/status update for #1353
+3. Blocks 31-34: #1354 structured logging adoption (core modules, web routers, event naming, closure check)
+4. Block 35: post-pyright standard mode assessment
+5. Block 36: CI health and workflow audit
+6. Block 37: VM diagnostics starvation investigation
+7. Block 38: task starvation remediation if safe
+8. Block 39: final repo health audit
+9. Block 40: final 20-block audit, compliance matrix, memory consolidation
+10. Do NOT declare issues complete until acceptance criteria are fully met

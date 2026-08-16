@@ -212,7 +212,7 @@ def _create_skip_issue(project_root: str, issue_number: int, failure_count: int)
             cwd=project_root, capture_output=True, text=True, timeout=30,
         )
         _watchdog_logger.info("Watchdog: created skip issue for roadmap #%d", issue_number)
-    except Exception as exc:
+    except (subprocess.SubprocessError, OSError) as exc:
         _watchdog_logger.warning("Watchdog: failed to create skip issue: %s", exc)
 
 
@@ -286,9 +286,9 @@ async def _watchdog_loop(project_root: str) -> None:
                                             from igris.core.self_repair_supervisor import RUN_LOCK, RUN_STORE
                                             with RUN_LOCK:
                                                 RUN_STORE.pop(_ar.run_id, None)
-                                        except Exception as _ze:
+                                        except (KeyError, AttributeError, TypeError, ImportError) as _ze:
                                             _watchdog_logger.warning("Watchdog: zombie eviction failed: %s", _ze)
-                            except Exception:
+                            except Exception:  # noqa: BLE001  watchdog inner loop boundary
                                 pass
             if not active:
                 # Account for the outcome of the run we last launched
@@ -443,7 +443,7 @@ async def _watchdog_loop(project_root: str) -> None:
                                         "problematic_file": _ws.stdout.strip().splitlines()[0][:500],
                                     },
                                 )
-                            except Exception as exc:
+                            except (ImportError, OSError, TypeError, ValueError, KeyError, RuntimeError) as exc:
                                 _watchdog_logger.warning("Watchdog diagnostic issue action failed: %s", exc)
                             await asyncio.sleep(300)
                     else:
@@ -530,7 +530,7 @@ async def _watchdog_loop(project_root: str) -> None:
                     _watchdog_logger.debug(
                         "Watchdog: no actionable roadmap issue found (skipped=%s)", _skipped_issues
                     )
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001  top-level watchdog loop boundary
             _watchdog_logger.warning("Watchdog error: %s", exc)
         await asyncio.sleep(_WATCHDOG_POLL_SECONDS)
 
@@ -709,7 +709,7 @@ def run_app(application: FastAPI, host: str = "0.0.0.0", port: int = 7778) -> No
                 capture_output=True,
                 text=True,
             )
-        except Exception as exc:
+        except (subprocess.SubprocessError, OSError) as exc:
             startup_logger.error("Unable to open diagnostic GitHub issue: %s", exc)
         raise SystemExit(1)
     if uvicorn is None:

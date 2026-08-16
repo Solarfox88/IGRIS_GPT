@@ -86,7 +86,7 @@ async def get_issue(
         raise HTTPException(status_code=403, detail=str(e))
     except RuntimeError as e:
         raise HTTPException(status_code=502, detail=f"GitHub CLI error: {e}")
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001  API endpoint boundary
         raise HTTPException(status_code=500, detail=f"Internal gateway error: {type(e).__name__}")
 
 
@@ -108,7 +108,7 @@ async def get_pr(
         raise HTTPException(status_code=403, detail=str(e))
     except RuntimeError as e:
         raise HTTPException(status_code=502, detail=f"GitHub CLI error: {e}")
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001  API endpoint boundary
         raise HTTPException(status_code=500, detail=f"Internal gateway error: {type(e).__name__}")
 
 
@@ -137,7 +137,7 @@ async def list_issues(
         raise HTTPException(status_code=403, detail=str(e))
     except RuntimeError as e:
         raise HTTPException(status_code=502, detail=f"GitHub CLI error: {e}")
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001  API endpoint boundary
         raise HTTPException(status_code=500, detail=f"Internal gateway error: {type(e).__name__}")
 
 
@@ -160,7 +160,7 @@ async def get_file(
         raise HTTPException(status_code=403, detail=str(e))
     except RuntimeError as e:
         raise HTTPException(status_code=502, detail=f"GitHub CLI error: {e}")
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001  API endpoint boundary
         raise HTTPException(status_code=500, detail=f"Internal gateway error: {type(e).__name__}")
 
 
@@ -181,5 +181,5 @@ async def get_actions(
         raise HTTPException(status_code=403, detail=str(e))
     except RuntimeError as e:
         raise HTTPException(status_code=502, detail=f"GitHub CLI error: {e}")
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001  API endpoint boundary
         raise HTTPException(status_code=500, detail=f"Internal gateway error: {type(e).__name__}")

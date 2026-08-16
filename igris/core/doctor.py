@@ -187,7 +187,7 @@ def check_fastapi_server(host: str = "127.0.0.1", port: int = 8000) -> DoctorChe
                     detail=f"Server reachable at {host}:{port}",
                     meta={"url": url},
                 )
-    except Exception as exc:
+    except (OSError, ValueError, TypeError) as exc:
         pass
     return DoctorCheck(
         name="fastapi_server", category="server", status="warning",
@@ -238,7 +238,7 @@ def check_ollama() -> DoctorCheck:
                 fix_suggestion=f"Pull the model: ollama pull {model_configured}",
                 meta={"models_count": len(models), "model_configured": model_configured},
             )
-    except Exception:
+    except (OSError, ValueError, TypeError, IndexError, json.JSONDecodeError):
         return DoctorCheck(
             name="ollama", category="ollama", status="warning",
             detail=f"Ollama not reachable at {base_url}",
@@ -280,7 +280,7 @@ def check_git() -> DoctorCheck:
             name="git", category="git", status="ok",
             detail=version, meta={"path": git_path},
         )
-    except Exception as exc:
+    except (subprocess.SubprocessError, OSError) as exc:
         return DoctorCheck(
             name="git", category="git", status="error",
             detail=f"git found but error running: {exc}",
@@ -312,7 +312,7 @@ def check_docker() -> DoctorCheck:
             detail="Docker installed but daemon not reachable",
             fix_suggestion="Start Docker: sudo systemctl start docker",
         )
-    except Exception:
+    except (subprocess.SubprocessError, OSError):
         return DoctorCheck(
             name="docker", category="docker", status="warning",
             detail="Docker installed but error checking status",
@@ -353,7 +353,7 @@ def check_port(port: int, host: str = "127.0.0.1") -> DoctorCheck:
             detail=f"Port {port} is available",
             meta={"port": port, "in_use": False},
         )
-    except Exception:
+    except OSError:
         return DoctorCheck(
             name=f"port_{port}", category="ports", status="warning",
             detail=f"Could not check port {port}",
@@ -535,7 +535,7 @@ def run_verify(project_root: Optional[str] = None) -> Dict[str, Any]:
         test_file.write_text("ok", encoding="utf-8")
         test_file.unlink()
         results["checks"]["igris_dir_writable"] = True
-    except Exception:
+    except OSError:
         results["checks"]["igris_dir_writable"] = False
 
     # 4. Config loadable
@@ -543,7 +543,7 @@ def run_verify(project_root: Optional[str] = None) -> Dict[str, Any]:
         from igris.models.config import Config
         cfg = Config.load()
         results["checks"]["config_loadable"] = True
-    except Exception as exc:
+    except (ImportError, OSError, ValueError, TypeError, KeyError, AttributeError) as exc:
         results["checks"]["config_loadable"] = False
 
     # 5. Dependencies importable
