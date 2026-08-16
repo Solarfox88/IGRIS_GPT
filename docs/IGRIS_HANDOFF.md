@@ -42,22 +42,18 @@ A runtime refactor with missing import graph evidence is not complete.
 
 ## Current next issue
 
-**#1371 — supervisor Phase 5 split in progress. 3,125 lines remain (target <2,000).**
+**#1371 and #1356 CLOSED — supervisor split complete (1,844 lines, below 2,000 target).**
 
-10-block roadmap #2 (Blocks 11-20) complete:
-- Block 11: extracted _run_rank_loop → supervisor_rank_loop.py (PR #1378, 4874→4169)
-- Block 12: extracted _repair_cycle → supervisor_repair_cycle.py (PR #1379+#1380, 4169→3515)
-- Block 13: extracted _run_preflight_phase → supervisor_preflight.py (PR #1381, 3515→3125)
-- Block 14: Phase 5 size check — 3125 lines remain (PR #1382)
-- Block 15: pyright Phase 4 — 102→0 errors (PR #1383)
-- Block 16: pyright CI blocking, #1355 closed (PR #1384)
-- Block 17: except Exception routes 506→464 (PR #1385)
-- Block 18: except Exception core 464→347 (PR #1386)
-- Block 19: #1315 closed, #1354 updated (PR #1387)
-- Block 20: final audit (this PR)
-- VM: commit 281f72b, gauntlet 15/15, service active
-- Open: #1356 (3125>2000), #1353 (347>50), #1354 (broader scope), #1371 (Phase 5)
-- Closed: #1355 (0 errors, CI blocking), #1315 (foundation complete)
+10-block roadmap #3 (Blocks 21-30) in progress:
+- Block 21: extracted _auto_create_subissues → supervisor_subissues.py (PR #1390, 3125→2775)
+- Block 22: extracted _execute_staged_reasoning → supervisor_staged_reasoning.py (PR #1391, 2775→2455)
+- Block 23: extracted _complete_rank → supervisor_complete_rank.py (PR #1392, 2455→2228)
+- Block 24: extracted _rank_initial_context → supervisor_initial_context.py (PR #1393, 2228→2101)
+- Block 25: extracted autorun/escalation helpers → supervisor_autorun_escalation.py (PR #1394, 2101→1844, below 2000)
+- Block 26: final size check, #1371 closed, #1356 closed, follow-up #1395 created
+- VM: commit 1d51957, gauntlet 15/15, service active
+- Open: #1353 (347>50), #1354 (broader scope), #1395 (agent_reasoning_loop.py 2477>2000)
+- Closed: #1371 (1844<2000), #1356 (1844<2000), #1355 (0 errors, CI blocking), #1315 (foundation complete)
 
 Previous 10-block roadmap (#1) complete:
 - #1356 Phase 4: supervisor 6011→4874 lines (5 PRs #1366-#1370)
