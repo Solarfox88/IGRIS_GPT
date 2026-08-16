@@ -105,7 +105,7 @@ def mbop_phase1_intake(issue_number: int, project_root: str) -> MBOPIntakeResult
         result.constraints = _extract_list_section(body, ["### Constraints", "**Constraints**"])
         result.acceptance_criteria = _extract_acceptance_criteria(body)
         result.extraction_ok = True
-    except Exception:  # noqa: BLE001
+    except (subprocess.SubprocessError, OSError, json.JSONDecodeError, KeyError, ValueError, TypeError):  # noqa: BLE001
         pass
     return result
 
@@ -303,7 +303,7 @@ def mbop_phase9_quality_gate(
             result.pytest_ran = True
             result.pytest_passed = False
             result.evidence = f"pytest timed out after {_MAX_PYTEST_SECONDS}s"
-        except Exception as exc:  # noqa: BLE001
+        except (subprocess.SubprocessError, OSError, ImportError, ValueError, TypeError) as exc:  # noqa: BLE001
             result.error = f"pytest error: {exc}"
     elif not test_files:
         result.evidence = "no test files in diff — pytest skipped"
@@ -658,20 +658,20 @@ def mbop_post_run(
         modified_files: List[str] = []
         try:
             modified_files = _get_modified_files(project_root)
-        except Exception:  # noqa: BLE001
+        except (subprocess.SubprocessError, OSError):  # noqa: BLE001
             pass
 
         # Get diff text early — used by Phase 9 destructive-patch detection and Phase 10
         diff_text_early = ""
         try:
             diff_text_early = _get_diff_text(project_root)
-        except Exception:  # noqa: BLE001
+        except (subprocess.SubprocessError, OSError):  # noqa: BLE001
             pass
 
         quality = MBOPQualityGateResult()
         try:
             quality = mbop_phase9_quality_gate(project_root, modified_files, diff_text=diff_text_early)
-        except Exception as exc:  # noqa: BLE001
+        except (OSError, subprocess.SubprocessError, json.JSONDecodeError, ValueError, TypeError, KeyError) as exc:  # noqa: BLE001
             quality.error = str(exc)
 
         # Bug fix: distinguish real PASS (pytest ran+green) from vacuous PASS (pytest skipped).
@@ -719,13 +719,13 @@ def mbop_post_run(
         try:
             diff_text = _get_diff_text(project_root)
             commit_msg = _get_last_commit_message(project_root)
-        except Exception:  # noqa: BLE001
+        except (subprocess.SubprocessError, OSError):  # noqa: BLE001
             pass
 
         satisfaction = MBOPSatisfactionGateResult()
         try:
             satisfaction = mbop_phase10_satisfaction_gate(intake, diff_text, commit_msg, quality)
-        except Exception as exc:  # noqa: BLE001
+        except (ValueError, TypeError, KeyError, AttributeError) as exc:  # noqa: BLE001
             satisfaction.error = str(exc)
 
         # Bug fix: vacuous pass (no ACs extracted) stays "advisory", not "pass".
@@ -760,7 +760,7 @@ def mbop_post_run(
                 intake, quality, satisfaction, duration, failure_class,
                 run_status=run_status, completion_mode=completion_mode,
             )
-        except Exception:  # noqa: BLE001
+        except (AttributeError, TypeError, ValueError):  # noqa: BLE001
             pass
         eval_detail = f"MBOP Phase 11 Post-Task Eval: {eval_result.summary}"
         eval_extra: Dict[str, Any] = {
@@ -787,7 +787,7 @@ def mbop_post_run(
                     _existing = _json.loads(_qs_path.read_text()) or []
                     if not isinstance(_existing, list):
                         _existing = []
-                except Exception:
+                except (json.JSONDecodeError, OSError, TypeError, ValueError):
                     _existing = []
             _existing.append({
                 "run_id": run_id,
@@ -825,7 +825,7 @@ def mbop_post_run(
                 except Exception:  # noqa: BLE001
                     pass
                 _persist_event(project_root, run_id, issue_number, "mbop_phase12_next_step", "advisory", ns_detail, ns_extra)
-        except Exception:  # noqa: BLE001
+        except (ValueError, TypeError, AttributeError):  # noqa: BLE001
             pass
 
     except Exception:  # noqa: BLE001

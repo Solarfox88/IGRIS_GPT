@@ -204,7 +204,7 @@ class UnifiedMemory:
             else:
                 ep = ConversationEpisode(**{**episode_or_kwargs, **kwargs})
             ep_id = ep.episode_id
-        except Exception as e:
+        except (ImportError, TypeError, ValueError, KeyError, AttributeError) as e:
             return StoreResult(ok=False, kind="episode", id="",
                                backends={}, warnings=[f"episode construction failed: {e}"])
 
@@ -218,7 +218,7 @@ class UnifiedMemory:
                     backends_status["conversation_store"] = "degraded"
                     warnings.append("conv_store.persist() returned False")
                     logger.warning("store_episode: ConversationMemoryStore.persist() returned False")
-            except Exception as e:
+            except (sqlite3.Error, OSError, ValueError, TypeError, KeyError, AttributeError) as e:
                 backends_status["conversation_store"] = "degraded"
                 warnings.append(f"conv_store: {e}")
                 logger.warning("store_episode: ConversationMemoryStore.persist() raised: %s", e)
@@ -272,7 +272,7 @@ class UnifiedMemory:
                 entry_id = entry.id
                 backends_status["ltm"] = "ok"
                 any_primary_wrote = True
-            except Exception as e:
+            except (sqlite3.Error, OSError, ValueError, TypeError, KeyError) as e:
                 backends_status["ltm"] = "degraded"
                 warnings.append(f"ltm: {e}")
                 logger.warning("store_preference LTM failed: %s", e)
@@ -311,7 +311,7 @@ class UnifiedMemory:
                 entry_id = entry.id
                 backends_status["ltm"] = "ok"
                 any_primary_wrote = True
-            except Exception as e:
+            except (sqlite3.Error, OSError, ValueError, TypeError, KeyError) as e:
                 backends_status["ltm"] = "degraded"
                 warnings.append(f"ltm: {e}")
                 logger.warning("store_decision LTM failed: %s", e)
@@ -349,7 +349,7 @@ class UnifiedMemory:
                 entry_id = entry.id
                 backends_status["ltm"] = "ok"
                 any_primary_wrote = True
-            except Exception as e:
+            except (sqlite3.Error, OSError, ValueError, TypeError, KeyError) as e:
                 backends_status["ltm"] = "degraded"
                 warnings.append(f"ltm: {e}")
                 logger.warning("store_correction LTM failed: %s", e)
@@ -386,7 +386,7 @@ class UnifiedMemory:
                 entry_id = entry.id
                 backends_status["ltm"] = "ok"
                 any_primary_wrote = True
-            except Exception as e:
+            except (sqlite3.Error, OSError, ValueError, TypeError, KeyError) as e:
                 backends_status["ltm"] = "degraded"
                 warnings.append(f"ltm: {e}")
                 logger.warning("store_lesson LTM failed: %s", e)
@@ -429,7 +429,7 @@ class UnifiedMemory:
                 entry_id = entry.id
                 backends_status["ltm"] = "ok"
                 any_primary_wrote = True
-            except Exception as e:
+            except (sqlite3.Error, OSError, ValueError, TypeError, KeyError) as e:
                 backends_status["ltm"] = "degraded"
                 warnings.append(f"ltm: {e}")
                 logger.warning("store_run_event LTM failed: %s", e)
@@ -466,7 +466,7 @@ class UnifiedMemory:
                 entry_id = entry.id
                 backends_status["ltm"] = "ok"
                 any_primary_wrote = True
-            except Exception as e:
+            except (sqlite3.Error, OSError, ValueError, TypeError, KeyError) as e:
                 backends_status["ltm"] = "degraded"
                 warnings.append(f"ltm: {e}")
                 logger.warning("store_fact LTM failed: %s", e)
@@ -570,7 +570,7 @@ class UnifiedMemory:
                 )
                 backends_status["ltm"] = "ok"
                 any_primary_wrote = True
-            except Exception as e:
+            except (sqlite3.Error, OSError, ValueError, TypeError, KeyError) as e:
                 backends_status["ltm"] = "degraded"
                 warnings.append(f"ltm: {e}")
                 logger.warning("record_feedback: LTM write failed: %s", e)
@@ -609,7 +609,7 @@ class UnifiedMemory:
                 )
                 backends_status["ltm"] = "ok"
                 any_wrote = True
-            except Exception as e:
+            except (sqlite3.Error, OSError, ValueError, TypeError, KeyError) as e:
                 backends_status["ltm"] = "degraded"
                 warnings.append(f"ltm: {e}")
                 logger.warning("mark_superseded: LTM write failed: %s", e)
@@ -647,7 +647,7 @@ class UnifiedMemory:
                 )
                 backends_status["ltm"] = "ok"
                 any_wrote = True
-            except Exception as e:
+            except (sqlite3.Error, OSError, ValueError, TypeError, KeyError) as e:
                 backends_status["ltm"] = "degraded"
                 warnings.append(f"ltm: {e}")
                 logger.warning("forget: LTM write failed: %s", e)

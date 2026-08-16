@@ -380,28 +380,28 @@ class IntegrationLayer:
         try:
             mc = self._get_mission_controller()
             components["mission_controller"] = {"available": True}
-        except Exception as e:
+        except (ImportError, OSError, TypeError, ValueError) as e:
             components["mission_controller"] = {"available": False, "error": str(e)}
 
         # Check GOAP Planner
         try:
             planner = self._get_goap_planner()
             components["goap_planner"] = {"available": True}
-        except Exception as e:
+        except (ImportError, OSError, TypeError, ValueError) as e:
             components["goap_planner"] = {"available": False, "error": str(e)}
 
         # Check Governor
         try:
             gov = self._get_governor()
             components["teacher_governor"] = {"available": True}
-        except Exception as e:
+        except (ImportError, OSError, TypeError, ValueError) as e:
             components["teacher_governor"] = {"available": False, "error": str(e)}
 
         # Check Rollback Manager
         try:
             rm = self._get_rollback_manager()
             components["rollback_manager"] = {"available": True}
-        except Exception as e:
+        except (ImportError, OSError, TypeError, ValueError) as e:
             components["rollback_manager"] = {"available": False, "error": str(e)}
 
         # Check Context Manager
@@ -409,7 +409,7 @@ class IntegrationLayer:
             from igris.core.context_manager import ContextManager
             cm = ContextManager(project_root=self.project_root)
             components["context_manager"] = {"available": True}
-        except Exception as e:
+        except (ImportError, OSError, TypeError, ValueError) as e:
             components["context_manager"] = {"available": False, "error": str(e)}
 
         # Check Model Orchestrator
@@ -417,14 +417,14 @@ class IntegrationLayer:
             from igris.core.model_orchestrator import ModelOrchestrator
             orch = ModelOrchestrator()
             components["model_orchestrator"] = {"available": True}
-        except Exception as e:
+        except (ImportError, OSError, TypeError, ValueError) as e:
             components["model_orchestrator"] = {"available": False, "error": str(e)}
 
         # Check Agent Reasoning Loop
         try:
             from igris.core.agent_reasoning_loop import AgentReasoningLoop
             components["agent_reasoning_loop"] = {"available": True}
-        except Exception as e:
+        except (ImportError, OSError, TypeError, ValueError) as e:
             components["agent_reasoning_loop"] = {"available": False, "error": str(e)}
 
         # Check Tool Runtime
@@ -432,7 +432,7 @@ class IntegrationLayer:
             from igris.core.tool_runtime import ToolRuntime
             rt = ToolRuntime(project_root=self.project_root)
             components["tool_runtime"] = {"available": True}
-        except Exception as e:
+        except (ImportError, OSError, TypeError, ValueError) as e:
             components["tool_runtime"] = {"available": False, "error": str(e)}
 
         # Check Code Navigation
@@ -440,14 +440,14 @@ class IntegrationLayer:
             from igris.core.code_navigation import CodeNavigator
             nav = CodeNavigator(project_root=self.project_root)
             components["code_navigation"] = {"available": True}
-        except Exception as e:
+        except (ImportError, OSError, TypeError, ValueError) as e:
             components["code_navigation"] = {"available": False, "error": str(e)}
 
         # Check Decision Memory
         try:
             from igris.core.decision_memory import get_recent_decisions
             components["decision_memory"] = {"available": True}
-        except Exception as e:
+        except (ImportError, OSError, TypeError, ValueError) as e:
             components["decision_memory"] = {"available": False, "error": str(e)}
 
         all_ok = all(c.get("available", False) for c in components.values())

@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import logging
 import os
+import sys
 from pathlib import Path
 
 import pytest
@@ -135,14 +136,17 @@ def test_except_exception_count_decreased():
     We expect at least 50 to be narrowed to specific types.
     """
     import subprocess
-    result = subprocess.run(
-        ["python", "-c",
-         "import subprocess,sys; "
-         "r=subprocess.run(['rg','--count','except Exception','igris/'],"
-         "capture_output=True,text=True); "
-         "print(r.stdout.count(chr(10)))"],
-        capture_output=True, text=True, cwd=str(REPO_ROOT),
-    )
+    try:
+        result = subprocess.run(
+            [sys.executable, "-c",
+             "import subprocess,sys; "
+             "r=subprocess.run(['rg','--count','except Exception','igris/'],"
+             "capture_output=True,text=True); "
+             "print(r.stdout.count(chr(10)))"],
+            capture_output=True, text=True, cwd=str(REPO_ROOT),
+        )
+    except (FileNotFoundError, OSError):
+        pass  # Fallback to manual counting below
     # Fallback: count manually
     import re
     count = 0

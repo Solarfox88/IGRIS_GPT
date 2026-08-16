@@ -124,7 +124,7 @@ class DeliveryWorkflow:
                 "lesson",
                 {"event_type": "ci_fix_success", "pr_number": pr_number, "attempts": attempts, "failed_jobs": failed_jobs},
             )
-        except Exception:
+        except Exception:  # noqa: BLE001 — complex: import + sqlite3 + file I/O
             pass
 
     def _record_weak_signals(self) -> None:
@@ -133,7 +133,7 @@ class DeliveryWorkflow:
 
             signals = run_all_detectors(self.project_root)
             save_weak_signals(signals, self.project_root)
-        except Exception:
+        except Exception:  # noqa: BLE001 — complex: import + multiple subsystems
             pass
 
     def _diagnose_ci_failure(self, pr_number: int, failed_jobs: List[str]) -> Optional[dict]:
@@ -209,10 +209,10 @@ class DeliveryWorkflow:
                             },
                             confidence=0.8 if ci_result.resolved else 0.5,
                         )
-                    except Exception:
+                    except Exception:  # noqa: BLE001 — complex: import + sqlite3 + file I/O
                         pass
                     return ci_result.resolved
-                except Exception as exc:
+                except Exception as exc:  # noqa: BLE001 — CIRepairLoop is complex external code
                     _log.warning("CIRepairLoop: failed to run: %s — falling back", exc)
             # Fallback: log lesson only (original behavior when no backend)
             try:
@@ -226,7 +226,7 @@ class DeliveryWorkflow:
                     },
                     confidence=0.7,
                 )
-            except Exception:
+            except Exception:  # noqa: BLE001 — complex: import + sqlite3 + file I/O
                 pass
             return False
         return False
@@ -255,7 +255,7 @@ class DeliveryWorkflow:
         try:
             from igris.core.memory_graph import MemoryGraph
             MemoryGraph(self.project_root).unsaturate_family(family)
-        except Exception:
+        except Exception:  # noqa: BLE001 — complex: import + sqlite3 + file I/O
             pass
 
     # ------------------------------------------------------------------
@@ -409,7 +409,7 @@ class DeliveryWorkflow:
                     return False, "pr_is_draft"
                 if info.get("state", "").upper() not in ("OPEN",):
                     return False, f"pr_state_not_open: {info.get('state')}"
-        except Exception as exc:
+        except (subprocess.SubprocessError, OSError, json.JSONDecodeError, KeyError, ValueError, TypeError) as exc:
             _log.warning("pre_merge_safety_check: pr view failed: %s", exc)
 
         # 2. CI green (quick check — not a full wait)
@@ -430,7 +430,7 @@ class DeliveryWorkflow:
                 ]
                 if failed:
                     return False, f"ci_failed: {[c['name'] for c in failed[:3]]}"
-        except Exception as exc:
+        except (subprocess.SubprocessError, OSError, json.JSONDecodeError, KeyError, ValueError, TypeError) as exc:
             _log.warning("pre_merge_safety_check: pr checks failed: %s", exc)
 
         # 3. Diff scope + safety scan on changed files
@@ -450,7 +450,7 @@ class DeliveryWorkflow:
                 )
                 if not scope.ok:
                     return False, f"diff_scope_violation: {scope.summary[:300]}"
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 — complex: subprocess + safety gate + scope validation
             _log.warning("pre_merge_safety_check: diff scan failed: %s", exc)
 
         return True, "ok"
@@ -497,7 +497,7 @@ class DeliveryWorkflow:
                 last_commit_ts=last_commit_ts,
                 recommendation=recommendation,
             )
-        except Exception as exc:
+        except (subprocess.SubprocessError, OSError, ValueError, TypeError) as exc:
             _log.warning("check_branch_hygiene: failed for branch %r: %s", branch, exc)
             return BranchHygieneReport(
                 branch=branch, is_stale=False, age_days=0.0,
@@ -568,7 +568,7 @@ class DeliveryWorkflow:
                 if r.returncode != 0 and "remote ref does not exist" not in r.stderr:
                     _log.warning("delete_merged_branch: remote delete failed for %r: %s", branch, r.stderr[:200])
                     success = False
-            except Exception as exc:
+            except (subprocess.SubprocessError, OSError) as exc:
                 _log.warning("delete_merged_branch: remote delete exception for %r: %s", branch, exc)
                 success = False
 
@@ -580,7 +580,7 @@ class DeliveryWorkflow:
             )
             if r.returncode != 0 and "not found" not in r.stderr and "error: branch" not in r.stderr:
                 _log.warning("delete_merged_branch: local delete failed for %r: %s", branch, r.stderr[:200])
-        except Exception as exc:
+        except (subprocess.SubprocessError, OSError) as exc:
             _log.warning("delete_merged_branch: local delete exception for %r: %s", branch, exc)
 
         _log.info("delete_merged_branch: %r remote=%s success=%s", branch, remote, success)
