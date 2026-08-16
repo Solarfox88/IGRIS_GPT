@@ -2,13 +2,13 @@
 
 Stable project state — source of truth for all agents.
 
-Last updated: 2026-08-15 (import graph validation hardening added — ADR-IGRIS-0013)
+Last updated: 2026-08-16 (Block 29 — except Exception Phase 8, 286→178)
 
 ## Repository
 
 - repo: `Solarfox88/IGRIS_GPT` (public)
 - default branch: `main`
-- current `main` commit: `6131bb9` (chore(#1354): structured logging Phase 2 — wire into server startup + redaction)
+- current `main` commit: `8f2ff1e` (fix(#1353): narrow 67 broad except Exception in memory/task/diagnostics modules (353→286) (#1398))
 
 ## Mandatory operating method
 
@@ -145,6 +145,11 @@ A task cannot be considered production-complete if VM evidence is missing.
 | Decomp policy REDACTED | #1337 Cat-B | done | `5094626` | detect `<REDACTED>` marker in secret check |
 | Write-auth test bypass | #1337-A | done | `cad25e4` | bypass write-auth gate in integration tests — 401 → 200 |
 | Supervisor subprocess import | — | done | `b1b3f64` | missing subprocess import fix |
+| Supervisor split complete | #1371 / PRs #1390-#1396 | done | `1d51957` | 3125→1844 lines (below 2,000); #1371 closed, #1356 closed, #1395 created |
+| Pyright Phase 4 + CI blocking | #1355 / PRs #1383-#1384 | done | `bc435e5` | 102→0 errors; CI made blocking; #1355 closed |
+| Except Exception Phase 6 | #1353 / PR #1397 | **PARTIAL** | `a547a8e` | narrowed 41 in 5 core files (394→353) |
+| Except Exception Phase 7 | #1353 / PR #1398 | **PARTIAL** | `8f2ff1e` | narrowed 67 in 8 memory/task/diagnostics files (353→286) |
+| Except Exception Phase 8 | #1353 / (pending merge) | **PARTIAL** | (pending) | narrowed 108 in 27 core/api/web/agent files (286→178); VM validated 15/15 |
 
 ## Security baseline
 
@@ -167,12 +172,16 @@ Run: `python -m igris.core.jarvis_core_gauntlet`
 
 ## Known caveats
 
-- **#1312 is only partially complete** — `self_repair_supervisor.py` is still 6,013 lines (target <2000). Follow-up issue #1356 tracks Phase 3.
-- **#1314, #1315, #1316 are open** — Phase 1 merged but Phase 2 pending. Follow-up issues: #1353, #1354, #1355.
+- **#1353 is still open** — `except Exception` count reduced 627→178 (Phases 3-8 complete); 178 remain (target <50). Block 30 will do final count and follow-up.
+- **#1354 is still open** — structured logging foundation complete but broader module adoption pending (Blocks 31-34).
+- **#1395 is open** — `agent_reasoning_loop.py` 2,477 lines (target <2,000).
+- **#1290 is open** — diagnostics starvation warning (3 pending tasks, task_engine unavailable). Deferred to Block 37.
+- **#1312, #1371, #1356, #1355, #1315 are closed** — supervisor split complete (1,844 lines), pyright 0 errors with CI blocking, structured logging foundation complete.
 - **`memory_cross_session` gauntlet check fails on Windows** with `[WinError 32]` SQLite graph.db file lock — pre-existing, NOT a regression. Passes on Linux VM.
 - CI may have pre-existing auth/server failures; prove on clean `origin/main` before claiming regression.
 - `gh` CLI may not be installed/authenticated on all agent machines — verify before PR operations.
 - VM Python environment: `/home/igris/IGRIS_GPT/.venv/bin/python` (Python 3.12.3, fastapi 0.136.1). NOT system `python3`.
+- VM SSH: password auth (`igris`/`igris`). Key-based auth not configured. Use paramiko for SSH command execution from Windows host.
 - The `.local/` directory is used for local-only agent reports (e.g. `DEVIN_IGRIS_HANDOFF_CONTEXT.md`) and should NOT be committed.
 
 ## Local clones audited (2026-08-14)
