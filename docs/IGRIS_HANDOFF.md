@@ -42,13 +42,13 @@ A runtime refactor with missing import graph evidence is not complete.
 
 ## Current next issue
 
-**Block 29 complete (pending merge) — except Exception Phase 8, 286→178 in igris/.**
+**Block 29 merged (PR #1399, `4f80984`) — except Exception Phase 8, 286→179 in igris/.**
 
 20-block roadmap (Blocks 21-40) progress:
 - Blocks 21-26: supervisor extraction complete (3125→1844 lines). #1371 closed, #1356 closed, #1395 created.
 - Block 27: except Exception Phase 6 (394→353, PR #1397 merged `a547a8e`)
 - Block 28: except Exception Phase 7 (353→286, PR #1398 merged `8f2ff1e`)
-- Block 29: except Exception Phase 8 (286→178, branch `fix/1353-except-exception-phase8`, commit `07c8e70`, VM validated 15/15 gauntlet + 135 safety tests) — **pending merge**
+- Block 29: except Exception Phase 8 (286→179, PR #1399 merged `4f80984`) — **complete**
 - Block 30: except Exception Phase 9 — final count and follow-up
 - Blocks 31-34: #1354 structured logging rollout
 - Block 35: post-pyright standard mode assessment
@@ -171,13 +171,12 @@ Network: IGRIS External Switch, static IP 192.168.1.253/24, gateway 192.168.1.1.
 
 ## Do next
 
-1. Merge Block 29 PR (pending) — except Exception Phase 8, 286→178
-2. Block 30: final except Exception count and follow-up issue/status update for #1353
-3. Blocks 31-34: #1354 structured logging adoption (core modules, web routers, event naming, closure check)
-4. Block 35: post-pyright standard mode assessment
-5. Block 36: CI health and workflow audit
-6. Block 37: VM diagnostics starvation investigation
-7. Block 38: task starvation remediation if safe
-8. Block 39: final repo health audit
-9. Block 40: final 20-block audit, compliance matrix, memory consolidation
-10. Do NOT declare issues complete until acceptance criteria are fully met
+1. Block 30: final except Exception count and follow-up issue/status update for #1353
+2. Blocks 31-34: #1354 structured logging adoption (core modules, web routers, event naming, closure check)
+3. Block 35: post-pyright standard mode assessment
+4. Block 36: CI health and workflow audit (CI is currently failing on main — pre-existing pyright unused-import errors + test ordering issues)
+5. Block 37: VM diagnostics starvation investigation
+6. Block 38: task starvation remediation if safe
+7. Block 39: final repo health audit
+8. Block 40: final 20-block audit, compliance matrix, memory consolidation
+9. Do NOT declare issues complete until acceptance criteria are fully met
