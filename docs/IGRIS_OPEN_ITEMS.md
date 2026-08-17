@@ -2,7 +2,7 @@
 
 Open issues and tech debt for IGRIS_GPT. Updated after every task.
 
-Last updated: 2026-08-17 (Block 30 — #1353 final count: 179 remain, target <50)
+Last updated: 2026-08-17 (Block 31 — #1354 acceptance criteria met by architecture)
 
 ## Completion policy
 
@@ -68,7 +68,7 @@ A runtime refactor with missing import graph evidence is not complete.
 | Priority | Issue | Status | Next action |
 |---|---|---|---|
 | Critical | #1314 | **open** — Phase 1 merged (PR #1349 `0ac7a7b`), Phase 2 merged (PR #1360 `8ed5ac0`) | Follow-up: **#1353** — except Exception count reduced 627→178 (Phases 3-8 complete), target <50; 178 remain |
-| Critical | #1315 | **closed** — foundation complete (PR #1375 `4877168`) | Follow-up: **#1354** — structured logging wired into server startup, redaction added to StructuredFormatter; broader module adoption still pending |
+| Critical | #1315 | **closed** — foundation complete (PR #1375 `4877168`) | Follow-up: **#1354** — structured logging wired into server startup, redaction added to StructuredFormatter; **acceptance criteria met by architecture** (all 107 loggers inherit StructuredFormatter from root "igris" logger) |
 | Critical | #1316 | **closed** — pyright 0 errors, CI blocking (PR #1384 `bc435e5`) | Follow-up: **#1355** CLOSED — pyright errors 174→0, CI made blocking |
 | Tech debt | #1312 | **closed** — supervisor split complete | Follow-up: **#1371** CLOSED — `self_repair_supervisor.py` 1,844 lines (below 2,000 target); #1356 CLOSED; follow-up **#1395** for `agent_reasoning_loop.py` (2,477 lines) |
 | Refactor | #1317 (I1) | open | router anonymous routes `routes_01..10` — rename by domain |

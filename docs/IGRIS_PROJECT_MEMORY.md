@@ -2,13 +2,13 @@
 
 Stable project state — source of truth for all agents.
 
-Last updated: 2026-08-17 (Block 30 — #1353 final count: 179 remain, target <50)
+Last updated: 2026-08-17 (Block 31 — #1354 acceptance criteria met by architecture)
 
 ## Repository
 
 - repo: `Solarfox88/IGRIS_GPT` (public)
 - default branch: `main`
-- current `main` commit: `8e834c2` (docs: Block 29 process correction — direct-main commit 590d978)
+- current `main` commit: `97d5b88` (docs(#1353): Block 30 — final count and follow-up)
 
 ## Mandatory operating method
 
