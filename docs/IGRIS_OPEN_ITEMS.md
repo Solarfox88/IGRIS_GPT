@@ -59,7 +59,7 @@ A runtime refactor with missing import graph evidence is not complete.
 | P0 | #1300 | open (EPIC) | Live Acceptance Harness — browser/runtime E2E validation |
 | P0 | #1301 | open (EPIC, active) | Auth & Session SSOT — PR1–PR5A merged (#1345 merged `54b6b60`) |
 | P2 | #1291 | **closed** (PR #1348 merged `19a1dc4`) | Fixed — /api/chat/intent now gates code_change for limited users |
-| P2 | #1290 | open | diagnostics starvation — task_engine/mission_controller unavailable (overlaps with #1296, partially fixed by #1347) |
+| P2 | #1290 | **closed** (PR #1408 Block 37 + Block 38 maintenance) | Fixed — starvation false positive corrected, 3 stale tasks processed, diagnostics now healthy=true |
 | P2 | #1289 | open | API path inconsistency — `/api/github/prs`, `/api/github/issues`, `/api/git/log` do not exist |
 | P2 | #1297 | open | Verifier/Reflection payload contract undocumented, misleading error |
 
