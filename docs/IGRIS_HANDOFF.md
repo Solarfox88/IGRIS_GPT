@@ -57,7 +57,7 @@ A runtime refactor with missing import graph evidence is not complete.
 
 ## Current next issue
 
-**Block 38 complete — VM diagnostics now healthy=true. #1290 closed.**
+**Block 39 complete — final repo health audit. Block 40 pending.**
 
 20-block roadmap (Blocks 21-40) progress:
 - Blocks 21-26: supervisor extraction complete (3125→1844 lines). #1371 closed, #1356 closed, #1395 created.
@@ -68,17 +68,21 @@ A runtime refactor with missing import graph evidence is not complete.
 - Block 36: CI health fix — 7 pyright errors → 0, RuntimeError catches added (PR #1407)
 - Block 37: diagnostics starvation false positive fixed (PR #1408) — #1290 closed
 - Block 38: task starvation remediation — 3 stale tasks processed, VM diagnostics healthy=true
-- Block 39: final repo health audit
+- Block 39: final repo health audit — pyright 0 errors, 179 except Exception, 20 open issues, CI has pre-existing test failures
 - Block 40: final 20-block audit and memory consolidation
 
-**Open issues:**
+**Open issues (20):**
 - #1353: except Exception cleanup — 179 remain (target <50). Phase 8 complete, Phase 9 pending.
 - #1395: agent_reasoning_loop.py 2,477 lines (target <2,000).
-- #1290: diagnostics starvation — deferred to Block 37.
 - #1300, #1301: EPICs still open.
+- #1314: parent of #1353 (except Exception cleanup, 476→179).
+- #1316: parent of #1355 (pyright enforcement, closed).
+- #1317-1330: M1-M8 improvement issues (deferred).
+- #1333: Live Graph Reactor UI (deferred).
+- #1310: EPIC P1 documentation.
 
 **Closed issues:**
-- #1371 (supervisor split, 1844<2000), #1356 (same), #1355 (pyright 0 errors, CI blocking), #1315 (structured logging foundation complete), #1296 (task engine), #1291 (chat intent auth).
+- #1371 (supervisor split), #1356 (same), #1355 (pyright 0 errors, CI blocking), #1354 (structured logging), #1315 (structured logging foundation), #1296 (task engine), #1291 (chat intent auth), #1290 (diagnostics starvation).
 
 Previous 10-block roadmap (#1) complete:
 - #1356 Phase 4: supervisor 6011→4874 lines (5 PRs #1366-#1370)
