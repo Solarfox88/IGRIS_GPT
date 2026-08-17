@@ -57,15 +57,15 @@ A runtime refactor with missing import graph evidence is not complete.
 
 ## Current next issue
 
-**Block 35 complete (pending merge) — pyright standard mode not ready (65 errors vs 7 in basic).**
+**Block 36 complete (pending merge) — CI health fix: 7 pyright errors → 0, 1 test failure fixed.**
 
 20-block roadmap (Blocks 21-40) progress:
 - Blocks 21-26: supervisor extraction complete (3125→1844 lines). #1371 closed, #1356 closed, #1395 created.
 - Block 27-30: #1353 except Exception Phases 6-9 (286→179, issue OPEN, target <50)
 - Block 29 process deviation repaired (PR #1400)
 - Block 31-34: #1354 structured logging — criteria met by architecture, #1354 closed
-- Block 35: pyright standard mode assessment — basic: 7 errors, standard: 65 errors. Not ready. #1355 remains closed (basic mode) — **pending merge**
-- Block 36: CI health and workflow audit
+- Block 35: pyright standard mode assessment — not ready (65 vs 7 errors in basic)
+- Block 36: CI health fix — 7 pyright errors → 0, 1 test failure fixed, VM 15/15 — **pending merge**
 - Block 37: VM diagnostics starvation investigation
 - Block 38: task starvation remediation if safe
 - Block 39: final repo health audit
