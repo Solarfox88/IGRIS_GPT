@@ -148,6 +148,7 @@ def complete_rank(
                         config.required_smoke_endpoints,
                         restart_command,
                     )
+                    assert post_merge_smoke is not None
                     run.add(
                         "post_merge_smoke",
                         "success" if post_merge_smoke.success else "failure",

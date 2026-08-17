@@ -20,7 +20,7 @@ def _make_router():
     async def get_brief(request: Request) -> dict:
         try:
             body = await request.json()
-        except (json.JSONDecodeError, TypeError, ValueError):
+        except (TypeError, ValueError):
             body = {}
 
         query = body.get("query", "")

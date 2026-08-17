@@ -417,7 +417,7 @@ class AgentReasoningLoop:
                                 e for e in self._recent_errors
                                 if "READ LOOP" not in str(e.get("error", ""))
                             ]
-                except (subprocess.SubprocessError, OSError):
+                except (_sp.SubprocessError, OSError):
                     pass  # never crash the reasoning loop over auto-commit
 
             self._steps.append(step)
