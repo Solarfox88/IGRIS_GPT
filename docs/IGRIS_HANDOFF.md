@@ -57,16 +57,16 @@ A runtime refactor with missing import graph evidence is not complete.
 
 ## Current next issue
 
-**Block 31 complete (pending merge) — #1354 acceptance criteria met by architecture.**
+**Block 32 complete (pending merge) — #1354 Phase 4 web routers N/A (all inherit structured logging).**
 
 20-block roadmap (Blocks 21-40) progress:
 - Blocks 21-26: supervisor extraction complete (3125→1844 lines). #1371 closed, #1356 closed, #1395 created.
 - Block 27: except Exception Phase 6 (394→353, PR #1397 merged `a547a8e`)
 - Block 28: except Exception Phase 7 (353→286, PR #1398 merged `8f2ff1e`)
 - Block 29: except Exception Phase 8 (286→179, PR #1399 merged `4f80984`) — complete, process deviation documented (PR #1400)
-- Block 30: #1353 final count — 179 remain (63 boundaries + 116 narrowable), issue OPEN (PR #1401 merged `97d5b88`)
-- Block 31: #1354 Phase 3 — acceptance criteria met by architecture (all 107 loggers inherit StructuredFormatter from root "igris" logger; zero non-igris logger names) — **pending merge**
-- Block 32: #1354 Phase 4 — web routers logger adoption (may be N/A if architecture already covers)
+- Block 30: #1353 final count — 179 remain, issue OPEN (PR #1401 merged `97d5b88`)
+- Block 31: #1354 Phase 3 — acceptance criteria met by architecture (PR #1402 merged `09d92c9`)
+- Block 32: #1354 Phase 4 — web routers N/A, all web loggers inherit from "igris" root — **pending merge**
 - Block 33: #1354 Phase 5 — event naming and log-level hardening
 - Block 34: #1354 closure check
 - Block 35: post-pyright standard mode assessment
