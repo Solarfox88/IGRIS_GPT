@@ -57,32 +57,55 @@ A runtime refactor with missing import graph evidence is not complete.
 
 ## Current next issue
 
-**Block 39 complete — final repo health audit. Block 40 pending.**
+**20-block roadmap (Blocks 21-40) COMPLETE.**
 
-20-block roadmap (Blocks 21-40) progress:
-- Blocks 21-26: supervisor extraction complete (3125→1844 lines). #1371 closed, #1356 closed, #1395 created.
-- Block 27-30: #1353 except Exception Phases 6-9 (286→179, issue OPEN, target <50)
-- Block 29 process deviation repaired (PR #1400)
-- Block 31-34: #1354 structured logging — criteria met by architecture, #1354 closed
-- Block 35: pyright standard mode assessment — not ready (65 vs 7 errors in basic)
-- Block 36: CI health fix — 7 pyright errors → 0, RuntimeError catches added (PR #1407)
-- Block 37: diagnostics starvation false positive fixed (PR #1408) — #1290 closed
-- Block 38: task starvation remediation — 3 stale tasks processed, VM diagnostics healthy=true
-- Block 39: final repo health audit — pyright 0 errors, 179 except Exception, 20 open issues, CI has pre-existing test failures
-- Block 40: final 20-block audit and memory consolidation
+## Final 20-block audit summary
 
-**Open issues (20):**
-- #1353: except Exception cleanup — 179 remain (target <50). Phase 8 complete, Phase 9 pending.
-- #1395: agent_reasoning_loop.py 2,477 lines (target <2,000).
-- #1300, #1301: EPICs still open.
-- #1314: parent of #1353 (except Exception cleanup, 476→179).
-- #1316: parent of #1355 (pyright enforcement, closed).
-- #1317-1330: M1-M8 improvement issues (deferred).
-- #1333: Live Graph Reactor UI (deferred).
-- #1310: EPIC P1 documentation.
+| Block | PR | Result |
+|---|---|---|
+| Part A | #1389 | Circular-import hardening + ADR-IGRIS-0013 |
+| 21-26 | #1390-#1396 | Supervisor extraction (3125→1844 lines) |
+| 27-30 | #1397-#1401 | except Exception cleanup (286→179, target <50) |
+| 29 correction | #1400 | Direct-main process deviation repaired |
+| 31-34 | #1402-#1405 | Structured logging — criteria met by architecture, #1354 closed |
+| 35 | #1406 | Pyright standard mode assessment — not ready (65 vs 7 errors) |
+| 36 | #1407 | CI health fix — 7 pyright errors → 0, RuntimeError catches |
+| 37 | #1408 | Diagnostics starvation false positive fixed, #1290 closed |
+| 38 | #1409 | Task starvation remediation — 3 stale tasks processed |
+| 39 | #1410 | Final repo health audit |
+| 40 | (this PR) | Final 20-block audit and memory consolidation |
 
-**Closed issues:**
-- #1371 (supervisor split), #1356 (same), #1355 (pyright 0 errors, CI blocking), #1354 (structured logging), #1315 (structured logging foundation), #1296 (task engine), #1291 (chat intent auth), #1290 (diagnostics starvation).
+## Process compliance
+
+- No direct-main commits (except Block 29 deviation, repaired by PR #1400)
+- No force-pushes
+- No security regressions
+- All runtime-impacting changes VM-validated (15/15 gauntlet)
+- All memory updates through feature branches and PRs
+- Block 29 process rating: not 10/10 (direct-main deviation)
+- All other blocks: 10/10 process compliance
+
+## Final metrics
+
+| Metric | Value |
+|---|---|
+| pyright errors | 0 |
+| pyright warnings | 839 |
+| except Exception count | 179 (target <50, #1353 open) |
+| supervisor lines | 1844 (target <2000, achieved) |
+| Open issues | 20 |
+| VM gauntlet | 15/15 PASSED |
+| VM diagnostics | healthy=true |
+| VM os/brief | ok=true |
+
+## Remaining work (deferred)
+
+- #1353: except Exception cleanup — 179 remain (target <50). Future phases needed.
+- #1395: agent_reasoning_loop.py 2,477 lines (target <2,000). Refactor needed.
+- #1300, #1301: EPICs (live acceptance harness, auth SSOT).
+- #1317-1330: M1-M8 improvement issues.
+- Pre-existing CI test failures (caplog/structured-logging, RuntimeError mocks, source-text assertions).
+- Pyright standard mode not ready (65 errors vs 7 in basic).
 
 Previous 10-block roadmap (#1) complete:
 - #1356 Phase 4: supervisor 6011→4874 lines (5 PRs #1366-#1370)
