@@ -334,11 +334,14 @@ def get_diagnostic_summary(
         except (ValueError, OverflowError):
             pass
 
-    starvation_detected = pending_old_count > 0 or len(pending) > 0 and len(running) == 0 and len(completed) == 0
+    # Starvation is only reported when tasks are actually stale (older than threshold).
+    # The TaskEngine is passive storage by design — pending tasks without running/completed
+    # is the normal idle state, not starvation. See #1290, Block 37.
+    starvation_detected = pending_old_count > 0
     task_engine_state = {
         "enabled": True,
         "running": len(running) > 0,
-        "unhealthy": starvation_detected or (len(pending) > 0 and len(running) == 0 and len(completed) == 0),
+        "unhealthy": starvation_detected,
         "starvation_detected": starvation_detected,
         "pending_old_count": pending_old_count,
         "pending_count": len(pending),
