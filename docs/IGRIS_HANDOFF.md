@@ -57,7 +57,7 @@ A runtime refactor with missing import graph evidence is not complete.
 
 ## Current next issue
 
-**Block 33 complete (pending merge) — #1354 Phase 5 event naming/log-level PASS.**
+**Block 34 complete (pending merge) — #1354 closed, all acceptance criteria met.**
 
 20-block roadmap (Blocks 21-40) progress:
 - Blocks 21-26: supervisor extraction complete (3125→1844 lines). #1371 closed, #1356 closed, #1395 created.
@@ -67,8 +67,8 @@ A runtime refactor with missing import graph evidence is not complete.
 - Block 30: #1353 final count — 179 remain, issue OPEN (PR #1401 merged `97d5b88`)
 - Block 31: #1354 Phase 3 — acceptance criteria met by architecture (PR #1402 merged `09d92c9`)
 - Block 32: #1354 Phase 4 — web routers N/A (PR #1403 merged `7879699`)
-- Block 33: #1354 Phase 5 — event naming/log-level PASS, no hardening needed — **pending merge**
-- Block 34: #1354 closure check
+- Block 33: #1354 Phase 5 — event naming/log-level PASS (PR #1404 merged `e1b1441`)
+- Block 34: #1354 closure check — all criteria met, #1354 closed — **pending merge**
 - Block 35: post-pyright standard mode assessment
 - Block 36: CI health and workflow audit
 - Block 37: VM diagnostics starvation investigation
