@@ -62,8 +62,8 @@ def _effective_trust_level(interlocutor_id: str, request: Request | None = None)
         profile = ir.resolve(interlocutor_id)
         if profile:
             return str(getattr(profile, "trust_level", "untrusted")).lower()
-    except (ImportError, AttributeError, TypeError, ValueError, OSError) as _exc:
-        _logger.debug(
+    except (ImportError, AttributeError, TypeError, ValueError, OSError, RuntimeError) as _exc:
+        _logger.warning(
             "Memory API identity lookup failed; falling back to untrusted for "
             "interlocutor_id=%r: %s",
             interlocutor_id,

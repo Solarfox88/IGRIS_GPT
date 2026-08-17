@@ -286,7 +286,7 @@ class ContextAggregator:
                 safe = CONFIG.safe_dict()
                 info.update({k: v for k, v in safe.items()
                               if k in ("app_name", "version", "environment", "log_level")})
-            except (AttributeError, TypeError, KeyError, ValueError) as e:
+            except (AttributeError, TypeError, KeyError, ValueError, RuntimeError) as e:
                 sec.warnings.append(f"safe_dict error: {e}")
                 logger.warning("ContextAggregator: _section_project_state safe_dict failed: %s", e)
             sec.items = [_redact_dict(info)]
@@ -319,7 +319,7 @@ class ContextAggregator:
             })]
             sec.summary = f"Branch: {branch} | SHA: {sha} | {'dirty' if dirty else 'clean'} ({changed_count} changes)"
             sec.status = "ok" if branch else "degraded"
-        except (subprocess.SubprocessError, OSError, ValueError, AttributeError) as e:
+        except (subprocess.SubprocessError, OSError, ValueError, AttributeError, RuntimeError) as e:
             sec.status = "degraded"
             sec.warnings.append(f"git_state error: {e}")
             logger.debug("ContextAggregator: git_state section failed: %s", e)
@@ -339,7 +339,7 @@ class ContextAggregator:
             })]
             sec.summary = f"Rank: {result.rank} | Score: {result.score:.0%} | {'PASSED' if result.passed else 'FAILED'}"
             sec.status = "ok"
-        except (ImportError, AttributeError, TypeError, ValueError, KeyError, OSError) as e:
+        except (ImportError, AttributeError, TypeError, ValueError, KeyError, OSError, RuntimeError) as e:
             sec.status = "unavailable"
             sec.warnings.append(f"rank_gauntlet unavailable: {e}")
             logger.debug("ContextAggregator: rank section failed: %s", e)

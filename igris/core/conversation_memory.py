@@ -284,7 +284,7 @@ class ConversationMemoryStore:
                     "interlocutor_id": episode.interlocutor_id,
                 },
             )
-        except (ImportError, OSError, TypeError, ValueError, KeyError, AttributeError) as e:
+        except (ImportError, OSError, TypeError, ValueError, KeyError, AttributeError, RuntimeError) as e:
             logger.debug("MemoryGraph integration skipped: %s", e)
 
 
