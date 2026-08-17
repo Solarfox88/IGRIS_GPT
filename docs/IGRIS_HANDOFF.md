@@ -2,7 +2,22 @@
 
 The exact point where work resumes. Updated by every agent at the end of each task.
 
-Last updated: 2026-08-16 (Block 29 — except Exception Phase 8, 286→178)
+Last updated: 2026-08-16 (Block 29 process correction — direct-main docs commit 590d978)
+
+## Process violation recorded (2026-08-16)
+
+Block 29 post-merge docs update was committed directly on `main` (commit `590d978`), violating ADR-IGRIS-0012 and the "never commit on main" rule.
+
+- Content: docs-only (4 memory markdown files)
+- Runtime impact: none
+- Force-push: no
+- Remote history rewrite: no
+- Repair: process correction PR + compliance matrix update
+- Block 29 process rating: **not 10/10**
+
+**The next agent MUST verify `git branch --show-current` returns a feature branch (not `main`) before every commit, including post-merge docs updates. No commit is "too small for a branch."**
+
+See: `docs/PROCESS_CORRECTION_BLOCK29_DIRECT_MAIN.md`
 
 ## Mandatory process before next task
 
