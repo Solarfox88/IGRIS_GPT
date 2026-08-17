@@ -2,7 +2,7 @@
 
 Open issues and tech debt for IGRIS_GPT. Updated after every task.
 
-Last updated: 2026-08-16 (Block 29 process correction — direct-main docs commit 590d978)
+Last updated: 2026-08-17 (Block 30 — #1353 final count: 179 remain, target <50)
 
 ## Completion policy
 
@@ -117,6 +117,6 @@ A runtime refactor with missing import graph evidence is not complete.
 | #352 | open | evaluate candidate reasoning models |
 | #1271 | open | People Catalog / Person Registry — separate from identity/auth |
 | #1355 | **CLOSED** — pyright 0 errors, CI blocking (PR #1384) | Closed 2026-08-15 |
-| #1353 | Except Exception Phase 8 complete (286→179, PR #1399 merged `4f80984`); 179 remain (target <50) | Continue narrowing — Phase 9 (Block 30) will do final count and follow-up |
+| #1353 | Except Exception Phase 8 complete (286→179, PR #1399 merged `4f80984`); **179 remain (target <50)**. Phase 9 (Block 30): final count done — 63 boundaries (`# noqa: BLE001`), 116 narrowable. No `except Exception: pass` remaining. Progress comment posted. Issue remains OPEN. | Continue narrowing 116 non-boundary occurrences in future phases after roadmap Blocks 31-40 |
 | #1371 | **CLOSED** — supervisor split complete, 1,844 lines (below 2,000) | Closed 2026-08-15 |
 | #1395 | `agent_reasoning_loop.py` 2,477 lines (target <2,000) | Split agent_reasoning_loop.py |
