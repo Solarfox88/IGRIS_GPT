@@ -57,7 +57,7 @@ A runtime refactor with missing import graph evidence is not complete.
 
 ## Current next issue
 
-**Block 36 complete (pending merge) — CI health fix: 7 pyright errors → 0, 1 test failure fixed.**
+**Block 38 complete — VM diagnostics now healthy=true. #1290 closed.**
 
 20-block roadmap (Blocks 21-40) progress:
 - Blocks 21-26: supervisor extraction complete (3125→1844 lines). #1371 closed, #1356 closed, #1395 created.
@@ -65,15 +65,14 @@ A runtime refactor with missing import graph evidence is not complete.
 - Block 29 process deviation repaired (PR #1400)
 - Block 31-34: #1354 structured logging — criteria met by architecture, #1354 closed
 - Block 35: pyright standard mode assessment — not ready (65 vs 7 errors in basic)
-- Block 36: CI health fix — 7 pyright errors → 0, 1 test failure fixed, VM 15/15 — **pending merge**
-- Block 37: VM diagnostics starvation investigation
-- Block 38: task starvation remediation if safe
+- Block 36: CI health fix — 7 pyright errors → 0, RuntimeError catches added (PR #1407)
+- Block 37: diagnostics starvation false positive fixed (PR #1408) — #1290 closed
+- Block 38: task starvation remediation — 3 stale tasks processed, VM diagnostics healthy=true
 - Block 39: final repo health audit
 - Block 40: final 20-block audit and memory consolidation
 
 **Open issues:**
-- #1353: except Exception cleanup — 178 remain (target <50). Phase 8 complete, Phase 9 pending.
-- #1354: structured logging rollout — broader scope, foundation complete.
+- #1353: except Exception cleanup — 179 remain (target <50). Phase 8 complete, Phase 9 pending.
 - #1395: agent_reasoning_loop.py 2,477 lines (target <2,000).
 - #1290: diagnostics starvation — deferred to Block 37.
 - #1300, #1301: EPICs still open.
