@@ -57,19 +57,14 @@ A runtime refactor with missing import graph evidence is not complete.
 
 ## Current next issue
 
-**Block 34 complete (pending merge) — #1354 closed, all acceptance criteria met.**
+**Block 35 complete (pending merge) — pyright standard mode not ready (65 errors vs 7 in basic).**
 
 20-block roadmap (Blocks 21-40) progress:
 - Blocks 21-26: supervisor extraction complete (3125→1844 lines). #1371 closed, #1356 closed, #1395 created.
-- Block 27: except Exception Phase 6 (394→353, PR #1397 merged `a547a8e`)
-- Block 28: except Exception Phase 7 (353→286, PR #1398 merged `8f2ff1e`)
-- Block 29: except Exception Phase 8 (286→179, PR #1399 merged `4f80984`) — complete, process deviation documented (PR #1400)
-- Block 30: #1353 final count — 179 remain, issue OPEN (PR #1401 merged `97d5b88`)
-- Block 31: #1354 Phase 3 — acceptance criteria met by architecture (PR #1402 merged `09d92c9`)
-- Block 32: #1354 Phase 4 — web routers N/A (PR #1403 merged `7879699`)
-- Block 33: #1354 Phase 5 — event naming/log-level PASS (PR #1404 merged `e1b1441`)
-- Block 34: #1354 closure check — all criteria met, #1354 closed — **pending merge**
-- Block 35: post-pyright standard mode assessment
+- Block 27-30: #1353 except Exception Phases 6-9 (286→179, issue OPEN, target <50)
+- Block 29 process deviation repaired (PR #1400)
+- Block 31-34: #1354 structured logging — criteria met by architecture, #1354 closed
+- Block 35: pyright standard mode assessment — basic: 7 errors, standard: 65 errors. Not ready. #1355 remains closed (basic mode) — **pending merge**
 - Block 36: CI health and workflow audit
 - Block 37: VM diagnostics starvation investigation
 - Block 38: task starvation remediation if safe
