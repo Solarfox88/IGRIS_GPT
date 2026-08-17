@@ -2,13 +2,13 @@
 
 Stable project state — source of truth for all agents.
 
-Last updated: 2026-08-16 (Block 29 process correction — direct-main docs commit 590d978)
+Last updated: 2026-08-17 (Block 30 — #1353 final count: 179 remain, target <50)
 
 ## Repository
 
 - repo: `Solarfox88/IGRIS_GPT` (public)
 - default branch: `main`
-- current `main` commit: `4f80984` (fix(#1353): narrow 107 except Exception in 27 core/api/web/agent modules (286→179) (#1399))
+- current `main` commit: `8e834c2` (docs: Block 29 process correction — direct-main commit 590d978)
 
 ## Mandatory operating method
 
@@ -172,7 +172,7 @@ Run: `python -m igris.core.jarvis_core_gauntlet`
 
 ## Known caveats
 
-- **#1353 is still open** — `except Exception` count reduced 627→179 (Phases 3-8 complete); 179 remain (target <50). Block 30 will do final count and follow-up.
+- **#1353 is still open** — `except Exception` count reduced 627→179 (Phases 3-8 complete); 179 remain (target <50). Phase 9 (Block 30) final count: 63 boundaries (`# noqa: BLE001`), 116 narrowable, no `except Exception: pass` remaining. Future phases will continue narrowing.
 - **#1354 is still open** — structured logging foundation complete but broader module adoption pending (Blocks 31-34).
 - **#1395 is open** — `agent_reasoning_loop.py` 2,477 lines (target <2,000).
 - **#1290 is open** — diagnostics starvation warning (3 pending tasks, task_engine unavailable). Deferred to Block 37.
