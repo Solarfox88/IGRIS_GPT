@@ -2,7 +2,7 @@
 
 Stable project state — source of truth for all agents.
 
-Last updated: 2026-08-16 (Block 29 — except Exception Phase 8, 286→178)
+Last updated: 2026-08-16 (Block 29 process correction — direct-main docs commit 590d978)
 
 ## Repository
 
@@ -66,7 +66,7 @@ The following quality hardening rules are mandatory (full text in `AGENTS.md`):
 10. Update VM after every merge
 11. PR body must include proof, not only narrative
 12. Memory files must be internally consistent before merge
-13. Never commit directly on `main` — verify branch before every commit (ADR-IGRIS-0012)
+13. Never commit directly on `main` — verify branch before every commit (ADR-IGRIS-0012). **Violated on Block 29 (commit 590d978, docs-only). Process correction documented.**
 14. VM branch validation is mandatory for runtime-impacting work and cannot be replaced by post-merge validation (ADR-IGRIS-0012)
 15. Final roadmap reports must use a per-block compliance matrix with complete/partial/missing/not applicable/blocked (ADR-IGRIS-0012)
 16. Import graph validation required for core refactors — compileall + import smoke tests + supervisor module imports (ADR-IGRIS-0013)

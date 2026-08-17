@@ -2,7 +2,7 @@
 
 Open issues and tech debt for IGRIS_GPT. Updated after every task.
 
-Last updated: 2026-08-16 (Block 29 — except Exception Phase 8, 286→178)
+Last updated: 2026-08-16 (Block 29 process correction — direct-main docs commit 590d978)
 
 ## Completion policy
 
@@ -34,6 +34,12 @@ The 20-pass quality gate now includes hard correction rules (ADR-IGRIS-0012):
 - post-merge VM validation does not replace branch validation
 - if VM/SSH validation is unavailable, runtime-impacting work is blocked unless the user explicitly approves an exception
 - final roadmap reports must include a per-block compliance matrix
+
+## Process violations
+
+| Date | Block | Violation | Impact | Repair | Status |
+|---|---|---|---|---|---|
+| 2026-08-16 | Block 29 | Post-merge docs update committed directly on `main` (`590d978`) | docs-only, no runtime impact | Process correction PR + compliance matrix update; direct-main guard reinforced | documented |
 
 ## Import graph validation
 
