@@ -777,7 +777,7 @@ def create_router(deps) -> APIRouter:
                         "affects_loop_decision": False,
                         "approval_required": True,
                     }
-        except (ImportError, AttributeError, TypeError, ValueError, KeyError):
+        except (ImportError, AttributeError, TypeError, ValueError, KeyError, RuntimeError):
             advisory_card = None
 
         return {
@@ -925,7 +925,7 @@ def create_router(deps) -> APIRouter:
                         "approval_required": True,
                         "generated_at": proposal.timestamp,
                     }
-            except (ImportError, AttributeError, TypeError, ValueError, KeyError):
+            except (ImportError, AttributeError, TypeError, ValueError, KeyError, RuntimeError):
                 advisory_card = None
 
         return {

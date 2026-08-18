@@ -408,7 +408,7 @@ class ShadowMLCoordinator:
             )
             sub_reports["intent_risk"] = intent_report.to_dict()
             sub_warnings.extend(intent_report.warnings)
-        except (AttributeError, TypeError, ValueError, KeyError) as e:
+        except (AttributeError, TypeError, ValueError, KeyError, RuntimeError) as e:
             logger.warning("ShadowMLCoordinator: intent_model failed: %s", e)
             sub_warnings.append(f"intent_risk_degraded: {_redact(str(e))}")
             sub_reports["intent_risk"] = {"ok": False, "error": _redact(str(e))}
@@ -420,7 +420,7 @@ class ShadowMLCoordinator:
             )
             sub_reports["strategy"] = strategy_report.to_dict()
             sub_warnings.extend(strategy_report.warnings)
-        except (AttributeError, TypeError, ValueError, KeyError) as e:
+        except (AttributeError, TypeError, ValueError, KeyError, RuntimeError) as e:
             logger.warning("ShadowMLCoordinator: strategy_selector failed: %s", e)
             sub_warnings.append(f"strategy_selector_degraded: {_redact(str(e))}")
             sub_reports["strategy"] = {"ok": False, "error": _redact(str(e))}

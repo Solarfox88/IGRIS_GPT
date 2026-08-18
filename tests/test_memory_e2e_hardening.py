@@ -478,11 +478,19 @@ def test_memory_retrieval_failure_logged_degraded(client, tmp_path, monkeypatch,
     r = client.post("/api/sessions")
     sid = r.json()["id"]
 
-    with caplog.at_level(logging.WARNING):
-        r2 = client.post(
-            f"/api/sessions/{sid}/messages",
-            json={"message": "ciao", "interlocutor_id": "owner"},
-        )
+    with caplog.at_level(logging.WARNING, logger="igris"):
+        # Structured logging sets propagate=False on the igris logger.
+        # Temporarily enable propagation so caplog can capture records.
+        _igris_logger = logging.getLogger("igris")
+        _orig_propagate = _igris_logger.propagate
+        _igris_logger.propagate = True
+        try:
+            r2 = client.post(
+                f"/api/sessions/{sid}/messages",
+                json={"message": "ciao", "interlocutor_id": "owner"},
+            )
+        finally:
+            _igris_logger.propagate = _orig_propagate
 
     assert r2.status_code == 200, "Chat must succeed even when retrieval fails"
     assert "response" in r2.json(), "Chat response must be present"
@@ -766,8 +774,16 @@ def test_memory_api_identity_resolver_failure_falls_back_untrusted(
     except Exception as e:
         pytest.fail(f"Cannot patch IdentityResolver: {e}")
 
-    with caplog.at_level(logging.DEBUG):
-        r = client.get("/api/memory/conversation/recent?interlocutor_id=some_user&limit=10")
+    with caplog.at_level(logging.DEBUG, logger="igris"):
+        # Structured logging sets propagate=False on the igris logger.
+        # Temporarily enable propagation so caplog can capture records.
+        _igris_logger = logging.getLogger("igris")
+        _orig_propagate = _igris_logger.propagate
+        _igris_logger.propagate = True
+        try:
+            r = client.get("/api/memory/conversation/recent?interlocutor_id=some_user&limit=10")
+        finally:
+            _igris_logger.propagate = _orig_propagate
 
     assert r.status_code == 200, f"Unexpected status: {r.status_code}"
     data = r.json()

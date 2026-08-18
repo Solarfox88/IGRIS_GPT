@@ -185,11 +185,17 @@ class TestRepairCycleProviderCheck:
         )
 
     def test_guard_code_present_in_repair_cycle(self):
-        """Smoke-test: the guard code was injected into _repair_cycle source."""
+        """Smoke-test: the guard code was injected into _repair_cycle source.
+
+        The repair cycle logic was refactored into supervisor_repair_cycle.py (Blocks 21-26).
+        The test now inspects the extracted _repair_cycle_fn instead of the
+        thin delegator on SelfRepairSupervisor.
+        """
         import inspect
-        src = inspect.getsource(SelfRepairSupervisor._repair_cycle)
+        from igris.core.supervisor_repair_cycle import repair_cycle
+        src = inspect.getsource(repair_cycle)
         assert "_quick_provider_check" in src, (
-            "_quick_provider_check call must exist inside _repair_cycle"
+            "_quick_provider_check call must exist inside repair_cycle"
         )
         assert "provider_unavailable" in src or "All LLM providers unavailable" in src, (
             "The guard must emit a 'provider unavailable' message when check fails"
