@@ -154,7 +154,7 @@ class WorkSession:
                     },
                     confidence=0.7,
                 )
-        except (OSError, ValueError, TypeError, KeyError, sqlite3.Error):
+        except (OSError, ValueError, TypeError, KeyError, sqlite3.Error, RuntimeError):
             logger.debug("WorkSession.remember: MemoryGraph persist failed", exc_info=True)
             pass
 

@@ -833,7 +833,7 @@ class SelfRepairSupervisor:
                     unsatisfied_deps=_dep_unsat,
                 )
                 return
-        except (ImportError, OSError, ValueError, KeyError) as _dep_exc:
+        except (ImportError, OSError, ValueError, KeyError, RuntimeError) as _dep_exc:
             # Best-effort — never block roadmap autoselect on dep check error
             run.add("watchdog_dependency_skip", "error",
                     f"dep check error (non-fatal): {_dep_exc}", issue_number=_next["number"])
@@ -1253,7 +1253,7 @@ class SelfRepairSupervisor:
         try:
             from igris.core.work_session import WorkSession as _WS
             _work_session = _WS.create(goal=config.goal, mission_id=None)
-        except (ImportError, OSError, ValueError, TypeError):
+        except (ImportError, OSError, ValueError, TypeError, RuntimeError):
             pass
 
         run, ctx = self._run_preflight_phase(run, config)

@@ -687,7 +687,7 @@ class AgentReasoningLoop:
                 tokens_generated=self._fleet_tokens_total,
                 tokens_per_sec=0.0,
             ))
-        except (ImportError, TypeError, ValueError, AttributeError, KeyError):
+        except (ImportError, TypeError, ValueError, AttributeError, KeyError, RuntimeError):
             pass  # fleet errors must never break reasoning
 
     def _ensure_micro_step_state(self, goal: str) -> None:
@@ -858,7 +858,7 @@ class AgentReasoningLoop:
                     duration_ms=_tool_duration_ms,
                     error_snippet=_error_snippet,
                 )
-            except (ImportError, OSError, TypeError, ValueError, AttributeError):
+            except (ImportError, OSError, TypeError, ValueError, AttributeError, RuntimeError):
                 pass  # ToolTracker is best-effort, never crashes the step
 
             # 4b. Store structured result data (apply 16KB byte-cap before injection)
@@ -870,7 +870,7 @@ class AgentReasoningLoop:
                         from igris.core.tool_output_compactor import ToolOutputCompactor
                         _compact = ToolOutputCompactor()
                         result_data = _compact.compress(result_data, source_type=action.action_type)
-                    except (ImportError, TypeError, ValueError, AttributeError):
+                    except (ImportError, TypeError, ValueError, AttributeError, RuntimeError):
                         pass  # compactor is best-effort
                     _budget = self._tool_result_budget_bytes()
                     result_data, _bout = apply_tool_result_budget(result_data, _budget)
@@ -960,7 +960,7 @@ class AgentReasoningLoop:
                 "tool_count": 1,  # each _execute_step is one tool call
             }
             self._reflection_hook.on_step_complete(_step_result, goal=goal, project_root=self.project_root or ".")
-        except (ImportError, TypeError, ValueError, KeyError, AttributeError, OSError):
+        except (ImportError, TypeError, ValueError, KeyError, AttributeError, OSError, RuntimeError):
             pass  # ReflectionHook is best-effort
 
         return step

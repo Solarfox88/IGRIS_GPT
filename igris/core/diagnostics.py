@@ -12,6 +12,7 @@ Inspired by IGRIS_DEVIN diagnostics.py but adapted to IGRIS_GPT's architecture.
 
 from __future__ import annotations
 
+import calendar
 import logging
 import time
 from dataclasses import dataclass, field
@@ -88,7 +89,7 @@ def check_task_starvation(tasks: List[Dict[str, Any]]) -> List[DiagnosticFinding
         if not created:
             continue
         try:
-            ct = time.mktime(time.strptime(created, "%Y-%m-%dT%H:%M:%SZ"))
+            ct = calendar.timegm(time.strptime(created, "%Y-%m-%dT%H:%M:%SZ"))
             age = now - ct
             if age > STARVATION_THRESHOLD_SECONDS:
                 stale.append(t)
@@ -328,7 +329,7 @@ def get_diagnostic_summary(
         if not created:
             continue
         try:
-            ct = time.mktime(time.strptime(created, "%Y-%m-%dT%H:%M:%SZ"))
+            ct = calendar.timegm(time.strptime(created, "%Y-%m-%dT%H:%M:%SZ"))
             if now - ct > STARVATION_THRESHOLD_SECONDS:
                 pending_old_count += 1
         except (ValueError, OverflowError):

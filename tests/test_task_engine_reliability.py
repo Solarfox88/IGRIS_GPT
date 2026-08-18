@@ -166,8 +166,12 @@ def test_diagnostics_reports_task_engine_state(tmp_path):
     assert "pending_old_count" in state
     assert state["enabled"] is True
     assert state["running"] is False  # no running tasks
-    # 2 pending, 0 running, 0 completed → unhealthy
-    assert state["unhealthy"] is True
+    # Block 37 (#1290): fresh pending tasks are NOT unhealthy — the TaskEngine is
+    # passive storage by design. Only stale pending tasks (older than threshold)
+    # are unhealthy. These tasks were just created, so unhealthy should be False.
+    assert state["unhealthy"] is False
+    assert state["starvation_detected"] is False
+    assert state["pending_old_count"] == 0
 
 
 def test_context_aggregator_reports_task_engine_state(tmp_path):

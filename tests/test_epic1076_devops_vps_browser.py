@@ -283,6 +283,8 @@ class TestDevOpsManagerDeploy:
                 _mock_subprocess_ok(self._disk_ok()),
                 _mock_subprocess_ok(""),
                 _mock_subprocess_ok("", returncode=0),
+                _mock_subprocess_ok("ok"),        # nginx -t (dry_run_evidence)
+                _mock_subprocess_ok("igris-app"), # docker ps (dry_run_evidence)
             ]
             mgr = _mgr(tmp_path)
             result = mgr.run_deploy(strategy="dry_run", dry_run=True)
@@ -296,6 +298,8 @@ class TestDevOpsManagerDeploy:
                 _mock_subprocess_ok(self._disk_ok()),
                 _mock_subprocess_ok(""),
                 _mock_subprocess_ok("", returncode=0),
+                _mock_subprocess_ok("ok"),        # nginx -t (dry_run_evidence)
+                _mock_subprocess_ok("igris-app"), # docker ps (dry_run_evidence)
             ]
             mgr = _mgr(tmp_path)
             result = mgr.run_deploy(dry_run=True)
@@ -326,6 +330,8 @@ class TestDevOpsManagerDeploy:
                 _mock_subprocess_ok(self._disk_ok()),
                 _mock_subprocess_ok(""),
                 _mock_subprocess_ok("", returncode=0),
+                _mock_subprocess_ok("ok"),        # nginx -t (dry_run_evidence)
+                _mock_subprocess_ok("igris-app"), # docker ps (dry_run_evidence)
             ]
             mgr = _mgr(tmp_path)
             # Pass dry_run as a strategy keyword

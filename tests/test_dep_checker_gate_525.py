@@ -145,12 +145,17 @@ class TestDepCheckerGateWiring:
         assert len(dep_skip_events) == 0
 
     def test_run_preflight_source_contains_dep_gate(self):
-        """Source inspection: _run_preflight_phase must contain check_runtime_deps call."""
-        import igris.core.self_repair_supervisor as srv
+        """Source inspection: _run_preflight_phase must contain check_runtime_deps call.
+
+        The preflight logic was refactored into supervisor_preflight.py (Blocks 21-26).
+        The test now inspects the extracted _run_preflight_phase_fn instead of the
+        thin delegator on SelfRepairSupervisor.
+        """
         import inspect
-        src = inspect.getsource(srv.SelfRepairSupervisor._run_preflight_phase)
+        from igris.core.supervisor_preflight import run_preflight_phase
+        src = inspect.getsource(run_preflight_phase)
         assert "check_runtime_deps" in src, (
-            "check_runtime_deps not found in _run_preflight_phase — hard gate not wired"
+            "check_runtime_deps not found in run_preflight_phase — hard gate not wired"
         )
 
     def test_dependency_skip_event_has_missing_data(self, tmp_path):
