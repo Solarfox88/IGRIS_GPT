@@ -57,7 +57,10 @@ A runtime refactor with missing import graph evidence is not complete.
 
 ## Current next issue
 
-**20-block roadmap (Blocks 21-40) COMPLETE.**
+**CI test health baseline complete — all 24 pre-existing CI test failures fixed.**
+
+20-block roadmap (Blocks 21-40) COMPLETE.
+CI test health cleanup COMPLETE (24 failures → 0).
 
 ## Final 20-block audit summary
 
