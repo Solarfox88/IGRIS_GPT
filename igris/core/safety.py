@@ -50,7 +50,7 @@ def check_path_access(path: Path, root: Path, purpose: str = "read") -> bool:
     try:
         resolved = path.resolve()
         root_resolved = root.resolve()
-    except Exception:
+    except (OSError, RuntimeError):
         return False
     # Block symlinks that escape root
     if path.is_symlink():
@@ -58,7 +58,7 @@ def check_path_access(path: Path, root: Path, purpose: str = "read") -> bool:
             link_target = path.resolve(strict=False)
             if root_resolved not in link_target.parents and link_target != root_resolved:
                 return False
-        except Exception:
+        except (OSError, RuntimeError):
             return False
     return root_resolved in resolved.parents or resolved == root_resolved
 
@@ -167,7 +167,7 @@ def check_file_preview(path: Path, root: Path) -> SafetyDecision:
             target = path.resolve(strict=False)
             if root.resolve() not in target.parents and target != root.resolve():
                 return SafetyDecision(allowed=False, reason="Symlink escapes root")
-        except Exception:
+        except (OSError, RuntimeError):
             return SafetyDecision(allowed=False, reason="Cannot resolve symlink")
     if path.name.lower() in _SENSITIVE_NAMES:
         return SafetyDecision(allowed=False, reason="Sensitive filename blocked")

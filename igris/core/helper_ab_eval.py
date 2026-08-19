@@ -601,7 +601,7 @@ def save_ab_result(record: Dict[str, Any], path: str = ".igris/helper_ab_results
             f.flush()
             os.fsync(f.fileno())
         os.replace(tmp_path, p)
-    except Exception:
+    except (OSError, IOError, PermissionError):
         try:
             os.unlink(tmp_path)
         except OSError:

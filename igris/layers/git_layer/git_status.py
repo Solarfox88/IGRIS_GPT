@@ -29,7 +29,7 @@ def _run_git(args: List[str], cwd: Path | None = None) -> str:
             timeout=5,
             check=False,
         )
-    except Exception:
+    except (OSError, subprocess.SubprocessError, RuntimeError):
         return ""
     if result.returncode != 0:
         return ""

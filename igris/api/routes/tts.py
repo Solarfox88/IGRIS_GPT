@@ -46,7 +46,7 @@ def tts_status() -> Dict[str, Any]:
         engine = _engine()
         status = engine.get_status()
         return {"available": status.get("enabled", False), **status}
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001  # API endpoint boundary
         logger.warning("TTS status check failed: %s", exc)
         return {"available": False, "error": str(exc)}
 
@@ -67,6 +67,6 @@ def tts_synthesize(req: SynthesizeRequest) -> Dict[str, Any]:
             "format": "wav",
             "text_length": len(req.text),
         }
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001  # API endpoint boundary
         logger.warning("TTS synthesis failed: %s", exc)
         return {"success": False, "degraded": True, "error": str(exc)}

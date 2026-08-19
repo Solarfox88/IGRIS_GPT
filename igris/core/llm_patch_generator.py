@@ -263,7 +263,7 @@ def generate_patch(
             "proposal_only": True,
         }
 
-    except Exception:
+    except (OSError, ValueError, TypeError, KeyError, AttributeError, RuntimeError):
         result = _deterministic_patch(task_title, task_description)
         result["fallback_reason"] = "LLM call failed"
         result["latency_ms"] = int((time.monotonic() - t0) * 1000)

@@ -558,7 +558,7 @@ class ModelOrchestrator:
                     )
                     return result
 
-                except Exception as e:
+                except (OSError, ValueError, TypeError, KeyError, AttributeError, RuntimeError) as e:
                     attempt_classification = classify_llm_provider_error(
                         exception=e,
                         message=str(e),

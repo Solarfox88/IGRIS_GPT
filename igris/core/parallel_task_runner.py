@@ -373,7 +373,7 @@ class ParallelTaskRunner:
                     if not pr.success:
                         self._failed_task_ids.add(task.task_id)
                     return pr
-                except Exception as exc:
+                except Exception as exc:  # noqa: BLE001  # worker loop boundary — parallel task execution must not crash the runner
                     logger.error("parallel task %s failed: %s", task.task_id, exc)
                     self._failed_task_ids.add(task.task_id)
                     return ParallelResult(task_id=task.task_id, result=None, error=str(exc))

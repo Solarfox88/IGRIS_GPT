@@ -282,6 +282,6 @@ def persist_assignment_outcome(
             "created_at": run.created_at if hasattr(run, "created_at") and run.created_at else 0.0,
         }
         save_assignment_outcome(outcomes_path, record)
-    except Exception as exc:
+    except (OSError, ValueError, TypeError, KeyError, AttributeError) as exc:
         import logging as _logging
         _logging.getLogger(__name__).warning("Failed to persist assignment outcome: %s", exc)

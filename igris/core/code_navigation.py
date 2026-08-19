@@ -151,7 +151,7 @@ def _is_safe_path(path: Path, root: Path) -> bool:
         root_resolved = root.resolve()
         if root_resolved not in resolved.parents and resolved != root_resolved:
             return False
-    except Exception:
+    except (OSError, ValueError, RuntimeError):
         return False
 
     if path.name in SECRET_FILES:

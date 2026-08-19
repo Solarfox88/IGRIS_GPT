@@ -346,7 +346,7 @@ class SupervisorRunStore:
         # Persist non-blocking
         try:
             self._persist_audit_entry(entry)
-        except Exception as exc:
+        except (OSError, TypeError, ValueError) as exc:
             logger.warning("supervisor_run_store: failed to persist audit entry: %s", exc)
 
     def _persist_audit_entry(self, entry: AuditEntry) -> None:
@@ -379,10 +379,10 @@ class SupervisorRunStore:
                             metadata=data.get("metadata", ""),
                         )
                         self._audit_log.append(entry)
-                    except Exception:
+                    except (json.JSONDecodeError, TypeError, ValueError, KeyError):
                         logger.debug("Failed to parse audit log entry", exc_info=True)
                         pass
-        except Exception as exc:
+        except (OSError, ValueError) as exc:
             logger.warning("supervisor_run_store: could not load audit log: %s", exc)
 
     # ------------------------------------------------------------------

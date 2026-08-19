@@ -144,7 +144,7 @@ class InventoryCatalog:
             self.storage_path.write_text(raw, encoding="utf-8")
             result.ok = True
             result.metadata["saved_count"] = len(self._items)
-        except Exception as exc:
+        except (OSError, IOError, PermissionError, TypeError, ValueError) as exc:
             msg = f"save failed: {exc}"
             result.errors.append(msg)
             logger.warning("InventoryCatalog.save: %s", msg)
@@ -206,7 +206,7 @@ class InventoryCatalog:
                 continue
             try:
                 loaded[item_id] = InventoryItem.from_dict(raw_item)
-            except Exception as exc:
+            except (KeyError, TypeError, ValueError, AttributeError) as exc:
                 skipped += 1
                 logger.debug("InventoryCatalog.reload: skip item %s: %s", item_id, exc)
 

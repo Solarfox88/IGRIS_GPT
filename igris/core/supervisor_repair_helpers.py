@@ -53,7 +53,7 @@ def quick_provider_check(timeout: int = 10) -> bool:
             result.returncode, result.stdout[:200],
         )
         return False
-    except Exception as exc:  # TimeoutExpired, FileNotFoundError, etc.
+    except (OSError, subprocess.SubprocessError, RuntimeError) as exc:  # TimeoutExpired, FileNotFoundError, etc.
         _log.warning("_quick_provider_check: provider ping failed: %s", exc)
         return False
 

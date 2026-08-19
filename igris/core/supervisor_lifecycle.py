@@ -60,7 +60,7 @@ def transition_run_status(
             reason,
             exc,
         )
-    except Exception as exc:
+    except (OSError, ValueError, TypeError, KeyError, AttributeError, RuntimeError) as exc:
         _log.warning(
             "Run store transition degraded run_id=%s %s -> %s (%s): %s",
             getattr(run, "run_id", ""),

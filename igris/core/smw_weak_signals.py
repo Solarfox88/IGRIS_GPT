@@ -30,7 +30,7 @@ def _ts(r):
         from datetime import datetime, timezone
         s = str(raw).replace('Z', '+00:00')
         return datetime.fromisoformat(s).astimezone(timezone.utc).timestamp()
-    except Exception:
+    except (ValueError, TypeError, OverflowError):
         return 0.0
 
 

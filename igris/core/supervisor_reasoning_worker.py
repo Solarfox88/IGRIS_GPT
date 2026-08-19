@@ -85,7 +85,7 @@ def main() -> int:
             if int(step_num) >= int(payload["max_steps"]) - 1:
                 ws.advance_phase(WorkPhase.OBSERVE)
                 ws.advance_phase(WorkPhase.VERIFY)
-        except Exception:
+        except (ValueError, TypeError, AttributeError):
             logger.debug("Failed to advance work session phase", exc_info=True)
             pass
         try:
@@ -134,7 +134,7 @@ def main() -> int:
         from igris.core.memory import _get_graph
         _mg = _get_graph()
         _mg.flush_session_memory(result.loop_id, getattr(loop, "_memory_items", []))
-    except Exception:
+    except (ImportError, OSError, AttributeError, TypeError):
         logger.debug("Failed to flush session memory to graph", exc_info=True)
         pass
     try:
@@ -146,7 +146,7 @@ def main() -> int:
             half_life_days=float(cfg.get("half_life_days", 14.0)),
             max_age_days=float(cfg.get("max_age_days", 30.0)),
         )
-    except Exception:
+    except (ImportError, json.JSONDecodeError, OSError, ValueError, TypeError):
         logger.debug("MemoryValidator run failed", exc_info=True)
         pass
 

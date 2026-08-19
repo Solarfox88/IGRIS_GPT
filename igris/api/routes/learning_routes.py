@@ -1,6 +1,7 @@
 """Learning / Reflection API routes (#1247)."""
 # NOTE: do NOT use `from __future__ import annotations` here —
 # FastAPI uses runtime annotation inspection and deferred strings break Request injection.
+import json
 import logging
 import re
 
@@ -22,7 +23,7 @@ def _make_router():
     async def run_reflection(request: Request):
         try:
             body = await request.json()
-        except Exception:
+        except (json.JSONDecodeError, ValueError, TypeError):
             body = {}
 
         mission_data = body.get("mission") or {}
@@ -82,7 +83,7 @@ def _make_router():
                 "summary": report.summary_text(max_chars=500),
                 "apply_result": apply_result.to_dict(),
             }
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001  # API endpoint boundary — return error response
             logger.warning("Learning reflection API error: %s", e)
             return {"ok": False, "error": str(e)}
 
@@ -93,7 +94,7 @@ def _make_router():
             from igris.models.config import CONFIG
             r = AfterActionReviewer(project_root=str(CONFIG.project_root))
             return r.healthcheck()
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001  # API endpoint boundary — return error response
             return {"ok": False, "error": str(e)}
 
     return router

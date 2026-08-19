@@ -138,7 +138,7 @@ def load_mission(mission_id: str, project_root: str = ".") -> Optional[Mission]:
     try:
         data = json.loads(fp.read_text(encoding="utf-8"))
         return Mission.from_dict(data)
-    except Exception:
+    except (OSError, json.JSONDecodeError, ValueError, TypeError, KeyError):
         return None
 
 
@@ -148,7 +148,7 @@ def list_missions(project_root: str = ".") -> List[Mission]:
         try:
             data = json.loads(fp.read_text(encoding="utf-8"))
             missions.append(Mission.from_dict(data))
-        except Exception:
+        except (OSError, json.JSONDecodeError, ValueError, TypeError, KeyError):
             continue
     return missions
 

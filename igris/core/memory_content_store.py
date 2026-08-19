@@ -118,7 +118,7 @@ class ContentStore:
         try:
             tmp.write_text(body, encoding="utf-8")
             tmp.replace(dest)
-        except Exception:
+        except (OSError, IOError, PermissionError):
             if tmp.exists():
                 tmp.unlink(missing_ok=True)
             raise
@@ -151,7 +151,7 @@ class ContentStore:
                 chunk_id = md_file.stem
                 nt = md_file.parent.name
                 results.append({"chunk_id": chunk_id, "node_type": nt, "content": body, **meta})
-            except Exception:
+            except (OSError, ValueError, TypeError):
                 continue
         return results
 

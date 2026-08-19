@@ -118,7 +118,7 @@ class AuthorizationGate:
                 reason=f"delegation_key_rejected:{reason}",
                 message=f"Delegation key rejected: {reason}.",
             )
-        except Exception as e:
+        except (ImportError, ValueError, TypeError, KeyError, OSError) as e:
             return AuthResult(
                 allowed=False,
                 reason="delegation_key_error",

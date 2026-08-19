@@ -59,7 +59,7 @@ def build_project_snapshot(root: Optional[Path] = None, task_engine: Optional[Ta
                 top_entries = sorted(dirnames + filenames)[:10]
             if file_count > 1000:
                 break
-    except Exception:
+    except (OSError, PermissionError, ValueError):
         pass
     ctx["file_count"] = file_count
     ctx["top_entries"] = top_entries

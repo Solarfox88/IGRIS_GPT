@@ -128,7 +128,7 @@ def create_delegation_key(req: CreateKeyRequest) -> Dict[str, Any]:
                 grantor_scopes = ["*"] + p.authorized_scopes
             else:
                 grantor_scopes = list(p.authorized_scopes)
-        except Exception:
+        except (AttributeError, TypeError, OSError, KeyError):
             pass
 
         key = create_key(
@@ -188,7 +188,7 @@ def proactive_scan(req: ScanRequest) -> Dict[str, Any]:
             trust_level=req.trust_level,
         )
         return {"events": [e.__dict__ for e in events], "count": len(events)}
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001  # API endpoint boundary
         return {"events": [], "count": 0, "error": str(e)}
 
 

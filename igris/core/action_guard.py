@@ -42,7 +42,7 @@ def check_action(
     try:
         resolver = _get_resolver()
         profile = resolver.resolve(profile_id)
-    except Exception:
+    except (OSError, AttributeError, TypeError, KeyError):
         profile = None
 
     audit = _get_audit()
@@ -61,7 +61,7 @@ def check_action(
     try:
         gate = _get_gate()
         result = gate.check(profile, action_type=action_type, target_resource=required_scope)
-    except Exception as e:
+    except (OSError, AttributeError, TypeError, ValueError) as e:
         audit.record(
             "auth_error",
             interlocutor_id=profile_id,

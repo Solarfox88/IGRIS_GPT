@@ -142,13 +142,13 @@ def enrich_with_recovery(
             try:
                 bridge_result = bridge(run_status or "unknown", goal_status or "unknown")
                 combined_status = bridge_result.get("combined_status", "unknown_status")
-            except Exception:
+            except (AttributeError, TypeError, KeyError):
                 combined_status = "unknown_status"
 
         rec = build_recovery_recommendation(combined_status, cycle=cycle)
         return {**enriched, "recovery_recommendation": rec}
 
-    except Exception:
+    except (AttributeError, TypeError, KeyError, ValueError):
         return report
 
 
@@ -178,7 +178,7 @@ def enrich_cycle_with_recovery(
             cycle=cycle,
             config=config,
         )
-    except Exception:
+    except (AttributeError, TypeError, KeyError, ValueError):
         return cycle
 
 

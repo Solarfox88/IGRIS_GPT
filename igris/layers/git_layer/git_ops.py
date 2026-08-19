@@ -45,7 +45,7 @@ def _run_git(args: List[str], cwd: Path | None = None) -> str:
             timeout=10,
             check=False,
         )
-    except Exception:
+    except (OSError, subprocess.SubprocessError):
         return ""
     if result.returncode != 0:
         return ""
@@ -65,7 +65,7 @@ def _run_git_full(args: List[str], cwd: Path | None = None) -> Dict[str, str]:
             timeout=10,
             check=False,
         )
-    except Exception as exc:
+    except (OSError, subprocess.SubprocessError) as exc:
         return {"stdout": "", "stderr": str(exc), "returncode": "1"}
     return {
         "stdout": result.stdout.strip(),

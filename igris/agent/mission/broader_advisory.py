@@ -84,7 +84,7 @@ def enrich_report_broader(report: Dict[str, Any], *, run_status: Optional[str] =
     try:
         return enrich_report_with_advisory(report, run_status=run_status, goal_status=goal_status,
             cycle=cycle, advisory_config=_to_advisory_emit_config(config))
-    except Exception:
+    except (ValueError, TypeError, KeyError, AttributeError):
         return report
 
 def enrich_cycle_broader(cycle: Dict[str, Any], *, config: BroaderAdvisoryConfig = DEFAULT_BROADER_CONFIG) -> Dict[str, Any]:

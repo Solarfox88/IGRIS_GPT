@@ -231,7 +231,7 @@ class GitHubWriteGateway:
                 output=proc.stdout.strip() if success else None,
                 error=proc.stderr.strip() if not success else None,
             )
-        except Exception as exc:
+        except (OSError, subprocess.SubprocessError, RuntimeError) as exc:
             self._record_audit({
                 "action": action_type, "target": target, "outcome": "exception",
                 "error": str(exc), "dry_run": False,

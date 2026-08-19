@@ -316,7 +316,7 @@ def validate_all(project_root: Optional[str] = None) -> ConfigValidationResult:
             for issue in issues:
                 result.add_issue(issue)
             result.validated_sections.append(name)
-        except Exception as exc:
+        except (ValueError, TypeError, KeyError, AttributeError, OSError) as exc:
             result.add_issue(ConfigIssue(
                 field=name, severity="error",
                 message=f"Validation failed with error: {exc}",

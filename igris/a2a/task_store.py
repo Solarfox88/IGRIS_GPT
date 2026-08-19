@@ -107,7 +107,7 @@ def list_a2a_tasks(project_root: Optional[str] = None) -> List[Dict[str, Any]]:
         try:
             t = json.loads(fp.read_text(encoding="utf-8"))
             tasks.append(_redact_task(t))
-        except Exception:
+        except (json.JSONDecodeError, OSError, ValueError, TypeError):
             continue
     return tasks
 

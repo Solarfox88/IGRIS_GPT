@@ -196,13 +196,13 @@ class AdaptiveResponse:
                     authorized_scopes=profile.authorized_scopes or None,
                     trust_level=profile.trust_level,
                 )
-            except Exception:
+            except (AttributeError, TypeError, ValueError, OSError):
                 pass
 
         # 9. Persist profile in memory graph (best-effort)
         try:
             self._identity.persist_to_memory_graph(profile)
-        except Exception:
+        except (OSError, AttributeError, TypeError):
             pass
 
         # 10. Full audit

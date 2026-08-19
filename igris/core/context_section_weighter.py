@@ -120,7 +120,7 @@ def load_usage_records(project_root: str) -> List[StepUsageRecord]:
             )
             for r in raw
         ]
-    except Exception:
+    except (json.JSONDecodeError, OSError, ValueError, TypeError, KeyError):
         return []
 
 
@@ -148,7 +148,7 @@ def load_section_weights(project_root: str) -> Dict[str, float]:
         return {}
     try:
         return {str(k): float(v) for k, v in json.loads(path.read_text(encoding="utf-8")).items()}
-    except Exception:
+    except (json.JSONDecodeError, OSError, ValueError, TypeError):
         return {}
 
 
@@ -291,7 +291,7 @@ class ContextSectionWeighter:
         try:
             weights = compute_weights(records, self._min_samples)
             save_section_weights(self._root, weights)
-        except Exception:
+        except (OSError, ValueError, ZeroDivisionError, TypeError):
             pass
 
     def get_stats(self) -> Dict[str, Any]:

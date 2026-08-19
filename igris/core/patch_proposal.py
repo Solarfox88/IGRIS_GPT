@@ -254,7 +254,7 @@ def list_patch_proposals(project_root: str = ".") -> List[Dict]:
                 "created_at": data.get("created_at", ""),
                 "task_id": data.get("task_id"),
             })
-        except Exception:
+        except (OSError, json.JSONDecodeError, ValueError, TypeError, KeyError):
             continue
     return proposals
 
@@ -268,7 +268,7 @@ def load_patch_proposal(proposal_id: str, project_root: str = ".") -> Optional[P
     try:
         data = json.loads(path.read_text())
         return _dict_to_proposal(data)
-    except Exception:
+    except (OSError, json.JSONDecodeError, ValueError, TypeError, KeyError):
         return None
 
 

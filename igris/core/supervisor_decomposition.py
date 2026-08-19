@@ -285,7 +285,7 @@ def ask_igris_decompose(
                 for i in _val_report.issues
             ]
             decomposition["_validation_summary"] = _val_report.to_diagnostics()
-        except Exception as _val_exc:
+        except (ImportError, ValueError, TypeError, KeyError, AttributeError) as _val_exc:
             run.add(
                 "decomposition_quality",
                 "skipped",

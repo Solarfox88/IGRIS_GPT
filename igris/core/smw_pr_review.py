@@ -173,7 +173,7 @@ async def review_pr(request: PRReviewRequest, project_root: str) -> PRReviewResu
                     "checked_at": time.time(),
                     "source": "smw_pr_review",
                 })
-        except Exception:
+        except (ImportError, ValueError, TypeError, KeyError, AttributeError, OSError):
             logger.debug("Self-mod gate check failed (best-effort)", exc_info=True)
             pass  # self-mod gate is best-effort, never blocks the review
 

@@ -334,7 +334,7 @@ class JarvisRequestRouter:
             try:
                 from igris.core.unified_memory import UnifiedMemory
                 self._memory = UnifiedMemory(project_root=self.project_root)
-            except Exception as e:
+            except (ImportError, OSError, TypeError, ValueError) as e:
                 logger.debug("JarvisRequestRouter: UnifiedMemory unavailable: %s", e)
         return self._memory
 
@@ -582,7 +582,7 @@ class JarvisRequestRouter:
                     if result.context:
                         decision.metadata["memory_context"] = result.context
                         decision.metadata["memory_items_count"] = len(result.items)
-            except Exception as e:
+            except (OSError, AttributeError, TypeError, ValueError) as e:
                 logger.debug("JarvisRequestRouter: memory retrieval failed: %s", e)
                 decision.warnings.append(f"memory_retrieval_degraded: {e}")
 
@@ -601,7 +601,7 @@ class JarvisRequestRouter:
                     decision.metadata["memory_store_id"] = store_result.id
                     if not store_result.ok:
                         decision.warnings.append(f"memory_store_degraded: {store_result.warnings}")
-            except Exception as e:
+            except (OSError, AttributeError, TypeError, ValueError) as e:
                 logger.warning("JarvisRequestRouter: memory store failed: %s", e)
                 decision.warnings.append(f"memory_store_failed: {e}")
 

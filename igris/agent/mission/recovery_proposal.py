@@ -421,7 +421,7 @@ def generate_recovery_proposal(
             cycle=cycle,
             source_advisory_id=source_advisory_id,
         )
-    except Exception:
+    except (AttributeError, TypeError, KeyError, ValueError):
         return None
 
 
@@ -446,7 +446,7 @@ def _generate_proposal_internal(
     try:
         bridge_result = bridge(run_status, goal_status)
         combined_status = bridge_result.get("combined_status", "unknown_status")
-    except Exception:
+    except (AttributeError, TypeError, KeyError):
         combined_status = "unknown_status"
 
     proposal_type = get_proposal_type(combined_status)
@@ -935,7 +935,7 @@ def proposal_to_mbop_handoff_safe(
     """Safe version — returns None instead of raising on invariant violation."""
     try:
         return proposal_to_mbop_handoff(proposal)
-    except (ValueError, Exception):
+    except ValueError:
         return None
 
 
@@ -981,7 +981,7 @@ def enrich_report_with_proposal(
             **report,
             "recovery_proposal": proposal.to_dict(),
         }
-    except Exception:
+    except (AttributeError, TypeError, KeyError, ValueError):
         return report
 
 

@@ -53,5 +53,5 @@ async def diagnose_with_llm(detected: DetectedPattern, snapshot: SystemSnapshot,
             return diagnose(detected, project_root)
         data = json.loads(proc.stdout or "{}")
         return Diagnosis(detected.pattern.name, str(data.get("diagnosis", "llm diagnosis unavailable")), float(data.get("confidence", 0.5)), 2, [str(data.get("suggested_repair_strategy", "open_diagnostic_issue"))], detected.evidence, False)
-    except Exception:
+    except (OSError, subprocess.SubprocessError, json.JSONDecodeError, ValueError, TypeError):
         return diagnose(detected, project_root)

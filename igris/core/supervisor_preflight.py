@@ -100,7 +100,7 @@ def run_preflight_phase(
                 f"Non-blocking runtime deps missing: {dep_result.warning_missing}",
                 missing=dep_result.warning_missing,
             )
-    except Exception:
+    except (ImportError, OSError, RuntimeError):
         pass  # non-blocking if checker fails
     # Validate API escalation helper config at run start so problems are
     # visible immediately rather than discovered mid-repair-cycle.
@@ -163,7 +163,7 @@ def run_preflight_phase(
                     f"Issue #{config.issue_number} has unsatisfied dependencies: {_dep_unsat}. "
                     "Close or merge dependent issues first.",
                 ), None
-        except Exception as _dep_exc:
+        except (ImportError, OSError, ValueError, RuntimeError) as _dep_exc:
             # Dep check is best-effort: log but never block on error
             run.add("dependency_check", "error", f"dep check error (non-fatal): {_dep_exc}")
 
@@ -389,7 +389,7 @@ def run_preflight_phase(
                     ),
                     **assignment_decision.to_dict(),
                 )
-        except Exception as _exc:
+        except (OSError, ValueError, TypeError, AttributeError, KeyError) as _exc:
             run.add("assignment_routing", "skipped", f"AssignmentRouter error: {_exc}")
 
     mission_plan = supervisor._build_mission_plan(config)

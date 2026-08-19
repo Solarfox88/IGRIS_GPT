@@ -112,7 +112,7 @@ def load_keys(project_root: str) -> Dict[str, DelegationKey]:
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
         return {k: DelegationKey.from_dict(v) for k, v in data.items()}
-    except Exception:
+    except (json.JSONDecodeError, OSError, ValueError, TypeError, KeyError):
         return {}
 
 

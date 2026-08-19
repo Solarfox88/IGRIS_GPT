@@ -354,7 +354,7 @@ class BehaviorTracker:
                 url = proc.stdout.strip()
                 logger.info("BehaviorTracker opened issue: %s", url)
                 return url
-        except Exception as exc:
+        except (OSError, subprocess.SubprocessError, RuntimeError) as exc:
             logger.warning("BehaviorTracker failed to open issue: %s", exc)
         return ""
 

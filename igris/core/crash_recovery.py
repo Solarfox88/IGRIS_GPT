@@ -223,7 +223,7 @@ def load_good_state(project_root: Optional[str] = None) -> Optional[Dict[str, An
         return None
     try:
         return json.loads(path.read_text(encoding="utf-8"))
-    except Exception:
+    except (json.JSONDecodeError, OSError, ValueError):
         return None
 
 
@@ -261,7 +261,7 @@ def list_crash_reports(
         try:
             data = json.loads(f.read_text(encoding="utf-8"))
             reports.append(data)
-        except Exception:
+        except (json.JSONDecodeError, OSError, ValueError):
             pass
     return reports
 
@@ -274,7 +274,7 @@ def get_crash_report(crash_id: str, project_root: Optional[str] = None) -> Optio
         return None
     try:
         return json.loads(path.read_text(encoding="utf-8"))
-    except Exception:
+    except (json.JSONDecodeError, OSError, ValueError):
         return None
 
 
