@@ -254,7 +254,7 @@ def run_rank_loop(
                 _patch_path.parent.mkdir(parents=True, exist_ok=True)
                 _patch_path.write_text(diff.output, encoding="utf-8")
                 run.add("diff_patch_saved", "success", str(_patch_path))
-            except Exception as _pe:
+            except (OSError, IOError, PermissionError) as _pe:
                 run.add("diff_patch_saved", "failure", str(_pe))
         if (
             ui_visibility_required

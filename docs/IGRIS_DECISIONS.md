@@ -211,3 +211,18 @@ The new hard rules are:
 - Supervisor refactors must import every `igris.core.supervisor*.py` module before merge.
 - Circular import fixes must be documented and validated on VM.
 - A PR missing import graph evidence is not complete.
+
+## ADR-IGRIS-0014 — Ubuntu migration for CPU throttle bypass
+
+**Date**: 2026-08-20
+**Status**: accepted
+
+**Decision**: Migrated development environment from Windows to Ubuntu to bypass HP 250 G7 firmware CPU throttle (Event ID 37, CPU locked at 991 MHz on Windows). Ubuntu uses intel_pstate driver, not intelppm, so firmware throttle is not enforced. CPU now runs at full speed (up to 3.6 GHz turbo).
+
+**Rationale**: HP 250 G7 EC/firmware actively throttles CPU on Windows via intelppm. No BIOS update available (Insyde F.48 is latest). Disabling intelppm gave only +20% (991→1190 MHz). Ubuntu bypasses the throttle entirely.
+
+**Consequences**:
+- Development environment is now Ubuntu 25.10 on HP 250 G7
+- VM migrated from Hyper-V to KVM/QEMU (Ubuntu 24.04 cloud image)
+- VM IP changed from 192.168.1.253 (Hyper-V bridged) to 192.168.122.65 (KVM NAT)
+- SSH access: sshpass -p igris ssh igris@192.168.122.65

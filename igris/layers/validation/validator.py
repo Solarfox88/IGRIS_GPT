@@ -93,7 +93,7 @@ def get_validations_for_task(task_id: int, project_root: Optional[str] = None) -
             data = json.loads(fp.read_text(encoding="utf-8"))
             if data.get("task_id") == task_id:
                 results.append(ValidationResult.from_dict(data))
-        except Exception:
+        except (json.JSONDecodeError, OSError, ValueError, TypeError, KeyError):
             continue
     return results
 

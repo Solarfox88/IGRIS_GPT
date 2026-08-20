@@ -240,7 +240,7 @@ def load_controlled_mission(mission_id: str, project_root: Optional[str] = None)
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
         return ControlledMission.from_dict(data)
-    except Exception:
+    except (OSError, json.JSONDecodeError, ValueError, TypeError, KeyError):
         return None
 
 
@@ -251,7 +251,7 @@ def list_controlled_missions(project_root: Optional[str] = None) -> List[Control
         try:
             data = json.loads(fp.read_text(encoding="utf-8"))
             missions.append(ControlledMission.from_dict(data))
-        except Exception:
+        except (OSError, json.JSONDecodeError, ValueError, TypeError, KeyError):
             continue
     return missions
 

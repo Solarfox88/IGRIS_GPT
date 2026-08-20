@@ -2,7 +2,7 @@
 
 The exact point where work resumes. Updated by every agent at the end of each task.
 
-Last updated: 2026-08-17 (Block 31 — #1354 acceptance criteria met by architecture)
+Last updated: 2026-08-20 (Phase 9 — #1353 except Exception narrowing, 179→76)
 
 ## Process violation recorded (2026-08-16)
 
@@ -57,10 +57,7 @@ A runtime refactor with missing import graph evidence is not complete.
 
 ## Current next issue
 
-**CI test health baseline complete — all 24 pre-existing CI test failures fixed.**
-
-20-block roadmap (Blocks 21-40) COMPLETE.
-CI test health cleanup COMPLETE (24 failures → 0).
+**Phase 9 of #1353 complete (179→76 except Exception, 0 narrowable remaining). PR pending. Issue remains OPEN (76 > target <50).**
 
 ## Final 20-block audit summary
 
@@ -94,7 +91,7 @@ CI test health cleanup COMPLETE (24 failures → 0).
 |---|---|
 | pyright errors | 0 |
 | pyright warnings | 839 |
-| except Exception count | 179 (target <50, #1353 open) |
+| except Exception count | 76 (target <50, #1353 open) |
 | supervisor lines | 1844 (target <2000, achieved) |
 | Open issues | 20 |
 | VM gauntlet | 15/15 PASSED |
@@ -103,7 +100,7 @@ CI test health cleanup COMPLETE (24 failures → 0).
 
 ## Remaining work (deferred)
 
-- #1353: except Exception cleanup — 179 remain (target <50). Future phases needed.
+- #1353: except Exception cleanup — 76 remain (75 annotated boundaries, 1 docstring; target <50 not met — future phases needed to reduce boundary count or accept 76 as practical minimum).
 - #1395: agent_reasoning_loop.py 2,477 lines (target <2,000). Refactor needed.
 - #1300, #1301: EPICs (live acceptance harness, auth SSOT).
 - #1317-1330: M1-M8 improvement issues.
@@ -192,33 +189,28 @@ Fix: added `exist_ok=True` to mkdir calls in `jarvis_core_gauntlet.py`.
 
 VM gauntlet result after fix: **15/15 PASSED** (Linux, via `.venv/bin/python`).
 
-## Hyper-V VM status (2026-08-14, latest checkpoint)
+## VM status (2026-08-20, latest checkpoint — KVM/QEMU)
 
 | Field | Value |
 |---|---|
-| VM | IGRIS-GPT |
-| IP | 192.168.1.253 (static, on IGRIS External Switch) |
-| URL | http://192.168.1.253:7778 |
-| Branch | main |
-| Commit | 84b39ef (latest) |
-| Service | igris.service (systemd, active, `.venv/bin/python` uvicorn on 0.0.0.0:7778) |
-| Python env | `/home/igris/IGRIS_GPT/.venv/bin/python` (Python 3.12.3, fastapi 0.136.1) |
+| VM | KVM/QEMU (Ubuntu 24.04 cloud image, 4GB RAM, 4 vCPU) |
+| IP | 192.168.122.65 (KVM NAT network) |
+| URL | http://192.168.122.65:7778 |
+| Branch | fix/1353-except-exception-phase9 |
+| Commit | 60e80d8 |
+| Service | igris.service (systemd, active, uvicorn on 0.0.0.0:7778) |
+| Python env | `.venv/bin/python` (Python 3.12.3) |
 | Gauntlet | 15/15 PASSED (via `.venv/bin/python -m igris.core.jarvis_core_gauntlet`) |
-| diagnostics | HTTP 200 — task_engine_state present, starvation_detected=true (3 old pending tasks) |
-| os/brief | HTTP 200 — ok=true, backends: unified_memory=ok, git=ok, rank_gauntlet=ok |
-| chat/intent | limited+code_change → blocked=true, scope_denied=true; admin → approval_required=true |
+| diagnostics | healthy=true |
+| os/brief | ok=true |
 
-VM access: SSH (user=igris, password=igris) to 192.168.1.253.
-Network: IGRIS External Switch, static IP 192.168.1.253/24, gateway 192.168.1.1.
+VM access: `sshpass -p igris ssh igris@192.168.122.65` (password auth, KVM NAT network).
+Previous Hyper-V VM at 192.168.1.253 is no longer in use (VHDX could not boot on KVM — EFI bootloader missing).
 
 ## Do next
 
-1. Blocks 31-34: #1354 structured logging adoption (core modules, web routers, event naming, closure check)
-2. Block 35: post-pyright standard mode assessment
-3. Block 36: CI health and workflow audit (CI is currently failing on main — pre-existing pyright unused-import errors + test ordering issues)
-4. Block 37: VM diagnostics starvation investigation
-5. Block 38: task starvation remediation if safe
-6. Block 39: final repo health audit
-7. Block 40: final 20-block audit, compliance matrix, memory consolidation
-8. After Block 40: continue #1353 narrowing (116 narrowable remaining, target <50)
-9. Do NOT declare issues complete until acceptance criteria are fully met
+1. Merge PR for Phase 9 of #1353
+2. Post-merge VM validation (update VM to latest main, restart service, run gauntlet, check diagnostics/os-brief)
+3. Continue #1353 if target <50 is still required (may need ADR to accept 76 as practical minimum since all are annotated boundaries)
+4. Continue #1395 (agent_reasoning_loop.py split — 2,477 lines, target <2,000)
+5. Do NOT declare issues complete until acceptance criteria are fully met

@@ -297,7 +297,7 @@ def _try_llm_analysis(memory_summary: Dict[str, Any]) -> Optional[Dict[str, Any]
             "provider": response.get("provider", "unknown"),
             "model": response.get("model", "unknown"),
         }
-    except Exception:
+    except (OSError, ValueError, TypeError, KeyError, AttributeError):
         return None
 
 

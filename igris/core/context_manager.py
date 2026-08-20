@@ -311,7 +311,7 @@ class ContextManager:
             from igris.core.context_section_weighter import ContextSectionWeighter
             _weighter = ContextSectionWeighter(self.project_root or ".")
             _section_multipliers = _weighter.get_budget_multipliers()
-        except Exception:
+        except (ImportError, OSError, ValueError, TypeError):
             pass
 
         def _weighted_budget(base: int, section: str) -> int:
@@ -366,7 +366,7 @@ class ContextManager:
                 graph_items.append(recipe)
             # Expose memory influence summary for downstream consumers
             packet.memory_influence = mem_packet.get("memory_influence", "")
-        except Exception:
+        except (ImportError, OSError, ValueError, TypeError, AttributeError, RuntimeError):
             pass
         memory_text = self._build_memory_context(graph_items)
         memory_budget = _weighted_budget(min(available // 4, 3000), "memory_context")

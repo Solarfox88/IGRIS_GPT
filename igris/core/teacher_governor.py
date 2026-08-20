@@ -439,6 +439,6 @@ class TeacherGovernor:
             self._escalation_log = data.get("escalation_log", [])
             self.threshold = data.get("threshold", 3)
             return True
-        except Exception:
+        except (json.JSONDecodeError, OSError, ValueError, TypeError, KeyError):
             logger.debug("Governor state load failed", exc_info=True)
             return False

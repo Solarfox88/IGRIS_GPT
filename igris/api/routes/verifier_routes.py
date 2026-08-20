@@ -1,5 +1,6 @@
 """Verifier API routes (#1246)."""
 from __future__ import annotations
+import json
 import logging
 logger = logging.getLogger(__name__)
 
@@ -20,7 +21,7 @@ def _make_router():
     async def verify_mission(request: Request) -> dict:
         try:
             body = await request.json()
-        except Exception:
+        except (json.JSONDecodeError, ValueError, TypeError):
             body = {}
 
         mission_data = body.get("mission") or {}
@@ -67,7 +68,7 @@ def _make_router():
                 "bundle": bundle.to_dict(),
                 "summary": bundle.summary_text(max_chars=1000),
             }
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001  # API endpoint boundary — return error response
             logger.warning("Verifier API error: %s", e)
             return {"ok": False, "error": str(e), "bundle": None}
 
@@ -78,7 +79,7 @@ def _make_router():
             from igris.models.config import CONFIG
             registry = VerifierRegistry(project_root=str(CONFIG.project_root))
             return registry.healthcheck()
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001  # API endpoint boundary — return error response
             return {"ok": False, "error": str(e)}
 
     return router

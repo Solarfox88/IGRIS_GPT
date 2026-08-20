@@ -141,7 +141,7 @@ class HybridRetriever:
                                 safe_for_context=True,
                                 trust_required="trusted",
                             ))
-            except Exception as e:
+            except (OSError, AttributeError, TypeError, RuntimeError) as e:
                 logger.debug("HybridRetriever: conv_retriever failed: %s", e)
                 degraded = True
                 warnings.append(f"conversation: {e}")
@@ -209,7 +209,7 @@ class HybridRetriever:
                             safe_for_context=not _is_sensitive_kind(entry_kind) or allows_sensitive,
                             trust_required="trusted" if _is_sensitive_kind(entry_kind) else "untrusted",
                         ))
-                except Exception as e:
+                except (OSError, AttributeError, TypeError, ValueError, RuntimeError) as e:
                     logger.debug("HybridRetriever: LTM domain %s failed: %s", domain, e)
                     degraded = True
 
@@ -248,7 +248,7 @@ class HybridRetriever:
                             safe_for_context=not _is_sensitive_kind(nt) or allows_sensitive,
                             trust_required="trusted" if _is_sensitive_kind(nt) else "untrusted",
                         ))
-                except Exception as e:
+                except (OSError, AttributeError, TypeError, KeyError, RuntimeError) as e:
                     logger.debug("HybridRetriever: graph node_type=%s failed: %s", nt, e)
                     degraded = True
                     warnings.append(f"graph:{nt}: {e}")

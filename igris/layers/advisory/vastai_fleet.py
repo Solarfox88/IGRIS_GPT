@@ -366,7 +366,7 @@ class FleetMonitor:
         while not self._stop_event.wait(self.POLL_INTERVAL_SECONDS):
             try:
                 self._poll_cycle()
-            except Exception:
+            except Exception:  # noqa: BLE001  # worker loop boundary — FleetMonitor must not crash on poll errors
                 _log.exception("FleetMonitor poll cycle error")
 
     def _poll_cycle(self) -> None:

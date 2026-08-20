@@ -539,7 +539,7 @@ def repair_cycle(
         # Prepend goal_prefix for additional context (does not override full goal logic above)
         if _rs.goal_prefix and not repair_goal.startswith(_rs.goal_prefix):
             repair_goal = f"{_rs.goal_prefix} {repair_goal}"
-    except Exception as _rs_exc:
+    except (ImportError, ValueError, TypeError, KeyError, AttributeError) as _rs_exc:
         run.add(
             "repair_strategy_decision",
             "skipped",

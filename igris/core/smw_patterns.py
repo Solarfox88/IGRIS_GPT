@@ -48,7 +48,7 @@ def detect_patterns(snapshot: SystemSnapshot) -> List[DetectedPattern]:
             if p.check(snapshot):
                 ev = f"active_runs={len(snapshot.active_runs)} port_in_use={snapshot.igris_port_in_use} dirty={len(snapshot.dirty_files)}"
                 out.append(DetectedPattern(pattern=p, snapshot=snapshot, detected_at=time.time(), evidence=ev))
-        except Exception:
+        except (AttributeError, TypeError, ValueError, KeyError):
             logger.debug("Pattern check failed for %s", p.name, exc_info=True)
             continue
     return out
@@ -61,7 +61,7 @@ def learn_pattern(name: str, description: str, check_code_str: str, severity: st
     if p.exists():
         try:
             records = json.loads(p.read_text(encoding="utf-8"))
-        except Exception:
+        except (OSError, json.JSONDecodeError, ValueError, TypeError):
             logger.debug("Failed to parse incident patterns JSON, resetting to empty list", exc_info=True)
             records = []
     records.append({"name": name, "description": description, "check_code_str": check_code_str, "severity": severity, "learned_at": time.time()})

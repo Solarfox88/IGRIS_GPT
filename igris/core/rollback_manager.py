@@ -115,7 +115,7 @@ class RollbackManager:
         try:
             data = json.loads(path.read_text(encoding="utf-8"))
             return RollbackEntry.from_dict(data)
-        except Exception:
+        except (json.JSONDecodeError, OSError, ValueError, TypeError, KeyError):
             return None
 
     # -- Backup file --
@@ -277,7 +277,7 @@ class RollbackManager:
                 entries.append(data)
                 if len(entries) >= limit:
                     break
-            except Exception:
+            except (json.JSONDecodeError, OSError, ValueError, TypeError):
                 continue
         return entries
 
@@ -295,6 +295,6 @@ class RollbackManager:
                 data = json.loads(fp.read_text(encoding="utf-8"))
                 if data.get("action_id") == action_id:
                     return True
-            except Exception:
+            except (json.JSONDecodeError, OSError, ValueError, TypeError):
                 continue
         return False

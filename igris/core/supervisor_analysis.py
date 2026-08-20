@@ -234,7 +234,7 @@ def _load_known_baseline_failures(project_root: str, main_sha: str) -> Optional[
         data = json.loads(path.read_text(encoding="utf-8"))
         if str(data.get("main_sha", "")).strip() == str(main_sha).strip():
             return list(data.get("failed_nodes", []))
-    except Exception:
+    except (json.JSONDecodeError, OSError, ValueError, TypeError, KeyError):
         logger.debug("Failed to load known baseline failures", exc_info=True)
         pass
     return None

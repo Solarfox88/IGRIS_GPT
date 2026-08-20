@@ -23,5 +23,5 @@ def nav_invariant_check() -> Dict[str, Any]:
         html = _TEMPLATE_PATH.read_text(encoding="utf-8") if _TEMPLATE_PATH.exists() else ""
         report = check_nav_hierarchy(html)
         return report.to_dict()
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001  # API endpoint boundary — return error dict on any failure
         return {"passed": None, "error": str(e), "violations": [], "top_level_tabs": []}

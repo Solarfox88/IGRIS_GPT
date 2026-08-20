@@ -285,7 +285,7 @@ class SafetyEventLog:
                 events.append(data)
                 if len(events) >= limit:
                     break
-            except Exception:
+            except (json.JSONDecodeError, OSError, ValueError, TypeError):
                 continue
         return events
 
@@ -296,7 +296,7 @@ class SafetyEventLog:
             return None
         try:
             return json.loads(path.read_text(encoding="utf-8"))
-        except Exception:
+        except (json.JSONDecodeError, OSError, ValueError):
             return None
 
     def count_blocks(self, mission_id: str = "") -> int:
@@ -309,7 +309,7 @@ class SafetyEventLog:
                     if mission_id and data.get("mission_id") != mission_id:
                         continue
                     count += 1
-            except Exception:
+            except (json.JSONDecodeError, OSError, ValueError, TypeError):
                 continue
         return count
 

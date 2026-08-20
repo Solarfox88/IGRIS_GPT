@@ -43,6 +43,6 @@ class AgentCoordinator:
                     escalation_role = ESCALATION_PATH.get(role, "")
                     if escalation_role:
                         mg.add_node("run_event", {"event_type": "escalation_triggered", "reason": f"Role '{role}' violated contract on '{action_type}' {repeat_count}x", "escalation_to": escalation_role})
-            except Exception:
+            except (ImportError, OSError, ValueError, TypeError, KeyError, AttributeError, RuntimeError):
                 pass
         return allowed, reason

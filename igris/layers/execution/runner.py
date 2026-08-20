@@ -45,7 +45,7 @@ def _run_command(command: List[str], cwd: Path, timeout: int = 30) -> Dict[str, 
             "stdout": exc.stdout or "",
             "stderr": "Command timed out",
         }
-    except Exception as exc:
+    except (OSError, subprocess.SubprocessError, RuntimeError) as exc:
         return {
             "returncode": 1,
             "stdout": "",

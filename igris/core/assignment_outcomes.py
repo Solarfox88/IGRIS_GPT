@@ -70,7 +70,7 @@ def _atomic_write(path: str, data: Any) -> None:
             f.flush()
             os.fsync(f.fileno())
         os.replace(tmp, path)
-    except Exception:
+    except (OSError, IOError, PermissionError):
         try:
             os.unlink(tmp)
         except OSError:

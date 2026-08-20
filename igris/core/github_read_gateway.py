@@ -373,7 +373,7 @@ class GitHubReadGateway:
         content = raw.get("content", "")
         try:
             decoded = base64.b64decode(content).decode("utf-8")
-        except Exception:
+        except (ValueError, TypeError):
             decoded = "[binary or undecodable content]"
         # Size limit post-decode
         truncated = decoded[:10000]

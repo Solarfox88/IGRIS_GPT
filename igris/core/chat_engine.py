@@ -115,7 +115,7 @@ def _try_ollama(messages: list[dict[str, str]], model: str, base_url: str,
                 data = json.loads(resp.read().decode("utf-8"))
                 txt = data.get("message", {}).get("content", "")
                 result[0] = txt if txt else None
-        except Exception as exc:
+        except (OSError, ValueError, TypeError) as exc:
             exc_holder[0] = exc
 
     t = threading.Thread(target=_do_request, daemon=True)

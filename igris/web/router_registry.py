@@ -54,5 +54,5 @@ def include_optional_api_routers(
         try:
             module = importlib.import_module(module_name)
             app.include_router(getattr(module, router_attr))
-        except Exception as exc:  # pragma: no cover - best effort path
+        except (ImportError, AttributeError, TypeError) as exc:  # pragma: no cover - best effort path
             log.debug("Skipping optional router %s: %s", module_name, exc)

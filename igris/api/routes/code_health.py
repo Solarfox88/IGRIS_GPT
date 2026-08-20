@@ -35,7 +35,7 @@ def update_code_health_cache(report: Any) -> None:
             "errors": list(report.errors),
             "ran_at": report.ran_at,
         }
-    except Exception as exc:
+    except (AttributeError, TypeError, KeyError) as exc:
         logger.warning("Failed to cache code health report: %s", exc)
 
 

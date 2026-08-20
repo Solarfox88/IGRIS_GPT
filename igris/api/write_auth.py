@@ -75,7 +75,7 @@ async def require_write_auth(request) -> "WriteAuthResult":
                 http_status=401,
             )
         username = resolve_result.profile_id or session.profile_id or ""
-    except Exception as exc:
+    except (ImportError, OSError, AttributeError, TypeError, ValueError) as exc:
         logger.warning("write_auth session error: %s", exc)
         return WriteAuthResult(
             allowed=False, trust_level="untrusted",
@@ -90,7 +90,7 @@ async def require_write_auth(request) -> "WriteAuthResult":
         ir = IdentityResolver(project_root=project_root)
         profile = ir.resolve(username)
         trust_level = str(getattr(profile, "trust_level", "untrusted")).lower()
-    except Exception as exc:
+    except (ImportError, AttributeError, TypeError) as exc:
         logger.warning("write_auth identity error for %s: %s", username, exc)
         trust_level = "limited"
 

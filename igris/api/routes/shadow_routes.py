@@ -92,7 +92,7 @@ def _make_router():
                 "summary": report.summary_text(max_chars=500),
             }
 
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001  # API endpoint boundary
             logger.warning("Shadow evaluate API error: %s", e)
             return {"ok": False, "error": _redact(str(e)), "shadow_only": True,
                     "changed_decision": False}
@@ -104,7 +104,7 @@ def _make_router():
             from igris.models.config import CONFIG
             c = ShadowMLCoordinator(project_root=str(CONFIG.project_root))
             return c.healthcheck()
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001  # API endpoint boundary
             return {"ok": False, "error": _redact(str(e))}
 
     return router

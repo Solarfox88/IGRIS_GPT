@@ -181,7 +181,7 @@ def enrich_report_with_advisory(
             cycle=cycle,
             config=bridge_cfg,
         )
-    except Exception:
+    except (ValueError, TypeError, KeyError, AttributeError):
         return report
 
 
