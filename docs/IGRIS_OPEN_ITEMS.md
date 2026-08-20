@@ -117,6 +117,6 @@ A runtime refactor with missing import graph evidence is not complete.
 | #352 | open | evaluate candidate reasoning models |
 | #1271 | open | People Catalog / Person Registry — separate from identity/auth |
 | #1355 | **CLOSED** — pyright 0 errors, CI blocking (PR #1384) | Closed 2026-08-15 |
-| #1353 | Phase 9 complete (179→76, PR pending). 75 boundaries annotated, 0 narrowable, 0 except Exception: pass. Issue remains OPEN (76 > target <50). | Continue narrowing or ADR to accept 76 as practical minimum |
+| #1353 | Phase 9 merged via PR #1413 (e1a1797). 179→76, 75 boundaries annotated, 0 narrowable, 0 except Exception: pass. Post-merge VM 15/15. Issue remains OPEN (76 > target <50). | Continue narrowing or ADR to accept 76 as practical minimum |
 | #1371 | **CLOSED** — supervisor split complete, 1,844 lines (below 2,000) | Closed 2026-08-15 |
 | #1395 | `agent_reasoning_loop.py` 2,477 lines (target <2,000) | Split agent_reasoning_loop.py |
