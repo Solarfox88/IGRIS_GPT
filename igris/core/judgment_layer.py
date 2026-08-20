@@ -153,5 +153,5 @@ class JudgmentLayer:
                 },
                 confidence=0.65,
             )
-        except (ImportError, OSError, ValueError, TypeError, KeyError, AttributeError):
+        except (ImportError, OSError, ValueError, TypeError, KeyError, AttributeError, RuntimeError):
             pass

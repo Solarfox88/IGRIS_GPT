@@ -366,7 +366,7 @@ class ContextManager:
                 graph_items.append(recipe)
             # Expose memory influence summary for downstream consumers
             packet.memory_influence = mem_packet.get("memory_influence", "")
-        except (ImportError, OSError, ValueError, TypeError, AttributeError):
+        except (ImportError, OSError, ValueError, TypeError, AttributeError, RuntimeError):
             pass
         memory_text = self._build_memory_context(graph_items)
         memory_budget = _weighted_budget(min(available // 4, 3000), "memory_context")

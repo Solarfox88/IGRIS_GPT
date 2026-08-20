@@ -95,7 +95,7 @@ def _append_event(event: DecisionEvent, project_root: Optional[str] = None) -> D
         graph = MemoryGraph(root)
         mapping = {"decision": "decision", "failure": "lesson", "saturation": "capability", "remediation": "run_event"}
         graph.add_node(mapping.get(event.event_type, "run_event"), event.to_dict())
-    except (ImportError, OSError, AttributeError, TypeError):
+    except (ImportError, OSError, AttributeError, TypeError, RuntimeError, ValueError):
         pass
     return event
 
@@ -171,7 +171,7 @@ def record_saturation(
         from igris.core.memory_graph import MemoryGraph
         root = project_root or str(CONFIG.project_root)
         MemoryGraph(root).add_node("capability", {"family": family, "saturated": True})
-    except (ImportError, OSError, AttributeError, TypeError):
+    except (ImportError, OSError, AttributeError, TypeError, RuntimeError, ValueError):
         pass
     return recorded
 

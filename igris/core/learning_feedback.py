@@ -60,7 +60,7 @@ class LearningFeedbackApplier:
             try:
                 from igris.models.config import CONFIG
                 project_root = CONFIG.project_root
-            except (ImportError, AttributeError):
+            except (ImportError, AttributeError, RuntimeError):
                 project_root = Path.home()
         self.project_root = Path(project_root)
         self._memory = unified_memory
@@ -70,7 +70,7 @@ class LearningFeedbackApplier:
             try:
                 from igris.core.unified_memory import UnifiedMemory
                 self._memory = UnifiedMemory(project_root=self.project_root)
-            except (ImportError, OSError, TypeError, ValueError) as e:
+            except (ImportError, OSError, TypeError, ValueError, RuntimeError) as e:
                 logger.debug("LearningFeedbackApplier: UnifiedMemory unavailable: %s", e)
         return self._memory
 
@@ -120,7 +120,7 @@ class LearningFeedbackApplier:
                 return {"ok": False, "status": "failed", "reason": str(r.warnings),
                         "signal_id": signal.signal_id}
 
-        except (OSError, TypeError, ValueError, AttributeError) as e:
+        except (OSError, TypeError, ValueError, AttributeError, RuntimeError) as e:
             logger.warning("LearningFeedbackApplier: apply_signal failed for %s: %s",
                            signal.signal_id, e)
             return {"ok": False, "status": "failed", "reason": str(e),

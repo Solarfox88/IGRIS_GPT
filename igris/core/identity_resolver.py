@@ -154,7 +154,7 @@ def load_profiles(project_root: str) -> Dict[str, InterlocutorProfile]:
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
         return {k: InterlocutorProfile.from_dict(v) for k, v in data.items()}
-    except (OSError, json.JSONDecodeError, ValueError, TypeError, KeyError) as exc:
+    except (OSError, json.JSONDecodeError, ValueError, TypeError, KeyError, RuntimeError) as exc:
         logger.warning("load_profiles: failed to load %s: %s", path, exc)
         return {}
 
@@ -371,5 +371,5 @@ class IdentityResolver:
                 },
                 confidence=0.9,
             )
-        except (OSError, AttributeError, TypeError) as exc:
+        except (OSError, AttributeError, TypeError, RuntimeError) as exc:
             logger.debug("IdentityResolver.persist_to_memory_graph skipped/degraded: %s", exc)
