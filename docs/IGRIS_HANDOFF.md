@@ -57,7 +57,7 @@ A runtime refactor with missing import graph evidence is not complete.
 
 ## Current next issue
 
-**Phase 9 of #1353 complete (179→76 except Exception, 0 narrowable remaining). PR pending. Issue remains OPEN (76 > target <50).**
+**Phase 9 of #1353 merged via PR #1413 (commit e1a1797). 179→76 except Exception, 0 narrowable remaining. Post-merge VM validated: gauntlet 15/15, diagnostics healthy=true, os/brief ok=true. Issue remains OPEN (76 > target <50).**
 
 ## Final 20-block audit summary
 
@@ -209,8 +209,8 @@ Previous Hyper-V VM at 192.168.1.253 is no longer in use (VHDX could not boot on
 
 ## Do next
 
-1. Merge PR for Phase 9 of #1353
-2. Post-merge VM validation (update VM to latest main, restart service, run gauntlet, check diagnostics/os-brief)
+1. ~~Merge PR for Phase 9 of #1353~~ — DONE (PR #1413 merged e1a1797)
+2. ~~Post-merge VM validation~~ — DONE (VM e1a1797, gauntlet 15/15, healthy=true, ok=true)
 3. Continue #1353 if target <50 is still required (may need ADR to accept 76 as practical minimum since all are annotated boundaries)
 4. Continue #1395 (agent_reasoning_loop.py split — 2,477 lines, target <2,000)
 5. Do NOT declare issues complete until acceptance criteria are fully met

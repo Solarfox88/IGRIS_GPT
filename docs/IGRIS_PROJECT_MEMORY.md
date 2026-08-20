@@ -8,7 +8,7 @@ Last updated: 2026-08-20 (Phase 9 — #1353 except Exception narrowing, 179→76
 
 - repo: `Solarfox88/IGRIS_GPT` (public)
 - default branch: `main`
-- current `main` commit: `3c9cd13` (current main before Phase 9 PR)
+- current `main` commit: `e1a1797` (Phase 9 #1353 merged via PR #1413)
 
 ## Mandatory operating method
 
@@ -150,7 +150,7 @@ A task cannot be considered production-complete if VM evidence is missing.
 | Except Exception Phase 6 | #1353 / PR #1397 | **PARTIAL** | `a547a8e` | narrowed 41 in 5 core files (394→353) |
 | Except Exception Phase 7 | #1353 / PR #1398 | **PARTIAL** | `8f2ff1e` | narrowed 67 in 8 memory/task/diagnostics files (353→286) |
 | Except Exception Phase 8 | #1353 / PR #1399 | **PARTIAL** | `4f80984` | narrowed 107 in 27 core/api/web/agent files (286→179); fixed 4 regressions; VM validated 15/15 |
-| Except Exception Phase 9 | #1353 / PR (pending) | **PARTIAL** (Phase 9) | (pending merge) | narrowed 103 broad catches (179→76); 75 annotated # noqa: BLE001; 0 narrowable remaining; 0 except Exception: pass; VM 15/15 |
+| Except Exception Phase 9 | #1353 / PR #1413 | **PARTIAL** (Phase 9) | `e1a1797` | narrowed 103 broad catches (179→76); 75 annotated # noqa: BLE001; 0 narrowable remaining; 0 except Exception: pass; VM 15/15; post-merge VM e1a1797 15/15 |
 
 ## Security baseline
 
