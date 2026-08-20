@@ -2,7 +2,7 @@
 
 Open issues and tech debt for IGRIS_GPT. Updated after every task.
 
-Last updated: 2026-08-17 (Block 31 — #1354 acceptance criteria met by architecture)
+Last updated: 2026-08-20 (Phase 9 — #1353 except Exception narrowing, 179→76)
 
 ## Completion policy
 
@@ -67,7 +67,7 @@ A runtime refactor with missing import graph evidence is not complete.
 
 | Priority | Issue | Status | Next action |
 |---|---|---|---|
-| Critical | #1314 | **open** — Phase 1 merged (PR #1349 `0ac7a7b`), Phase 2 merged (PR #1360 `8ed5ac0`) | Follow-up: **#1353** — except Exception count reduced 627→178 (Phases 3-8 complete), target <50; 178 remain |
+| Critical | #1314 | **open** — Phase 1 merged, Phase 2 merged | Follow-up: **#1353** — except Exception count reduced 627→76 (Phases 3-9 complete), 75 annotated # noqa: BLE001, 0 narrowable remaining, 0 except Exception: pass. Target <50 not met (76 remain, all intentional boundaries). Issue remains OPEN. |
 | Critical | #1315 | **closed** — foundation complete (PR #1375 `4877168`) | Follow-up: **#1354 CLOSED** — structured logging acceptance criteria met by architecture (all 107 loggers inherit StructuredFormatter from root "igris" logger) |
 | Critical | #1316 | **closed** — pyright 0 errors, CI blocking (PR #1384 `bc435e5`) | Follow-up: **#1355** CLOSED — pyright errors 174→0, CI made blocking |
 | Tech debt | #1312 | **closed** — supervisor split complete | Follow-up: **#1371** CLOSED — `self_repair_supervisor.py` 1,844 lines (below 2,000 target); #1356 CLOSED; follow-up **#1395** for `agent_reasoning_loop.py` (2,477 lines) |
@@ -117,6 +117,6 @@ A runtime refactor with missing import graph evidence is not complete.
 | #352 | open | evaluate candidate reasoning models |
 | #1271 | open | People Catalog / Person Registry — separate from identity/auth |
 | #1355 | **CLOSED** — pyright 0 errors, CI blocking (PR #1384) | Closed 2026-08-15 |
-| #1353 | Except Exception Phase 8 complete (286→179, PR #1399 merged `4f80984`); **179 remain (target <50)**. Phase 9 (Block 30): final count done — 63 boundaries (`# noqa: BLE001`), 116 narrowable. No `except Exception: pass` remaining. Progress comment posted. Issue remains OPEN. | Continue narrowing 116 non-boundary occurrences in future phases after roadmap Blocks 31-40 |
+| #1353 | Phase 9 complete (179→76, PR pending). 75 boundaries annotated, 0 narrowable, 0 except Exception: pass. Issue remains OPEN (76 > target <50). | Continue narrowing or ADR to accept 76 as practical minimum |
 | #1371 | **CLOSED** — supervisor split complete, 1,844 lines (below 2,000) | Closed 2026-08-15 |
 | #1395 | `agent_reasoning_loop.py` 2,477 lines (target <2,000) | Split agent_reasoning_loop.py |

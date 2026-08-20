@@ -2,13 +2,13 @@
 
 Stable project state — source of truth for all agents.
 
-Last updated: 2026-08-17 (Block 31 — #1354 acceptance criteria met by architecture)
+Last updated: 2026-08-20 (Phase 9 — #1353 except Exception narrowing, 179→76)
 
 ## Repository
 
 - repo: `Solarfox88/IGRIS_GPT` (public)
 - default branch: `main`
-- current `main` commit: `97d5b88` (docs(#1353): Block 30 — final count and follow-up)
+- current `main` commit: `3c9cd13` (current main before Phase 9 PR)
 
 ## Mandatory operating method
 
@@ -150,6 +150,7 @@ A task cannot be considered production-complete if VM evidence is missing.
 | Except Exception Phase 6 | #1353 / PR #1397 | **PARTIAL** | `a547a8e` | narrowed 41 in 5 core files (394→353) |
 | Except Exception Phase 7 | #1353 / PR #1398 | **PARTIAL** | `8f2ff1e` | narrowed 67 in 8 memory/task/diagnostics files (353→286) |
 | Except Exception Phase 8 | #1353 / PR #1399 | **PARTIAL** | `4f80984` | narrowed 107 in 27 core/api/web/agent files (286→179); fixed 4 regressions; VM validated 15/15 |
+| Except Exception Phase 9 | #1353 / PR (pending) | **PARTIAL** (Phase 9) | (pending merge) | narrowed 103 broad catches (179→76); 75 annotated # noqa: BLE001; 0 narrowable remaining; 0 except Exception: pass; VM 15/15 |
 
 ## Security baseline
 
@@ -165,14 +166,17 @@ A task cannot be considered production-complete if VM evidence is missing.
 
 Expected gauntlet count: **15/15 jarvis-core-ready** (after gauntlet mkdir fix).
 
-- On **Linux (VM)**: 15/15 PASSED via `.venv/bin/python -m igris.core.jarvis_core_gauntlet`
+- On **Linux (VM — KVM/QEMU)**: 15/15 PASSED via `.venv/bin/python -m igris.core.jarvis_core_gauntlet`
 - On **Windows (host)**: 14/15 — `memory_cross_session` fails with `[WinError 32]` SQLite graph.db file lock (pre-existing, Windows-only, NOT a regression)
 
 Run: `python -m igris.core.jarvis_core_gauntlet`
 
+VM is now KVM/QEMU (Ubuntu 24.04 cloud image, 4GB RAM, 4 vCPU) at 192.168.122.65 (KVM NAT network).
+Previous Hyper-V VM at 192.168.1.253 is no longer in use (VHDX could not boot on KVM — EFI bootloader missing).
+
 ## Known caveats
 
-- **#1353 is still open** — `except Exception` count reduced 627→179 (Phases 3-8 complete); 179 remain (target <50). Phase 9 (Block 30) final count: 63 boundaries (`# noqa: BLE001`), 116 narrowable, no `except Exception: pass` remaining. Future phases will continue narrowing.
+- **#1353 is still open** — `except Exception` count reduced 627→76 (Phases 3-9 complete); 76 remain (75 annotated # noqa: BLE001, 1 docstring false positive; 0 narrowable; 0 except Exception: pass). Target <50 not met. Future phases needed to reduce boundary count or accept 76 as practical minimum.
 - **#1354 is closed** — structured logging criteria met by architecture (Blocks 31-34). All `igris.*` child loggers inherit structured JSON formatting from root logger.
 - **#1395 is open** — `agent_reasoning_loop.py` 2,477 lines (target <2,000).
 - **#1290 is closed** — diagnostics starvation false positive fixed (Block 37, PR #1408). 3 stale tasks processed (Block 38). VM diagnostics now healthy=true.
@@ -181,9 +185,10 @@ Run: `python -m igris.core.jarvis_core_gauntlet`
 - CI type-check PASSES on main (0 pyright errors). CI tests now PASS (24 pre-existing failures fixed in CI test health baseline PR). Fixes: RuntimeError added to 15 degraded boundaries, source-text tests updated for supervisor extraction, gauntlet count 14→15, devops mock side_effect extended, diagnostics timezone fix (calendar.timegm), caplog propagation helper for structured logging tests.
 - `gh` CLI may not be installed/authenticated on all agent machines — verify before PR operations.
 - VM Python environment: `/home/igris/IGRIS_GPT/.venv/bin/python` (Python 3.12.3, fastapi 0.136.1). NOT system `python3`.
-- VM SSH: password auth (`igris`/`igris`). Key-based auth not configured. Use paramiko for SSH command execution from Windows host.
+- VM SSH: `sshpass -p igris ssh igris@192.168.122.65` (password auth, KVM NAT network). Key-based auth not configured.
 - VM service uses `PROJECT_ROOT=/home/igris/IGRIS_TEST` (from environment), NOT `IGRIS_PROJECT_ROOT=/home/igris/IGRIS_GPT` (from .env). Task storage is at `/home/igris/IGRIS_TEST/.igris/tasks/`.
 - The `.local/` directory is used for local-only agent reports (e.g. `DEVIN_IGRIS_HANDOFF_CONTEXT.md`) and should NOT be committed.
+- **Ubuntu migration (2026-08-20)**: Development environment migrated from Windows to Ubuntu to bypass HP 250 G7 firmware CPU throttle (Event ID 37, CPU locked at 991 MHz on Windows via intelppm). Ubuntu uses intel_pstate driver, not intelppm, so firmware throttle is not enforced. CPU now runs at full speed (up to 3.6 GHz turbo). VM migrated from Hyper-V to KVM/QEMU (Ubuntu 24.04 cloud image). See ADR-IGRIS-0014.
 
 ## Local clones audited (2026-08-14)
 
