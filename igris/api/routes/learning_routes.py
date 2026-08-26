@@ -15,9 +15,39 @@ def _redact(text): return _SECRET_RE.sub(r'\1=<REDACTED>', str(text)) if text el
 def _make_router():
     try:
         from fastapi import APIRouter, Request
+        from pydantic import BaseModel, Field
         router = APIRouter(prefix="/api/learning", tags=["learning"])
     except ImportError:
         return None
+
+    class MissionStepPayload(BaseModel):
+        """Request schema for a single mission step (#1297)."""
+        step_id: str = ""
+        title: str = ""
+        action_type: str = "analysis"
+        risk: str = "low"
+        requires_approval: bool = False
+        dry_run_only: bool = True
+
+    class MissionPayload(BaseModel):
+        """Request schema for the 'mission' field (#1297)."""
+        mission_id: str = ""
+        title: str = ""
+        route: str = ""
+        risk: str = "low"
+        status: str = "planned"
+        execution_mode: str = "plan_only"
+        interlocutor_id: str = "unknown"
+        trust_level: str = "untrusted"
+        requires_approval: bool = False
+        blocked: bool = False
+        steps: list = Field(default_factory=list)
+
+    class ReflectionRequest(BaseModel):
+        """Explicit request schema for POST /api/learning/reflection (#1297)."""
+        mission: MissionPayload | None = None
+        bundle: dict | None = None
+        user_feedback: str = ""
 
     @router.post("/reflection")
     async def run_reflection(request: Request):
@@ -26,12 +56,32 @@ def _make_router():
         except (json.JSONDecodeError, ValueError, TypeError):
             body = {}
 
+        # Check for common wrong field names and provide helpful error (#1297)
+        wrong_fields = []
+        for wrong in ("bundle", "mission_plan", "evidence_bundle"):
+            if wrong in body and "mission" not in body:
+                wrong_fields.append(wrong)
+
         mission_data = body.get("mission") or {}
         bundle_data = body.get("bundle") or {}
         user_feedback = _redact(str(body.get("user_feedback", "") or "")[:500])
 
         if not mission_data:
-            return {"ok": False, "error": "mission payload required"}
+            if wrong_fields:
+                return {
+                    "ok": False,
+                    "error": (
+                        f"Missing 'mission' field (found '{wrong_fields[0]}'). "
+                        "Expected: {{'mission': {{mission_id, title, route, steps}}}}"
+                    ),
+                }
+            return {
+                "ok": False,
+                "error": (
+                    "Missing 'mission' field. "
+                    "Expected: {'mission': {mission_id, title, route, steps}}"
+                ),
+            }
 
         try:
             from igris.core.mission_first import MissionPlan, MissionStep
