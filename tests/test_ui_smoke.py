@@ -2,6 +2,7 @@
 import os
 from fastapi.testclient import TestClient
 from igris.web.server import create_app
+from tests._js_helpers import read_all_js
 
 
 def _client(tmp_path):
@@ -29,8 +30,6 @@ def test_css_present(tmp_path):
 
 def test_js_contains_endpoint_calls(tmp_path):
     client = _client(tmp_path)
-    resp = client.get("/static/js/app.js")
-    assert resp.status_code == 200
-    js = resp.text
+    js = read_all_js()
     for endpoint in ["/api/health", "/api/terminal/commands", "/api/files/tree", "/api/git/status", "/api/tasks"]:
         assert endpoint in js

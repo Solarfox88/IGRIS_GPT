@@ -1,5 +1,6 @@
 """UI v3 smoke tests — verify new structural elements are present."""
 import os
+from tests._js_helpers import read_all_js
 
 
 def _read(path):
@@ -75,17 +76,17 @@ def test_css_has_chat_input_box():
 
 
 def test_js_has_status_panel_loader():
-    js = _read("igris/web/static/js/app.js")
+    js = read_all_js()
     assert "loadStatusPanel" in js
     assert "sp-interlocutor-content" in js
     assert "sp-rank-content" in js
 
 
 def test_js_has_hint_chips():
-    js = _read("igris/web/static/js/app.js")
+    js = read_all_js()
     assert "hint-chip" in js
 
 
 def test_js_has_textarea_handler():
-    js = _read("igris/web/static/js/app.js")
+    js = read_all_js()
     assert "TEXTAREA" in js or "textarea" in js

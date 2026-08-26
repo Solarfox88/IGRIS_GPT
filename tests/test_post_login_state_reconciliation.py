@@ -30,11 +30,15 @@ _APP_JS = _REPO / "igris/web/static/js/app.js"
 
 
 def _auth_js() -> str:
-    return _AUTH_JS.read_text(encoding="utf-8")
+    """Read auth.js + auth_ui.js combined (#1318 modularization)."""
+    from tests._js_helpers import read_auth_js
+    return read_auth_js()
 
 
 def _app_js() -> str:
-    return _APP_JS.read_text(encoding="utf-8")
+    """Read all JS files combined (#1318 modularization)."""
+    from tests._js_helpers import read_all_js
+    return read_all_js()
 
 
 def _unique_username() -> str:
@@ -171,7 +175,8 @@ def test_app_js_load_status_panel_uses_auth_guard_variable():
 def test_app_js_on_auth_state_cleared_resets_sidebar():
     """onAuthStateCleared must reset sp-interlocutor-content to unknown/untrusted."""
     content = _app_js()
-    fn_start = content.find("window.onAuthStateCleared")
+    # After #1318, the definition is in status_panel.js; find the assignment, not the call.
+    fn_start = content.find("window.onAuthStateCleared = function")
     assert fn_start >= 0
     fn_body = content[fn_start:fn_start + 400]
     assert "sp-interlocutor-content" in fn_body or "spIC" in fn_body, \
@@ -181,7 +186,7 @@ def test_app_js_on_auth_state_cleared_resets_sidebar():
 def test_app_js_on_auth_state_cleared_resets_chat_meta():
     """onAuthStateCleared must reset chat-interlocutor-meta to 'non autenticato'."""
     content = _app_js()
-    fn_start = content.find("window.onAuthStateCleared")
+    fn_start = content.find("window.onAuthStateCleared = function")
     assert fn_start >= 0
     fn_body = content[fn_start:fn_start + 400]
     assert "non autenticato" in fn_body, \

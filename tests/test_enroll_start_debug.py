@@ -162,7 +162,8 @@ def test_enroll_route_registered():
 # ── Frontend static: JS error normalisation ──────────────────────────────────
 
 def _auth_js() -> str:
-    return _AUTH_JS.read_text(encoding="utf-8")
+    from tests._js_helpers import read_auth_js
+    return read_auth_js()
 
 
 def test_auth_js_has_normalize_api_error():

@@ -17,6 +17,7 @@ import re
 
 import pytest
 from tests.git_status_policy import assert_git_status_policy
+from tests._js_helpers import read_all_js
 
 
 # ---------------------------------------------------------------------------
@@ -238,35 +239,35 @@ class TestDashboardJS:
 
     def test_js_has_subtab_handler(self):
         import pathlib
-        js = pathlib.Path("igris/web/static/js/app.js").read_text()
+        js = read_all_js()
         assert ".sub-tab" in js
         assert "data-subtab" in js or "dataset.subtab" in js
 
     def test_js_loads_dashboard_extras(self):
         import pathlib
-        js = pathlib.Path("igris/web/static/js/app.js").read_text()
+        js = read_all_js()
         assert "loadDashboardExtras" in js
         assert '"/api/dashboard/summary"' in js
         assert "dash-control-room-status" in js
 
     def test_js_populates_diagnostics(self):
         import pathlib
-        js = pathlib.Path("igris/web/static/js/app.js").read_text()
+        js = read_all_js()
         assert "dash-diagnostics-summary" in js
 
     def test_js_populates_loop_info(self):
         import pathlib
-        js = pathlib.Path("igris/web/static/js/app.js").read_text()
+        js = read_all_js()
         assert "dash-loop-info" in js
 
     def test_js_populates_decision_reports(self):
         import pathlib
-        js = pathlib.Path("igris/web/static/js/app.js").read_text()
+        js = read_all_js()
         assert "dash-reports" in js
 
     def test_js_populates_new_panels(self):
         import pathlib
-        js = pathlib.Path("igris/web/static/js/app.js").read_text()
+        js = read_all_js()
         for marker in [
             "dash-evidence-summary",
             "dash-github-summary",
@@ -278,7 +279,7 @@ class TestDashboardJS:
 
     def test_js_uses_interpreted_evidence_endpoint(self):
         import pathlib
-        js = pathlib.Path("igris/web/static/js/app.js").read_text()
+        js = read_all_js()
         assert "/evidence/interpreted" in js
         assert "evidence_cards" in js
         assert "next_actions" in js
@@ -287,7 +288,7 @@ class TestDashboardJS:
 
     def test_js_auto_refresh_uses_dashboard(self):
         import pathlib
-        js = pathlib.Path("igris/web/static/js/app.js").read_text()
+        js = read_all_js()
         assert '"dashboard"' in js
 
 

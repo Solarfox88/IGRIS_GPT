@@ -268,7 +268,8 @@ def test_stream_invalid_token_gets_gated():
 # ── Frontend static: auth.js intent detection ────────────────────────────────
 
 def _auth_js() -> str:
-    return _AUTH_JS.read_text(encoding="utf-8")
+    from tests._js_helpers import read_auth_js
+    return read_auth_js()
 
 
 def test_auth_js_has_is_enrollment_intent():
@@ -331,7 +332,8 @@ def test_auth_clear_ui_shows_non_autenticato():
 # ── Frontend static: app.js auth gate ────────────────────────────────────────
 
 def _app_js() -> str:
-    return _APP_JS.read_text(encoding="utf-8")
+    from tests._js_helpers import read_all_js
+    return read_all_js()
 
 
 def test_app_js_has_get_session_token_check():
