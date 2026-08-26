@@ -100,8 +100,8 @@ class TestJSMarkdownRenderer:
 
     @pytest.fixture(autouse=True)
     def load_js(self):
-        js_path = Path(__file__).parent.parent / "igris" / "web" / "static" / "js" / "app.js"
-        self.js = js_path.read_text()
+        from tests._js_helpers import read_all_js
+        self.js = read_all_js()
 
     def test_has_render_markdown_function(self):
         assert "renderMarkdown" in self.js

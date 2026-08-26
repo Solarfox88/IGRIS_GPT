@@ -30,11 +30,14 @@ _PREFLIGHT_MODULE = "igris.core.chat_interlocutor_preflight"
 
 
 def _auth_js() -> str:
-    return _AUTH_JS.read_text(encoding="utf-8")
+    from tests._js_helpers import read_auth_js
+    return read_auth_js()
 
 
 def _app_js() -> str:
-    return _APP_JS.read_text(encoding="utf-8")
+    """Read all JS files combined (#1318 modularization)."""
+    from tests._js_helpers import read_all_js
+    return read_all_js()
 
 
 def _index_html() -> str:
@@ -277,18 +280,17 @@ def test_app_js_require_auth_before_chat_inside_chat_iife():
     not in the status-panel IIFE. If defined outside, it cannot access addMsg
     (closure scope) and the submit handler crashes silently — users can't send messages."""
     content = _app_js()
-    # The chat inner-IIFE starts with '  (function () {' (2-space indent)
-    # and contains the submit handler.  requireAuthBeforeChat must appear
-    # BEFORE 'form.addEventListener("submit"' and AFTER the chat IIFE open.
-    chat_iife_start = content.find('  (function () {\n    var sessionId = null;')
-    assert chat_iife_start >= 0, "Chat inner-IIFE not found"
-    submit_pos = content.find('form.addEventListener("submit"', chat_iife_start)
-    assert submit_pos >= 0, "submit handler not found after chat IIFE start"
-    fn_pos = content.find("function requireAuthBeforeChat", chat_iife_start)
-    assert fn_pos >= 0, "requireAuthBeforeChat not found inside chat IIFE"
+    # After #1318 modularization, chat code is in chat.js (ES module, no IIFE).
+    # requireAuthBeforeChat must appear in the chat module before the submit handler.
+    chat_start = content.find("var sessionId = null;")
+    assert chat_start >= 0, "Chat module content not found"
+    submit_pos = content.find('form.addEventListener("submit"', chat_start)
+    assert submit_pos >= 0, "submit handler not found after chat start"
+    fn_pos = content.find("function requireAuthBeforeChat", chat_start)
+    assert fn_pos >= 0, "requireAuthBeforeChat not found in chat module"
     assert fn_pos < submit_pos, (
         f"requireAuthBeforeChat (pos {fn_pos}) must be defined BEFORE submit handler "
-        f"(pos {submit_pos}) inside the chat IIFE. If placed in a different IIFE, "
+        f"(pos {submit_pos}) in the chat module. If placed in a different module, "
         "it cannot access addMsg and the submit handler crashes silently."
     )
 

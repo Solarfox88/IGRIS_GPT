@@ -9,6 +9,7 @@ from fastapi.testclient import TestClient
 from igris.core import self_repair_supervisor as sup
 from igris.core.self_repair_supervisor import SupervisorEvent, SupervisorRun
 from igris.web.server import CONFIG, create_app
+from tests._js_helpers import read_all_js
 
 
 @pytest.fixture()
@@ -27,6 +28,11 @@ def isolated_run_store():
 @pytest.fixture()
 def client():
     return TestClient(create_app())
+
+
+def _fetch_all_js(client) -> str:
+    """Fetch all JS files and concatenate (#1318 modularization)."""
+    return read_all_js()
 
 
 def _seed_run(*, run_id: str, status: str = "running") -> SupervisorRun:
@@ -309,9 +315,7 @@ def test_ui_contains_supervised_launcher_form(client):
 
 
 def test_ui_js_contains_supervisor_monitor_states(client):
-    r = client.get("/static/js/app.js")
-    assert r.status_code == 200
-    js = r.text
+    js = _fetch_all_js(client)
     assert "No active supervisor runs. Start a supervised mission or view recent audit history." in js
     assert "Supervisor monitor unavailable:" in js
     assert "Loading supervisor runs..." in js
@@ -335,9 +339,7 @@ def test_ui_js_contains_supervisor_monitor_states(client):
 
 
 def test_ui_js_rank_s_preset_values(client):
-    r = client.get("/static/js/app.js")
-    assert r.status_code == 200
-    js = r.text
+    js = _fetch_all_js(client)
     assert "rank-s-full-e2e" in js
     assert "allow_api_escalation: true" in js
     assert "max_api_escalations_per_run: 2" in js
@@ -348,9 +350,7 @@ def test_ui_js_rank_s_preset_values(client):
 
 
 def test_ui_js_launcher_submits_run_supervised(client):
-    r = client.get("/static/js/app.js")
-    assert r.status_code == 200
-    js = r.text
+    js = _fetch_all_js(client)
     assert 'api("POST", "/api/rank/run-supervised", payload)' in js
     for key in (
         "rank_id",
@@ -370,18 +370,14 @@ def test_ui_js_launcher_submits_run_supervised(client):
 
 
 def test_ui_js_launcher_updates_monitor_with_run_id(client):
-    r = client.get("/static/js/app.js")
-    assert r.status_code == 200
-    js = r.text
+    js = _fetch_all_js(client)
     assert "window._lastStartedSupervisorRun = resp.data || {};" in js
     assert "run_id=<strong>" in js
     assert "await loadSupervisorMonitor();" in js
 
 
 def test_ui_js_chat_guardrail_redirects_supervisor_prompt(client):
-    r = client.get("/static/js/app.js")
-    assert r.status_code == 200
-    js = r.text
+    js = _fetch_all_js(client)
     assert "_supervisorPromptLike" in js
     assert "run-supervised" in js
     assert "rank s" in js
@@ -391,9 +387,7 @@ def test_ui_js_chat_guardrail_redirects_supervisor_prompt(client):
 
 
 def test_ui_js_includes_cancel_button_and_endpoint(client):
-    r = client.get("/static/js/app.js")
-    assert r.status_code == 200
-    js = r.text
+    js = _fetch_all_js(client)
     assert "Stop safely" in js
     assert "btn-cancel-supervised-run" in js
     assert '"/api/rank/runs/" + encodeURIComponent(runId) + "/cancel"' in js
@@ -401,24 +395,18 @@ def test_ui_js_includes_cancel_button_and_endpoint(client):
 
 
 def test_ui_js_suppresses_recent_duplicates_for_active_ids(client):
-    r = client.get("/static/js/app.js")
-    assert r.status_code == 200
-    js = r.text
+    js = _fetch_all_js(client)
     assert "suppressed duplicate run ids already shown in active" in js
     assert "activeRunIds" in js
 
 
 def test_ui_js_refresh_triggers_reload(client):
-    r = client.get("/static/js/app.js")
-    assert r.status_code == 200
-    js = r.text
+    js = _fetch_all_js(client)
     assert 'supRefresh.addEventListener("click", function () { loadSupervisorMonitor(); });' in js
 
 
 def test_ui_js_audit_fallback_render_present(client):
-    r = client.get("/static/js/app.js")
-    assert r.status_code == 200
-    js = r.text
+    js = _fetch_all_js(client)
     assert "Audit & Escalations" in js
     assert "Recent Runs:" in js
     assert "not available (in-memory history reset after restart)" in js
@@ -427,9 +415,7 @@ def test_ui_js_audit_fallback_render_present(client):
 
 
 def test_ui_js_loading_not_terminal_state(client):
-    r = client.get("/static/js/app.js")
-    assert r.status_code == 200
-    js = r.text
+    js = _fetch_all_js(client)
     assert "finally {" in js
     assert "monitorEl.innerHTML = finalHtml;" in js
     assert "finalHtml = \"Supervisor monitor unavailable: no data\";" in js

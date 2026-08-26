@@ -20,6 +20,7 @@ import re
 
 import pytest
 from tests.git_status_policy import assert_git_status_policy
+from tests._js_helpers import read_all_js
 
 
 # ---------------------------------------------------------------------------
@@ -333,37 +334,37 @@ class TestUIActionCards:
 
     def test_js_has_handle_action_click(self):
         import pathlib
-        js = pathlib.Path("igris/web/static/js/app.js").read_text()
+        js = read_all_js()
         assert "handleActionClick" in js
 
     def test_js_renders_actions_in_addmsg(self):
         import pathlib
-        js = pathlib.Path("igris/web/static/js/app.js").read_text()
+        js = read_all_js()
         assert "suggested-actions" in js
         assert "action-card" in js
 
     def test_js_passes_actions_in_meta(self):
         import pathlib
-        js = pathlib.Path("igris/web/static/js/app.js").read_text()
+        js = read_all_js()
         assert "suggested_actions" in js
         assert "meta.actions" in js or "actions: r.data.suggested_actions" in js
 
     def test_js_action_click_calls_api(self):
         import pathlib
-        js = pathlib.Path("igris/web/static/js/app.js").read_text()
+        js = read_all_js()
         assert "api(" in js
         assert "btn.dataset.endpoint" in js
 
     def test_js_no_xss_in_action_labels(self):
         """Action labels are escaped via escapeHtml."""
         import pathlib
-        js = pathlib.Path("igris/web/static/js/app.js").read_text()
+        js = read_all_js()
         assert "escapeHtml(act.label)" in js
         assert "escapeHtml(act.description)" in js
 
     def test_js_shows_approval_badge(self):
         import pathlib
-        js = pathlib.Path("igris/web/static/js/app.js").read_text()
+        js = read_all_js()
         assert "action-gated" in js
         assert "requires approval" in js
 

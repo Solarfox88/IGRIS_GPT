@@ -156,7 +156,8 @@ def test_post_message_valid_bearer_resolves_profile_id():
 # ── Static: frontend sends auth headers ───────────────────────────────────────
 
 def _app_js() -> str:
-    return _APP_JS.read_text(encoding="utf-8")
+    from tests._js_helpers import read_all_js
+    return read_all_js()
 
 
 def test_app_js_chat_fetch_uses_auth_headers():

@@ -4,6 +4,7 @@ import re
 import pytest
 from fastapi.testclient import TestClient
 from igris.web.server import create_app
+from tests._js_helpers import read_all_js
 
 
 def _read(path):
@@ -27,7 +28,7 @@ def css():
 
 
 def js():
-    return _read("igris/web/static/js/app.js")
+    return read_all_js()
 
 
 def test_identity_badge_element_present():
