@@ -328,6 +328,12 @@ class AgentReasoningLoop(AgentLoopEditMixin):
         self._hydrate_long_term_memory_context(goal)
         self._ensure_micro_step_state(goal)
 
+        # #1321: Loop checkpointing for crash recovery
+        from igris.core.loop_checkpoint_manager import LoopCheckpointManager, GracefulShutdownHandler
+        _checkpoint = LoopCheckpointManager(self.project_root, mission_id=mission_id)
+        _shutdown_handler = GracefulShutdownHandler()
+        _shutdown_handler.install()
+
         for step_num in range(1, self.max_steps + 1):
             # Check stop conditions before each step
             stop = self._check_stop_conditions(step_num)
@@ -426,6 +432,26 @@ class AgentReasoningLoop(AgentLoopEditMixin):
                     _log.debug("agent_reasoning_loop: narrowed catch failed: %s", exc, exc_info=True)
 
             self._steps.append(step)
+
+            # #1321: Save checkpoint after each step
+            try:
+                _checkpoint.save(step_num, {
+                    "world_state": dict(self._world_state),
+                    "steps_without_write": self._steps_without_write,
+                    "consecutive_errors": self._consecutive_errors,
+                    "files_modified": list(self._files_modified),
+                    "recent_errors": list(self._recent_errors[-5:]),
+                })
+            except (OSError, TypeError, ValueError) as exc:
+                _log.debug("agent_reasoning_loop: checkpoint save failed: %s", exc, exc_info=True)
+
+            # #1321: Check for graceful shutdown signal
+            if _shutdown_handler.should_shutdown:
+                result.stop_reason = "graceful_shutdown"
+                result.status = "stopped"
+                _log.info("agent_reasoning_loop: graceful shutdown at step %d", step_num)
+                break
+
             if step_callback is not None:
                 try:
                     step_callback(step_num, step.action_type or "unknown")
@@ -467,6 +493,13 @@ class AgentReasoningLoop(AgentLoopEditMixin):
         result.orchestrator_used = self._orchestrator_used
         result.local_model_available = self._local_model_available()
         result.estimated_cost_usd = self._total_cost_usd
+        # #1321: Clear checkpoint on successful completion
+        try:
+            _checkpoint.clear()
+            _shutdown_handler.uninstall()
+        except OSError:
+            pass
+
         self._run_mission_brain_shadow(goal=goal, result=result)
         self._persist_long_term_memory_outcome(goal=goal, result=result)
 
