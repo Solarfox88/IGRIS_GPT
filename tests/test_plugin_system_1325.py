@@ -2,6 +2,7 @@
 import os
 import tempfile
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -45,7 +46,6 @@ class CalculatorPlugin(ToolPlugin):
         return {"status": "error", "message": "unknown action"}
 
 
-from typing import Any
 
 
 class TestToolPlugin:
