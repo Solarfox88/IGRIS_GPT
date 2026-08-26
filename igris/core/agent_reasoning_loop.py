@@ -46,6 +46,7 @@ from typing import Any, Callable, Dict, List, Optional, cast
 from igris.core.micro_step_planner import MicroStepPlanner
 from igris.core.safety import redact_secrets
 from igris.core.tool_result_budget import apply_tool_result_budget, DEFAULT_BUDGET_BYTES
+from igris.core.agent_loop_edit_mixin import AgentLoopEditMixin
 import logging
 
 
@@ -210,7 +211,7 @@ class LoopResult:
 # Agent Reasoning Loop
 # ---------------------------------------------------------------------------
 
-class AgentReasoningLoop:
+class AgentReasoningLoop(AgentLoopEditMixin):
     """The cognitive core of IGRIS: observe-reason-act-observe-repeat.
 
     Usage:
@@ -1725,60 +1726,15 @@ class AgentReasoningLoop:
     # Destructive write guard helpers (#76)
     # ------------------------------------------------------------------
 
-    # Extensions considered "source code" — full-file replacement is dangerous
-    _SOURCE_EXTENSIONS = frozenset({
-        ".py", ".js", ".ts", ".jsx", ".tsx",
-        ".html", ".css", ".scss", ".sass",
-        ".md", ".json", ".yaml", ".yml",
-        ".toml", ".ini", ".cfg", ".sh",
-        ".go", ".rs", ".java", ".cpp", ".c", ".h",
-        ".rb", ".php", ".swift", ".kt",
-    })
-
-    # Ratio: if new content is smaller than this fraction of existing content
-    # AND both files are above the minimum size threshold, block the write.
-    _DESTRUCTIVE_RATIO_THRESHOLD = 0.3   # new < 30% of old → suspicious
-    _DESTRUCTIVE_MIN_EXISTING_CHARS = 200  # only guard files > 200 chars
-
     def _is_destructive_write(
         self,
         file_path: str,
         existing_content: str,
         new_content: str,
     ) -> Optional[str]:
-        """Return an error message if this write would be destructively small.
+        from igris.core.agent_loop_insertion_helpers import is_destructive_write
+        return is_destructive_write(file_path, existing_content, new_content)
 
-        A write is considered destructive when:
-        - The file already exists with substantial content (>200 chars)
-        - The new content is much smaller (< 30 % of existing size)
-        - The file has a source-code extension
-
-        Returns None if the write is safe.
-        """
-        import os as _os
-        ext = _os.path.splitext(file_path)[1].lower()
-        if ext not in self._SOURCE_EXTENSIONS:
-            return None  # Unknown extension — not guarded
-
-        existing_size = len(existing_content)
-        new_size = len(new_content)
-
-        if existing_size < self._DESTRUCTIVE_MIN_EXISTING_CHARS:
-            return None  # Small file — replacing is safe
-
-        ratio = new_size / existing_size if existing_size > 0 else 1.0
-        if ratio >= self._DESTRUCTIVE_RATIO_THRESHOLD:
-            return None  # New content is large enough — safe
-
-        return (
-            f"Destructive write guard: '{file_path}' has {existing_size} chars "
-            f"but new content is only {new_size} chars "
-            f"({ratio:.0%} of original). "
-            f"This looks like a snippet replacing a full file. "
-            f"Use insert_after / insert_before / replace_range / append_file "
-            f"for targeted edits, or write_file only when providing the "
-            f"complete replacement file content."
-        )
 
     @staticmethod
     def _validate_python_ast(path: str, content: str) -> Optional[str]:
@@ -1836,182 +1792,6 @@ class AgentReasoningLoop:
 
         return None  # Valid
 
-    def _execute_write_file(self, rt, action) -> Dict[str, Any]:
-        """Execute write_file with destructive-write guard and verification.
-
-        Guards (#76):
-        - Blocks snippet replacement on large existing source files
-        - Verifies hash before/after to confirm real change
-        - Validates Python AST for .py files
-        - Checks that critical symbols survive in igris/web/server.py
-        - Tracks files_modified only on real diff
-        - Idempotent: if content is already on disk, returns success=True
-          without re-writing (no disk I/O, no files_modified entry)
-        """
-        import hashlib
-        import ast as _ast
-
-        file_path = action.parameters.get("path", "")
-        content = action.parameters.get("content", "")
-
-        if not file_path:
-            return {"success": False, "error": "write_file: missing 'path' parameter"}
-        if content is None:
-            return {"success": False, "error": "write_file: missing 'content' parameter"}
-
-        # Resolve full path
-        full_path = os.path.join(self.project_root, file_path)
-
-        # Read existing file (if any)
-        existing_content: Optional[str] = None
-        hash_before: Optional[str] = None
-        if os.path.isfile(full_path):
-            try:
-                with open(full_path, "r", encoding="utf-8", errors="replace") as f:
-                    existing_content = f.read()
-                hash_before = hashlib.sha256(existing_content.encode("utf-8")).hexdigest()
-            except OSError as exc:
-                _log.debug("agent_reasoning_loop: narrowed catch failed: %s", exc, exc_info=True)
-
-        # Hash of the new content
-        hash_new = hashlib.sha256(content.encode("utf-8")).hexdigest()
-
-        # Idempotent: content already on disk — no write needed
-        if hash_before is not None and hash_before == hash_new:
-            # Count this as a modification (caller may be retrying a previous
-            # successful write that crashed before tracking; we honour it)
-            self._files_modified.append(file_path)
-            return {
-                "success": True,
-                "summary": f"write_file: '{file_path}' already has this content (idempotent)",
-                "result_data": {"path": file_path, "chars": len(content), "hash": hash_new[:12]},
-            }
-
-        # ── Destructive write guard ──────────────────────────────────────────
-        if existing_content is not None:
-            guard_error = self._is_destructive_write(file_path, existing_content, content)
-            if guard_error:
-                return {
-                    "success": False,
-                    "error": guard_error,
-                    "summary": f"Blocked: destructive write on '{file_path}'",
-                }
-
-            # Extra guard for server.py: critical symbols must survive
-            import os as _os
-            if _os.path.basename(file_path) == "server.py" or file_path.endswith("web/server.py"):
-                if file_path.endswith(".py"):
-                    # Check existing has create_app / run_app
-                    try:
-                        old_tree = _ast.parse(existing_content, filename=file_path)
-                        old_defs = {
-                            n.name for n in _ast.walk(old_tree)
-                            if isinstance(n, (_ast.FunctionDef, _ast.AsyncFunctionDef))
-                        }
-                        critical_existing = {"create_app", "run_app"} & old_defs
-                        if critical_existing:
-                            # New content must also have them
-                            new_tree = _ast.parse(content, filename=file_path)
-                            new_defs = {
-                                n.name for n in _ast.walk(new_tree)
-                                if isinstance(n, (_ast.FunctionDef, _ast.AsyncFunctionDef))
-                            }
-                            missing = critical_existing - new_defs
-                            if missing:
-                                return {
-                                    "success": False,
-                                    "error": (
-                                        f"Symbol guard: writing '{file_path}' would remove "
-                                        f"critical symbols: {sorted(missing)}. "
-                                        f"Provide a complete file that preserves these functions."
-                                    ),
-                                    "summary": f"Blocked: symbol removal in '{file_path}'",
-                                }
-                    except SyntaxError:
-                        pass  # Will be caught by AST validation below
-
-        # ── Python AST validation ────────────────────────────────────────────
-        if file_path.endswith(".py"):
-            ast_error = self._validate_python_ast(file_path, content)
-            if ast_error:
-                return {
-                    "success": False,
-                    "error": ast_error,
-                    "summary": f"Blocked: invalid Python in '{file_path}'",
-                }
-
-        # ── Perform the write via ToolRuntime ────────────────────────────────
-        tr = rt.fs_write(path=full_path, content=content)
-        if not tr.success:
-            return {
-                "success": False,
-                "error": tr.error,
-                "summary": f"write_file failed: {tr.error}",
-            }
-
-        # ── Verify hash after write ──────────────────────────────────────────
-        try:
-            with open(full_path, "rb") as f:
-                hash_after = hashlib.sha256(f.read()).hexdigest()
-        except OSError as exc:
-            return {
-                "success": False,
-                "error": f"write_file: cannot verify written file: {exc}",
-            }
-
-        if hash_after != hash_new:
-            return {
-                "success": False,
-                "error": "write_file: verification failed — hash mismatch after write",
-            }
-
-        # Real change confirmed — track it
-        self._files_modified.append(file_path)
-
-        return {
-            "success": True,
-            "summary": (
-                f"Written {len(content)} chars to {file_path} "
-                f"(hash: {(hash_before or 'new')[:8]}→{hash_after[:8]})"
-            ),
-            "result_data": {"path": file_path, "chars": len(content), "hash": hash_after[:12]},
-        }
-
-    def _execute_propose_patch(self, rt, action) -> Dict[str, Any]:
-        """Execute propose_patch: show diff preview without applying."""
-        file_path = action.parameters.get("path", "")
-        new_content = action.parameters.get("content", "")
-
-        if not file_path:
-            return {"success": False, "error": "propose_patch: missing 'path'"}
-
-        full_path = os.path.join(self.project_root, file_path)
-        tr = rt.fs_diff(path=full_path, new_content=new_content)
-
-        return {
-            "success": tr.success,
-            "summary": tr.output[:300] if tr.output else "No diff output",
-            "error": tr.error,
-            "result_data": tr.output,
-        }
-
-    def _execute_apply_patch(self, rt, action) -> Dict[str, Any]:
-        """Execute apply_patch: write verified content to file."""
-        file_path = action.parameters.get("path", "")
-        content = action.parameters.get("content", "")
-
-        if not file_path or not content:
-            return {"success": False, "error": "apply_patch: missing 'path' or 'content'"}
-
-        # Delegate to write_file logic for verified write
-        write_action_params = {"path": file_path, "content": content}
-        # Temporarily set action parameters for the write
-        from igris.core.agent_action_schema import AgentAction
-        write_action = AgentAction(
-            action_type="write_file",
-            parameters=write_action_params,
-        )
-        return self._execute_write_file(rt, write_action)
 
     # ------------------------------------------------------------------
     # Safe edit actions (#76) — patch-first policy
@@ -2044,128 +1824,6 @@ class AgentReasoningLoop:
         except OSError as exc:
             return {"success": False, "error": str(exc)}
 
-    def _execute_insert_after(self, rt, action) -> Dict[str, Any]:
-        """Insert content after anchor line. Params: path, anchor, content."""
-        import hashlib
-        file_path = action.parameters.get("path", "")
-        anchor = action.parameters.get("anchor", "")
-        new_content = action.parameters.get("content", "")
-        if not file_path or anchor is None or new_content is None:
-            return {"success": False, "error": "insert_after: missing path/anchor/content"}
-        full_path = os.path.join(self.project_root, file_path)
-        if not os.path.isfile(full_path):
-            return {"success": False, "error": f"insert_after: file not found: {file_path}"}
-        try:
-            with open(full_path, "r", encoding="utf-8") as f:
-                file_lines = f.readlines()
-        except OSError as exc:
-            return {"success": False, "error": str(exc)}
-        idx = next((i for i, ln in enumerate(file_lines) if anchor in ln), None)
-        if idx is None and anchor.strip() == "app = FastAPI()":
-            idx = next((i for i, ln in enumerate(file_lines) if "app = FastAPI(" in ln), None)
-        if idx is None:
-            return {"success": False, "error": f"insert_after: anchor not found: {repr(anchor)}"}
-        nl = "\n"
-        insertion = new_content if new_content.endswith(nl) else new_content + nl
-        insertion = self._normalize_app_route_insertion_indent(file_lines[idx], insertion)
-        if self._inserts_app_route_after_block_header(file_lines[idx], insertion):
-            return {
-                "success": False,
-                "error": (
-                    "insert_after: refusing to insert @app route immediately after "
-                    "a Python block header; use an anchor after app = FastAPI(...) "
-                    "or after the complete previous route/block; "
-                    "route would be before app = FastAPI initialization"
-                ),
-            }
-        if self._inserts_app_route_after_decorator_line(file_lines[idx], insertion):
-            return {
-                "success": False,
-                "error": (
-                    "insert_after: refusing to insert @app route immediately after "
-                    "a decorator line; use an anchor after the complete decorated "
-                    "function block or after app = FastAPI(...)"
-                ),
-            }
-        if self._app_route_already_exists(file_lines, insertion):
-            return {"success": False, "error": self._duplicate_app_route_error("insert_after")}
-        if self._inserts_app_route_before_app_init(file_lines, idx, insertion, after=True):
-            return {
-                "success": False,
-                "error": "insert_after: refusing to insert @app route before app = FastAPI initialization",
-            }
-        if self._insertion_already_near_anchor(file_lines, idx, insertion, after=True):
-            return {"success": True, "summary": "insert_after: no change; content already present near anchor"}
-        merged_lines = file_lines[: idx + 1] + [insertion] + file_lines[idx + 1 :]
-        merged = "".join(merged_lines)
-        if file_path.endswith(".py"):
-            err = self._validate_python_ast(file_path, merged)
-            if err:
-                return {"success": False, "error": err}
-        hash_before = hashlib.sha256("".join(file_lines).encode()).hexdigest()
-        hash_new = hashlib.sha256(merged.encode()).hexdigest()
-        if hash_before == hash_new:
-            return {"success": True, "summary": "insert_after: no change"}
-        wr = self._commit_safe_edit(full_path, merged, insertion)
-        if not wr["success"]:
-            return {"success": False, "error": wr["error"]}
-        self._files_modified.append(file_path)
-        return {
-            "success": True,
-            "summary": f"Inserted {len(insertion)} chars after line {idx+1} in {file_path}",
-            "result_data": {"path": file_path, "after_line": idx + 1},
-        }
-
-    def _execute_insert_before(self, rt, action) -> Dict[str, Any]:
-        """Insert content before anchor line. Params: path, anchor, content."""
-        import hashlib
-        file_path = action.parameters.get("path", "")
-        anchor = action.parameters.get("anchor", "")
-        new_content = action.parameters.get("content", "")
-        if not file_path or anchor is None or new_content is None:
-            return {"success": False, "error": "insert_before: missing path/anchor/content"}
-        full_path = os.path.join(self.project_root, file_path)
-        if not os.path.isfile(full_path):
-            return {"success": False, "error": f"insert_before: file not found: {file_path}"}
-        try:
-            with open(full_path, "r", encoding="utf-8") as f:
-                file_lines = f.readlines()
-        except OSError as exc:
-            return {"success": False, "error": str(exc)}
-        idx = next((i for i, ln in enumerate(file_lines) if anchor in ln), None)
-        if idx is None:
-            return {"success": False, "error": f"insert_before: anchor not found: {repr(anchor)}"}
-        nl = "\n"
-        insertion = new_content if new_content.endswith(nl) else new_content + nl
-        if self._app_route_already_exists(file_lines, insertion):
-            return {"success": False, "error": self._duplicate_app_route_error("insert_before")}
-        if self._inserts_app_route_before_app_init(file_lines, idx, insertion, after=False):
-            return {
-                "success": False,
-                "error": "insert_before: refusing to insert @app route before app = FastAPI initialization",
-            }
-        if self._insertion_already_near_anchor(file_lines, idx, insertion, after=False):
-            return {"success": True, "summary": "insert_before: no change; content already present near anchor"}
-        merged_lines = file_lines[:idx] + [insertion] + file_lines[idx:]
-        merged = "".join(merged_lines)
-        if file_path.endswith(".py"):
-            err = self._validate_python_ast(file_path, merged)
-            if err:
-                return {"success": False, "error": err}
-        hash_before = hashlib.sha256("".join(file_lines).encode()).hexdigest()
-        hash_new = hashlib.sha256(merged.encode()).hexdigest()
-        if hash_before == hash_new:
-            return {"success": True, "summary": "insert_before: no change"}
-        wr = self._commit_safe_edit(full_path, merged, insertion)
-        if not wr["success"]:
-            return {"success": False, "error": wr["error"]}
-        self._files_modified.append(file_path)
-        return {
-            "success": True,
-            "summary": f"Inserted {len(insertion)} chars before line {idx+1} in {file_path}",
-            "result_data": {"path": file_path, "before_line": idx + 1},
-        }
-
     @staticmethod
     def _insertion_already_near_anchor(
         file_lines: List[str],
@@ -2174,17 +1832,8 @@ class AgentReasoningLoop:
         *,
         after: bool,
     ) -> bool:
-        wanted = insertion.strip()
-        if not wanted:
-            return False
-        insertion_line_count = max(1, len(insertion.splitlines()))
-        window_size = insertion_line_count + 4
-        if after:
-            window = "".join(file_lines[anchor_idx + 1 : anchor_idx + 1 + window_size])
-        else:
-            start = max(0, anchor_idx - window_size)
-            window = "".join(file_lines[start:anchor_idx])
-        return wanted in window.strip()
+        from igris.core.agent_loop_insertion_helpers import insertion_already_near_anchor
+        return insertion_already_near_anchor(file_lines, anchor_idx, insertion, after=after)
 
     @staticmethod
     def _inserts_app_route_before_app_init(
@@ -2194,61 +1843,28 @@ class AgentReasoningLoop:
         *,
         after: bool,
     ) -> bool:
-        if "@app." not in insertion:
-            return False
-        insertion_point_end = anchor_idx + 1 if after else anchor_idx
-        prior_text = "".join(file_lines[:insertion_point_end])
-        return "app = FastAPI" not in prior_text
+        from igris.core.agent_loop_insertion_helpers import inserts_app_route_before_app_init
+        return inserts_app_route_before_app_init(file_lines, anchor_idx, insertion, after=after)
 
     @staticmethod
     def _inserts_app_route_after_block_header(anchor_line: str, insertion: str) -> bool:
-        if "@app." not in insertion:
-            return False
-        stripped = anchor_line.strip()
-        return stripped.endswith(":") and not stripped.startswith("@")
+        from igris.core.agent_loop_insertion_helpers import inserts_app_route_after_block_header
+        return inserts_app_route_after_block_header(anchor_line, insertion)
 
     @staticmethod
     def _normalize_app_route_insertion_indent(anchor_line: str, insertion: str) -> str:
-        if "@app." not in insertion or "app = FastAPI(" not in anchor_line:
-            return insertion
-        anchor_indent = anchor_line[: len(anchor_line) - len(anchor_line.lstrip())]
-        if not anchor_indent:
-            return insertion
-        lines = insertion.splitlines()
-        leading_blank = bool(lines and not lines[0].strip())
-        content_lines = lines[1:] if leading_blank else lines
-        nonblank = [line for line in content_lines if line.strip()]
-        if not nonblank:
-            return insertion
-        first_nonblank_index = next(i for i, line in enumerate(content_lines) if line.strip())
-        body_nonblank = [line for line in content_lines[first_nonblank_index + 1 :] if line.strip()]
-        body_base_indent = min((len(line) - len(line.lstrip(" ")) for line in body_nonblank), default=0)
-        normalized = []
-        for i, line in enumerate(content_lines):
-            if not line.strip():
-                normalized.append(line)
-                continue
-            if i == first_nonblank_index:
-                stripped = line.lstrip(" ")
-            else:
-                stripped = line[body_base_indent:] if len(line) >= body_base_indent else line.lstrip(" ")
-            normalized.append(anchor_indent + stripped)
-        if leading_blank:
-            normalized.insert(0, "")
-        return "\n".join(normalized) + ("\n" if insertion.endswith("\n") else "")
+        from igris.core.agent_loop_insertion_helpers import normalize_app_route_insertion_indent
+        return normalize_app_route_insertion_indent(anchor_line, insertion)
 
     @staticmethod
     def _inserts_app_route_after_decorator_line(anchor_line: str, insertion: str) -> bool:
-        return "@app." in insertion and anchor_line.strip().startswith("@")
+        from igris.core.agent_loop_insertion_helpers import inserts_app_route_after_decorator_line
+        return inserts_app_route_after_decorator_line(anchor_line, insertion)
 
     @staticmethod
     def _app_routes_in_content(content: str) -> set[tuple[str, str]]:
-        import re
-
-        return {
-            (match.group(1), match.group(2))
-            for match in re.finditer(r"@app\.(\w+)\(\s*['\"]([^'\"]+)['\"]", content)
-        }
+        from igris.core.agent_loop_insertion_helpers import app_routes_in_content
+        return app_routes_in_content(content)
 
     def _app_route_already_exists(
         self,
@@ -2258,147 +1874,18 @@ class AgentReasoningLoop:
         exclude_start: Optional[int] = None,
         exclude_end: Optional[int] = None,
     ) -> bool:
-        inserted_routes = self._app_routes_in_content(insertion)
-        if not inserted_routes:
-            return False
-        if exclude_start is not None and exclude_end is not None:
-            existing_text = "".join(file_lines[:exclude_start] + file_lines[exclude_end:])
-        else:
-            existing_text = "".join(file_lines)
-        existing_routes = self._app_routes_in_content(existing_text)
-        return bool(inserted_routes & existing_routes)
+        from igris.core.agent_loop_insertion_helpers import app_route_already_exists
+        return app_route_already_exists(file_lines, insertion, exclude_start=exclude_start, exclude_end=exclude_end)
 
     @staticmethod
     def _duplicate_app_route_error(action_type: str) -> str:
-        return (
-            f"{action_type}: FastAPI route already present; do not retry this edit. "
-            "Proceed to tests/report or use replace_range only if the existing route "
-            "body needs a targeted update."
-        )
-
-    def _execute_replace_range(self, rt, action) -> Dict[str, Any]:
-        """Replace line range. Params: path, start (1-based), end (1-based), content."""
-        import hashlib
-        file_path = action.parameters.get("path", "")
-        start = action.parameters.get("start")
-        end = action.parameters.get("end")
-        new_content = action.parameters.get("content", "")
-        if not file_path or start is None or end is None or new_content is None:
-            return {"success": False, "error": "replace_range: missing path/start/end/content"}
-        try:
-            start, end = int(start), int(end)
-        except (TypeError, ValueError):
-            return {"success": False, "error": "replace_range: start/end must be integers"}
-        if start < 1 or end < start:
-            return {"success": False, "error": f"replace_range: invalid range {start}..{end}"}
-        full_path = os.path.join(self.project_root, file_path)
-        if not os.path.isfile(full_path):
-            return {"success": False, "error": f"replace_range: file not found: {file_path}"}
-        try:
-            with open(full_path, "r", encoding="utf-8") as f:
-                file_lines = f.readlines()
-        except OSError as exc:
-            return {"success": False, "error": str(exc)}
-        if end > len(file_lines):
-            return {"success": False, "error": f"replace_range: end {end} > file length {len(file_lines)}"}
-        nl = "\n"
-        replacement = new_content if new_content.endswith(nl) else new_content + nl
-        if self._app_route_already_exists(
-            file_lines,
-            replacement,
-            exclude_start=start - 1,
-            exclude_end=end,
-        ):
-            return {
-                "success": True,
-                "summary": "replace_range: FastAPI route already present; no change",
-                "result_data": {"path": file_path, "start": start, "end": end, "noop": True},
-            }
-        merged_lines = file_lines[: start - 1] + [replacement] + file_lines[end:]
-        merged = "".join(merged_lines)
-        if file_path.endswith(".py"):
-            err = self._validate_python_ast(file_path, merged)
-            if err:
-                return {"success": False, "error": err}
-        hash_before = hashlib.sha256("".join(file_lines).encode()).hexdigest()
-        hash_new = hashlib.sha256(merged.encode()).hexdigest()
-        if hash_before == hash_new:
-            return {"success": True, "summary": "replace_range: no change"}
-        wr = self._commit_safe_edit(full_path, merged, replacement)
-        if not wr["success"]:
-            return {"success": False, "error": wr["error"]}
-        self._files_modified.append(file_path)
-        return {
-            "success": True,
-            "summary": f"Replaced lines {start}–{end} in {file_path} with {len(replacement)} chars",
-            "result_data": {"path": file_path, "start": start, "end": end},
-        }
-
-    def _execute_append_file(self, rt, action) -> Dict[str, Any]:
-        """Append content to end of file. Params: path, content."""
-        import hashlib
-        file_path = action.parameters.get("path", "")
-        new_content = action.parameters.get("content", "")
-        if not file_path or new_content is None:
-            return {"success": False, "error": "append_file: missing path/content"}
-        full_path = os.path.join(self.project_root, file_path)
-        existing = ""
-        if os.path.isfile(full_path):
-            try:
-                with open(full_path, "r", encoding="utf-8") as f:
-                    existing = f.read()
-            except OSError as exc:
-                return {"success": False, "error": str(exc)}
-        if (
-            file_path.endswith(".py")
-            and existing.strip()
-            and self._looks_like_complete_python_module(new_content)
-        ):
-            return {
-                "success": False,
-                "error": (
-                    "append_file: refusing to append complete Python module content "
-                    f"to existing file: {file_path}; use write_file for new files "
-                    "or replace_range/insert_after/insert_before for existing files"
-                ),
-            }
-        nl = "\n"
-        sep = "" if (not existing or existing.endswith(nl)) else nl
-        merged = existing + sep + new_content
-        if file_path.endswith(".py"):
-            err = self._validate_python_ast(file_path, merged)
-            if err:
-                return {"success": False, "error": err}
-        hash_before = hashlib.sha256(existing.encode()).hexdigest()
-        hash_new = hashlib.sha256(merged.encode()).hexdigest()
-        if hash_before == hash_new:
-            return {"success": True, "summary": "append_file: no change"}
-        wr = self._commit_safe_edit(full_path, merged, new_content)
-        if not wr["success"]:
-            return {"success": False, "error": wr["error"]}
-        self._files_modified.append(file_path)
-        return {
-            "success": True,
-            "summary": f"Appended {len(new_content)} chars to {file_path}",
-            "result_data": {"path": file_path, "appended_chars": len(new_content)},
-        }
+        from igris.core.agent_loop_insertion_helpers import duplicate_app_route_error
+        return duplicate_app_route_error(action_type)
 
     @staticmethod
     def _looks_like_complete_python_module(content: str) -> bool:
-        """Heuristic for full-module Python content accidentally used as an append."""
-        stripped = content.lstrip()
-        if not (stripped.startswith("import ") or stripped.startswith("from ")):
-            return False
-        probe = "\n" + stripped
-        module_body_markers = (
-            "\ndef ",
-            "\nasync def ",
-            "\nclass ",
-            "\n@pytest.fixture",
-            "\napp = ",
-            "\nclient = ",
-        )
-        return any(marker in probe for marker in module_body_markers)
+        from igris.core.agent_loop_insertion_helpers import looks_like_complete_python_module
+        return looks_like_complete_python_module(content)
 
     def _execute_plan_update(self, action) -> Dict[str, Any]:
         """Execute a plan update action."""
