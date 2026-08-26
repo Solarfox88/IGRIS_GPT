@@ -288,7 +288,7 @@ async def _watchdog_loop(project_root: str) -> None:
                                                 RUN_STORE.pop(_ar.run_id, None)
                                         except (KeyError, AttributeError, TypeError, ImportError) as _ze:
                                             _watchdog_logger.warning("Watchdog: zombie eviction failed: %s", _ze)
-                            except Exception:  # noqa: BLE001  watchdog inner loop boundary
+                            except (OSError, ValueError, TypeError, KeyError, AttributeError, RuntimeError, ImportError):  # noqa: BLE001  watchdog inner loop boundary
                                 pass
             if not active:
                 # Account for the outcome of the run we last launched

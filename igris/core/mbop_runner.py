@@ -828,5 +828,5 @@ def mbop_post_run(
         except (ValueError, TypeError, AttributeError):  # noqa: BLE001
             pass
 
-    except Exception:  # noqa: BLE001
+    except (ImportError, OSError, ValueError, TypeError, RuntimeError, KeyError, AttributeError):  # noqa: BLE001
         pass
