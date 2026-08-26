@@ -29,6 +29,10 @@ import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional
+import logging
+
+
+_log = logging.getLogger(__name__)
 
 _DEFAULT_STORE = Path(".igris/failure_patterns.json")
 
@@ -244,5 +248,5 @@ class FailureMemory:
                 encoding="utf-8",
             )
             tmp.replace(self._path)
-        except OSError:
-            pass  # non-fatal: memory is advisory, never blocks a run
+        except OSError as exc:
+            _log.debug("failure_memory: narrowed catch failed: %s", exc, exc_info=True)

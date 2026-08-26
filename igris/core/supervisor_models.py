@@ -39,6 +39,9 @@ from igris.core.supervisor_repair_cycle import (
 )
 
 # AssignmentRouter — lazy import to avoid circular deps at module load
+
+_log = logging.getLogger(__name__)
+
 _assignment_router_available = False
 try:
     from igris.core.assignment_router import AssignmentRequest, AssignmentDecision, AssignmentRouter
@@ -370,15 +373,15 @@ def _parse_issue_number(explicit: Any, goal: str = "") -> int:
             n = int(explicit)
             if n > 0:
                 return n
-    except (TypeError, ValueError):
-        pass
+    except (TypeError, ValueError) as exc:
+        _log.debug("supervisor_models: narrowed catch failed: %s", exc, exc_info=True)
     # Fallback: parse first #NNN from goal string
     m = re.search(r"#(\d+)", goal)
     if m:
         try:
             return int(m.group(1))
-        except (TypeError, ValueError):
-            pass
+        except (TypeError, ValueError) as exc:
+            _log.debug("supervisor_models: narrowed catch failed: %s", exc, exc_info=True)
     return 0
 
 

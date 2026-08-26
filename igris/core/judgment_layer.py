@@ -9,7 +9,11 @@ from __future__ import annotations
 import time
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
+import logging
 
+
+
+_log = logging.getLogger(__name__)
 
 @dataclass
 class Advisory:
@@ -153,5 +157,5 @@ class JudgmentLayer:
                 },
                 confidence=0.65,
             )
-        except (ImportError, OSError, ValueError, TypeError, KeyError, AttributeError, RuntimeError):
-            pass
+        except (ImportError, OSError, ValueError, TypeError, KeyError, AttributeError, RuntimeError) as exc:
+            _log.debug("judgment_layer: narrowed catch failed: %s", exc, exc_info=True)

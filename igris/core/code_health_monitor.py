@@ -24,11 +24,15 @@ import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
+import logging
 
 
 # ---------------------------------------------------------------------------
 # Data structures
 # ---------------------------------------------------------------------------
+
+
+_log = logging.getLogger(__name__)
 
 @dataclass
 class HealthFinding:
@@ -71,8 +75,8 @@ def _run_coverage_json(project_root: str) -> Optional[Dict[str, Any]]:
     if json_path.exists():
         try:
             return json.loads(json_path.read_text())
-        except (json.JSONDecodeError, OSError, TypeError, ValueError):
-            pass
+        except (json.JSONDecodeError, OSError, TypeError, ValueError) as exc:
+            _log.debug("code_health_monitor: narrowed catch failed: %s", exc, exc_info=True)
     return None
 
 
@@ -174,8 +178,8 @@ def _git_blame_first_line_date(project_root: str, filepath: str, lineno: int) ->
             line = line.strip()
             if line.isdigit():
                 return float(line)
-    except (subprocess.SubprocessError, OSError, ValueError, TypeError):
-        pass
+    except (subprocess.SubprocessError, OSError, ValueError, TypeError) as exc:
+        _log.debug("code_health_monitor: narrowed catch failed: %s", exc, exc_info=True)
     return None
 
 
@@ -310,8 +314,8 @@ def _load_open_proactive_issues(project_root: str) -> List[Dict[str, str]]:
         )
         if result.returncode == 0:
             return list(json.loads(result.stdout or "[]"))
-    except (subprocess.SubprocessError, json.JSONDecodeError, OSError, TypeError, ValueError):
-        pass
+    except (subprocess.SubprocessError, json.JSONDecodeError, OSError, TypeError, ValueError) as exc:
+        _log.debug("code_health_monitor: narrowed catch failed: %s", exc, exc_info=True)
     return []
 
 
@@ -348,8 +352,8 @@ def _open_github_issue(project_root: str, finding: HealthFinding) -> Optional[st
         )
         if result.returncode == 0:
             return result.stdout.strip()
-    except (subprocess.SubprocessError, OSError, ValueError, TypeError):
-        pass
+    except (subprocess.SubprocessError, OSError, ValueError, TypeError) as exc:
+        _log.debug("code_health_monitor: narrowed catch failed: %s", exc, exc_info=True)
     return None
 
 
@@ -393,8 +397,8 @@ class CodeHealthMonitor:
                 if json_path.exists():
                     try:
                         cov_data = json.loads(json_path.read_text())
-                    except (json.JSONDecodeError, OSError, TypeError, ValueError):
-                        pass
+                    except (json.JSONDecodeError, OSError, TypeError, ValueError) as exc:
+                        _log.debug("code_health_monitor: narrowed catch failed: %s", exc, exc_info=True)
 
             if cov_data:
                 current_cov = _parse_coverage_json(cov_data)

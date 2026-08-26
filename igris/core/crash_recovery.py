@@ -24,11 +24,15 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from igris.core.safety import redact_secrets
+import logging
 
 
 # ---------------------------------------------------------------------------
 # Failure categories
 # ---------------------------------------------------------------------------
+
+
+_log = logging.getLogger(__name__)
 
 FAILURE_CATEGORIES: Dict[str, str] = {
     "import_error": "Missing or broken dependency",
@@ -261,8 +265,8 @@ def list_crash_reports(
         try:
             data = json.loads(f.read_text(encoding="utf-8"))
             reports.append(data)
-        except (json.JSONDecodeError, OSError, ValueError):
-            pass
+        except (json.JSONDecodeError, OSError, ValueError) as exc:
+            _log.debug("crash_recovery: narrowed catch failed: %s", exc, exc_info=True)
     return reports
 
 

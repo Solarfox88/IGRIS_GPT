@@ -96,8 +96,8 @@ def _gh_issue_state(project_root: str, issue_number: int) -> Optional[str]:
         if r.returncode == 0:
             data = json.loads(r.stdout)
             return str(data.get("state", "")).lower()
-    except (subprocess.SubprocessError, OSError, json.JSONDecodeError, KeyError, ValueError, TypeError):
-        pass
+    except (subprocess.SubprocessError, OSError, json.JSONDecodeError, KeyError, ValueError, TypeError) as exc:
+        logger.debug("dependency_checker: narrowed catch failed: %s", exc, exc_info=True)
     return None
 
 
@@ -112,8 +112,8 @@ def _gh_pr_merged(project_root: str, issue_number: int) -> Optional[bool]:
         if r.returncode == 0:
             data = json.loads(r.stdout)
             return bool(data.get("merged", False))
-    except (subprocess.SubprocessError, OSError, json.JSONDecodeError, KeyError, ValueError, TypeError):
-        pass
+    except (subprocess.SubprocessError, OSError, json.JSONDecodeError, KeyError, ValueError, TypeError) as exc:
+        logger.debug("dependency_checker: narrowed catch failed: %s", exc, exc_info=True)
     return None
 
 
@@ -184,8 +184,8 @@ class DependencyChecker:
             if r.returncode == 0:
                 data = json.loads(r.stdout)
                 return data.get("labels", [])
-        except (subprocess.SubprocessError, OSError, json.JSONDecodeError, KeyError, ValueError, TypeError):
-            pass
+        except (subprocess.SubprocessError, OSError, json.JSONDecodeError, KeyError, ValueError, TypeError) as exc:
+            logger.debug("dependency_checker: narrowed catch failed: %s", exc, exc_info=True)
         return []
 
     def _get_deps(self, issue_number: int) -> List[int]:

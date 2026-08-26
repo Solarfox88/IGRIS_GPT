@@ -486,8 +486,8 @@ def create_router(deps) -> APIRouter:
                     "Readability violations in response (words=%d): %s",
                     _rdx.word_count, _rdx.violations,
                 )
-        except (ImportError, AttributeError, TypeError, ValueError):
-            pass
+        except (ImportError, AttributeError, TypeError, ValueError) as exc:
+            logger.debug("routes_01: narrowed catch failed: %s", exc, exc_info=True)
 
         # Record routing decision
         provider_router.record_chat_routing(
@@ -880,16 +880,16 @@ def create_router(deps) -> APIRouter:
             diag = diagnostics_dash.get_diagnostic_summary(
                 tasks, timeline, project_root=str(CONFIG.project_root),
             )
-        except (AttributeError, KeyError, TypeError, ValueError, OSError):
-            pass
+        except (AttributeError, KeyError, TypeError, ValueError, OSError) as exc:
+            logger.debug("routes_01: narrowed catch failed: %s", exc, exc_info=True)
 
         loop_info: dict = {}
         try:
             from igris.core.autonomous_loop import get_loop_status as _get_loop_status
             _ls = _get_loop_status()
             loop_info = _ls.to_dict() if hasattr(_ls, "to_dict") else {}
-        except (ImportError, AttributeError, TypeError, ValueError, OSError):
-            pass
+        except (ImportError, AttributeError, TypeError, ValueError, OSError) as exc:
+            logger.debug("routes_01: narrowed catch failed: %s", exc, exc_info=True)
 
         mission_overview = {
             "active_task_count": 0,
@@ -905,8 +905,8 @@ def create_router(deps) -> APIRouter:
             if running:
                 mission_overview["running_task_id"] = str(running[0].get("task_id", "") or "")
                 mission_overview["running_task_title"] = str(running[0].get("description", "") or "")
-        except (AttributeError, KeyError, TypeError, ValueError):
-            pass
+        except (AttributeError, KeyError, TypeError, ValueError) as exc:
+            logger.debug("routes_01: narrowed catch failed: %s", exc, exc_info=True)
 
         risk_snapshot = {
             "level": "low",
@@ -920,8 +920,8 @@ def create_router(deps) -> APIRouter:
             elif mission_overview["pending_task_count"] > 15:
                 risk_snapshot["level"] = "medium"
                 risk_snapshot["reason"] = "task_backlog_high"
-        except (AttributeError, KeyError, TypeError, ValueError):
-            pass
+        except (AttributeError, KeyError, TypeError, ValueError) as exc:
+            logger.debug("routes_01: narrowed catch failed: %s", exc, exc_info=True)
 
         warnings = []
         if risk_snapshot["level"] in {"medium", "high"}:
@@ -977,8 +977,8 @@ def create_router(deps) -> APIRouter:
                         "last_intent": _last.get("action_type"),
                         "decision": _last.get("decision"),
                     }
-            except (AttributeError, KeyError, TypeError, ValueError):
-                pass
+            except (AttributeError, KeyError, TypeError, ValueError) as exc:
+                logger.debug("routes_01: narrowed catch failed: %s", exc, exc_info=True)
         except (ImportError, AttributeError, TypeError, ValueError, OSError) as _e:
             interlocutor_section["error"] = str(_e)
 

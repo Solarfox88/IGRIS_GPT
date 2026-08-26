@@ -3,7 +3,11 @@ from __future__ import annotations
 import time
 from dataclasses import dataclass
 from typing import Tuple
+import logging
 
+
+
+_log = logging.getLogger(__name__)
 
 @dataclass
 class ContractViolation:
@@ -43,6 +47,6 @@ class AgentCoordinator:
                     escalation_role = ESCALATION_PATH.get(role, "")
                     if escalation_role:
                         mg.add_node("run_event", {"event_type": "escalation_triggered", "reason": f"Role '{role}' violated contract on '{action_type}' {repeat_count}x", "escalation_to": escalation_role})
-            except (ImportError, OSError, ValueError, TypeError, KeyError, AttributeError, RuntimeError):
-                pass
+            except (ImportError, OSError, ValueError, TypeError, KeyError, AttributeError, RuntimeError) as exc:
+                _log.debug("agent_contracts: narrowed catch failed: %s", exc, exc_info=True)
         return allowed, reason

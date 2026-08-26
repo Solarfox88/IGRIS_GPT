@@ -93,8 +93,8 @@ def check_task_starvation(tasks: List[Dict[str, Any]]) -> List[DiagnosticFinding
             age = now - ct
             if age > STARVATION_THRESHOLD_SECONDS:
                 stale.append(t)
-        except (ValueError, OverflowError):
-            pass
+        except (ValueError, OverflowError) as exc:
+            logger.debug("diagnostics: narrowed catch failed: %s", exc, exc_info=True)
 
     if stale:
         severity = "critical" if len(stale) >= 5 else "warning"
@@ -332,8 +332,8 @@ def get_diagnostic_summary(
             ct = calendar.timegm(time.strptime(created, "%Y-%m-%dT%H:%M:%SZ"))
             if now - ct > STARVATION_THRESHOLD_SECONDS:
                 pending_old_count += 1
-        except (ValueError, OverflowError):
-            pass
+        except (ValueError, OverflowError) as exc:
+            logger.debug("diagnostics: narrowed catch failed: %s", exc, exc_info=True)
 
     # Starvation is only reported when tasks are actually stale (older than threshold).
     # The TaskEngine is passive storage by design — pending tasks without running/completed

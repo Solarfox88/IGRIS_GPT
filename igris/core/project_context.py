@@ -21,7 +21,11 @@ from igris.layers.git_layer.git_status import get_git_info
 from igris.core.task_engine import TaskEngine
 from igris.core import anti_loop
 from igris.models.config import CONFIG
+import logging
 
+
+
+_log = logging.getLogger(__name__)
 
 def build_project_snapshot(root: Optional[Path] = None, task_engine: Optional[TaskEngine] = None) -> Dict[str, object]:
     """Assemble a dictionary summarizing the current project context.
@@ -59,8 +63,8 @@ def build_project_snapshot(root: Optional[Path] = None, task_engine: Optional[Ta
                 top_entries = sorted(dirnames + filenames)[:10]
             if file_count > 1000:
                 break
-    except (OSError, PermissionError, ValueError):
-        pass
+    except (OSError, PermissionError, ValueError) as exc:
+        _log.debug("project_context: narrowed catch failed: %s", exc, exc_info=True)
     ctx["file_count"] = file_count
     ctx["top_entries"] = top_entries
     # Git info

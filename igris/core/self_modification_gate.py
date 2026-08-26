@@ -28,11 +28,15 @@ import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set
+import logging
 
 
 # ---------------------------------------------------------------------------
 # Core file registry (env-overridable)
 # ---------------------------------------------------------------------------
+
+
+_log = logging.getLogger(__name__)
 
 _DEFAULT_CORE_FILES: Set[str] = {
     "igris/web/server.py",
@@ -346,5 +350,5 @@ class SelfModificationGate:
                 "outcome": outcome,
                 "checked_at": result.checked_at,
             })
-        except (OSError, json.JSONDecodeError, TypeError, ValueError):
-            pass  # audit must never raise
+        except (OSError, json.JSONDecodeError, TypeError, ValueError) as exc:
+            _log.debug("self_modification_gate: narrowed catch failed: %s", exc, exc_info=True)

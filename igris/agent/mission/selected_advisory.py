@@ -52,8 +52,12 @@ from igris.agent.mission.recovery_taxonomy import (
     get_template,
 )
 from igris.agent.mission.status_bridge import bridge
+import logging
 
 # Lazy import for taxonomy_bridge (only loaded when use_taxonomy_bridge_alignment=True)
+
+_log = logging.getLogger(__name__)
+
 def _get_aligned_template_fn():
     from igris.agent.mission.taxonomy_bridge import (
         get_aligned_template,
@@ -481,8 +485,8 @@ def compute_selected_metrics(
             conf = rec.get("confidence", "unknown")
             confidence_dist[conf] = confidence_dist.get(conf, 0) + 1
 
-        except (TypeError, ValueError, KeyError, AttributeError, IndexError):
-            pass
+        except (TypeError, ValueError, KeyError, AttributeError, IndexError) as exc:
+            _log.debug("selected_advisory: narrowed catch failed: %s", exc, exc_info=True)
 
     for c in cycles_list:
         run_s  = str(c.get("current_loop_decision") or "unknown")

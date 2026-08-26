@@ -307,8 +307,8 @@ class CIRepairLoop:
                 cwd=self.project_root, capture_output=True, text=True, timeout=15,
             )
             current_diff = r.stdout[:3000] if r.returncode == 0 else ""
-        except (subprocess.SubprocessError, OSError, ValueError, TypeError):
-            pass
+        except (subprocess.SubprocessError, OSError, ValueError, TypeError) as exc:
+            _log.debug("ci_repair_loop: narrowed catch failed: %s", exc, exc_info=True)
 
         return {
             "pr_number": self.pr_number,

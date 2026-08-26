@@ -24,7 +24,11 @@ import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional
+import logging
 
+
+
+_log = logging.getLogger(__name__)
 
 _QUALITY_HISTORY_FILE = ".igris/quality_scores.json"
 _QUALITY_WINDOW_DAYS = 7      # days after which a fix is considered "stable"
@@ -130,8 +134,8 @@ def _get_issue_state(project_root: str, issue_number: int) -> Optional[str]:
         if r.returncode == 0:
             data = json.loads(r.stdout)
             return str(data.get("state", "")).lower()
-    except (subprocess.SubprocessError, OSError, json.JSONDecodeError, KeyError, ValueError, TypeError):
-        pass
+    except (subprocess.SubprocessError, OSError, json.JSONDecodeError, KeyError, ValueError, TypeError) as exc:
+        _log.debug("outcome_quality_tracker: narrowed catch failed: %s", exc, exc_info=True)
     return None
 
 
@@ -146,8 +150,8 @@ def _get_issue_events(project_root: str, issue_number: int) -> List[Dict]:
         if r.returncode == 0:
             events = [line.strip() for line in r.stdout.splitlines() if line.strip()]
             return [{"event": e} for e in events]
-    except (subprocess.SubprocessError, OSError, IndexError, TypeError):
-        pass
+    except (subprocess.SubprocessError, OSError, IndexError, TypeError) as exc:
+        _log.debug("outcome_quality_tracker: narrowed catch failed: %s", exc, exc_info=True)
     return []
 
 
@@ -289,8 +293,8 @@ class OutcomeQualityTracker:
             if raw_issue is not None:
                 try:
                     issue_num = int(raw_issue)
-                except (TypeError, ValueError):
-                    pass
+                except (TypeError, ValueError) as exc:
+                    _log.debug("outcome_quality_tracker: narrowed catch failed: %s", exc, exc_info=True)
 
             rec = scores.get(oid) or QualityRecord(
                 outcome_id=oid,

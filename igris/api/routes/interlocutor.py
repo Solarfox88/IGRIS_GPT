@@ -8,6 +8,10 @@ from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
+import logging
+
+
+_log = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api", tags=["interlocutor"])
 
@@ -128,8 +132,8 @@ def create_delegation_key(req: CreateKeyRequest) -> Dict[str, Any]:
                 grantor_scopes = ["*"] + p.authorized_scopes
             else:
                 grantor_scopes = list(p.authorized_scopes)
-        except (AttributeError, TypeError, OSError, KeyError):
-            pass
+        except (AttributeError, TypeError, OSError, KeyError) as exc:
+            _log.debug("interlocutor: narrowed catch failed: %s", exc, exc_info=True)
 
         key = create_key(
             project_root=_PROJECT_ROOT,

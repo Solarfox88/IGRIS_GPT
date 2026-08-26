@@ -74,6 +74,8 @@ STATIC_DIR = MODULE_DIR / "static"
 
 
 _watchdog_logger = logging.getLogger("igris.watchdog")
+_log = logging.getLogger(__name__)
+
 
 _WATCHDOG_POLL_SECONDS = 60
 _WATCHDOG_COOLDOWN_SECONDS = 30
@@ -288,8 +290,8 @@ async def _watchdog_loop(project_root: str) -> None:
                                                 RUN_STORE.pop(_ar.run_id, None)
                                         except (KeyError, AttributeError, TypeError, ImportError) as _ze:
                                             _watchdog_logger.warning("Watchdog: zombie eviction failed: %s", _ze)
-                            except (OSError, ValueError, TypeError, KeyError, AttributeError, RuntimeError, ImportError):  # noqa: BLE001  watchdog inner loop boundary
-                                pass
+                            except (OSError, ValueError, TypeError, KeyError, AttributeError, RuntimeError, ImportError) as exc:  # noqa: BLE001  watchdog inner loop boundary
+                                _log.debug("server: narrowed catch failed: %s", exc, exc_info=True)
             if not active:
                 # Account for the outcome of the run we last launched
                 if _last_run_id is not None and _last_issue_num is not None:
@@ -463,8 +465,8 @@ async def _watchdog_loop(project_root: str) -> None:
                     except (json.JSONDecodeError, OSError, TypeError, ValueError, KeyError):
                         try:
                             _hint_path.unlink()
-                        except OSError:
-                            pass
+                        except OSError as exc:
+                            _log.debug("server: narrowed catch failed: %s", exc, exc_info=True)
                 issue = _hint_issue or _pick_next_roadmap_issue(project_root, skip_issues=_skipped_issues)
                 if issue:
                     number = issue["number"]
@@ -560,8 +562,8 @@ async def _lifespan(app: FastAPI):
                 _nav_logger.info(
                     "Nav hierarchy invariant: OK (%d top-level tabs)", len(_report.top_level_tabs)
                 )
-    except (ImportError, OSError, ValueError, TypeError, AttributeError):
-        pass
+    except (ImportError, OSError, ValueError, TypeError, AttributeError) as exc:
+        _log.debug("server: narrowed catch failed: %s", exc, exc_info=True)
     try:
         yield
     finally:
@@ -569,8 +571,8 @@ async def _lifespan(app: FastAPI):
         smw_task.cancel()
         try:
             await task
-        except asyncio.CancelledError:
-            pass
+        except asyncio.CancelledError as exc:
+            _log.debug("server: narrowed catch failed: %s", exc, exc_info=True)
 
 
 

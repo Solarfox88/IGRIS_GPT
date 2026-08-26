@@ -15,6 +15,10 @@ import subprocess
 from typing import TYPE_CHECKING, Any, Dict, List
 
 from igris.core.supervisor_models import _safe_redact
+import logging
+
+
+_log = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from igris.core.supervisor_models import RankSupervisorConfig, SupervisorRun
@@ -59,8 +63,8 @@ def auto_create_subissues(
                     _n = (_lbl.get("name") or "").lower()
                     if _n in ("roadmap", "created-by:igris") or _n.startswith("p") and len(_n) == 2 and _n[1].isdigit() or _n.startswith("phase-"):
                         _parent_inherit_labels.append(_lbl.get("name", _n))
-    except (subprocess.SubprocessError, OSError, json.JSONDecodeError, ValueError, TypeError, KeyError):
-        pass  # Label propagation is best-effort
+    except (subprocess.SubprocessError, OSError, json.JSONDecodeError, ValueError, TypeError, KeyError) as exc:
+        _log.debug("supervisor_subissues: narrowed catch failed: %s", exc, exc_info=True)
 
     # Epic #1075 — Dependency-order scheduling: build execution waves and log
     # the wave structure so the autochain can respect creation order.
@@ -117,8 +121,8 @@ def auto_create_subissues(
             import json as _json
             for _issue in _json.loads(_existing.stdout or "[]"):
                 existing_open_titles.add((_issue.get("title") or "").lower().strip())
-    except (subprocess.SubprocessError, json.JSONDecodeError, OSError, TypeError, ValueError):
-        pass  # Dedup is best-effort; if it fails, allow creation to proceed
+    except (subprocess.SubprocessError, json.JSONDecodeError, OSError, TypeError, ValueError) as exc:
+        _log.debug("supervisor_subissues: narrowed catch failed: %s", exc, exc_info=True)
 
     # Epic #1078 — Enforce max sub-issue count to prevent noisy decompositions.
     _MAX_SUBISSUES = int(os.getenv("IGRIS_MAX_SUBISSUES_PER_DECOMPOSITION", "12"))
@@ -270,8 +274,8 @@ def auto_create_subissues(
                                 reason="dedup:title_match",
                             )
                             break
-            except (subprocess.SubprocessError, OSError, json.JSONDecodeError, ValueError, TypeError, KeyError):
-                pass
+            except (subprocess.SubprocessError, OSError, json.JSONDecodeError, ValueError, TypeError, KeyError) as exc:
+                _log.debug("supervisor_subissues: narrowed catch failed: %s", exc, exc_info=True)
             continue
         out_of_scope = sub.get("out_of_scope") or []
         success_signal = str(sub.get("success_signal", "")).strip()
@@ -339,8 +343,8 @@ def auto_create_subissues(
                     capture_output=True, text=True,
                     cwd=supervisor.project_root, timeout=20,
                 )
-            except (subprocess.SubprocessError, OSError):
-                pass  # Label application is best-effort
+            except (subprocess.SubprocessError, OSError) as exc:
+                _log.debug("supervisor_subissues: narrowed catch failed: %s", exc, exc_info=True)
         else:
             run.add(
                 "subissue_created",

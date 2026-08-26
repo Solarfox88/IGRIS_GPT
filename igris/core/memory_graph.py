@@ -671,8 +671,8 @@ CREATE INDEX IF NOT EXISTS idx_edges_dst  ON memory_edges(dst_node);
                         updated_at = row["updated_at"] if hasattr(row, "__getitem__") else row[5]
                         if updated_at and float(updated_at) < stale_threshold_ts:
                             stale_count += 1
-                except (KeyError, IndexError, TypeError, ValueError):
-                    pass
+                except (KeyError, IndexError, TypeError, ValueError) as exc:
+                    _log.debug("memory_graph: narrowed catch failed: %s", exc, exc_info=True)
 
                 # Collect lesson advice for contradiction check
                 try:
@@ -682,8 +682,8 @@ CREATE INDEX IF NOT EXISTS idx_edges_dst  ON memory_edges(dst_node);
                         advice = content.get("lesson", content.get("advice", content.get("summary", "")))
                         if goal_type and advice:
                             lesson_advice.setdefault(goal_type, []).append(str(advice))
-                except (KeyError, IndexError, TypeError, ValueError):
-                    pass
+                except (KeyError, IndexError, TypeError, ValueError) as exc:
+                    _log.debug("memory_graph: narrowed catch failed: %s", exc, exc_info=True)
 
             # Count contradictions: goal_type with 3+ conflicting lessons
             contradicted = sum(
@@ -762,8 +762,8 @@ CREATE INDEX IF NOT EXISTS idx_edges_dst  ON memory_edges(dst_node);
             recipe = self.get_command_recipe(goal)
             if recipe:
                 packet["command_recipe"] = recipe
-        except (KeyError, TypeError, ValueError, sqlite3.Error):
-            pass
+        except (KeyError, TypeError, ValueError, sqlite3.Error) as exc:
+            _log.debug("memory_graph: narrowed catch failed: %s", exc, exc_info=True)
 
         if include_health:
             try:

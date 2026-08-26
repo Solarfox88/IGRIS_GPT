@@ -957,8 +957,8 @@ class JarvisCoreGauntlet:
                 try:
                     import shutil
                     shutil.rmtree(temp_dir, ignore_errors=True)
-                except OSError:
-                    pass
+                except OSError as exc:
+                    logger.debug("jarvis_core_gauntlet: narrowed catch failed: %s", exc, exc_info=True)
 
     def _check_write_endpoint_auth_gate(self, r: GauntletCheckResult) -> None:
         """Smoke: all write endpoints require a valid admin/owner session (P0 fix #1293).
@@ -1115,8 +1115,8 @@ class JarvisCoreGauntlet:
             try:
                 import shutil
                 shutil.rmtree(temp_dir, ignore_errors=True)
-            except OSError:
-                pass
+            except OSError as exc:
+                logger.debug("jarvis_core_gauntlet: narrowed catch failed: %s", exc, exc_info=True)
 
     def _check_dangerous_intent_routing(self, r: GauntletCheckResult) -> None:
         """Verify dangerous intents are never classified as chat_only (#1295).

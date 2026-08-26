@@ -253,8 +253,8 @@ def _save_known_baseline_failures(
     }
     try:
         path.write_text(json.dumps(data, indent=2), encoding="utf-8")
-    except OSError:
-        pass
+    except OSError as exc:
+        logger.debug("supervisor_analysis: narrowed catch failed: %s", exc, exc_info=True)
 
 
 def _get_main_sha(project_root: str) -> str:

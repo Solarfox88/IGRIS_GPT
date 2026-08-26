@@ -24,7 +24,11 @@ from igris.core.supervisor_models import (
     SupervisorRun,
     _safe_redact,
 )
+import logging
 
+
+
+_log = logging.getLogger(__name__)
 
 def load_audit_index(supervisor: Any) -> Dict[str, Dict[str, Any]]:
     try:
@@ -71,8 +75,8 @@ def persist_runs_index(supervisor: Any) -> None:
         try:
             from igris.core.file_rotation import rotate_if_needed
             rotate_if_needed(supervisor._runs_path)
-        except (ImportError, OSError, ValueError, TypeError):
-            pass
+        except (ImportError, OSError, ValueError, TypeError) as exc:
+            _log.debug("supervisor_audit: narrowed catch failed: %s", exc, exc_info=True)
         payload = {"runs": supervisor._runs_index}
         supervisor._runs_path.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
     except OSError:

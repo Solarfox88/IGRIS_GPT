@@ -4,6 +4,10 @@ import json, os, re, tempfile, time, uuid
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
+import logging
+
+
+_log = logging.getLogger(__name__)
 
 REQUIRED_SCHEMA_FIELDS = (
     "diagnosis", "likely_supervisor_gap", "suggested_repair_strategy",
@@ -604,8 +608,8 @@ def save_ab_result(record: Dict[str, Any], path: str = ".igris/helper_ab_results
     except (OSError, IOError, PermissionError):
         try:
             os.unlink(tmp_path)
-        except OSError:
-            pass
+        except OSError as exc:
+            _log.debug("helper_ab_eval: narrowed catch failed: %s", exc, exc_info=True)
         raise
 
 

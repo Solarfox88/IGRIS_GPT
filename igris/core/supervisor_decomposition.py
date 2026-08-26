@@ -23,6 +23,8 @@ from igris.core.supervisor_models import (
     _safe_redact,
 )
 
+_log = logging.getLogger(__name__)
+
 
 # Short prompt template for the local decomposition attempt (max_steps=15).
 DECOMP_SHORT_PROMPT = (
@@ -357,8 +359,8 @@ def api_helper_decompose(
     resp: Dict[str, Any] = {}
     try:
         resp = json.loads(api_result.output)
-    except (json.JSONDecodeError, ValueError):
-        pass
+    except (json.JSONDecodeError, ValueError) as exc:
+        _log.debug("supervisor_decomposition: narrowed catch failed: %s", exc, exc_info=True)
 
     why = resp.get("why_too_large", "")
     subs = resp.get("sub_missions")

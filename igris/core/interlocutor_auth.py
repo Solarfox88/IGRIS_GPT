@@ -469,8 +469,8 @@ class AuthCredentialStore:
                 _dummy_salt = secrets.token_hex(PASSWORD_SALT_BYTES)
                 hashlib.pbkdf2_hmac("sha256", raw_password.encode("utf-8"),
                                      _dummy_salt.encode("utf-8"), PASSWORD_ITERATIONS)
-            except (ValueError, TypeError):
-                pass
+            except (ValueError, TypeError) as exc:
+                logger.debug("interlocutor_auth: narrowed catch failed: %s", exc, exc_info=True)
             finally:
                 del raw_password
             result.errors.append(_GENERIC_ERROR)

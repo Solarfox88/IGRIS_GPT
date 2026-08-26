@@ -692,8 +692,8 @@ def get_supervisor_audit_summary(project_root: str) -> Dict[str, Any]:
                         )
                     ):
                         deferred_due_count += 1
-        except (OSError, json.JSONDecodeError):
-            pass
+        except (OSError, json.JSONDecodeError) as exc:
+            logger.debug("supervisor_api: narrowed catch failed: %s", exc, exc_info=True)
 
     return {
         "audit_file": str(audit_path),

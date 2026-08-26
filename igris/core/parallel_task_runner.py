@@ -86,8 +86,8 @@ class FileLock:
             try:
                 fcntl.flock(self._fd, fcntl.LOCK_UN)  # type: ignore[union-attr]  # Unix-only fcntl
                 os.close(self._fd)
-            except (OSError, PermissionError):
-                pass
+            except (OSError, PermissionError) as exc:
+                logger.debug("parallel_task_runner: narrowed catch failed: %s", exc, exc_info=True)
             finally:
                 self._fd = None
                 try:

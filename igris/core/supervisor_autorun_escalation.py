@@ -19,6 +19,10 @@ import os
 from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple
 
 from igris.core.supervisor_models import _command_detail, _safe_redact
+import logging
+
+
+_log = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from igris.core.supervisor_models import RankSupervisorConfig, SupervisorRun
@@ -147,8 +151,8 @@ def maybe_api_escalate(
                 stage_id="api_escalation",
                 evidence=json.dumps(supervisor._sanitize_escalation_value(advice), sort_keys=True),
             )
-        except (KeyError, TypeError, ValueError, AttributeError, RuntimeError):  # noqa: BLE001
-            pass
+        except (KeyError, TypeError, ValueError, AttributeError, RuntimeError) as exc:  # noqa: BLE001
+            _log.debug("supervisor_autorun_escalation: narrowed catch failed: %s", exc, exc_info=True)
     return advice
 
 

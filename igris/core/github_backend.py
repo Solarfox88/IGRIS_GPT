@@ -299,8 +299,8 @@ class SubprocessGitHubBackend(GitHubBackend):
                 ok = False
         try:
             self._run(["git", "branch", "-d", branch], timeout=10)
-        except (subprocess.SubprocessError, OSError):
-            pass
+        except (subprocess.SubprocessError, OSError) as exc:
+            _log.debug("github_backend: narrowed catch failed: %s", exc, exc_info=True)
         return ok
 
 

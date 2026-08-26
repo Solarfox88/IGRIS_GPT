@@ -21,11 +21,15 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Set
 
 from igris.core.safety import redact_secrets
+import logging
 
 
 # ---------------------------------------------------------------------------
 # World State
 # ---------------------------------------------------------------------------
+
+
+_log = logging.getLogger(__name__)
 
 @dataclass
 class WorldState:
@@ -419,8 +423,8 @@ class GOAPPlanner:
                     failed_count = sum(1 for h in history if h.get("content", {}).get("outcome") == "failure")
                     if failed_count >= 2:
                         action.cost = action.cost * 1.5
-            except (ImportError, OSError, TypeError, ValueError, KeyError, AttributeError):
-                pass
+            except (ImportError, OSError, TypeError, ValueError, KeyError, AttributeError) as exc:
+                _log.debug("goap_planner: narrowed catch failed: %s", exc, exc_info=True)
 
             # Score and select best action
             scored = sorted(eligible, key=lambda a: self._score_action(a, goal, current_state), reverse=True)

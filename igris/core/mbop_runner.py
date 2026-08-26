@@ -25,11 +25,15 @@ import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
+import logging
 
 
 # ---------------------------------------------------------------------------
 # Data models
 # ---------------------------------------------------------------------------
+
+
+_log = logging.getLogger(__name__)
 
 @dataclass
 class MBOPIntakeResult:
@@ -105,8 +109,8 @@ def mbop_phase1_intake(issue_number: int, project_root: str) -> MBOPIntakeResult
         result.constraints = _extract_list_section(body, ["### Constraints", "**Constraints**"])
         result.acceptance_criteria = _extract_acceptance_criteria(body)
         result.extraction_ok = True
-    except (subprocess.SubprocessError, OSError, json.JSONDecodeError, KeyError, ValueError, TypeError):  # noqa: BLE001
-        pass
+    except (subprocess.SubprocessError, OSError, json.JSONDecodeError, KeyError, ValueError, TypeError) as exc:  # noqa: BLE001
+        _log.debug("mbop_runner: narrowed catch failed: %s", exc, exc_info=True)
     return result
 
 
@@ -247,8 +251,8 @@ def mbop_phase9_quality_gate(
                         for rpat in _STUB_REGEX_PATTERNS:
                             if rpat.search(line):
                                 stub_found.append(f"{rel_path}:{line_no}:{rpat.pattern}")
-        except OSError:
-            pass
+        except OSError as exc:
+            _log.debug("mbop_runner: narrowed catch failed: %s", exc, exc_info=True)
     result.stub_patterns_found = stub_found
 
     # --- Destructive patch detection ---
@@ -500,8 +504,8 @@ def _get_modified_files(project_root: str, base_branch: str = "main") -> List[st
             proc = subprocess.run(cmd, capture_output=True, text=True, timeout=10, cwd=project_root)
             if proc.returncode == 0:
                 return [f.strip() for f in proc.stdout.splitlines() if f.strip()]
-        except (subprocess.SubprocessError, OSError, FileNotFoundError):  # noqa: BLE001
-            pass
+        except (subprocess.SubprocessError, OSError, FileNotFoundError) as exc:  # noqa: BLE001
+            _log.debug("mbop_runner: narrowed catch failed: %s", exc, exc_info=True)
     return []
 
 
@@ -514,8 +518,8 @@ def _get_diff_text(project_root: str, base_branch: str = "main") -> str:
         )
         if proc.returncode == 0:
             return proc.stdout[:10000]
-    except (subprocess.SubprocessError, OSError, FileNotFoundError):  # noqa: BLE001
-        pass
+    except (subprocess.SubprocessError, OSError, FileNotFoundError) as exc:  # noqa: BLE001
+        _log.debug("mbop_runner: narrowed catch failed: %s", exc, exc_info=True)
     return ""
 
 
@@ -528,8 +532,8 @@ def _get_last_commit_message(project_root: str) -> str:
         )
         if proc.returncode == 0:
             return proc.stdout.strip()
-    except (subprocess.SubprocessError, OSError, FileNotFoundError):  # noqa: BLE001
-        pass
+    except (subprocess.SubprocessError, OSError, FileNotFoundError) as exc:  # noqa: BLE001
+        _log.debug("mbop_runner: narrowed catch failed: %s", exc, exc_info=True)
     return ""
 
 
@@ -577,8 +581,8 @@ def _persist_event(
         with _persist_event._lock:  # type: ignore[attr-defined]
             with open(log_path, "a", encoding="utf-8") as f:
                 f.write(line)
-    except (OSError, PermissionError, TypeError):  # noqa: BLE001
-        pass
+    except (OSError, PermissionError, TypeError) as exc:  # noqa: BLE001
+        _log.debug("mbop_runner: narrowed catch failed: %s", exc, exc_info=True)
 
 
 # ---------------------------------------------------------------------------
@@ -629,8 +633,8 @@ def mbop_pre_run(
         if run_add_fn:
             try:
                 run_add_fn("mbop_phase1_intake", "error", err_detail)
-            except (KeyError, TypeError, AttributeError):  # noqa: BLE001
-                pass
+            except (KeyError, TypeError, AttributeError) as exc:  # noqa: BLE001
+                _log.debug("mbop_runner: narrowed catch failed: %s", exc, exc_info=True)
         _persist_event(project_root, run_id, issue_number, "mbop_phase1_intake", "error", err_detail)
     return intake
 
@@ -658,15 +662,15 @@ def mbop_post_run(
         modified_files: List[str] = []
         try:
             modified_files = _get_modified_files(project_root)
-        except (subprocess.SubprocessError, OSError):  # noqa: BLE001
-            pass
+        except (subprocess.SubprocessError, OSError) as exc:  # noqa: BLE001
+            _log.debug("mbop_runner: narrowed catch failed: %s", exc, exc_info=True)
 
         # Get diff text early — used by Phase 9 destructive-patch detection and Phase 10
         diff_text_early = ""
         try:
             diff_text_early = _get_diff_text(project_root)
-        except (subprocess.SubprocessError, OSError):  # noqa: BLE001
-            pass
+        except (subprocess.SubprocessError, OSError) as exc:  # noqa: BLE001
+            _log.debug("mbop_runner: narrowed catch failed: %s", exc, exc_info=True)
 
         quality = MBOPQualityGateResult()
         try:
@@ -695,8 +699,8 @@ def mbop_post_run(
         }
         try:
             run.add("mbop_phase9_quality_gate", qg_status, qg_detail, **qg_extra)
-        except (KeyError, TypeError, AttributeError):  # noqa: BLE001
-            pass
+        except (KeyError, TypeError, AttributeError) as exc:  # noqa: BLE001
+            _log.debug("mbop_runner: narrowed catch failed: %s", exc, exc_info=True)
         _persist_event(project_root, run_id, issue_number, "mbop_phase9_quality_gate", qg_status, qg_detail, qg_extra)
 
         if not quality.passed and enforce_quality_gate and run_status == "completed":
@@ -710,8 +714,8 @@ def mbop_post_run(
                 run.failure_class = "mbop_quality_gate_failed"
                 run.outcome = "Blocked — MBOP Quality Gate failed"
                 run.add("mbop_quality_gate_enforcement", "blocked", enf_detail)
-            except (KeyError, TypeError, AttributeError):  # noqa: BLE001
-                pass
+            except (KeyError, TypeError, AttributeError) as exc:  # noqa: BLE001
+                _log.debug("mbop_runner: narrowed catch failed: %s", exc, exc_info=True)
             _persist_event(project_root, run_id, issue_number, "mbop_quality_gate_enforcement", "blocked", enf_detail)
 
         # ---- Phase 10: Satisfaction Gate ----
@@ -719,8 +723,8 @@ def mbop_post_run(
         try:
             diff_text = _get_diff_text(project_root)
             commit_msg = _get_last_commit_message(project_root)
-        except (subprocess.SubprocessError, OSError):  # noqa: BLE001
-            pass
+        except (subprocess.SubprocessError, OSError) as exc:  # noqa: BLE001
+            _log.debug("mbop_runner: narrowed catch failed: %s", exc, exc_info=True)
 
         satisfaction = MBOPSatisfactionGateResult()
         try:
@@ -748,8 +752,8 @@ def mbop_post_run(
         }
         try:
             run.add("mbop_phase10_satisfaction_gate", sg_status, sg_detail, **sg_extra)
-        except (KeyError, TypeError, AttributeError):  # noqa: BLE001
-            pass
+        except (KeyError, TypeError, AttributeError) as exc:  # noqa: BLE001
+            _log.debug("mbop_runner: narrowed catch failed: %s", exc, exc_info=True)
         _persist_event(project_root, run_id, issue_number, "mbop_phase10_satisfaction_gate", sg_status, sg_detail, sg_extra)
 
         # ---- Phase 11: Post-Task Evaluation ----
@@ -760,8 +764,8 @@ def mbop_post_run(
                 intake, quality, satisfaction, duration, failure_class,
                 run_status=run_status, completion_mode=completion_mode,
             )
-        except (AttributeError, TypeError, ValueError):  # noqa: BLE001
-            pass
+        except (AttributeError, TypeError, ValueError) as exc:  # noqa: BLE001
+            _log.debug("mbop_runner: narrowed catch failed: %s", exc, exc_info=True)
         eval_detail = f"MBOP Phase 11 Post-Task Eval: {eval_result.summary}"
         eval_extra: Dict[str, Any] = {
             "duration_seconds": round(duration, 1), "lessons": eval_result.lessons[:5],
@@ -770,8 +774,8 @@ def mbop_post_run(
         }
         try:
             run.add("mbop_phase11_post_task_eval", "done", eval_detail, **eval_extra)
-        except (KeyError, TypeError, AttributeError):  # noqa: BLE001
-            pass
+        except (KeyError, TypeError, AttributeError) as exc:  # noqa: BLE001
+            _log.debug("mbop_runner: narrowed catch failed: %s", exc, exc_info=True)
         _persist_event(project_root, run_id, issue_number, "mbop_phase11_post_task_eval", "done", eval_detail, eval_extra)
 
         # ---- Write quality_scores.json record (Bug fix: was never written) ----
@@ -809,8 +813,8 @@ def mbop_post_run(
             })
             # Keep last 500 records
             _qs_path.write_text(_json.dumps(_existing[-500:], indent=2))
-        except (OSError, json.JSONDecodeError, TypeError, ValueError):  # noqa: BLE001
-            pass  # never block
+        except (OSError, json.JSONDecodeError, TypeError, ValueError) as exc:  # noqa: BLE001
+            _log.debug("mbop_runner: narrowed catch failed: %s", exc, exc_info=True)
 
         # ---- Phase 12: Next-Step ----
         try:
@@ -822,11 +826,11 @@ def mbop_post_run(
                 ns_extra: Dict[str, Any] = {"suggestions": suggestions, "failure_class": failure_class}
                 try:
                     run.add("mbop_phase12_next_step", "advisory", ns_detail, **ns_extra)
-                except (KeyError, TypeError, AttributeError):  # noqa: BLE001
-                    pass
+                except (KeyError, TypeError, AttributeError) as exc:  # noqa: BLE001
+                    _log.debug("mbop_runner: narrowed catch failed: %s", exc, exc_info=True)
                 _persist_event(project_root, run_id, issue_number, "mbop_phase12_next_step", "advisory", ns_detail, ns_extra)
-        except (ValueError, TypeError, AttributeError):  # noqa: BLE001
-            pass
+        except (ValueError, TypeError, AttributeError) as exc:  # noqa: BLE001
+            _log.debug("mbop_runner: narrowed catch failed: %s", exc, exc_info=True)
 
-    except (ImportError, OSError, ValueError, TypeError, RuntimeError, KeyError, AttributeError):  # noqa: BLE001
-        pass
+    except (ImportError, OSError, ValueError, TypeError, RuntimeError, KeyError, AttributeError) as exc:  # noqa: BLE001
+        _log.debug("mbop_runner: narrowed catch failed: %s", exc, exc_info=True)

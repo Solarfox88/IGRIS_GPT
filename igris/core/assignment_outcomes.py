@@ -9,7 +9,11 @@ import tempfile
 from typing import Any, Dict, List
 
 from igris.core.redaction import redact as _canonical_redact, redact_nested as _canonical_redact_nested
+import logging
 
+
+
+_log = logging.getLogger(__name__)
 
 def _redact_string(value: str) -> str:
     # Delegate to canonical module; replace marker to match [REDACTED] convention expected by existing tests.
@@ -47,8 +51,8 @@ def load_assignment_outcomes(path: str) -> List[Dict[str, Any]]:
             data = json.load(f)
         if isinstance(data, list):
             return data
-    except (OSError, json.JSONDecodeError):
-        pass
+    except (OSError, json.JSONDecodeError) as exc:
+        _log.debug("assignment_outcomes: narrowed catch failed: %s", exc, exc_info=True)
     return []
 
 
@@ -73,6 +77,6 @@ def _atomic_write(path: str, data: Any) -> None:
     except (OSError, IOError, PermissionError):
         try:
             os.unlink(tmp)
-        except OSError:
-            pass
+        except OSError as exc:
+            _log.debug("assignment_outcomes: narrowed catch failed: %s", exc, exc_info=True)
         raise

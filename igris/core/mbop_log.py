@@ -3,6 +3,10 @@ from __future__ import annotations
 import json
 from pathlib import Path
 from typing import Any, Dict, List, Optional
+import logging
+
+
+_log = logging.getLogger(__name__)
 
 def log_path(project_root: str) -> Path:
     return Path(project_root) / ".igris" / "mbop_events.jsonl"
@@ -19,10 +23,10 @@ def read_all(project_root: str) -> List[Dict[str, Any]]:
                 if line:
                     try:
                         events.append(json.loads(line))
-                    except json.JSONDecodeError:
-                        pass
-    except OSError:
-        pass
+                    except json.JSONDecodeError as exc:
+                        _log.debug("mbop_log: narrowed catch failed: %s", exc, exc_info=True)
+    except OSError as exc:
+        _log.debug("mbop_log: narrowed catch failed: %s", exc, exc_info=True)
     return events
 
 def read_for_run(project_root: str, run_id: str) -> List[Dict[str, Any]]:

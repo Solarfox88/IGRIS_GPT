@@ -13,7 +13,11 @@ import os
 import time
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
+import logging
 
+
+
+_log = logging.getLogger(__name__)
 
 _DEFAULT_CONFIG: Dict[str, Any] = {
     "enabled": True,
@@ -245,5 +249,5 @@ class ReflectionHook:
                     },
                     confidence=0.65,
                 )
-        except (ImportError, OSError, TypeError, ValueError, RuntimeError):
-            pass
+        except (ImportError, OSError, TypeError, ValueError, RuntimeError) as exc:
+            _log.debug("reflection_hook: narrowed catch failed: %s", exc, exc_info=True)

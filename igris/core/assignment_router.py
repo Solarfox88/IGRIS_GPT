@@ -424,8 +424,8 @@ def _compute_profile_stats(
             avg_q = avg_quality_for_profile(matching, profile, scores, min_history=3)
             if avg_q is not None:
                 quality_weighted = success_rate * avg_q
-        except (OSError, KeyError, ValueError, TypeError, json.JSONDecodeError):
-            pass  # quality tracking is best-effort, never blocks routing
+        except (OSError, KeyError, ValueError, TypeError, json.JSONDecodeError) as exc:
+            _log.debug("assignment_router: narrowed catch failed: %s", exc, exc_info=True)
 
     return {
         "total": total,
