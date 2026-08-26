@@ -2,8 +2,8 @@
 
 **Target:** `jarvis-core-ready`
 **Status:** PASSED ✅
-**Generated:** 2026-08-26T18:39:44.170476+00:00
-**Report ID:** `6eb0f99a-b97c-4e05-b44e-b58b95f41ef1`
+**Generated:** 2026-08-26T23:15:01.051952+00:00
+**Report ID:** `337efb48-1532-4366-aa36-5973c985d550`
 
 ## Summary
 
@@ -13,21 +13,21 @@
 
 | ID | Name | Status | Passed | Duration |
 |----|------|--------|--------|----------|
-| `security_gate` | Security Gate | passed | ✅ | 17ms |
-| `memory_persistence` | Memory Persistence | passed | ✅ | 86ms |
+| `security_gate` | Security Gate | passed | ✅ | 15ms |
+| `memory_persistence` | Memory Persistence | passed | ✅ | 93ms |
 | `request_routing` | Request Routing | passed | ✅ | 0ms |
-| `context_aggregation` | Context Aggregation | passed | ✅ | 77ms |
-| `mission_first` | Mission-first Planning | passed | ✅ | 32ms |
-| `verification_evidence` | Verification & Evidence | passed | ✅ | 30ms |
-| `reflection_learning` | Reflection & Learning | passed | ✅ | 114ms |
-| `ml_light_shadow` | ML-light Shadow Mode | passed | ✅ | 28ms |
-| `end_to_end_jarvis_flow` | End-to-End Jarvis Flow | passed | ✅ | 130ms |
-| `secret_redaction_global` | Global Secret Redaction | passed | ✅ | 80ms |
-| `auth_enrollment_login_flow` | Auth Enrollment/Login Flow | passed | ✅ | 130ms |
-| `write_endpoint_auth_gate` | Write Endpoint Auth Gate | passed | ✅ | 711ms |
+| `context_aggregation` | Context Aggregation | passed | ✅ | 81ms |
+| `mission_first` | Mission-first Planning | passed | ✅ | 40ms |
+| `verification_evidence` | Verification & Evidence | passed | ✅ | 29ms |
+| `reflection_learning` | Reflection & Learning | passed | ✅ | 151ms |
+| `ml_light_shadow` | ML-light Shadow Mode | passed | ✅ | 34ms |
+| `end_to_end_jarvis_flow` | End-to-End Jarvis Flow | passed | ✅ | 152ms |
+| `secret_redaction_global` | Global Secret Redaction | passed | ✅ | 95ms |
+| `auth_enrollment_login_flow` | Auth Enrollment/Login Flow | passed | ✅ | 123ms |
+| `write_endpoint_auth_gate` | Write Endpoint Auth Gate | passed | ✅ | 708ms |
 | `dangerous_intent_routing` | Dangerous Intent Routing | passed | ✅ | 0ms |
-| `memory_cross_session` | Memory Cross-Session | passed | ✅ | 8ms |
-| `task_engine_reliability` | Task Engine Reliability | passed | ✅ | 8ms |
+| `memory_cross_session` | Memory Cross-Session | passed | ✅ | 7ms |
+| `task_engine_reliability` | Task Engine Reliability | passed | ✅ | 6ms |
 
 ## Evidence
 
@@ -52,7 +52,7 @@
 - {'blocked_sections': ['route', 'missions', 'tasks_timeline', 'project_state', 'git_state', 'rank_status'], 'blocked_route': <RequestRoute.BLOCKED: 'blocked'>}
 
 ### Mission-first Planning
-- {'read_only': {'mission_id': 'cefbdbad', 'route': 'read_only_inspection', 'status': 'planned', 'execution_mode': 'read_only', 'blocked': False}}
+- {'read_only': {'mission_id': 'e29963a6', 'route': 'read_only_inspection', 'status': 'planned', 'execution_mode': 'read_only', 'blocked': False}}
 - {'deploy': {'route': 'deploy_operation', 'status': 'waiting_approval', 'execution_mode': 'approval_required', 'requires_approval': True, 'blocked': False}}
 - {'blocked_plan': {'route': 'blocked', 'blocked': True, 'status': 'blocked'}}
 
@@ -84,7 +84,7 @@
 - **total_checks**: 15
 - **passed_checks**: 15
 - **failed_checks**: 0
-- **total_duration_ms**: 1451
+- **total_duration_ms**: 1534
 
 ## Next Steps
 
