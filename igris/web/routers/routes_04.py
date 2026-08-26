@@ -371,6 +371,11 @@ def create_router(deps) -> APIRouter:
         finally:
             nonlocal_cmd_running["running"] = False
 
+    @router.post("/api/terminal/exec", deprecated=True)
+    async def api_terminal_exec_legacy(request: Request, command: Dict[str, str] = Body(...)) -> Dict[str, object]:
+        """Legacy alias for /api/terminal/run (#1289)."""
+        return await api_terminal_run(request, command)
+
     # ---- Reports ----
 
     @router.get("/api/reports/recent")
