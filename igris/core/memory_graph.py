@@ -45,32 +45,10 @@ class MemoryGraph:
         self._init_schema()
 
     def _init_schema(self) -> None:
-        self.conn.executescript(
-            """
-CREATE TABLE IF NOT EXISTS memory_nodes (
-    node_id     TEXT PRIMARY KEY,
-    node_type   TEXT NOT NULL,
-    content     TEXT NOT NULL,
-    confidence  REAL NOT NULL DEFAULT 1.0,
-    success_rate REAL NOT NULL DEFAULT 1.0,
-    created_at  REAL NOT NULL,
-    updated_at  REAL NOT NULL,
-    tags        TEXT NOT NULL DEFAULT '[]'
-);
-CREATE TABLE IF NOT EXISTS memory_edges (
-    edge_id     TEXT PRIMARY KEY,
-    src_node    TEXT NOT NULL REFERENCES memory_nodes(node_id),
-    dst_node    TEXT NOT NULL REFERENCES memory_nodes(node_id),
-    edge_type   TEXT NOT NULL,
-    weight      REAL NOT NULL DEFAULT 1.0,
-    created_at  REAL NOT NULL
-);
-CREATE INDEX IF NOT EXISTS idx_nodes_type ON memory_nodes(node_type);
-CREATE INDEX IF NOT EXISTS idx_edges_src  ON memory_edges(src_node);
-CREATE INDEX IF NOT EXISTS idx_edges_dst  ON memory_edges(dst_node);
-"""
-        )
-        self.conn.commit()
+        from igris.core.schema_manager import SchemaManager, MIGRATIONS
+
+        mgr = SchemaManager(self.conn, MIGRATIONS["memory_graph"], component="memory_graph")
+        mgr.migrate_to_latest()
 
     def _contains_secret(self, value: Any) -> bool:
         if isinstance(value, str):

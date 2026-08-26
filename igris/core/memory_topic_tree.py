@@ -46,24 +46,9 @@ class TopicTree:
         self._init_schema()
 
     def _init_schema(self) -> None:
-        self._conn.executescript("""
-CREATE TABLE IF NOT EXISTS topic_chunks (
-    topic       TEXT NOT NULL,
-    chunk_id    TEXT NOT NULL,
-    score       REAL NOT NULL DEFAULT 0.0,
-    content     TEXT NOT NULL DEFAULT '',
-    added_at    REAL NOT NULL DEFAULT 0.0,
-    PRIMARY KEY (topic, chunk_id)
-);
-CREATE TABLE IF NOT EXISTS topic_summaries (
-    topic       TEXT PRIMARY KEY,
-    summary     TEXT NOT NULL DEFAULT '',
-    chunk_count INTEGER NOT NULL DEFAULT 0,
-    updated_at  REAL NOT NULL DEFAULT 0.0
-);
-CREATE INDEX IF NOT EXISTS idx_tc_topic_score ON topic_chunks(topic, score DESC);
-""")
-        self._conn.commit()
+        from igris.core.schema_manager import SchemaManager, MIGRATIONS
+        mgr = SchemaManager(self._conn, MIGRATIONS["memory_topic_tree"], component="memory_topic_tree")
+        mgr.migrate_to_latest()
 
     # ------------------------------------------------------------------
     # Public API
