@@ -176,7 +176,8 @@ Previous Hyper-V VM at 192.168.1.253 is no longer in use (VHDX could not boot on
 
 ## Known caveats
 
-- **#1353 target <50 MET** — `except Exception` count reduced 627→76→49 (Phases 3-9 + final cleanup). 49 remain, all annotated # noqa: BLE001. 0 without noqa, 0 except Exception: pass. Target <50 achieved.
+- **#1353 CLOSED** — `except Exception` count reduced 627→76→49→47 (Phases 3-9 + final cleanup + #1314 eval). 47 remain, all annotated # noqa: BLE001. 0 without noqa, 0 except Exception: pass. Target <50 achieved. #1353 closed 2026-08-26.
+- **#1314 remains OPEN** — Parent evaluation complete. 4/5 criteria met, criterion 2 (every specific except logs) partially met — 154 narrowed catches use `pass` without logging. Follow-up #1417 created. #1314 cannot close until #1417 resolves.
 - **#1354 is closed** — structured logging criteria met by architecture (Blocks 31-34). All `igris.*` child loggers inherit structured JSON formatting from root logger.
 - **#1395 is open** — `agent_reasoning_loop.py` 2,477 lines (target <2,000).
 - **#1290 is closed** — diagnostics starvation false positive fixed (Block 37, PR #1408). 3 stale tasks processed (Block 38). VM diagnostics now healthy=true.
