@@ -18,6 +18,7 @@ import pytest
 
 _REPO = Path(__file__).parent.parent
 _AUTH_JS = _REPO / "igris/web/static/js/auth.js"
+_AUTH_UI_JS = _REPO / "igris/web/static/js/auth_ui.js"
 _APP_JS = _REPO / "igris/web/static/js/app.js"
 _INDEX_HTML = _REPO / "igris/web/templates/index.html"
 
@@ -196,12 +197,14 @@ def test_no_forbidden_fields_in_enroll_form():
 # ── Chat send uses authHeaders ────────────────────────────────────────────────
 
 def test_chat_send_uses_auth_headers():
-    content = _read(_APP_JS)
-    assert "authHeaders" in content, "authHeaders not referenced in app.js chat send"
+    # Chat code was extracted to chat.js (#1318); check both app.js and chat.js
+    content = _read(_APP_JS) + _read(_REPO / "igris/web/static/js/chat.js")
+    assert "authHeaders" in content, "authHeaders not referenced in app.js/chat.js chat send"
 
 
 def test_chat_api_function_accepts_extra_headers():
-    content = _read(_APP_JS)
+    # API function was extracted to api.js (#1318); check both app.js and api.js
+    content = _read(_APP_JS) + _read(_REPO / "igris/web/static/js/api.js")
     # The api() function should accept extraHeaders or similar
     assert "extraHeaders" in content or "extraHeaders" in content.replace(" ", ""), \
         "api() function does not accept extra headers"
@@ -257,22 +260,22 @@ def test_auth_js_loaded_after_app_js():
 def test_index_html_has_login_button():
     content = _read(_INDEX_HTML)
     assert "tb-auth-btn" in content, "Login button (tb-auth-btn) not found in index.html"
-    # Function must be in auth.js (no inline onclick)
-    auth_js = _read(_AUTH_JS)
+    # Function must be in auth.js or auth_ui.js (no inline onclick)
+    auth_js = _read(_AUTH_JS) + _read(_AUTH_UI_JS)
     assert "authShowLogin" in auth_js
 
 
 def test_index_html_has_logout_button():
     content = _read(_INDEX_HTML)
     assert "tb-logout-btn" in content, "Logout button (tb-logout-btn) not found in index.html"
-    auth_js = _read(_AUTH_JS)
+    auth_js = _read(_AUTH_JS) + _read(_AUTH_UI_JS)
     assert "authDoLogout" in auth_js
 
 
 def test_index_html_has_enroll_button():
     content = _read(_INDEX_HTML)
     assert "tb-enroll-btn" in content, "Enroll button (tb-enroll-btn) not found in index.html"
-    auth_js = _read(_AUTH_JS)
+    auth_js = _read(_AUTH_JS) + _read(_AUTH_UI_JS)
     assert "authShowEnroll" in auth_js
 
 
