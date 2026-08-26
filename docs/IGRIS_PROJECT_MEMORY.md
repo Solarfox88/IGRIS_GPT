@@ -2,13 +2,13 @@
 
 Stable project state — source of truth for all agents.
 
-Last updated: 2026-08-20 (Phase 9 — #1353 except Exception narrowing, 179→76)
+Last updated: 2026-08-26 (Post-roadmap stabilization audit — 10-issue roadmap complete)
 
 ## Repository
 
 - repo: `Solarfox88/IGRIS_GPT` (public)
 - default branch: `main`
-- current `main` commit: `e1a1797` (Phase 9 #1353 merged via PR #1413)
+- current `main` commit: `6aa78e3` (post-roadmap, all 10 issues closed)
 
 ## Mandatory operating method
 
@@ -151,6 +151,16 @@ A task cannot be considered production-complete if VM evidence is missing.
 | Except Exception Phase 7 | #1353 / PR #1398 | **PARTIAL** | `8f2ff1e` | narrowed 67 in 8 memory/task/diagnostics files (353→286) |
 | Except Exception Phase 8 | #1353 / PR #1399 | **PARTIAL** | `4f80984` | narrowed 107 in 27 core/api/web/agent files (286→179); fixed 4 regressions; VM validated 15/15 |
 | Except Exception Phase 9 | #1353 / PR #1413 | **PARTIAL** (Phase 9) | `e1a1797` | narrowed 103 broad catches (179→76); 75 annotated # noqa: BLE001; 0 narrowable remaining; 0 except Exception: pass; VM 15/15; post-merge VM e1a1797 15/15 |
+| #1417 logging narrowed catches | #1417 / PR #1419 | done | `b23a0a0` | 141 narrowed catches now log; 13 silent pass kept (ImportError etc.) |
+| #1314 parent closure | #1314 / PR #1420 | done | (docs) | all 5 criteria MET; #1314 closed |
+| #1316 pyright CI | #1316 / PR #1421 | done | (docs) | pyright CI already configured; #1316 closed |
+| #1289 API aliases | #1289 / PR #1422 | done | (squash) | backward-compatible API path aliases added |
+| #1297 verifier payload | #1297 / PR #1423 | done | (squash) | verifier/reflection error messages + payload schemas |
+| #1317 router rename | #1317 / PR #1424 | done | (squash) | anonymous web routers renamed by domain |
+| #1395 loop split | #1395 / PR #1425 | done | `403e2e0` | agent_reasoning_loop.py 2477→1968 lines; 2 modules extracted |
+| #1318 app.js modularization | #1318 / PR #1426 | done | `68c5818` | app.js 2401→170 lines; 13 ES modules; tests/_js_helpers.py |
+| #1319 SQLite migrations | #1319 / PR #1427 | done | `1357ea5` | SchemaManager + per-component migration registries; 12 tests |
+| #1321 graceful shutdown | #1321 / PR #1428 | done | `6aa78e3` | LoopCheckpointManager + GracefulShutdownHandler + StepWatchdog; 17 tests |
 
 ## Security baseline
 
@@ -180,7 +190,11 @@ Previous Hyper-V VM at 192.168.1.253 is no longer in use (VHDX could not boot on
 - **#1314 CLOSED** — All 5 criteria MET. except Exception: 47 (<50). 0 except Exception:pass. Criterion 2: 141 catches now log, 13 silent pass (ImportError etc, explicitly allowed). Tests: 7072 passed. CI: green. #1314 closed 2026-08-26.
 - **#1417 CLOSED** — 141 narrowed catches now log with debug level. 13 silent patterns kept (ImportError, FileNotFoundError, etc.). PR #1419 merged b23a0a0.
 - **#1354 is closed** — structured logging criteria met by architecture (Blocks 31-34). All `igris.*` child loggers inherit structured JSON formatting from root logger.
-- **#1395 is open** — `agent_reasoning_loop.py` 2,477 lines (target <2,000).
+- **#1395 CLOSED** — `agent_reasoning_loop.py` split from 2,477 to 1,968 lines via PR #1425. Extracted `agent_loop_edit_mixin.py` and `agent_loop_insertion_helpers.py`.
+- **#1318 CLOSED** — `app.js` modularized from 2,401 to 170 lines via PR #1426. 13 ES modules extracted, all under 500 lines. Tests updated via `tests/_js_helpers.py`.
+- **#1319 CLOSED** — SQLite schema versioning added via PR #1427. `SchemaManager` in `igris/core/schema_manager.py` with per-component migration registries.
+- **#1321 CLOSED** — Graceful shutdown and crash recovery added via PR #1428. `LoopCheckpointManager`, `GracefulShutdownHandler`, `StepWatchdog` in `igris/core/loop_checkpoint_manager.py`.
+- **Post-roadmap audit (2026-08-26)**: 7113 tests passed, 0 failed. pyright 0 errors. Gauntlet 15/15. VM healthy. All 14 JS modules load (200). SQLite migration smoke OK. Checkpoint smoke OK. Import graph OK.
 - **#1290 is closed** — diagnostics starvation false positive fixed (Block 37, PR #1408). 3 stale tasks processed (Block 38). VM diagnostics now healthy=true.
 - **#1312, #1371, #1356, #1355, #1315, #1296, #1291 are closed** — supervisor split complete (1,844 lines), pyright 0 errors with CI blocking, structured logging foundation complete, task engine worker, chat intent auth.
 - **`memory_cross_session` gauntlet check fails on Windows** with `[WinError 32]` SQLite graph.db file lock — pre-existing, NOT a regression. Passes on Linux VM. Tests now skip on Windows with pytest.skip().

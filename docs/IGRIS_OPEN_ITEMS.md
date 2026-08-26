@@ -2,7 +2,7 @@
 
 Open issues and tech debt for IGRIS_GPT. Updated after every task.
 
-Last updated: 2026-08-26 (#1314 evaluation — except Exception 47, #1353 closed, #1417 follow-up)
+Last updated: 2026-08-26 (Post-roadmap stabilization audit — 10-issue roadmap complete, all closed)
 
 ## Completion policy
 
@@ -60,8 +60,8 @@ A runtime refactor with missing import graph evidence is not complete.
 | P0 | #1301 | open (EPIC, active) | Auth & Session SSOT — PR1–PR5A merged (#1345 merged `54b6b60`) |
 | P2 | #1291 | **closed** (PR #1348 merged `19a1dc4`) | Fixed — /api/chat/intent now gates code_change for limited users |
 | P2 | #1290 | **closed** (PR #1408 Block 37 + Block 38 maintenance) | Fixed — starvation false positive corrected, 3 stale tasks processed, diagnostics now healthy=true |
-| P2 | #1289 | open | API path inconsistency — `/api/github/prs`, `/api/github/issues`, `/api/git/log` do not exist |
-| P2 | #1297 | open | Verifier/Reflection payload contract undocumented, misleading error |
+| P2 | #1289 | **CLOSED** (PR #1422 merged) | Fixed — backward-compatible API path aliases added |
+| P2 | #1297 | **CLOSED** (PR #1423 merged) | Fixed — verifier/reflection error messages + payload schemas |
 
 ## Tech debt
 
@@ -71,11 +71,11 @@ A runtime refactor with missing import graph evidence is not complete.
 | Critical | #1315 | **closed** — foundation complete (PR #1375 `4877168`) | Follow-up: **#1354 CLOSED** — structured logging acceptance criteria met by architecture (all 107 loggers inherit StructuredFormatter from root "igris" logger) |
 | Critical | #1316 | **CLOSED** — pyright 0 errors, CI type-check job exists and is blocking, 25 type:ignore all have comments/codes, tests pass. Closed 2026-08-26. | All criteria MET |
 | Tech debt | #1312 | **closed** — supervisor split complete | Follow-up: **#1371** CLOSED — `self_repair_supervisor.py` 1,844 lines (below 2,000 target); #1356 CLOSED; follow-up **#1395** for `agent_reasoning_loop.py` (2,477 lines) |
-| Refactor | #1317 (I1) | open | router anonymous routes `routes_01..10` — rename by domain |
-| Refactor | #1318 (I2) | open | `app.js` monolithic 2401 lines — modularize into ES modules |
-| Feature | #1319 (I4) | open | SQLite migration system / schema versioning |
+| Refactor | #1317 (I1) | **CLOSED** (PR #1424 merged) | Routers renamed by domain — routes_01..10 → semantic names |
+| Refactor | #1318 (I2) | **CLOSED** (PR #1426 merged) | app.js 2401→170 lines, 13 ES modules extracted, all <500 lines |
+| Feature | #1319 (I4) | **CLOSED** (PR #1427 merged) | SchemaManager + per-component migration registries, 12 tests |
 | Testing | #1320 (I5) | open | integration tests with real LLM |
-| Reliability | #1321 (I6) | open | graceful shutdown / crash recovery of loop state |
+| Reliability | #1321 (I6) | **CLOSED** (PR #1428 merged) | LoopCheckpointManager + GracefulShutdownHandler + StepWatchdog, 17 tests |
 | Safety | #1322 (I3) | open | 80 direct subprocess calls bypass ToolRuntime |
 
 ## Milestones (M1–M8)
@@ -120,4 +120,4 @@ A runtime refactor with missing import graph evidence is not complete.
 | #1353 | **CLOSED** — Final cleanup: 76→49→47 except Exception (target <50 MET). 28 catches narrowed. 0 except Exception: pass. PR #1416 merged 982785c. #1353 closed 2026-08-26. | Closed |
 | #1417 | **CLOSED** — 141 catches now log with debug, 13 silent pass kept (ImportError etc). PR #1419 merged b23a0a0. | Closed |
 | #1371 | **CLOSED** — supervisor split complete, 1,844 lines (below 2,000) | Closed 2026-08-15 |
-| #1395 | `agent_reasoning_loop.py` 2,477 lines (target <2,000) | Split agent_reasoning_loop.py |
+| #1395 | **CLOSED** (PR #1425 merged `403e2e0`) | agent_reasoning_loop.py 2477→1968 lines, 2 modules extracted |

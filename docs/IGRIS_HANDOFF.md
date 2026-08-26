@@ -2,7 +2,7 @@
 
 The exact point where work resumes. Updated by every agent at the end of each task.
 
-Last updated: 2026-08-20 (Phase 9 — #1353 except Exception narrowing, 179→76)
+Last updated: 2026-08-26 (Post-roadmap stabilization audit — 10-issue roadmap complete)
 
 ## Process violation recorded (2026-08-16)
 
@@ -57,7 +57,50 @@ A runtime refactor with missing import graph evidence is not complete.
 
 ## Current next issue
 
-**Phase 9 of #1353 merged via PR #1413 (commit e1a1797). 179→76 except Exception, 0 narrowable remaining. Post-merge VM validated: gauntlet 15/15, diagnostics healthy=true, os/brief ok=true. Issue remains OPEN (76 > target <50).**
+**10-issue autonomous roadmap COMPLETE. All 10 issues closed, all 10 PRs merged. Post-roadmap stabilization audit passed: 7113 tests, 0 errors pyright, 15/15 gauntlet, VM healthy.**
+
+### Roadmap completed (2026-08-26)
+
+| # | Issue | PR | Merge commit |
+|---|---|---|---|
+| 1 | #1417 | #1419 | `b23a0a0` |
+| 2 | #1314 | #1420 | (docs) |
+| 3 | #1316 | #1421 | (docs) |
+| 4 | #1289 | #1422 | (squash) |
+| 5 | #1297 | #1423 | (squash) |
+| 6 | #1317 | #1424 | (squash) |
+| 7 | #1395 | #1425 | `403e2e0` |
+| 8 | #1318 | #1426 | `68c5818` |
+| 9 | #1319 | #1427 | `1357ea5` |
+| 10 | #1321 | #1428 | `6aa78e3` |
+
+### Post-roadmap audit results
+
+- compileall: PASS
+- pyright: 0 errors, 897 warnings
+- pytest: 7113 passed, 2 skipped, 0 failed
+- targeted suites: 165 tests all passed
+- VM gauntlet: 15/15 PASSED
+- VM diagnostics: healthy=true, 0 findings
+- VM os/brief: ok=true
+- UI smoke: all 14 JS modules 200, index 200, chat form present
+- SQLite migration smoke: all 4 components have schema_version, data preserved
+- Checkpoint smoke: save/load/clear OK, watchdog OK, shutdown handler OK
+- Import graph: all 34 modules import OK
+
+### Next recommended work
+
+Select next 10-issue roadmap from open issues. Candidates by priority:
+- #1322 — [I3] Safety: 80 subprocess calls bypass ToolRuntime
+- #1320 — [I5] Testing: integration test with real LLM
+- #1330 — [M8] Reliability: backup automatico .igris/
+- #1329 — [M7] Security: rate limiting per-user
+- #1328 — [M6] Testing: Playwright E2E
+- #1323 — [M1] Feature: WebSocket chat streaming
+- #1324 — [M2] Observability: OpenTelemetry
+- #1325 — [M3] Architecture: plugin system
+- #1326 — [M4] Feature: multi-tenancy RBAC
+- #1327 — [M5] DevOps: Docker Compose production-ready
 
 ## Final 20-block audit summary
 
@@ -90,11 +133,15 @@ A runtime refactor with missing import graph evidence is not complete.
 | Metric | Value |
 |---|---|
 | pyright errors | 0 |
-| pyright warnings | 839 |
-| except Exception count | 76 (target <50, #1353 open) |
+| pyright warnings | 897 |
+| except Exception count | 47 (target <50, achieved) |
 | supervisor lines | 1844 (target <2000, achieved) |
-| Open issues | 20 |
+| agent_reasoning_loop lines | 1968 (target <2000, achieved) |
+| app.js lines | 170 (from 2401, modularized into 13 ES modules) |
+| Open issues | 27 |
+| Open PRs | 0 |
 | VM gauntlet | 15/15 PASSED |
+| Full pytest | 7113 passed, 2 skipped, 0 failed |
 | VM diagnostics | healthy=true |
 | VM os/brief | ok=true |
 
