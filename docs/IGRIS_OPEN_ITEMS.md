@@ -69,7 +69,7 @@ A runtime refactor with missing import graph evidence is not complete.
 |---|---|---|---|
 | Critical | #1314 | **CLOSED** — all 5 criteria MET | except Exception: 476→47 (<50). 0 except Exception:pass. Criterion 2: 141 catches now log, 13 silent pass (ImportError etc, explicitly allowed). Tests: 7072 passed. CI: green. #1314 CLOSED. |
 | Critical | #1315 | **closed** — foundation complete (PR #1375 `4877168`) | Follow-up: **#1354 CLOSED** — structured logging acceptance criteria met by architecture (all 107 loggers inherit StructuredFormatter from root "igris" logger) |
-| Critical | #1316 | **closed** — pyright 0 errors, CI blocking (PR #1384 `bc435e5`) | Follow-up: **#1355** CLOSED — pyright errors 174→0, CI made blocking |
+| Critical | #1316 | **CLOSED** — pyright 0 errors, CI type-check job exists and is blocking, 25 type:ignore all have comments/codes, tests pass. Closed 2026-08-26. | All criteria MET |
 | Tech debt | #1312 | **closed** — supervisor split complete | Follow-up: **#1371** CLOSED — `self_repair_supervisor.py` 1,844 lines (below 2,000 target); #1356 CLOSED; follow-up **#1395** for `agent_reasoning_loop.py` (2,477 lines) |
 | Refactor | #1317 (I1) | open | router anonymous routes `routes_01..10` — rename by domain |
 | Refactor | #1318 (I2) | open | `app.js` monolithic 2401 lines — modularize into ES modules |
