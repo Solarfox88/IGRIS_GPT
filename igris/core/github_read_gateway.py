@@ -323,7 +323,7 @@ class GitHubReadGateway:
             audit_file = self._audit_dir / "github_read_audit.jsonl"  # type: ignore[union-attr]
             with open(audit_file, "a") as f:
                 f.write(json.dumps(entry, default=str) + "\n")
-        except Exception as exc:  # noqa: BLE001
+        except (OSError, TypeError, ValueError) as exc:  # noqa: BLE001
             logger.warning("Failed to persist read audit: %s", exc)
 
     # ------------------------------------------------------------------

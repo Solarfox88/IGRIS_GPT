@@ -93,7 +93,7 @@ class GitHubAdminGateway:
             self.audit_path.parent.mkdir(parents=True, exist_ok=True)
             with self.audit_path.open("a", encoding="utf-8") as fh:
                 fh.write(json.dumps(entry, ensure_ascii=False) + "\n")
-        except Exception:  # noqa: BLE001
+        except (OSError, TypeError, ValueError):  # noqa: BLE001
             logger.warning("GitHubAdminGateway audit write failed for %s", action)
         logger.info(f"AUDIT: {entry}")
         return entry

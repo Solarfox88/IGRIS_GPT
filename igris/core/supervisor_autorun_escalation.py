@@ -147,7 +147,7 @@ def maybe_api_escalate(
                 stage_id="api_escalation",
                 evidence=json.dumps(supervisor._sanitize_escalation_value(advice), sort_keys=True),
             )
-        except Exception:  # noqa: BLE001
+        except (KeyError, TypeError, ValueError, AttributeError, RuntimeError):  # noqa: BLE001
             pass
     return advice
 

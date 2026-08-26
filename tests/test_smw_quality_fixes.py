@@ -183,7 +183,7 @@ class TestTeachBackNegativeLabel:
         incident = self._make_incident("failed")
 
         with patch("igris.core.smw_teach.should_open_igris_issue", return_value=False), \
-             patch("igris.core.memory_graph.MemoryGraph", side_effect=Exception("skip")):
+             patch("igris.core.memory_graph.MemoryGraph", side_effect=OSError("skip")):
             asyncio.run(teach_back(incident, str(tmp_path), outcome_label="negative"))
 
         incidents = load_incidents(str(tmp_path))
@@ -197,7 +197,7 @@ class TestTeachBackNegativeLabel:
         incident.resolved_at = 1010.0
 
         with patch("igris.core.smw_teach.should_open_igris_issue", return_value=False), \
-             patch("igris.core.memory_graph.MemoryGraph", side_effect=Exception("skip")):
+             patch("igris.core.memory_graph.MemoryGraph", side_effect=OSError("skip")):
             asyncio.run(teach_back(incident, str(tmp_path), outcome_label="positive"))
 
         incidents = load_incidents(str(tmp_path))

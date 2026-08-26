@@ -117,7 +117,7 @@ def start_supervised_rank_async(data: Dict[str, Any], project_root: str) -> Supe
                 run_add_fn=run.add,
                 run_id=run.run_id,
             )
-        except Exception:  # noqa: BLE001
+        except (ImportError, OSError, ValueError, TypeError, RuntimeError, KeyError, AttributeError):  # noqa: BLE001
             logger.debug("MBOP Phase 1 intake failed", exc_info=True)
             pass  # best-effort — never block the run
 
@@ -231,7 +231,7 @@ def start_supervised_rank_async(data: Dict[str, Any], project_root: str) -> Supe
                 enforce_quality_gate=mbop_enforce_qg,
                 run_id=run.run_id,
             )
-        except Exception:  # noqa: BLE001
+        except (ImportError, OSError, ValueError, TypeError, RuntimeError, KeyError, AttributeError):  # noqa: BLE001
             logger.debug("MBOP Phases 9-12 post-run hooks failed", exc_info=True)
             pass  # best-effort — never crash after supervisor completed
 
@@ -286,7 +286,7 @@ def start_supervised_rank_async(data: Dict[str, Any], project_root: str) -> Supe
                     notes=audit.notes[:5],
                     behavior_log=run.behavior_tracker.to_dict(),
                 )
-        except Exception:  # noqa: BLE001
+        except (ImportError, OSError, ValueError, TypeError, RuntimeError, KeyError, AttributeError):  # noqa: BLE001
             logger.debug("Supervisor self-audit post-run failed", exc_info=True)
             pass  # best-effort — never crash after supervisor completed
 

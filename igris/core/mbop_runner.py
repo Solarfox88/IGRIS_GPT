@@ -624,12 +624,12 @@ def mbop_pre_run(
                 run_add_fn("mbop_phase1_intake", "skipped", detail, issue_number=issue_number)
         _persist_event(project_root, run_id, issue_number, "mbop_phase1_intake",
                        "success" if intake.extraction_ok else "skipped", detail, extra or None)
-    except Exception as exc:  # noqa: BLE001
+    except (ImportError, OSError, ValueError, TypeError, RuntimeError, KeyError, AttributeError) as exc:  # noqa: BLE001
         err_detail = f"MBOP intake error (non-fatal): {exc}"
         if run_add_fn:
             try:
                 run_add_fn("mbop_phase1_intake", "error", err_detail)
-            except Exception:  # noqa: BLE001
+            except (KeyError, TypeError, AttributeError):  # noqa: BLE001
                 pass
         _persist_event(project_root, run_id, issue_number, "mbop_phase1_intake", "error", err_detail)
     return intake
@@ -695,7 +695,7 @@ def mbop_post_run(
         }
         try:
             run.add("mbop_phase9_quality_gate", qg_status, qg_detail, **qg_extra)
-        except Exception:  # noqa: BLE001
+        except (KeyError, TypeError, AttributeError):  # noqa: BLE001
             pass
         _persist_event(project_root, run_id, issue_number, "mbop_phase9_quality_gate", qg_status, qg_detail, qg_extra)
 
@@ -710,7 +710,7 @@ def mbop_post_run(
                 run.failure_class = "mbop_quality_gate_failed"
                 run.outcome = "Blocked — MBOP Quality Gate failed"
                 run.add("mbop_quality_gate_enforcement", "blocked", enf_detail)
-            except Exception:  # noqa: BLE001
+            except (KeyError, TypeError, AttributeError):  # noqa: BLE001
                 pass
             _persist_event(project_root, run_id, issue_number, "mbop_quality_gate_enforcement", "blocked", enf_detail)
 
@@ -748,7 +748,7 @@ def mbop_post_run(
         }
         try:
             run.add("mbop_phase10_satisfaction_gate", sg_status, sg_detail, **sg_extra)
-        except Exception:  # noqa: BLE001
+        except (KeyError, TypeError, AttributeError):  # noqa: BLE001
             pass
         _persist_event(project_root, run_id, issue_number, "mbop_phase10_satisfaction_gate", sg_status, sg_detail, sg_extra)
 
@@ -770,7 +770,7 @@ def mbop_post_run(
         }
         try:
             run.add("mbop_phase11_post_task_eval", "done", eval_detail, **eval_extra)
-        except Exception:  # noqa: BLE001
+        except (KeyError, TypeError, AttributeError):  # noqa: BLE001
             pass
         _persist_event(project_root, run_id, issue_number, "mbop_phase11_post_task_eval", "done", eval_detail, eval_extra)
 
@@ -822,7 +822,7 @@ def mbop_post_run(
                 ns_extra: Dict[str, Any] = {"suggestions": suggestions, "failure_class": failure_class}
                 try:
                     run.add("mbop_phase12_next_step", "advisory", ns_detail, **ns_extra)
-                except Exception:  # noqa: BLE001
+                except (KeyError, TypeError, AttributeError):  # noqa: BLE001
                     pass
                 _persist_event(project_root, run_id, issue_number, "mbop_phase12_next_step", "advisory", ns_detail, ns_extra)
         except (ValueError, TypeError, AttributeError):  # noqa: BLE001
