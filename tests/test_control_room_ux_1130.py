@@ -434,9 +434,9 @@ class TestInterpretedEvidenceEndpoint:
 
 class TestControlRoomReviewPersistence:
     def test_review_persistence_and_final_export(self, tmp_path, monkeypatch):
-        from igris.web.routers import routes_10
+        from igris.web.routers import router_supervisor
 
-        monkeypatch.setattr(routes_10.CONFIG, "project_root", Path(tmp_path))
+        monkeypatch.setattr(router_supervisor.CONFIG, "project_root", Path(tmp_path))
         client = _client()
         run = _make_run(status="success")
         with patch("igris.core.self_repair_supervisor.get_supervised_run", return_value=run):
@@ -476,9 +476,9 @@ class TestControlRoomReviewPersistence:
 
 class TestControlRoomReviewEdgeStates:
     def test_review_response_exposes_review_state(self, tmp_path, monkeypatch):
-        from igris.web.routers import routes_10
+        from igris.web.routers import router_supervisor
 
-        monkeypatch.setattr(routes_10.CONFIG, "project_root", Path(tmp_path))
+        monkeypatch.setattr(router_supervisor.CONFIG, "project_root", Path(tmp_path))
         client = _client()
         run = _make_run(status="blocked")
         with patch("igris.core.self_repair_supervisor.get_supervised_run", return_value=run):

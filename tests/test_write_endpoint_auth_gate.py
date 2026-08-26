@@ -20,9 +20,9 @@ _REPO = Path(__file__).parent.parent
 def _client_isolated(tmp_dir: str):
     os.environ["IGRIS_PROJECT_ROOT"] = tmp_dir
     for k in list(sys.modules.keys()):
-        if any(x in k for x in ("auth_routes", "interlocutor_auth", "routes_01",
-                                 "write_auth", "github_write", "routes_08",
-                                 "routes_04", "routes_03")):
+        if any(x in k for x in ("auth_routes", "interlocutor_auth", "router_status",
+                                 "write_auth", "github_write", "router_tools",
+                                 "router_tasks", "router_files")):
             del sys.modules[k]
     from fastapi.testclient import TestClient
     from igris.web.server import create_app
@@ -259,16 +259,16 @@ def test_github_write_routes_import_write_auth():
         "github_write.py does not import write_auth"
 
 
-def test_routes_08_imports_write_auth():
-    src = _REPO.joinpath("igris/web/routers/routes_08.py").read_text()
+def test_router_tools_imports_write_auth():
+    src = _REPO.joinpath("igris/web/routers/router_tools.py").read_text()
     assert "require_write_auth_or_raise" in src, \
-        "routes_08.py does not call require_write_auth_or_raise — fs/write P0 not applied"
+        "router_tools.py does not call require_write_auth_or_raise — fs/write P0 not applied"
 
 
-def test_routes_04_imports_write_auth():
-    src = _REPO.joinpath("igris/web/routers/routes_04.py").read_text()
+def test_router_tasks_imports_write_auth():
+    src = _REPO.joinpath("igris/web/routers/router_tasks.py").read_text()
     assert "require_write_auth_or_raise" in src, \
-        "routes_04.py does not call require_write_auth_or_raise — terminal/run P0 not applied"
+        "router_tasks.py does not call require_write_auth_or_raise — terminal/run P0 not applied"
 
 
 # ── positive path: admin/owner token is allowed ───────────────────────────────
@@ -471,23 +471,23 @@ def test_tools_git_commit_admin_reaches_git_layer():
         )
 
 
-def test_routes_08_git_commit_imports_write_auth():
-    """routes_08.py git commit endpoint must call require_write_auth_or_raise."""
-    src = _REPO.joinpath("igris/web/routers/routes_08.py").read_text()
+def test_router_tools_git_commit_imports_write_auth():
+    """router_tools.py git commit endpoint must call require_write_auth_or_raise."""
+    src = _REPO.joinpath("igris/web/routers/router_tools.py").read_text()
     # Find the git commit section
     idx = src.find('"/api/tools/git/commit"')
-    assert idx != -1, "git commit endpoint not found in routes_08.py"
+    assert idx != -1, "git commit endpoint not found in router_tools.py"
     # require_write_auth_or_raise must appear after the endpoint declaration
     after = src[idx:idx + 400]
     assert "require_write_auth_or_raise" in after, \
-        "routes_08.py /api/tools/git/commit does not call require_write_auth_or_raise"
+        "router_tools.py /api/tools/git/commit does not call require_write_auth_or_raise"
 
 
-def test_routes_02_git_commit_imports_write_auth():
-    """routes_02.py /api/git/commit endpoint must call require_write_auth_or_raise."""
-    src = _REPO.joinpath("igris/web/routers/routes_02.py").read_text()
+def test_router_chat_git_commit_imports_write_auth():
+    """router_chat.py /api/git/commit endpoint must call require_write_auth_or_raise."""
+    src = _REPO.joinpath("igris/web/routers/router_chat.py").read_text()
     idx = src.find('"/api/git/commit"')
-    assert idx != -1, "git commit legacy endpoint not found in routes_02.py"
+    assert idx != -1, "git commit legacy endpoint not found in router_chat.py"
     after = src[idx:idx + 400]
     assert "require_write_auth_or_raise" in after, \
-        "routes_02.py /api/git/commit does not call require_write_auth_or_raise"
+        "router_chat.py /api/git/commit does not call require_write_auth_or_raise"

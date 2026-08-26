@@ -24,7 +24,7 @@ _REPO = Path(__file__).parent.parent
 _AUTH_JS = _REPO / "igris/web/static/js/auth.js"
 _APP_JS = _REPO / "igris/web/static/js/app.js"
 
-# Module path used by routes_01 when it locally imports is_trusted_local_request
+# Module path used by router_status when it locally imports is_trusted_local_request
 _PREFLIGHT_MODULE = "igris.core.chat_interlocutor_preflight"
 
 

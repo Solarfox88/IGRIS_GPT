@@ -6,11 +6,11 @@ Uses source inspection since we can't easily wire up FastAPI in unit tests.
 
 import inspect
 import pytest
-from igris.web.routers import routes_10
+from igris.web.routers import router_supervisor
 
 
 def _src():
-    return inspect.getsource(routes_10)
+    return inspect.getsource(router_supervisor)
 
 
 class TestControlRoomEndpoints:
@@ -53,11 +53,11 @@ class TestSafeRedact:
     """_safe_redact is importable and works."""
 
     def test_safe_redact_basic(self):
-        from igris.web.routers.routes_10 import _safe_redact
+        from igris.web.routers.router_supervisor import _safe_redact
         assert isinstance(_safe_redact("hello"), str)
 
     def test_safe_redact_none(self):
-        from igris.web.routers.routes_10 import _safe_redact
+        from igris.web.routers.router_supervisor import _safe_redact
         assert _safe_redact(None) == ""
 
 

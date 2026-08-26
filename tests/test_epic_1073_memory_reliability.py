@@ -218,22 +218,22 @@ class TestMemoryHealthEndpoint:
 
     def test_endpoint_registered_in_routes(self):
         """The health endpoint function must exist in the routes module."""
-        from igris.web.routers import routes_03
+        from igris.web.routers import router_files
         # The function is registered inside a factory; check that the source
         # code contains the endpoint path
         import inspect
-        src = inspect.getsource(routes_03)
+        src = inspect.getsource(router_files)
         assert "/api/memory/health" in src, \
-            "/api/memory/health endpoint not found in routes_03 source"
+            "/api/memory/health endpoint not found in router_files source"
 
     def test_endpoint_returns_status_key(self):
         """If we call the endpoint function, it should produce a status key."""
         # We can't easily invoke the FastAPI endpoint in unit tests without
         # a running app, but we can verify the implementation exists and the
         # response contract is documented in the source.
-        from igris.web.routers import routes_03
+        from igris.web.routers import router_files
         import inspect
-        src = inspect.getsource(routes_03)
+        src = inspect.getsource(router_files)
         assert '"status"' in src or "'status'" in src, \
             "health endpoint should return a 'status' key"
         assert "healthy" in src, \

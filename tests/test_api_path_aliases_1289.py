@@ -57,18 +57,18 @@ def test_canonical_pr_path_exists() -> None:
 
 
 def test_legacy_git_log_alias_registered() -> None:
-    """Legacy /api/git/log alias should be present in routes_08 source."""
+    """Legacy /api/git/log alias should be present in router_tools source."""
     from pathlib import Path
 
-    source = Path("igris/web/routers/routes_08.py").read_text()
+    source = Path("igris/web/routers/router_tools.py").read_text()
     assert '"/api/git/log"' in source, "Legacy /api/git/log alias missing"
     assert '"/api/tools/git/log"' in source, "Canonical /api/tools/git/log missing"
 
 
 def test_legacy_terminal_exec_alias_registered() -> None:
-    """Legacy /api/terminal/exec alias should be present in routes_04 source."""
+    """Legacy /api/terminal/exec alias should be present in router_tasks source."""
     from pathlib import Path
 
-    source = Path("igris/web/routers/routes_04.py").read_text()
+    source = Path("igris/web/routers/router_tasks.py").read_text()
     assert '"/api/terminal/exec"' in source, "Legacy /api/terminal/exec alias missing"
     assert '"/api/terminal/run"' in source, "Canonical /api/terminal/run missing"

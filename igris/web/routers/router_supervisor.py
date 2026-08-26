@@ -210,7 +210,7 @@ def create_router(deps) -> APIRouter:
                     # Return the archived snapshot with an explicit archived flag
                     return {**_record, "archived": True, "run_id": run_id}
         except (OSError, json.JSONDecodeError, KeyError, TypeError, ValueError) as exc:
-            _log.debug("routes_10: narrowed catch failed: %s", exc, exc_info=True)
+            _log.debug("router_supervisor: narrowed catch failed: %s", exc, exc_info=True)
         raise HTTPException(status_code=404, detail="rank run not found")
 
     @router.post("/api/rank/runs/{run_id}/cancel")

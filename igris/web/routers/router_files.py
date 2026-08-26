@@ -293,7 +293,7 @@ def create_router(deps) -> APIRouter:
                     except (KeyError, TypeError, ValueError, json.JSONDecodeError):
                         dependency_graph[_issue_str] = {"deps": _deps, "satisfied": None}
         except (OSError, KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
-            _log.debug("routes_03: narrowed catch failed: %s", exc, exc_info=True)
+            _log.debug("router_files: narrowed catch failed: %s", exc, exc_info=True)
         return {
             "node_count": node_count,
             "edge_count": edge_count,
