@@ -56,6 +56,9 @@ from igris.a2a.agent_card import build_agent_card
 from igris.a2a import task_store as a2a_store
 
 
+
+_log = logging.getLogger(__name__)
+
 def _safe_redact(value: object) -> str:
     """Redact secrets from a string value (local helper for Epic #1077 endpoints)."""
     from igris.core.safety import redact_secrets
@@ -206,8 +209,8 @@ def create_router(deps) -> APIRouter:
                 if _record and isinstance(_record, dict):
                     # Return the archived snapshot with an explicit archived flag
                     return {**_record, "archived": True, "run_id": run_id}
-        except (OSError, json.JSONDecodeError, KeyError, TypeError, ValueError):
-            pass
+        except (OSError, json.JSONDecodeError, KeyError, TypeError, ValueError) as exc:
+            _log.debug("routes_10: narrowed catch failed: %s", exc, exc_info=True)
         raise HTTPException(status_code=404, detail="rank run not found")
 
     @router.post("/api/rank/runs/{run_id}/cancel")

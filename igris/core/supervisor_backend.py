@@ -24,7 +24,11 @@ from igris.core.supervisor_models import (
     _safe_text,
 )
 from igris.core.supervisor_analysis import _smoke_output_is_valid
+import logging
 
+
+
+_log = logging.getLogger(__name__)
 
 class SupervisorBackend(Protocol):
     def git_status(self) -> CommandResult: ...
@@ -242,8 +246,8 @@ class LocalSupervisorBackend:
             except OSError:
                 try:
                     proc.kill()
-                except OSError:
-                    pass
+                except OSError as exc:
+                    _log.debug("supervisor_backend: narrowed catch failed: %s", exc, exc_info=True)
             proc.wait()
             return CommandResult(
                 False,
@@ -303,19 +307,19 @@ class LocalSupervisorBackend:
             try:
                 for line in pipe:
                     parts.append(line)
-            except (OSError, ValueError):
-                pass
+            except (OSError, ValueError) as exc:
+                _log.debug("supervisor_backend: narrowed catch failed: %s", exc, exc_info=True)
 
         def _write_stdin() -> None:
             try:
                 proc.stdin.write(input_text)  # type: ignore[union-attr]
-            except OSError:
-                pass
+            except OSError as exc:
+                _log.debug("supervisor_backend: narrowed catch failed: %s", exc, exc_info=True)
             finally:
                 try:
                     proc.stdin.close()  # type: ignore[union-attr]
-                except OSError:
-                    pass
+                except OSError as exc:
+                    _log.debug("supervisor_backend: narrowed catch failed: %s", exc, exc_info=True)
 
         threading.Thread(target=_write_stdin, daemon=True).start()
         out_thread = threading.Thread(target=_read_pipe, args=(proc.stdout, stdout_parts), daemon=True)
@@ -335,8 +339,8 @@ class LocalSupervisorBackend:
             except OSError:
                 try:
                     proc.kill()
-                except OSError:
-                    pass
+                except OSError as exc:
+                    _log.debug("supervisor_backend: narrowed catch failed: %s", exc, exc_info=True)
 
         _POLL = 5
         while True:
@@ -357,8 +361,8 @@ class LocalSupervisorBackend:
                 hb_at = float(hb.get("heartbeat_at", 0))
                 if hb_at > 0:
                     last_hb_at = hb_at
-            except (OSError, json.JSONDecodeError, ValueError, KeyError):
-                pass
+            except (OSError, json.JSONDecodeError, ValueError, KeyError) as exc:
+                _log.debug("supervisor_backend: narrowed catch failed: %s", exc, exc_info=True)
 
             now = time.time()
             if last_hb_at is not None and (now - last_hb_at) > stale_threshold:
@@ -377,8 +381,8 @@ class LocalSupervisorBackend:
 
         try:
             os.unlink(heartbeat_path)
-        except OSError:
-            pass
+        except OSError as exc:
+            _log.debug("supervisor_backend: narrowed catch failed: %s", exc, exc_info=True)
 
         stdout = "".join(stdout_parts)
         stderr = "".join(stderr_parts) or kill_reason
@@ -562,8 +566,8 @@ class LocalSupervisorBackend:
                 for issue in open_issues:
                     if str(issue.get("title", "")) == title:
                         return CommandResult(True, str(issue.get("url", "")), "", 0)
-            except json.JSONDecodeError:
-                pass
+            except json.JSONDecodeError as exc:
+                _log.debug("supervisor_backend: narrowed catch failed: %s", exc, exc_info=True)
         return self._run(["gh", "issue", "create", "--title", title, "--body", body], timeout=120)
 
     def fetch_issue(self, issue_url: str) -> CommandResult:
@@ -770,8 +774,8 @@ class LocalSupervisorBackend:
             primary_result.helper_alt_cost_usd = alt_cost
             primary_result.helper_alt_latency_ms = alt_latency_ms
             primary_result.helper_switch_recommendation = safe
-        except (ValueError, TypeError, KeyError, OSError, AttributeError):
-            pass  # shadow mode is non-fatal
+        except (ValueError, TypeError, KeyError, OSError, AttributeError) as exc:
+            _log.debug("supervisor_backend: narrowed catch failed: %s", exc, exc_info=True)
 
     def api_helper_is_configured(self) -> bool:
         """Return True when IGRIS_API_HELPER_COMMAND env var is set and non-empty."""

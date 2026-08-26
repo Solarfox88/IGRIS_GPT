@@ -61,6 +61,8 @@ from igris.agents import build_default_registry
 from igris.a2a.agent_card import build_agent_card
 from igris.a2a import task_store as a2a_store
 
+_log = logging.getLogger(__name__)
+
 
 def create_router(deps) -> APIRouter:
     """Router module 3/10 — _create_app_impl chunk 3."""
@@ -290,8 +292,8 @@ def create_router(deps) -> APIRouter:
                         }
                     except (KeyError, TypeError, ValueError, json.JSONDecodeError):
                         dependency_graph[_issue_str] = {"deps": _deps, "satisfied": None}
-        except (OSError, KeyError, TypeError, ValueError, json.JSONDecodeError):
-            pass
+        except (OSError, KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
+            _log.debug("routes_03: narrowed catch failed: %s", exc, exc_info=True)
         return {
             "node_count": node_count,
             "edge_count": edge_count,

@@ -9,6 +9,10 @@ from __future__ import annotations
 
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Dict, Optional
+import logging
+
+
+_log = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from igris.core.supervisor_models import RankSupervisorConfig, SupervisorRun
@@ -116,8 +120,8 @@ def rank_initial_context(
                 context["mbop_constraints"] = list(_intake.constraints[:5])
             if getattr(_intake, "extraction_ok", False):
                 context["mbop_intake_ok"] = True
-        except (TypeError, AttributeError, ValueError):
-            pass  # best-effort — never block the run
+        except (TypeError, AttributeError, ValueError) as exc:
+            _log.debug("supervisor_initial_context: narrowed catch failed: %s", exc, exc_info=True)
 
     # --- Inject MBOP Phase 10-11 prior-run lessons for the same issue (BUG2 fix) ---
     # Phases 10-11 fire after supervisor.run() returns, so they're not available
@@ -144,7 +148,7 @@ def rank_initial_context(
                 context["mbop_prior_lessons"] = prior_lessons
             if prior_criteria_missing:
                 context["mbop_prior_criteria_missing"] = prior_criteria_missing
-        except (ImportError, OSError, ValueError, KeyError, TypeError):
-            pass  # best-effort — never block the run
+        except (ImportError, OSError, ValueError, KeyError, TypeError) as exc:
+            _log.debug("supervisor_initial_context: narrowed catch failed: %s", exc, exc_info=True)
 
     return context

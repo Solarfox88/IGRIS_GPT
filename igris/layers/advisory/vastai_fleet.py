@@ -86,20 +86,20 @@ class FleetPolicy:
         if raw_max_cost:
             try:
                 policy.max_hourly_cost_usd = float(raw_max_cost)
-            except ValueError:
-                pass
+            except ValueError as exc:
+                _log.debug("vastai_fleet: narrowed catch failed: %s", exc, exc_info=True)
         raw_max_inst = os.environ.get("VASTAI_MAX_INSTANCES", "")
         if raw_max_inst:
             try:
                 policy.max_instances = int(raw_max_inst)
-            except ValueError:
-                pass
+            except ValueError as exc:
+                _log.debug("vastai_fleet: narrowed catch failed: %s", exc, exc_info=True)
         raw_inst_cost = os.environ.get("VASTAI_INSTANCE_HOURLY_COST", "")
         if raw_inst_cost:
             try:
                 policy.instance_hourly_cost_usd = float(raw_inst_cost)
-            except ValueError:
-                pass
+            except ValueError as exc:
+                _log.debug("vastai_fleet: narrowed catch failed: %s", exc, exc_info=True)
         return policy
 
 @dataclass

@@ -267,6 +267,8 @@ try:
     _selected_advisory_available = True
 except ImportError:
     pass
+_log = logging.getLogger(__name__)
+
 
 
 class SelfRepairSupervisor:
@@ -1253,16 +1255,16 @@ class SelfRepairSupervisor:
         try:
             from igris.core.work_session import WorkSession as _WS
             _work_session = _WS.create(goal=config.goal, mission_id=None)
-        except (ImportError, OSError, ValueError, TypeError, RuntimeError):
-            pass
+        except (ImportError, OSError, ValueError, TypeError, RuntimeError) as exc:
+            _log.debug("self_repair_supervisor: narrowed catch failed: %s", exc, exc_info=True)
 
         run, ctx = self._run_preflight_phase(run, config)
         if ctx is None:
             if _work_session is not None:
                 try:
                     _work_session.remember(str(self.project_root))
-                except (OSError, TypeError, ValueError):
-                    pass
+                except (OSError, TypeError, ValueError) as exc:
+                    _log.debug("self_repair_supervisor: narrowed catch failed: %s", exc, exc_info=True)
             return run
 
         result = self._run_rank_loop(run, config, **ctx)
@@ -1275,8 +1277,8 @@ class SelfRepairSupervisor:
                     if e.phase not in {"start", "queued"}
                 ]
                 _work_session.remember(str(self.project_root), commands_run=_commands)
-            except (OSError, TypeError, ValueError):
-                pass
+            except (OSError, TypeError, ValueError) as exc:
+                _log.debug("self_repair_supervisor: narrowed catch failed: %s", exc, exc_info=True)
 
         return result
 
@@ -1775,8 +1777,8 @@ class SelfRepairSupervisor:
             if _stale_patch.exists():
                 _stale_patch.unlink(missing_ok=True)
                 run.add("patch_cleanup", "success", "rank_pending.patch removed on blocked run")
-        except (OSError, PermissionError):
-            pass
+        except (OSError, PermissionError) as exc:
+            _log.debug("self_repair_supervisor: narrowed catch failed: %s", exc, exc_info=True)
         # Record capability-related failures so future runs can learn from history.
         # Skip infrastructure/baseline failures — they're environment issues, not
         # capability limits, and would pollute similarity matching.
@@ -1789,8 +1791,8 @@ class SelfRepairSupervisor:
                     capability_signals=dict(run.capability_signals),
                     repair_cycles=run.repair_cycles_used,
                 )
-            except (OSError, ValueError, TypeError, KeyError, AttributeError):  # noqa: BLE001
-                pass
+            except (OSError, ValueError, TypeError, KeyError, AttributeError) as exc:  # noqa: BLE001
+                _log.debug("self_repair_supervisor: narrowed catch failed: %s", exc, exc_info=True)
         # Issue #914 — MissionBrain Advisory diagnostic (monitoring-only).
         # Computes a recovery recommendation for failed/blocked runs without
         # surfacing it in reports (should_emit=False, is_gate=False).
@@ -1818,8 +1820,8 @@ class SelfRepairSupervisor:
                     template_used=_adv_result.get("_advisory_template_used", "none"),
                     advisory_surfaced=False,
                 )
-            except (OSError, ValueError, TypeError, KeyError, AttributeError, RuntimeError):  # noqa: BLE001
-                pass  # advisory monitoring must never block or alter run outcome
+            except (OSError, ValueError, TypeError, KeyError, AttributeError, RuntimeError) as exc:  # noqa: BLE001
+                _log.debug("self_repair_supervisor: narrowed catch failed: %s", exc, exc_info=True)
         return run
 
     def _persist_blocked_outcome(

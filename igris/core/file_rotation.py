@@ -106,8 +106,8 @@ def _prune_archives(archive_dir: Path, filename: str, keep: int) -> None:
         try:
             shutil.rmtree(str(old_dir))
             _logger.info("Pruned old archive: %s", old_dir)
-        except OSError:
-            pass
+        except OSError as exc:
+            _logger.debug("file_rotation: narrowed catch failed: %s", exc, exc_info=True)
 
 
 def get_file_stats(igris_dir: Path) -> list:

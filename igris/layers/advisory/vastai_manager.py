@@ -123,8 +123,8 @@ def _vastai_request(
         body = ""
         try:
             body = e.read().decode()[:200]
-        except (OSError, UnicodeDecodeError, TypeError):
-            pass
+        except (OSError, UnicodeDecodeError, TypeError) as exc:
+            _log.debug("vastai_manager: narrowed catch failed: %s", exc, exc_info=True)
         raise RuntimeError(f"Vast.ai API {method} {path} → HTTP {e.code}: {body}") from e
     except (OSError, ConnectionError, TimeoutError, json.JSONDecodeError, ValueError, UnicodeDecodeError) as e:
         raise RuntimeError(f"Vast.ai API {method} {path} error: {e}") from e
@@ -748,8 +748,8 @@ class VastAIManager:
                         if port_key in ports and ports[port_key]:
                             try:
                                 ollama_port = int(ports[port_key][0].get("HostPort", 11434))
-                            except (KeyError, ValueError, TypeError):
-                                pass
+                            except (KeyError, ValueError, TypeError) as exc:
+                                _log.debug("vastai_manager: narrowed catch failed: %s", exc, exc_info=True)
                             break
 
                     if not ssh_host:

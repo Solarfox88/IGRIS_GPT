@@ -124,8 +124,8 @@ class DeliveryWorkflow:
                 "lesson",
                 {"event_type": "ci_fix_success", "pr_number": pr_number, "attempts": attempts, "failed_jobs": failed_jobs},
             )
-        except (ImportError, OSError, TypeError, ValueError, RuntimeError):  # noqa: BLE001
-            pass
+        except (ImportError, OSError, TypeError, ValueError, RuntimeError) as exc:  # noqa: BLE001
+            _log.debug("delivery_workflow: narrowed catch failed: %s", exc, exc_info=True)
 
     def _record_weak_signals(self) -> None:
         try:
@@ -133,8 +133,8 @@ class DeliveryWorkflow:
 
             signals = run_all_detectors(self.project_root)
             save_weak_signals(signals, self.project_root)
-        except (ImportError, OSError, ValueError, TypeError, RuntimeError):  # noqa: BLE001 — complex: import + multiple subsystems
-            pass
+        except (ImportError, OSError, ValueError, TypeError, RuntimeError) as exc:  # noqa: BLE001 — complex: import + multiple subsystems
+            _log.debug("delivery_workflow: narrowed catch failed: %s", exc, exc_info=True)
 
     def _diagnose_ci_failure(self, pr_number: int, failed_jobs: List[str]) -> Optional[dict]:
         result = subprocess.run(
@@ -209,8 +209,8 @@ class DeliveryWorkflow:
                             },
                             confidence=0.8 if ci_result.resolved else 0.5,
                         )
-                    except (ImportError, OSError, TypeError, ValueError, RuntimeError):  # noqa: BLE001
-                        pass
+                    except (ImportError, OSError, TypeError, ValueError, RuntimeError) as exc:  # noqa: BLE001
+                        _log.debug("delivery_workflow: narrowed catch failed: %s", exc, exc_info=True)
                     return ci_result.resolved
                 except (ImportError, OSError, ValueError, TypeError, RuntimeError, KeyError, AttributeError) as exc:  # noqa: BLE001 — CIRepairLoop is complex external code
                     _log.warning("CIRepairLoop: failed to run: %s — falling back", exc)
@@ -226,8 +226,8 @@ class DeliveryWorkflow:
                     },
                     confidence=0.7,
                 )
-            except (ImportError, OSError, TypeError, ValueError, RuntimeError):  # noqa: BLE001
-                pass
+            except (ImportError, OSError, TypeError, ValueError, RuntimeError) as exc:  # noqa: BLE001
+                _log.debug("delivery_workflow: narrowed catch failed: %s", exc, exc_info=True)
             return False
         return False
 
@@ -255,8 +255,8 @@ class DeliveryWorkflow:
         try:
             from igris.core.memory_graph import MemoryGraph
             MemoryGraph(self.project_root).unsaturate_family(family)
-        except (ImportError, OSError, TypeError, ValueError, RuntimeError):  # noqa: BLE001
-            pass
+        except (ImportError, OSError, TypeError, ValueError, RuntimeError) as exc:  # noqa: BLE001
+            _log.debug("delivery_workflow: narrowed catch failed: %s", exc, exc_info=True)
 
     # ------------------------------------------------------------------
     # Epic #1071 — CI failure diagnosis

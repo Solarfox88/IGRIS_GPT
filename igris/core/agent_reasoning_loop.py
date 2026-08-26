@@ -46,11 +46,15 @@ from typing import Any, Callable, Dict, List, Optional, cast
 from igris.core.micro_step_planner import MicroStepPlanner
 from igris.core.safety import redact_secrets
 from igris.core.tool_result_budget import apply_tool_result_budget, DEFAULT_BUDGET_BYTES
+import logging
 
 
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
+
+
+_log = logging.getLogger(__name__)
 
 STOP_REASONS = (
     "finish",
@@ -417,15 +421,15 @@ class AgentReasoningLoop:
                                 e for e in self._recent_errors
                                 if "READ LOOP" not in str(e.get("error", ""))
                             ]
-                except (_sp.SubprocessError, OSError):
-                    pass  # never crash the reasoning loop over auto-commit
+                except (_sp.SubprocessError, OSError) as exc:
+                    _log.debug("agent_reasoning_loop: narrowed catch failed: %s", exc, exc_info=True)
 
             self._steps.append(step)
             if step_callback is not None:
                 try:
                     step_callback(step_num, step.action_type or "unknown")
-                except (TypeError, ValueError, AttributeError, KeyError):
-                    pass
+                except (TypeError, ValueError, AttributeError, KeyError) as exc:
+                    _log.debug("agent_reasoning_loop: narrowed catch failed: %s", exc, exc_info=True)
             result.steps.append(step)
 
             # Track outcomes
@@ -687,8 +691,8 @@ class AgentReasoningLoop:
                 tokens_generated=self._fleet_tokens_total,
                 tokens_per_sec=0.0,
             ))
-        except (ImportError, TypeError, ValueError, AttributeError, KeyError, RuntimeError):
-            pass  # fleet errors must never break reasoning
+        except (ImportError, TypeError, ValueError, AttributeError, KeyError, RuntimeError) as exc:
+            _log.debug("agent_reasoning_loop: narrowed catch failed: %s", exc, exc_info=True)
 
     def _ensure_micro_step_state(self, goal: str) -> None:
         if self._micro_step_state is None:
@@ -813,8 +817,8 @@ class AgentReasoningLoop:
                     action_type=action.action_type,
                     goal=goal,
                 )
-            except (ImportError, ValueError, TypeError, KeyError, AttributeError):
-                pass
+            except (ImportError, ValueError, TypeError, KeyError, AttributeError) as exc:
+                _log.debug("agent_reasoning_loop: narrowed catch failed: %s", exc, exc_info=True)
 
             if not _contract_allowed:
                 step.outcome = "skipped"
@@ -858,8 +862,8 @@ class AgentReasoningLoop:
                     duration_ms=_tool_duration_ms,
                     error_snippet=_error_snippet,
                 )
-            except (ImportError, OSError, TypeError, ValueError, AttributeError, RuntimeError):
-                pass  # ToolTracker is best-effort, never crashes the step
+            except (ImportError, OSError, TypeError, ValueError, AttributeError, RuntimeError) as exc:
+                _log.debug("agent_reasoning_loop: narrowed catch failed: %s", exc, exc_info=True)
 
             # 4b. Store structured result data (apply 16KB byte-cap before injection)
             result_data = exec_result.get("result_data")
@@ -870,8 +874,8 @@ class AgentReasoningLoop:
                         from igris.core.tool_output_compactor import ToolOutputCompactor
                         _compact = ToolOutputCompactor()
                         result_data = _compact.compress(result_data, source_type=action.action_type)
-                    except (ImportError, TypeError, ValueError, AttributeError, RuntimeError):
-                        pass  # compactor is best-effort
+                    except (ImportError, TypeError, ValueError, AttributeError, RuntimeError) as exc:
+                        _log.debug("agent_reasoning_loop: narrowed catch failed: %s", exc, exc_info=True)
                     _budget = self._tool_result_budget_bytes()
                     result_data, _bout = apply_tool_result_budget(result_data, _budget)
                     if _bout.truncated:
@@ -960,8 +964,8 @@ class AgentReasoningLoop:
                 "tool_count": 1,  # each _execute_step is one tool call
             }
             self._reflection_hook.on_step_complete(_step_result, goal=goal, project_root=self.project_root or ".")
-        except (ImportError, TypeError, ValueError, KeyError, AttributeError, OSError, RuntimeError):
-            pass  # ReflectionHook is best-effort
+        except (ImportError, TypeError, ValueError, KeyError, AttributeError, OSError, RuntimeError) as exc:
+            _log.debug("agent_reasoning_loop: narrowed catch failed: %s", exc, exc_info=True)
 
         return step
 
@@ -1033,8 +1037,8 @@ class AgentReasoningLoop:
                 })
             self._world_state["ltm_hydrated"] = True
             self._world_state["ltm_items_loaded"] = len(hits)
-        except (OSError, ValueError, TypeError, AttributeError, KeyError):
-            pass
+        except (OSError, ValueError, TypeError, AttributeError, KeyError) as exc:
+            _log.debug("agent_reasoning_loop: narrowed catch failed: %s", exc, exc_info=True)
 
     def _persist_long_term_memory_outcome(self, goal: str, result: LoopResult) -> None:
         """Persist compact post-run lesson into long-term memory (best-effort)."""
@@ -1058,8 +1062,8 @@ class AgentReasoningLoop:
                 tags=["reasoning_loop", result.status or "unknown"],
                 importance=0.7 if result.status == "finished" else 0.5,
             )
-        except (OSError, ValueError, TypeError):
-            pass
+        except (OSError, ValueError, TypeError) as exc:
+            _log.debug("agent_reasoning_loop: narrowed catch failed: %s", exc, exc_info=True)
 
     # Token budget thresholds for local profiles (#1044)
     _LOCAL_TOKEN_WARN = 3000    # ~12 000 chars — warn and log
@@ -1196,8 +1200,8 @@ class AgentReasoningLoop:
         # Accumulate cost for execution budget tracking
         try:
             self._total_cost_usd += float(getattr(orch_result, "estimated_cost", 0.0) or 0.0)
-        except (TypeError, ValueError):
-            pass
+        except (TypeError, ValueError) as exc:
+            _log.debug("agent_reasoning_loop: narrowed catch failed: %s", exc, exc_info=True)
 
         # Record orchestrator observability on first successful call
         if orch_result.success and not self._orchestrator_used:
@@ -1866,8 +1870,8 @@ class AgentReasoningLoop:
                 with open(full_path, "r", encoding="utf-8", errors="replace") as f:
                     existing_content = f.read()
                 hash_before = hashlib.sha256(existing_content.encode("utf-8")).hexdigest()
-            except OSError:
-                pass
+            except OSError as exc:
+                _log.debug("agent_reasoning_loop: narrowed catch failed: %s", exc, exc_info=True)
 
         # Hash of the new content
         hash_new = hashlib.sha256(content.encode("utf-8")).hexdigest()

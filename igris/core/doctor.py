@@ -33,11 +33,15 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from igris.core.safety import redact_secrets
+import logging
 
 
 # ---------------------------------------------------------------------------
 # Models
 # ---------------------------------------------------------------------------
+
+
+_log = logging.getLogger(__name__)
 
 @dataclass
 class DoctorCheck:
@@ -188,7 +192,7 @@ def check_fastapi_server(host: str = "127.0.0.1", port: int = 8000) -> DoctorChe
                     meta={"url": url},
                 )
     except (OSError, ValueError, TypeError) as exc:
-        pass
+        _log.debug("doctor: narrowed catch failed: %s", exc, exc_info=True)
     return DoctorCheck(
         name="fastapi_server", category="server", status="warning",
         detail=f"Server not reachable at {host}:{port}",

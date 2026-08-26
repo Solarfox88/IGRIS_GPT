@@ -17,6 +17,10 @@ import os
 import uuid
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Dict, Optional, Tuple
+import logging
+
+
+_log = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from igris.core.supervisor_models import RankSupervisorConfig, SupervisorRun
@@ -100,8 +104,8 @@ def run_preflight_phase(
                 f"Non-blocking runtime deps missing: {dep_result.warning_missing}",
                 missing=dep_result.warning_missing,
             )
-    except (ImportError, OSError, RuntimeError):
-        pass  # non-blocking if checker fails
+    except (ImportError, OSError, RuntimeError) as exc:
+        _log.debug("supervisor_preflight: narrowed catch failed: %s", exc, exc_info=True)
     # Validate API escalation helper config at run start so problems are
     # visible immediately rather than discovered mid-repair-cycle.
     if config.allow_api_escalation and config.max_api_escalations_per_run > 0:
@@ -236,8 +240,8 @@ def run_preflight_phase(
                 if head_sha:
                     try:
                         _save_baseline_cache(str(supervisor.project_root), head_sha, policy="allow_unrelated_vastai")
-                    except OSError:
-                        pass
+                    except OSError as exc:
+                        _log.debug("supervisor_preflight: narrowed catch failed: %s", exc, exc_info=True)
             elif _baseline_failure_is_transient(baseline, diagnostics):
                 return supervisor._blocked(run, "infra_timeout", "Baseline tests timed out or transient infra error"), None
             else:
@@ -270,8 +274,8 @@ def run_preflight_phase(
                                     str(supervisor.project_root), head_sha,
                                     policy="preexisting_failures",
                                 )
-                            except OSError:
-                                pass
+                            except OSError as exc:
+                                _log.debug("supervisor_preflight: narrowed catch failed: %s", exc, exc_info=True)
                     else:
                         return supervisor._blocked(
                             run, "pytest_failure",
@@ -294,16 +298,16 @@ def run_preflight_phase(
                                 str(supervisor.project_root), head_sha,
                                 policy="preexisting_failures",
                             )
-                        except OSError:
-                            pass
+                        except OSError as exc:
+                            _log.debug("supervisor_preflight: narrowed catch failed: %s", exc, exc_info=True)
                 else:
                     # Unknown failures on a diverged branch — block conservatively.
                     return supervisor._blocked(run, "pytest_failure", "Baseline tests failed"), None
         elif head_sha:
             try:
                 _save_baseline_cache(str(supervisor.project_root), head_sha, policy="strict")
-            except OSError:
-                pass
+            except OSError as exc:
+                _log.debug("supervisor_preflight: narrowed catch failed: %s", exc, exc_info=True)
 
     run.add("baseline_smoke", "running", "Running baseline smoke")
     smoke = supervisor.backend.smoke(config.required_smoke_endpoints, restart_command)

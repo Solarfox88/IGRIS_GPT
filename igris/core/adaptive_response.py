@@ -15,7 +15,11 @@ from igris.core.interlocutor_audit import InterlocutorAudit
 from igris.core.judgment_layer import Advisory, JudgmentLayer, OperationalContext
 from igris.core.proactive_engine import ProactiveEngine, ProactiveEvent
 from igris.core.state_calibration import StateCalibration, StateSignal, ResponseMode
+import logging
 
+
+
+_log = logging.getLogger(__name__)
 
 @dataclass
 class InteractionResult:
@@ -196,14 +200,14 @@ class AdaptiveResponse:
                     authorized_scopes=profile.authorized_scopes or None,
                     trust_level=profile.trust_level,
                 )
-            except (AttributeError, TypeError, ValueError, OSError):
-                pass
+            except (AttributeError, TypeError, ValueError, OSError) as exc:
+                _log.debug("adaptive_response: narrowed catch failed: %s", exc, exc_info=True)
 
         # 9. Persist profile in memory graph (best-effort)
         try:
             self._identity.persist_to_memory_graph(profile)
-        except (OSError, AttributeError, TypeError):
-            pass
+        except (OSError, AttributeError, TypeError) as exc:
+            _log.debug("adaptive_response: narrowed catch failed: %s", exc, exc_info=True)
 
         # 10. Full audit
         audit_id = self._audit.record(

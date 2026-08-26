@@ -38,8 +38,8 @@ def _heartbeat_writer(path: str, state: dict, stop_event: threading.Event) -> No
         try:
             with open(path, "w") as f:
                 json.dump({**state, "heartbeat_at": time.time()}, f)
-        except OSError:
-            pass
+        except OSError as exc:
+            logger.debug("supervisor_reasoning_worker: narrowed catch failed: %s", exc, exc_info=True)
 
 
 def main() -> int:
@@ -100,8 +100,8 @@ def main() -> int:
                 "max_steps": int(payload["max_steps"]),
             }, indent=2), encoding="utf-8")
             tmp.replace(progress_path)
-        except OSError:
-            pass
+        except OSError as exc:
+            logger.debug("supervisor_reasoning_worker: narrowed catch failed: %s", exc, exc_info=True)
 
     result = loop.run(
         goal=str(payload["goal"]),
@@ -156,8 +156,8 @@ def main() -> int:
     if result.status == "finished":
         try:
             Path(progress_path).unlink(missing_ok=True)
-        except OSError:
-            pass
+        except OSError as exc:
+            logger.debug("supervisor_reasoning_worker: narrowed catch failed: %s", exc, exc_info=True)
 
     result_dict["heartbeat_path"] = heartbeat_path
     result_dict["steps_completed"] = result.total_steps

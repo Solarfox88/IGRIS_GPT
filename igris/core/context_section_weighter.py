@@ -34,11 +34,15 @@ import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional
+import logging
 
 
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
+
+
+_log = logging.getLogger(__name__)
 
 _USAGE_FILE = ".igris/section_usage.json"
 _WEIGHT_FILE = ".igris/section_weights.json"
@@ -291,8 +295,8 @@ class ContextSectionWeighter:
         try:
             weights = compute_weights(records, self._min_samples)
             save_section_weights(self._root, weights)
-        except (OSError, ValueError, ZeroDivisionError, TypeError):
-            pass
+        except (OSError, ValueError, ZeroDivisionError, TypeError) as exc:
+            _log.debug("context_section_weighter: narrowed catch failed: %s", exc, exc_info=True)
 
     def get_stats(self) -> Dict[str, Any]:
         """Return raw statistics for diagnostics."""

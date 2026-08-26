@@ -333,8 +333,8 @@ class ConversationRetriever:
                         if len(text) > 150:
                             text = text[:150] + "..."
                         results.append(f"- {text}")
-            except (OSError, TypeError, ValueError, KeyError, AttributeError):
-                pass
+            except (OSError, TypeError, ValueError, KeyError, AttributeError) as exc:
+                logger.debug("conversation_memory: narrowed catch failed: %s", exc, exc_info=True)
 
             if not results:
                 return ""

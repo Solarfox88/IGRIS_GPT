@@ -29,6 +29,7 @@ from igris.core.safety import (
     is_sensitive_filename,
     redact_secrets,
 )
+import logging
 
 
 # ---------------------------------------------------------------------------
@@ -36,6 +37,9 @@ from igris.core.safety import (
 # ---------------------------------------------------------------------------
 
 # Max results returned per query
+
+_log = logging.getLogger(__name__)
+
 MAX_SEARCH_RESULTS = 50
 MAX_FILE_RESULTS = 100
 MAX_DIR_ENTRIES = 200
@@ -746,8 +750,8 @@ class CodeNavigator:
                         indicators.append(f"content:{hit}")
                     if not test_type:
                         test_type = "test_content"
-            except (OSError, PermissionError):
-                pass
+            except (OSError, PermissionError) as exc:
+                _log.debug("code_navigation: narrowed catch failed: %s", exc, exc_info=True)
 
             if indicators:
                 discoveries.append({

@@ -29,6 +29,7 @@ from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
 from igris.core.safety import redact_secrets
+import logging
 
 
 # ---------------------------------------------------------------------------
@@ -36,6 +37,9 @@ from igris.core.safety import redact_secrets
 # ---------------------------------------------------------------------------
 
 # Default token budgets per profile (approximate char count, ~4 chars/token)
+
+_log = logging.getLogger(__name__)
+
 TOKEN_BUDGETS: Dict[str, int] = {
     "local_light": 8000,       # ~2K tokens
     "local_coder": 16000,      # ~4K tokens
@@ -311,8 +315,8 @@ class ContextManager:
             from igris.core.context_section_weighter import ContextSectionWeighter
             _weighter = ContextSectionWeighter(self.project_root or ".")
             _section_multipliers = _weighter.get_budget_multipliers()
-        except (ImportError, OSError, ValueError, TypeError):
-            pass
+        except (ImportError, OSError, ValueError, TypeError) as exc:
+            _log.debug("context_manager: narrowed catch failed: %s", exc, exc_info=True)
 
         def _weighted_budget(base: int, section: str) -> int:
             return max(0, int(base * _section_multipliers.get(section, 1.0)))
@@ -366,8 +370,8 @@ class ContextManager:
                 graph_items.append(recipe)
             # Expose memory influence summary for downstream consumers
             packet.memory_influence = mem_packet.get("memory_influence", "")
-        except (ImportError, OSError, ValueError, TypeError, AttributeError, RuntimeError):
-            pass
+        except (ImportError, OSError, ValueError, TypeError, AttributeError, RuntimeError) as exc:
+            _log.debug("context_manager: narrowed catch failed: %s", exc, exc_info=True)
         memory_text = self._build_memory_context(graph_items)
         memory_budget = _weighted_budget(min(available // 4, 3000), "memory_context")
         packet.memory_context = self._fit(memory_text, memory_budget, "memory")

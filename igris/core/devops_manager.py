@@ -23,11 +23,15 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from igris.core.browser_evidence import BrowserArtifactStore, BrowserRunner, run_browser_smoke_with_fallback
+import logging
 
 
 # ---------------------------------------------------------------------------
 # Command Runner abstraction — PR 3
 # ---------------------------------------------------------------------------
+
+
+_log = logging.getLogger(__name__)
 
 @dataclass
 class CommandResult:
@@ -339,8 +343,8 @@ class DevOpsManager:
                 for entry in raw.get("hosts", []):
                     h = HostConfig.from_dict(entry)
                     self._hosts[h.hostname] = h
-            except (OSError, json.JSONDecodeError, KeyError, ValueError, TypeError, AttributeError):
-                pass  # corrupt file → start with empty registry
+            except (OSError, json.JSONDecodeError, KeyError, ValueError, TypeError, AttributeError) as exc:
+                _log.debug("devops_manager: narrowed catch failed: %s", exc, exc_info=True)
 
     def _save_registry(self) -> None:
         """Persist the host registry to disk."""

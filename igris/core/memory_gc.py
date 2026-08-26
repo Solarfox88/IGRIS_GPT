@@ -8,7 +8,11 @@ import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional
+import logging
 
+
+
+_log = logging.getLogger(__name__)
 
 @dataclass
 class MemoryGCPolicy:
@@ -102,8 +106,8 @@ class MemoryGarbageCollector:
             if raw is not None:
                 try:
                     return max(0.0, min(1.0, float(raw)))
-                except (ValueError, TypeError):
-                    pass
+                except (ValueError, TypeError) as exc:
+                    _log.debug("memory_gc: narrowed catch failed: %s", exc, exc_info=True)
         score = (max(0.0, min(1.0, conf)) + max(0.0, min(1.0, sr))) / 2.0
         return max(0.0, min(1.0, score))
 

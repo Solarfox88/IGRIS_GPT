@@ -13,6 +13,10 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Dict, Optional
 
 from igris.core.supervisor_models import _command_detail
+import logging
+
+
+_log = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from igris.core.supervisor_models import (
@@ -92,13 +96,13 @@ def complete_rank(
                     )
                 try:
                     _patch_path.unlink(missing_ok=True)
-                except OSError:
-                    pass
+                except OSError as exc:
+                    _log.debug("supervisor_complete_rank: narrowed catch failed: %s", exc, exc_info=True)
         elif commit.success:
             try:
                 (Path(supervisor.project_root) / ".igris" / "rank_pending.patch").unlink(missing_ok=True)
-            except OSError:
-                pass
+            except OSError as exc:
+                _log.debug("supervisor_complete_rank: narrowed catch failed: %s", exc, exc_info=True)
         if not commit.success:
             return supervisor._blocked(
                 run,
