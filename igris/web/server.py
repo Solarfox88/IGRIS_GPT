@@ -654,6 +654,13 @@ def create_app() -> FastAPI:
     # ---- Register modular API routers (igris/api/) ----
     include_optional_api_routers(app)
 
+    # ---- Register WebSocket routes (#1323) ----
+    try:
+        from igris.web.websocket_routes import router as ws_router
+        app.include_router(ws_router)
+    except ImportError as exc:
+        logger.warning("WebSocket routes not loaded: %s", exc)
+
     return app
 
 
