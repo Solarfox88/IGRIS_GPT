@@ -187,7 +187,7 @@ Previous Hyper-V VM at 192.168.1.253 is no longer in use (VHDX could not boot on
 - VM Python environment: `/home/igris/IGRIS_GPT/.venv/bin/python` (Python 3.12.3, fastapi 0.136.1). NOT system `python3`.
 - VM SSH: `sshpass -p igris ssh igris@192.168.122.65` (password auth, KVM NAT network). Key-based auth not configured.
 - VM service uses `PROJECT_ROOT=/home/igris/IGRIS_TEST` (from environment), NOT `IGRIS_PROJECT_ROOT=/home/igris/IGRIS_GPT` (from .env). Task storage is at `/home/igris/IGRIS_TEST/.igris/tasks/`.
-- The `.local/` directory is used for local-only agent reports (e.g. `DEVIN_IGRIS_HANDOFF_CONTEXT.md`) and should NOT be committed.
+- The `.local/` directory is used for local-only agent reports (e.g. `DEVIN_IGRIS_HANDOFF_CONTEXT.md`) and should NOT be committed. Added to `.gitignore` on 2026-08-26 (was causing 3 local test_git_status_clean failures).
 - **Ubuntu migration (2026-08-20)**: Development environment migrated from Windows to Ubuntu to bypass HP 250 G7 firmware CPU throttle (Event ID 37, CPU locked at 991 MHz on Windows via intelppm). Ubuntu uses intel_pstate driver, not intelppm, so firmware throttle is not enforced. CPU now runs at full speed (up to 3.6 GHz turbo). VM migrated from Hyper-V to KVM/QEMU (Ubuntu 24.04 cloud image). See ADR-IGRIS-0014.
 
 ## Local clones audited (2026-08-14)

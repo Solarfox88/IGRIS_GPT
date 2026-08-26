@@ -37,6 +37,9 @@ $CONFIG_BACKUP_FILE
 wordpress_backup_*
 wordpress_db_backup_*
 
+# Local analysis/working scripts (not part of the repo)
+.local/
+
 # Python build metadata
 *.egg-info/.claude/
 .claude/**
