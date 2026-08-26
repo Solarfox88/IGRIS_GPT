@@ -62,21 +62,9 @@ class MemoryScorer:
         self._init_schema()
 
     def _init_schema(self) -> None:
-        self._conn.executescript("""
-CREATE TABLE IF NOT EXISTS chunk_scores (
-    chunk_id    TEXT PRIMARY KEY,
-    node_type   TEXT NOT NULL DEFAULT '',
-    score       REAL NOT NULL DEFAULT 0.0,
-    recency_sig REAL NOT NULL DEFAULT 0.0,
-    unique_sig  REAL NOT NULL DEFAULT 0.0,
-    token_sig   REAL NOT NULL DEFAULT 0.0,
-    source_sig  REAL NOT NULL DEFAULT 0.0,
-    scored_at   REAL NOT NULL DEFAULT 0.0
-);
-CREATE INDEX IF NOT EXISTS idx_scores_score ON chunk_scores(score DESC);
-CREATE INDEX IF NOT EXISTS idx_scores_type  ON chunk_scores(node_type);
-""")
-        self._conn.commit()
+        from igris.core.schema_manager import SchemaManager, MIGRATIONS
+        mgr = SchemaManager(self._conn, MIGRATIONS["memory_scorer"], component="memory_scorer")
+        mgr.migrate_to_latest()
 
     # ------------------------------------------------------------------
     # Signal computation

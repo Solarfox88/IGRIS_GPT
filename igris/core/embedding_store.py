@@ -18,18 +18,9 @@ class EmbeddingStore:
     def __init__(self, db_path: str) -> None:
         self._db_path = db_path
         self._conn = sqlite3.connect(self._db_path, check_same_thread=False)
-        self._conn.execute(
-            """
-            CREATE TABLE IF NOT EXISTS embeddings (
-                node_id TEXT PRIMARY KEY,
-                node_type TEXT NOT NULL,
-                text_content TEXT NOT NULL,
-                vector BLOB NOT NULL,
-                created_at REAL NOT NULL
-            )
-            """
-        )
-        self._conn.commit()
+        from igris.core.schema_manager import SchemaManager, MIGRATIONS
+        mgr = SchemaManager(self._conn, MIGRATIONS["embedding_store"], component="embedding_store")
+        mgr.migrate_to_latest()
 
     def embed(self, text: str) -> Optional[np.ndarray]:
         payload = json.dumps({"model": EMBED_MODEL, "prompt": text}).encode("utf-8")
