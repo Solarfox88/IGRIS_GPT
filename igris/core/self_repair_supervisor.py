@@ -1789,7 +1789,7 @@ class SelfRepairSupervisor:
                     capability_signals=dict(run.capability_signals),
                     repair_cycles=run.repair_cycles_used,
                 )
-            except Exception:  # noqa: BLE001
+            except (OSError, ValueError, TypeError, KeyError, AttributeError):  # noqa: BLE001
                 pass
         # Issue #914 — MissionBrain Advisory diagnostic (monitoring-only).
         # Computes a recovery recommendation for failed/blocked runs without
@@ -1818,7 +1818,7 @@ class SelfRepairSupervisor:
                     template_used=_adv_result.get("_advisory_template_used", "none"),
                     advisory_surfaced=False,
                 )
-            except Exception:  # noqa: BLE001
+            except (OSError, ValueError, TypeError, KeyError, AttributeError, RuntimeError):  # noqa: BLE001
                 pass  # advisory monitoring must never block or alter run outcome
         return run
 

@@ -149,7 +149,7 @@ class ReflectionHook:
             self._reflections_this_session += 1
             self._persist(output, goal, project_root or self.project_root)
             return output
-        except Exception:  # noqa: BLE001  top-level reflection boundary
+        except (OSError, ValueError, TypeError, RuntimeError, KeyError, AttributeError):  # noqa: BLE001  top-level reflection boundary
             return None
 
     def _call_llm(

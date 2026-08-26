@@ -159,7 +159,7 @@ CREATE INDEX IF NOT EXISTS idx_edges_dst  ON memory_edges(dst_node);
             # Write succeeded — tell the breaker so it can close from half-open.
             if _breaker is not None:
                 _breaker.record_success()
-        except Exception as exc:  # noqa: BLE001 — complex: import + ContentStore + Scorer + sqlite + file I/O
+        except (OSError, ValueError, TypeError, KeyError, RuntimeError, ImportError, sqlite3.Error) as exc:  # noqa: BLE001 — complex: import + ContentStore + Scorer + sqlite + file I/O
             # Epic #1073 — non-silent failure: log warning so memory tree failures
             # are observable (they previously swallowed all errors silently).
             # We still don't raise to avoid blocking the main write path.
@@ -704,7 +704,7 @@ CREATE INDEX IF NOT EXISTS idx_edges_dst  ON memory_edges(dst_node);
             else:
                 report["overall_health"] = "healthy"
 
-        except Exception as exc:  # noqa: BLE001 — complex: sqlite + json + float + many ops
+        except (OSError, ValueError, TypeError, KeyError, sqlite3.Error) as exc:  # noqa: BLE001 — complex: sqlite + json + float + many ops
             report["errors"].append(f"consistency_check_error: {exc}")
             report["overall_health"] = "failing"
 
@@ -768,17 +768,17 @@ CREATE INDEX IF NOT EXISTS idx_edges_dst  ON memory_edges(dst_node);
         if include_health:
             try:
                 packet["health"] = {**packet.get("health", {}), **self.memory_healthcheck()}
-            except Exception as exc:  # noqa: BLE001 — complex: delegates to memory_healthcheck
+            except (OSError, ValueError, TypeError, KeyError, sqlite3.Error) as exc:  # noqa: BLE001 — complex: delegates to memory_healthcheck
                 packet["health"]["healthcheck_error"] = str(exc)[:100]
 
             try:
                 packet["consistency"] = self.check_consistency()
-            except Exception as exc:  # noqa: BLE001 — complex: delegates to check_consistency
+            except (OSError, ValueError, TypeError, KeyError, sqlite3.Error) as exc:  # noqa: BLE001 — complex: delegates to check_consistency
                 packet["consistency"] = {"overall_health": "unknown", "error": str(exc)[:100]}
 
         try:
             packet["pipeline"] = self.build_memory_tree_pipeline_report(goal)
-        except Exception as exc:  # noqa: BLE001 — complex: delegates to build_memory_tree_pipeline_report
+        except (OSError, ValueError, TypeError, KeyError, sqlite3.Error) as exc:  # noqa: BLE001 — complex: delegates to build_memory_tree_pipeline_report
             packet["pipeline"] = {
                 "degraded": True,
                 "reason": f"pipeline_report_error: {str(exc)[:120]}",

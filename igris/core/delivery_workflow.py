@@ -133,7 +133,7 @@ class DeliveryWorkflow:
 
             signals = run_all_detectors(self.project_root)
             save_weak_signals(signals, self.project_root)
-        except Exception:  # noqa: BLE001 — complex: import + multiple subsystems
+        except (ImportError, OSError, ValueError, TypeError, RuntimeError):  # noqa: BLE001 — complex: import + multiple subsystems
             pass
 
     def _diagnose_ci_failure(self, pr_number: int, failed_jobs: List[str]) -> Optional[dict]:
@@ -212,7 +212,7 @@ class DeliveryWorkflow:
                     except (ImportError, OSError, TypeError, ValueError, RuntimeError):  # noqa: BLE001
                         pass
                     return ci_result.resolved
-                except Exception as exc:  # noqa: BLE001 — CIRepairLoop is complex external code
+                except (ImportError, OSError, ValueError, TypeError, RuntimeError, KeyError, AttributeError) as exc:  # noqa: BLE001 — CIRepairLoop is complex external code
                     _log.warning("CIRepairLoop: failed to run: %s — falling back", exc)
             # Fallback: log lesson only (original behavior when no backend)
             try:
@@ -450,7 +450,7 @@ class DeliveryWorkflow:
                 )
                 if not scope.ok:
                     return False, f"diff_scope_violation: {scope.summary[:300]}"
-        except Exception as exc:  # noqa: BLE001 — complex: subprocess + safety gate + scope validation
+        except (OSError, subprocess.SubprocessError, ValueError, TypeError, KeyError, AttributeError) as exc:  # noqa: BLE001 — complex: subprocess + safety gate + scope validation
             _log.warning("pre_merge_safety_check: diff scan failed: %s", exc)
 
         return True, "ok"

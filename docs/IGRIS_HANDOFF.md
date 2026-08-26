@@ -211,7 +211,7 @@ Previous Hyper-V VM at 192.168.1.253 is no longer in use (VHDX could not boot on
 
 1. ~~Merge PR for Phase 9 of #1353~~ — DONE (PR #1413 merged e1a1797)
 2. ~~Post-merge VM validation~~ — DONE (VM e1a1797, gauntlet 15/15, healthy=true, ok=true)
-3. ~~CI test health cleanup~~ — DONE (CI already green via PR #1412; .local/ gitignore fix aligns local with CI, PR pending)
-4. Continue #1353 if target <50 is still required (may need ADR to accept 76 as practical minimum since all are annotated boundaries)
+3. ~~CI test health cleanup~~ — DONE (CI already green via PR #1412; .local/ gitignore fix aligns local with CI, PR #1415 merged)
+4. ~~#1353 final cleanup~~ — DONE (76→49, target <50 MET, PR pending)
 5. Continue #1395 (agent_reasoning_loop.py split — 2,477 lines, target <2,000)
 6. Do NOT declare issues complete until acceptance criteria are fully met

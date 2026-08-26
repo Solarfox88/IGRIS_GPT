@@ -20,7 +20,7 @@ name — import and use directly:
         try:
             long_term_memory.save(...)
             breaker.record_success()
-        except Exception as exc:
+        except (OSError, RuntimeError) as exc:
             breaker.record_failure(exc)
 """
 
