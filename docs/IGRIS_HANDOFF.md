@@ -213,7 +213,7 @@ Previous Hyper-V VM at 192.168.1.253 is no longer in use (VHDX could not boot on
 2. ~~Post-merge VM validation~~ — DONE (VM e1a1797, gauntlet 15/15, healthy=true, ok=true)
 3. ~~CI test health cleanup~~ — DONE (CI already green via PR #1412; .local/ gitignore fix aligns local with CI, PR #1415 merged)
 4. ~~#1353 final cleanup~~ — DONE (76→49→47, target <50 MET, #1353 CLOSED, PR #1416 merged)
-5. ~~#1314 parent evaluation~~ — DONE (47 total, 0 except Exception:pass, criterion 2 partially met, #1314 remains OPEN, follow-up #1417 created)
-6. Continue #1417 (add logging to 154 narrowed catches with pass)
+5. ~~#1314 parent evaluation~~ — DONE (all 5 criteria MET, #1314 CLOSED)
+6. ~~#1417 follow-up~~ — DONE (141 catches now log, 13 silent pass kept, #1417 CLOSED)
 7. Continue #1395 (agent_reasoning_loop.py split — 2,477 lines, target <2,000)
 8. Do NOT declare issues complete until acceptance criteria are fully met
