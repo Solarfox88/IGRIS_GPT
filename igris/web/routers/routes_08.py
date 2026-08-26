@@ -158,6 +158,11 @@ def create_router(deps) -> APIRouter:
         rt = ToolRuntime(project_root=str(CONFIG.project_root))
         return rt.git_log(count=count, mission_id=mission_id, trace_id=trace_id).to_dict()
 
+    @router.get("/api/git/log", deprecated=True, include_in_schema=True)
+    async def api_git_log_legacy(count: int = 10, mission_id: str = "", trace_id: str = "") -> Dict[str, object]:
+        """Legacy alias for /api/tools/git/log (#1289)."""
+        return await api_tools_git_log(count=count, mission_id=mission_id, trace_id=trace_id)
+
     @router.get("/api/tools/git/branch")
     async def api_tools_git_branch(mission_id: str = "", trace_id: str = "") -> Dict[str, object]:
         """Git branches."""

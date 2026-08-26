@@ -183,3 +183,29 @@ async def get_actions(
         raise HTTPException(status_code=502, detail=f"GitHub CLI error: {e}")
     except Exception as e:  # noqa: BLE001  API endpoint boundary
         raise HTTPException(status_code=500, detail=f"Internal gateway error: {type(e).__name__}")
+
+
+# ---------------------------------------------------------------------------
+# Backward-compatible aliases (#1289)
+# Legacy paths kept as thin wrappers to canonical endpoints.
+# ---------------------------------------------------------------------------
+
+legacy_router = APIRouter(prefix="/api/github", tags=["github-read-legacy"])
+
+
+@legacy_router.get("/issues", response_model=List[IssueResponse], deprecated=True)
+async def legacy_list_issues(
+    state: str = Query("open"),
+    labels: Optional[str] = Query(None),
+    assignee: Optional[str] = Query(None),
+    limit: int = Query(30),
+    dry_run: bool = Query(False),
+):
+    """Legacy alias for /api/github/read/issues."""
+    return await list_issues(state=state, labels=labels, assignee=assignee, limit=limit, dry_run=dry_run)
+
+
+@legacy_router.get("/prs/{pr_number}", response_model=PRResponse, deprecated=True)
+async def legacy_get_pr(pr_number: int):
+    """Legacy alias for /api/github/read/pr/{pr_number}."""
+    return await get_pr(pr_number)
