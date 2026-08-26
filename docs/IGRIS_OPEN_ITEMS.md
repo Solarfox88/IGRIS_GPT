@@ -67,7 +67,7 @@ A runtime refactor with missing import graph evidence is not complete.
 
 | Priority | Issue | Status | Next action |
 |---|---|---|---|
-| Critical | #1314 | **open** — evaluation complete, criterion 2 partially met | except Exception: 476→47 (target <50 MET). 0 except Exception: pass. 154 narrowed catches use pass without logging (criterion 2 partially met). Follow-up #1417 created. #1314 remains OPEN until #1417 resolves criterion 2. |
+| Critical | #1314 | **CLOSED** — all 5 criteria MET | except Exception: 476→47 (<50). 0 except Exception:pass. Criterion 2: 141 catches now log, 13 silent pass (ImportError etc, explicitly allowed). Tests: 7072 passed. CI: green. #1314 CLOSED. |
 | Critical | #1315 | **closed** — foundation complete (PR #1375 `4877168`) | Follow-up: **#1354 CLOSED** — structured logging acceptance criteria met by architecture (all 107 loggers inherit StructuredFormatter from root "igris" logger) |
 | Critical | #1316 | **closed** — pyright 0 errors, CI blocking (PR #1384 `bc435e5`) | Follow-up: **#1355** CLOSED — pyright errors 174→0, CI made blocking |
 | Tech debt | #1312 | **closed** — supervisor split complete | Follow-up: **#1371** CLOSED — `self_repair_supervisor.py` 1,844 lines (below 2,000 target); #1356 CLOSED; follow-up **#1395** for `agent_reasoning_loop.py` (2,477 lines) |
@@ -118,6 +118,6 @@ A runtime refactor with missing import graph evidence is not complete.
 | #1271 | open | People Catalog / Person Registry — separate from identity/auth |
 | #1355 | **CLOSED** — pyright 0 errors, CI blocking (PR #1384) | Closed 2026-08-15 |
 | #1353 | **CLOSED** — Final cleanup: 76→49→47 except Exception (target <50 MET). 28 catches narrowed. 0 except Exception: pass. PR #1416 merged 982785c. #1353 closed 2026-08-26. | Closed |
-| #1417 | **OPEN** — Add logging to 154 narrowed except catches with pass. Breakdown: 59 file I/O, 36 optional imports, 30 data access, 21 subprocess, 3 JSON, 5 other. | Follow-up to #1314 criterion 2 |
+| #1417 | **CLOSED** — 141 catches now log with debug, 13 silent pass kept (ImportError etc). PR #1419 merged b23a0a0. | Closed |
 | #1371 | **CLOSED** — supervisor split complete, 1,844 lines (below 2,000) | Closed 2026-08-15 |
 | #1395 | `agent_reasoning_loop.py` 2,477 lines (target <2,000) | Split agent_reasoning_loop.py |
