@@ -1,9 +1,9 @@
 {
-  "report_id": "337efb48-1532-4366-aa36-5973c985d550",
+  "report_id": "f3ec2aec-4d51-4e92-a0d0-5d368881e396",
   "target": "jarvis-core-ready",
   "status": "passed",
   "passed": true,
-  "generated_at": "2026-08-26T23:15:01.051952+00:00",
+  "generated_at": "2026-08-26T23:29:40.957376+00:00",
   "summary": "15/15 checks passed",
   "checks": [
     {
@@ -155,7 +155,7 @@
       ],
       "warnings": [],
       "errors": [],
-      "duration_ms": 81,
+      "duration_ms": 110,
       "metadata": {}
     },
     {
@@ -167,7 +167,7 @@
       "evidence": [
         {
           "read_only": {
-            "mission_id": "e29963a6",
+            "mission_id": "6346e788",
             "route": "read_only_inspection",
             "status": "planned",
             "execution_mode": "read_only",
@@ -193,7 +193,7 @@
       ],
       "warnings": [],
       "errors": [],
-      "duration_ms": 40,
+      "duration_ms": 42,
       "metadata": {}
     },
     {
@@ -222,7 +222,7 @@
       ],
       "warnings": [],
       "errors": [],
-      "duration_ms": 29,
+      "duration_ms": 38,
       "metadata": {}
     },
     {
@@ -252,7 +252,7 @@
       ],
       "warnings": [],
       "errors": [],
-      "duration_ms": 151,
+      "duration_ms": 145,
       "metadata": {}
     },
     {
@@ -292,7 +292,7 @@
       ],
       "warnings": [],
       "errors": [],
-      "duration_ms": 34,
+      "duration_ms": 32,
       "metadata": {}
     },
     {
@@ -321,7 +321,7 @@
           ]
         },
         {
-          "mission_id": "625ce3de",
+          "mission_id": "09b45249",
           "route": "read_only_inspection",
           "execution_mode": "read_only"
         },
@@ -344,7 +344,7 @@
       ],
       "warnings": [],
       "errors": [],
-      "duration_ms": 152,
+      "duration_ms": 159,
       "metadata": {}
     },
     {
@@ -361,7 +361,7 @@
       ],
       "warnings": [],
       "errors": [],
-      "duration_ms": 95,
+      "duration_ms": 100,
       "metadata": {}
     },
     {
@@ -373,7 +373,7 @@
       "evidence": [],
       "warnings": [],
       "errors": [],
-      "duration_ms": 123,
+      "duration_ms": 142,
       "metadata": {
         "enrollment_token_present": true,
         "enrollment_hash_only_ok": true,
@@ -395,7 +395,7 @@
       "evidence": [],
       "warnings": [],
       "errors": [],
-      "duration_ms": 708,
+      "duration_ms": 725,
       "metadata": {
         "write_auth_exists": true,
         "static_source_checks_ok": true,
@@ -434,7 +434,7 @@
       "evidence": [],
       "warnings": [],
       "errors": [],
-      "duration_ms": 7,
+      "duration_ms": 10,
       "metadata": {
         "cross_session_retrieved": true,
         "cross_user_isolation": true,
@@ -451,7 +451,7 @@
       "evidence": [],
       "warnings": [],
       "errors": [],
-      "duration_ms": 6,
+      "duration_ms": 13,
       "metadata": {
         "task_status_enum_ok": true,
         "task_fields_ok": true,
@@ -470,7 +470,7 @@
     "total_checks": 15,
     "passed_checks": 15,
     "failed_checks": 0,
-    "total_duration_ms": 1534
+    "total_duration_ms": 1624
   },
   "artifacts": {},
   "metadata": {}
