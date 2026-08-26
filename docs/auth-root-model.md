@@ -8,7 +8,7 @@ IGRIS uses two distinct project root env vars that serve different purposes and 
 
 | Env var | Read by | What it governs |
 |---------|---------|----------------|
-| `IGRIS_PROJECT_ROOT` | auth layer (`write_auth.py`, `auth_routes.py`, `interlocutor.py`, `action_guard.py`, `routes_01.py` preflight block) | auth sessions, credentials, enrollment tokens, audit log, delegation keys, identity resolver, authorization gate |
+| `IGRIS_PROJECT_ROOT` | auth layer (`write_auth.py`, `auth_routes.py`, `interlocutor.py`, `action_guard.py`, `router_status.py` preflight block) | auth sessions, credentials, enrollment tokens, audit log, delegation keys, identity resolver, authorization gate |
 | `PROJECT_ROOT` | workspace layer (`CONFIG.project_root`, most route handlers) | missions, tasks, memory, code navigation, reflections, crash recovery, validations, a2a artifacts |
 
 In production these two can point to the same directory. In test environments they **must** be independently settable, and the test suite exploits this.
@@ -51,7 +51,7 @@ def _get_auth_root() -> str:
 - Read at **call time**, not at import time — env var changes after import are respected.
 - Fallback `"."` = CWD. Never `Path.home()`.
 - `auth_routes.py` imports and calls `_get_auth_root()` directly — no inline env reads.
-- `routes_01.py` preflight reads `os.environ.get("IGRIS_PROJECT_ROOT") or "."` directly, with explicit comment explaining why it must not fall back to `CONFIG.project_root`.
+- `router_status.py` preflight reads `os.environ.get("IGRIS_PROJECT_ROOT") or "."` directly, with explicit comment explaining why it must not fall back to `CONFIG.project_root`.
 
 ### Rule 2 — workspace layer uses `CONFIG.project_root`
 
@@ -133,7 +133,7 @@ If test isolation requires changing `IGRIS_PROJECT_ROOT` after import, these mod
 - `test_config_igris_dir_not_in_model_dump` — not a stored field
 - `test_preflight_audit_lands_under_project_root_not_home` — end-to-end audit path
 - `test_preflight_source_has_no_path_home` — static source check
-- `test_routes_01_preflight_uses_igris_project_root_not_config` — routes_01 invariant
+- `test_router_status_preflight_uses_igris_project_root_not_config` — router_status invariant
 - `test_auth_root_fallback_to_dot_when_igris_project_root_unset` — fallback chain
 - `test_preflight_fallback_uses_dot_not_home` — source-level check
 - `test_igris_project_root_and_project_root_are_independent` — two-root independence

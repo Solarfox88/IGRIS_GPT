@@ -1,10 +1,10 @@
 {
-  "report_id": "5871cccb-933f-45aa-88b7-93eddff8ca94",
+  "report_id": "6eb0f99a-b97c-4e05-b44e-b58b95f41ef1",
   "target": "jarvis-core-ready",
   "status": "passed",
   "passed": true,
-  "generated_at": "2026-06-08T08:24:51.447993+00:00",
-  "summary": "11/11 checks passed",
+  "generated_at": "2026-08-26T18:39:44.170476+00:00",
+  "summary": "15/15 checks passed",
   "checks": [
     {
       "check_id": "security_gate",
@@ -42,7 +42,7 @@
       ],
       "warnings": [],
       "errors": [],
-      "duration_ms": 8,
+      "duration_ms": 17,
       "metadata": {}
     },
     {
@@ -66,7 +66,7 @@
       ],
       "warnings": [],
       "errors": [],
-      "duration_ms": 218,
+      "duration_ms": 86,
       "metadata": {}
     },
     {
@@ -155,7 +155,7 @@
       ],
       "warnings": [],
       "errors": [],
-      "duration_ms": 286,
+      "duration_ms": 77,
       "metadata": {}
     },
     {
@@ -167,7 +167,7 @@
       "evidence": [
         {
           "read_only": {
-            "mission_id": "60a8d9de",
+            "mission_id": "cefbdbad",
             "route": "read_only_inspection",
             "status": "planned",
             "execution_mode": "read_only",
@@ -193,7 +193,7 @@
       ],
       "warnings": [],
       "errors": [],
-      "duration_ms": 164,
+      "duration_ms": 32,
       "metadata": {}
     },
     {
@@ -222,7 +222,7 @@
       ],
       "warnings": [],
       "errors": [],
-      "duration_ms": 155,
+      "duration_ms": 30,
       "metadata": {}
     },
     {
@@ -252,7 +252,7 @@
       ],
       "warnings": [],
       "errors": [],
-      "duration_ms": 266,
+      "duration_ms": 114,
       "metadata": {}
     },
     {
@@ -292,7 +292,7 @@
       ],
       "warnings": [],
       "errors": [],
-      "duration_ms": 41,
+      "duration_ms": 28,
       "metadata": {}
     },
     {
@@ -321,7 +321,7 @@
           ]
         },
         {
-          "mission_id": "25346220",
+          "mission_id": "e581b76b",
           "route": "read_only_inspection",
           "execution_mode": "read_only"
         },
@@ -344,7 +344,7 @@
       ],
       "warnings": [],
       "errors": [],
-      "duration_ms": 361,
+      "duration_ms": 130,
       "metadata": {}
     },
     {
@@ -361,7 +361,7 @@
       ],
       "warnings": [],
       "errors": [],
-      "duration_ms": 246,
+      "duration_ms": 80,
       "metadata": {}
     },
     {
@@ -373,7 +373,7 @@
       "evidence": [],
       "warnings": [],
       "errors": [],
-      "duration_ms": 271,
+      "duration_ms": 130,
       "metadata": {
         "enrollment_token_present": true,
         "enrollment_hash_only_ok": true,
@@ -385,15 +385,92 @@
         "invalid_session_blocks_fallback_ok": true,
         "limited_sensitive_blocked_ok": true
       }
+    },
+    {
+      "check_id": "write_endpoint_auth_gate",
+      "name": "Write Endpoint Auth Gate",
+      "status": "passed",
+      "passed": true,
+      "summary": "Write endpoint auth gate: write_auth.py ✓, static source ✓, env var ✓, fs/write blocked ✓, github/write blocked ✓, git/commit blocked ✓, no token echo ✓",
+      "evidence": [],
+      "warnings": [],
+      "errors": [],
+      "duration_ms": 711,
+      "metadata": {
+        "write_auth_exists": true,
+        "static_source_checks_ok": true,
+        "igris_project_root_env_ok": true,
+        "fs_write_unauth_blocked": true,
+        "github_create_issue_unauth_blocked": true,
+        "tools_git_commit_unauth_blocked": true,
+        "api_git_commit_unauth_blocked": true,
+        "no_raw_token_echo_ok": true
+      }
+    },
+    {
+      "check_id": "dangerous_intent_routing",
+      "name": "Dangerous Intent Routing",
+      "status": "passed",
+      "passed": true,
+      "summary": "Dangerous intent routing: rm -rf/ ✓, github issue ✓, sudo reboot ✓, limited≠admin code_change ✓, safe msgs ✓",
+      "evidence": [],
+      "warnings": [],
+      "errors": [],
+      "duration_ms": 0,
+      "metadata": {
+        "rm_rf_not_chat_only": true,
+        "github_issue_create_not_chat_only": true,
+        "sudo_reboot_not_chat_only": true,
+        "limited_code_change_blocked_admin_approval": true,
+        "safe_messages_unaffected": true
+      }
+    },
+    {
+      "check_id": "memory_cross_session",
+      "name": "Memory Cross-Session",
+      "status": "passed",
+      "passed": true,
+      "summary": "Memory cross-session: write ✓, new-session retrieve ✓, cross-user isolation ✓, router store ✓, secret redacted ✓",
+      "evidence": [],
+      "warnings": [],
+      "errors": [],
+      "duration_ms": 8,
+      "metadata": {
+        "cross_session_retrieved": true,
+        "cross_user_isolation": true,
+        "router_store_ok": true,
+        "secret_redacted": true
+      }
+    },
+    {
+      "check_id": "task_engine_reliability",
+      "name": "Task Engine Reliability",
+      "status": "passed",
+      "passed": true,
+      "summary": "Task engine reliability: enum ✓, fields ✓, methods ✓, empty queue ✓, low-risk transitions ✓, high-risk approval ✓, fail_task ✓, diagnostics state ✓",
+      "evidence": [],
+      "warnings": [],
+      "errors": [],
+      "duration_ms": 8,
+      "metadata": {
+        "task_status_enum_ok": true,
+        "task_fields_ok": true,
+        "engine_methods_ok": true,
+        "empty_queue_safe": true,
+        "low_risk_transitions": true,
+        "high_risk_approval_required": true,
+        "fail_task_ok": true,
+        "diagnostics_task_engine_state_ok": true
+      }
     }
   ],
   "warnings": [],
   "errors": [],
   "metrics": {
-    "total_checks": 11,
-    "passed_checks": 11,
+    "total_checks": 15,
+    "passed_checks": 15,
     "failed_checks": 0,
-    "total_duration_ms": 2016
+    "total_duration_ms": 1451
   },
   "artifacts": {},
   "metadata": {}

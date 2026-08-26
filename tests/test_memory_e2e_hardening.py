@@ -251,7 +251,7 @@ def test_chat_system_prompt_receives_memory_context_for_admin(client, tmp_path, 
         }
 
     try:
-        import igris.web.routers.routes_01 as _r
+        import igris.web.routers.router_status as _r
         monkeypatch.setattr(_r, "chat_llm", mock_chat)
     except Exception as e:
         pytest.fail(f"Cannot patch chat_llm: {e}")
@@ -295,7 +295,7 @@ def test_chat_system_prompt_does_not_receive_memory_context_for_unknown(client, 
         }
 
     try:
-        import igris.web.routers.routes_01 as _r
+        import igris.web.routers.router_status as _r
         monkeypatch.setattr(_r, "chat_llm", mock_chat)
     except Exception as e:
         pytest.fail(f"Cannot patch chat_llm: {e}")
@@ -470,7 +470,7 @@ def test_memory_retrieval_failure_logged_degraded(client, tmp_path, monkeypatch,
         }
 
     try:
-        import igris.web.routers.routes_01 as _r
+        import igris.web.routers.router_status as _r
         monkeypatch.setattr(_r, "chat_llm", mock_chat)
     except Exception as e:
         pytest.fail(f"Cannot patch chat_llm: {e}")

@@ -1,12 +1,12 @@
 """Fix #1286 — Post-login chat auth propagation tests.
 
-Root cause: routes_01.py used CONFIG.project_root (PROJECT_ROOT=/home/igris/IGRIS_TEST)
+Root cause: router_status.py used CONFIG.project_root (PROJECT_ROOT=/home/igris/IGRIS_TEST)
 as fallback for the auth session lookup, while auth_routes.py uses "." (CWD).
 Sessions written to /home/igris/IGRIS_GPT/.igris/auth/sessions.json were looked up
 in /home/igris/IGRIS_TEST/.igris/auth/ → not found → session_authenticated=False
 → gate fires → "Prima di continuare devo riconoscerti..." even after valid login.
 
-Fix: routes_01.py now uses os.environ.get("IGRIS_PROJECT_ROOT") or "." (same as auth_routes).
+Fix: router_status.py now uses os.environ.get("IGRIS_PROJECT_ROOT") or "." (same as auth_routes).
 """
 from __future__ import annotations
 
@@ -21,7 +21,7 @@ from unittest.mock import patch
 import pytest
 
 _REPO = Path(__file__).parent.parent
-_ROUTES_01 = _REPO / "igris/web/routers/routes_01.py"
+_ROUTES_01 = _REPO / "igris/web/routers/router_status.py"
 _AUTH_ROUTES = _REPO / "igris/api/routes/auth_routes.py"
 _APP_JS = _REPO / "igris/web/static/js/app.js"
 
@@ -52,7 +52,7 @@ def _gate_enabled_remote(tmp_dir: str):
 def _client_isolated(tmp_dir: str):
     os.environ["IGRIS_PROJECT_ROOT"] = tmp_dir
     for k in list(sys.modules.keys()):
-        if any(x in k for x in ("auth_routes", "interlocutor_auth", "routes_01")):
+        if any(x in k for x in ("auth_routes", "interlocutor_auth", "router_status")):
             del sys.modules[k]
     from fastapi.testclient import TestClient
     from igris.web.server import create_app
@@ -96,7 +96,7 @@ def test_login_then_post_message_with_bearer_does_not_auth_required():
         data = r.json()
         assert data.get("auth_required") is not True, (
             f"Valid session Bearer should not trigger auth_required, got: {data}. "
-            "Root cause: project_root mismatch between auth_routes and routes_01."
+            "Root cause: project_root mismatch between auth_routes and router_status."
         )
 
 
@@ -232,10 +232,10 @@ def test_stream_path_uses_auth_headers():
         "Stream path near /api/chat/stream does not include authHeaders — Bearer not sent"
 
 
-# ── Static: routes_01.py project_root consistency ────────────────────────────
+# ── Static: router_status.py project_root consistency ────────────────────────────
 
-def test_routes_01_does_not_fall_back_to_config_project_root():
-    """routes_01.py must NOT fall back to CONFIG.project_root for auth session lookup.
+def test_router_status_does_not_fall_back_to_config_project_root():
+    """router_status.py must NOT fall back to CONFIG.project_root for auth session lookup.
 
     CONFIG.project_root reads PROJECT_ROOT env var (workspace dir, e.g. /home/igris/IGRIS_TEST).
     auth_routes.py reads IGRIS_PROJECT_ROOT (auth store, e.g. /home/igris/IGRIS_GPT).
@@ -248,27 +248,27 @@ def test_routes_01_does_not_fall_back_to_config_project_root():
     assert pf_root_idx >= 0
     region = content[pf_root_idx:pf_root_idx + 200]
     assert "CONFIG.project_root" not in region, (
-        "routes_01.py falls back to CONFIG.project_root for auth session lookup. "
+        "router_status.py falls back to CONFIG.project_root for auth session lookup. "
         "This causes project_root mismatch: CONFIG.project_root reads PROJECT_ROOT "
         "(workspace = /home/igris/IGRIS_TEST) but auth sessions are in IGRIS_PROJECT_ROOT "
         "(= /home/igris/IGRIS_GPT). Sessions not found → auth_required after valid login."
     )
 
 
-def test_routes_01_stream_does_not_fall_back_to_config_project_root():
-    """Stream endpoint in routes_01.py must also not fall back to CONFIG.project_root."""
+def test_router_status_stream_does_not_fall_back_to_config_project_root():
+    """Stream endpoint in router_status.py must also not fall back to CONFIG.project_root."""
     content = _ROUTES_01.read_text(encoding="utf-8")
     pf_root_idx = content.find("_pf_project_root_s")
     assert pf_root_idx >= 0
     region = content[pf_root_idx:pf_root_idx + 200]
     assert "CONFIG.project_root" not in region, (
-        "Stream endpoint in routes_01.py falls back to CONFIG.project_root. "
+        "Stream endpoint in router_status.py falls back to CONFIG.project_root. "
         "Same mismatch as messages endpoint — sessions not found → auth_required."
     )
 
 
-def test_auth_routes_and_routes_01_use_same_env_var():
-    """Both auth_routes.py and routes_01.py must resolve IGRIS_PROJECT_ROOT for consistency.
+def test_auth_routes_and_router_status_use_same_env_var():
+    """Both auth_routes.py and router_status.py must resolve IGRIS_PROJECT_ROOT for consistency.
 
     After #1301-PR1, auth_routes.py delegates to _get_auth_root() (imported from
     write_auth.py) which reads IGRIS_PROJECT_ROOT lazily.  The invariant is that
@@ -288,6 +288,6 @@ def test_auth_routes_and_routes_01_use_same_env_var():
     assert "IGRIS_PROJECT_ROOT" in write_auth_content, (
         "write_auth.py must contain IGRIS_PROJECT_ROOT — it is the auth root source of truth"
     )
-    # routes_01.py still reads IGRIS_PROJECT_ROOT directly
+    # router_status.py still reads IGRIS_PROJECT_ROOT directly
     assert "IGRIS_PROJECT_ROOT" in routes_content, \
-        "routes_01.py does not use IGRIS_PROJECT_ROOT — inconsistency with auth_routes"
+        "router_status.py does not use IGRIS_PROJECT_ROOT — inconsistency with auth_routes"

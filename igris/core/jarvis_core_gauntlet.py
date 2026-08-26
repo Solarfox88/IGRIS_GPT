@@ -968,9 +968,9 @@ class JarvisCoreGauntlet:
         2. require_write_auth_or_raise blocks unauthenticated HTTP requests (401)
         3. require_write_auth_or_raise blocks limited-trust users (403)
         4. github_write.py imports write_auth (static source check)
-        5. routes_08.py imports write_auth (static source check)
-        6. routes_04.py imports write_auth (static source check)
-        7. routes_03.py imports write_auth (static source check)
+        5. router_tools.py imports write_auth (static source check)
+        6. router_tasks.py imports write_auth (static source check)
+        7. router_files.py imports write_auth (static source check)
         8. No raw token echoed in error responses
 
         SAFE: uses FastAPI TestClient with isolated temp project_root.
@@ -994,31 +994,31 @@ class JarvisCoreGauntlet:
         if "require_write_auth_or_raise" not in src_gw:
             r.errors.append("github_write.py missing require_write_auth_or_raise")
             return
-        src_r8 = (repo / "igris/web/routers/routes_08.py").read_text()
+        src_r8 = (repo / "igris/web/routers/router_tools.py").read_text()
         if "require_write_auth_or_raise" not in src_r8:
-            r.errors.append("routes_08.py missing require_write_auth_or_raise")
+            r.errors.append("router_tools.py missing require_write_auth_or_raise")
             return
-        src_r4 = (repo / "igris/web/routers/routes_04.py").read_text()
+        src_r4 = (repo / "igris/web/routers/router_tasks.py").read_text()
         if "require_write_auth_or_raise" not in src_r4:
-            r.errors.append("routes_04.py missing require_write_auth_or_raise")
+            r.errors.append("router_tasks.py missing require_write_auth_or_raise")
             return
-        src_r3 = (repo / "igris/web/routers/routes_03.py").read_text()
+        src_r3 = (repo / "igris/web/routers/router_files.py").read_text()
         if "require_write_auth_or_raise" not in src_r3:
-            r.errors.append("routes_03.py missing require_write_auth_or_raise")
+            r.errors.append("router_files.py missing require_write_auth_or_raise")
             return
-        # Perimeter extension: routes_08 git/commit and routes_02 git/commit
+        # Perimeter extension: router_tools git/commit and router_chat git/commit
         idx_tools_commit = src_r8.find('"/api/tools/git/commit"')
         if idx_tools_commit != -1:
             after = src_r8[idx_tools_commit:idx_tools_commit + 400]
             if "require_write_auth_or_raise" not in after:
-                r.errors.append("routes_08.py /api/tools/git/commit missing require_write_auth_or_raise")
+                r.errors.append("router_tools.py /api/tools/git/commit missing require_write_auth_or_raise")
                 return
-        src_r2 = (repo / "igris/web/routers/routes_02.py").read_text()
+        src_r2 = (repo / "igris/web/routers/router_chat.py").read_text()
         idx_legacy_commit = src_r2.find('"/api/git/commit"')
         if idx_legacy_commit != -1:
             after2 = src_r2[idx_legacy_commit:idx_legacy_commit + 400]
             if "require_write_auth_or_raise" not in after2:
-                r.errors.append("routes_02.py /api/git/commit missing require_write_auth_or_raise")
+                r.errors.append("router_chat.py /api/git/commit missing require_write_auth_or_raise")
                 return
         r.metadata["static_source_checks_ok"] = True
 
@@ -1039,8 +1039,8 @@ class JarvisCoreGauntlet:
             os.environ["IGRIS_PROJECT_ROOT"] = temp_dir
 
             for k in list(sys.modules.keys()):
-                if any(x in k for x in ("write_auth", "github_write", "routes_08",
-                                         "routes_04", "routes_03", "auth_routes")):
+                if any(x in k for x in ("write_auth", "github_write", "router_tools",
+                                         "router_tasks", "router_files", "auth_routes")):
                     del sys.modules[k]
 
             from fastapi.testclient import TestClient

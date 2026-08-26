@@ -7,7 +7,7 @@ No runtime behaviour changes. Guards that:
 3. WriteAuthResult has no raw session_token field and does not serialise it.
 4. The auth_required response shape (messages endpoint) is backward-compatible.
 5. The auth_required stream shape contains expected keys.
-6. The critical PreflightResult fields used by routes_01.py are stable:
+6. The critical PreflightResult fields used by router_status.py are stable:
      blocked, trust_level, session_authenticated, session_valid, session_reason,
      audit_event_id.
 7. WriteAuthResult.as_http_exception() produces the expected HTTP status.
@@ -29,7 +29,7 @@ def test_preflight_result_has_no_session_token_field():
     """PreflightResult must not store a raw session_token.
 
     Raw tokens must be consumed by extract_session_token() / resolve_session_identity()
-    and never kept in the result object that travels through routes_01.py.
+    and never kept in the result object that travels through router_status.py.
     """
     from igris.core.chat_interlocutor_preflight import PreflightResult
     field_names = {f.name for f in dataclasses.fields(PreflightResult)}
@@ -43,9 +43,9 @@ def test_preflight_result_has_no_session_token_field():
 
 
 def test_preflight_result_required_fields_exist():
-    """The fields consumed by routes_01.py must remain stable.
+    """The fields consumed by router_status.py must remain stable.
 
-    If any of these fields are removed or renamed, routes_01.py will break silently
+    If any of these fields are removed or renamed, router_status.py will break silently
     (returning untrusted defaults via getattr fallbacks) or raise AttributeError.
     """
     from igris.core.chat_interlocutor_preflight import PreflightResult
@@ -62,7 +62,7 @@ def test_preflight_result_required_fields_exist():
     }
     missing = required - field_names
     assert not missing, (
-        f"PreflightResult is missing required fields used by routes_01.py: {missing}"
+        f"PreflightResult is missing required fields used by router_status.py: {missing}"
     )
 
 

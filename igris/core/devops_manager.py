@@ -3,7 +3,7 @@
 Host registry (persist/load from JSON), server policy enforcement,
 deploy patterns with preflight/postcheck, and HTTP smoke-test evidence.
 
-Designed to be imported by igris.web.routers.routes_10 for the /api/devops/*
+Designed to be imported by igris.web.routers.router_supervisor for the /api/devops/*
 endpoints.  All operations are best-effort: each step records its own
 outcome so that partial failures are visible rather than silent.
 """

@@ -315,7 +315,7 @@ def test_chat_high_risk_deploy_returns_approval_required(client, monkeypatch):
                 "fallback_used": False, "latency_ms": 0, "routing_reason": "test",
                 "intent_detected": None, "suggested_actions": []}
 
-    import igris.web.routers.routes_01 as _r
+    import igris.web.routers.router_status as _r
     monkeypatch.setattr(_r, "chat_llm", mock_chat)
 
     # Monkeypatch preflight to simulate a trusted local admin request
@@ -338,7 +338,7 @@ def test_chat_high_risk_deploy_returns_approval_required(client, monkeypatch):
         )
     import igris.core.chat_interlocutor_preflight as _pf_mod
     monkeypatch.setattr(_pf_mod, "run_preflight", mock_preflight)
-    import igris.web.routers.routes_01 as _r2
+    import igris.web.routers.router_status as _r2
     monkeypatch.setattr(_r2, "run_preflight", mock_preflight, raising=False)
 
     r = client.post("/api/sessions")
@@ -381,7 +381,7 @@ def test_stream_high_risk_returns_approval_not_stream(client, monkeypatch):
         )
     import igris.core.chat_interlocutor_preflight as _pf_mod
     monkeypatch.setattr(_pf_mod, "run_preflight", mock_preflight)
-    import igris.web.routers.routes_01 as _r2
+    import igris.web.routers.router_status as _r2
     monkeypatch.setattr(_r2, "run_preflight", mock_preflight, raising=False)
 
     r = client.post(

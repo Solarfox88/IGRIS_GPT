@@ -8,16 +8,16 @@ from typing import Any, Iterable, Sequence
 
 
 CORE_ROUTE_MODULES: Sequence[str] = (
-    "igris.web.routers.routes_01",
-    "igris.web.routers.routes_02",
-    "igris.web.routers.routes_03",
-    "igris.web.routers.routes_04",
-    "igris.web.routers.routes_05",
-    "igris.web.routers.routes_06",
-    "igris.web.routers.routes_07",
-    "igris.web.routers.routes_08",
-    "igris.web.routers.routes_09",
-    "igris.web.routers.routes_10",
+    "igris.web.routers.router_status",
+    "igris.web.routers.router_chat",
+    "igris.web.routers.router_files",
+    "igris.web.routers.router_tasks",
+    "igris.web.routers.router_a2a",
+    "igris.web.routers.router_patches",
+    "igris.web.routers.router_missions",
+    "igris.web.routers.router_tools",
+    "igris.web.routers.router_governor",
+    "igris.web.routers.router_supervisor",
 )
 
 OPTIONAL_API_ROUTERS: Sequence[tuple[str, str]] = (

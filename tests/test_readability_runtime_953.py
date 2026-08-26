@@ -119,7 +119,7 @@ class TestReadabilityWiring:
         """post_message response must include a 'readability' field."""
         session_id = self._create_session(client)
         short_text = "This is a short answer."
-        with patch("igris.web.routers.routes_01.chat_llm", return_value=self._mock_chat_result(short_text)):
+        with patch("igris.web.routers.router_status.chat_llm", return_value=self._mock_chat_result(short_text)):
             r = client.post(
                 f"/api/sessions/{session_id}/messages",
                 json={"message": "hello"},
@@ -132,7 +132,7 @@ class TestReadabilityWiring:
         """A short response should have readability.passed=True."""
         session_id = self._create_session(client)
         short_text = "Yes, I understand."
-        with patch("igris.web.routers.routes_01.chat_llm", return_value=self._mock_chat_result(short_text)):
+        with patch("igris.web.routers.router_status.chat_llm", return_value=self._mock_chat_result(short_text)):
             r = client.post(
                 f"/api/sessions/{session_id}/messages",
                 json={"message": "OK?"},
@@ -146,7 +146,7 @@ class TestReadabilityWiring:
         """A wall-of-text response should log a warning."""
         session_id = self._create_session(client)
         long_text = " ".join(["verbosity"] * 300)  # 300 words, no structure
-        with patch("igris.web.routers.routes_01.chat_llm", return_value=self._mock_chat_result(long_text)):
+        with patch("igris.web.routers.router_status.chat_llm", return_value=self._mock_chat_result(long_text)):
             with caplog.at_level(logging.WARNING):
                 r = client.post(
                     f"/api/sessions/{session_id}/messages",
@@ -175,7 +175,7 @@ class TestReadabilityWiring:
             return real_import(name, *args, **kwargs)
 
         with patch("builtins.__import__", side_effect=failing_import):
-            with patch("igris.web.routers.routes_01.chat_llm", return_value=self._mock_chat_result("fine")):
+            with patch("igris.web.routers.router_status.chat_llm", return_value=self._mock_chat_result("fine")):
                 r = client.post(
                     f"/api/sessions/{session_id}/messages",
                     json={"message": "hello"},

@@ -10,7 +10,7 @@ Invariants guarded:
   3. CONFIG.igris_dir == CONFIG.project_root / ".igris"
   4. run_preflight audit lands under project_root, not Path.home()
   5. chat_interlocutor_preflight.py has no Path.home() references
-  6. routes_01.py preflight block uses IGRIS_PROJECT_ROOT, not CONFIG.project_root
+  6. router_status.py preflight block uses IGRIS_PROJECT_ROOT, not CONFIG.project_root
   7. Fallback chain: when IGRIS_PROJECT_ROOT is unset both auth and preflight use "."
   8. WORKSPACE layer (CONFIG.project_root) and AUTH layer (IGRIS_PROJECT_ROOT)
      are independent and can differ without breaking either
@@ -26,7 +26,7 @@ _REPO = Path(__file__).parent.parent
 _WRITE_AUTH = _REPO / "igris" / "api" / "write_auth.py"
 _AUTH_ROUTES = _REPO / "igris" / "api" / "routes" / "auth_routes.py"
 _PREFLIGHT = _REPO / "igris" / "core" / "chat_interlocutor_preflight.py"
-_ROUTES_01 = _REPO / "igris" / "web" / "routers" / "routes_01.py"
+_ROUTES_01 = _REPO / "igris" / "web" / "routers" / "router_status.py"
 _CONFIG = _REPO / "igris" / "models" / "config.py"
 
 
@@ -163,10 +163,10 @@ def test_preflight_source_has_no_path_home():
     )
 
 
-# ── 6. routes_01.py preflight uses IGRIS_PROJECT_ROOT ────────────────────────
+# ── 6. router_status.py preflight uses IGRIS_PROJECT_ROOT ────────────────────────
 
-def test_routes_01_preflight_uses_igris_project_root_not_config():
-    """routes_01.py must use IGRIS_PROJECT_ROOT for the preflight project_root.
+def test_router_status_preflight_uses_igris_project_root_not_config():
+    """router_status.py must use IGRIS_PROJECT_ROOT for the preflight project_root.
 
     CONFIG.project_root reads PROJECT_ROOT (workspace). Auth sessions live under
     IGRIS_PROJECT_ROOT. Using CONFIG.project_root would cause a path mismatch when
@@ -174,14 +174,14 @@ def test_routes_01_preflight_uses_igris_project_root_not_config():
     """
     src = _ROUTES_01.read_text(encoding="utf-8")
     # The preflight root variable must be sourced from IGRIS_PROJECT_ROOT
-    assert "IGRIS_PROJECT_ROOT" in src, "routes_01.py must reference IGRIS_PROJECT_ROOT"
+    assert "IGRIS_PROJECT_ROOT" in src, "router_status.py must reference IGRIS_PROJECT_ROOT"
 
     # Find the preflight root assignment and ensure it does NOT fall back to CONFIG.project_root
     pf_idx = src.find("_pf_project_root")
-    assert pf_idx >= 0, "_pf_project_root variable not found in routes_01.py"
+    assert pf_idx >= 0, "_pf_project_root variable not found in router_status.py"
     region = src[pf_idx: pf_idx + 300]
     assert "CONFIG.project_root" not in region, (
-        "routes_01.py preflight block falls back to CONFIG.project_root — "
+        "router_status.py preflight block falls back to CONFIG.project_root — "
         "use IGRIS_PROJECT_ROOT or '.' instead"
     )
 

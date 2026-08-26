@@ -285,7 +285,7 @@ def test_chat_operational_read_only_returns_mission_plan(client, monkeypatch):
     try:
         import igris.core.chat_engine as ce
         monkeypatch.setattr(ce, "chat", mock_chat)
-        import igris.web.routers.routes_01 as r1
+        import igris.web.routers.router_status as r1
         monkeypatch.setattr(r1, "chat_llm", mock_chat)
     except Exception:
         pass
@@ -324,7 +324,7 @@ def test_chat_deploy_requires_approval_strict(client, monkeypatch):
     try:
         import igris.core.chat_engine as ce
         monkeypatch.setattr(ce, "chat", mock_chat)
-        import igris.web.routers.routes_01 as r1
+        import igris.web.routers.router_status as r1
         monkeypatch.setattr(r1, "chat_llm", mock_chat)
     except Exception:
         pass
@@ -363,7 +363,7 @@ def test_chat_github_merge_approval_required(client, monkeypatch):
     try:
         import igris.core.chat_engine as ce
         monkeypatch.setattr(ce, "chat", mock_chat)
-        import igris.web.routers.routes_01 as r1
+        import igris.web.routers.router_status as r1
         monkeypatch.setattr(r1, "chat_llm", mock_chat)
     except Exception:
         pass
@@ -424,7 +424,7 @@ def test_stream_deploy_no_chat_stream_sync(client, monkeypatch):
     try:
         import igris.core.chat_streaming as cs
         monkeypatch.setattr(cs, "chat_stream_sync", mock_stream)
-        import igris.web.routers.routes_01 as r1
+        import igris.web.routers.router_status as r1
         monkeypatch.setattr(r1, "chat_streaming",
                             type("m", (), {"chat_stream_sync": mock_stream})())
     except Exception:
@@ -539,7 +539,7 @@ def test_chat_response_no_raw_secret(client, monkeypatch):
     try:
         import igris.core.chat_engine as ce
         monkeypatch.setattr(ce, "chat", mock_chat)
-        import igris.web.routers.routes_01 as r1
+        import igris.web.routers.router_status as r1
         monkeypatch.setattr(r1, "chat_llm", mock_chat)
     except Exception:
         pass

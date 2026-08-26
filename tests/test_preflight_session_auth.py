@@ -312,7 +312,7 @@ def test_session_token_not_in_logs(tmp_root, caplog):
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# API-level tests (routes_01 chat endpoint)
+# API-level tests (router_status chat endpoint)
 # ═══════════════════════════════════════════════════════════════════════════════
 
 def _send_chat(client, message: str, session_id: str | None = None,

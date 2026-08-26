@@ -6,11 +6,11 @@ _Epic #1301 — Auth & Session Single Source of Truth — PR-5A_
 
 ### `PreflightResult` (`igris/core/chat_interlocutor_preflight.py`)
 
-The object returned by `run_preflight()` and consumed by `routes_01.py`.
+The object returned by `run_preflight()` and consumed by `router_status.py`.
 
 **Security rule:** `PreflightResult` must never store a raw session token. The token is consumed by `extract_session_token()` / `resolve_session_identity()` and never reaches this object.
 
-**Fields consumed by `routes_01.py`** — these are stable and must not be removed or renamed:
+**Fields consumed by `router_status.py`** — these are stable and must not be removed or renamed:
 
 | Field | Type | Default | Used for |
 |-------|------|---------|----------|
@@ -93,7 +93,7 @@ data: [DONE]
 
 3. **Session auth fields default to `False`/`None`.** An absent or failed token must not accidentally appear authenticated due to a missing field or wrong default.
 
-4. **Stable field names.** The fields listed in the `PreflightResult` table above must not be renamed or removed without updating `routes_01.py` and the guard tests.
+4. **Stable field names.** The fields listed in the `PreflightResult` table above must not be renamed or removed without updating `router_status.py` and the guard tests.
 
 5. **`auth_required` response keys are stable.** Frontend and integration tests rely on `auth_required`, `auth_actions`, `auth_reason` being present in blocked responses.
 
