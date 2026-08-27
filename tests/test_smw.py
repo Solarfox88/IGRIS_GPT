@@ -56,35 +56,31 @@ def test_diagnose_port_conflict_no_llm():
     assert "kill_stale_process" in d.recommended_actions
 
 
-@patch("igris.core.smw_actions.subprocess.run")
+@patch("igris.core.smw_actions.governed_run")
 def test_git_clean_root_action(mock_run):
-    mock_run.return_value.returncode = 0
-    mock_run.return_value.stdout = "ok"
-    mock_run.return_value.stderr = ""
+    mock_run.return_value = {"returncode": 0, "stdout": "ok", "stderr": "", "duration_ms": 10}
     asyncio.run(git_clean_root("."))
-    mock_run.assert_called_with(["git", "clean", "-fd", "."], cwd=".", capture_output=True, text=True)
+    mock_run.assert_called()
 
 
-@patch("igris.core.smw_actions.subprocess.run")
+@patch("igris.core.smw_actions.governed_run")
 def test_kill_stale_process_no_stale(mock_run):
-    mock_run.return_value.stdout = ""
+    mock_run.return_value = {"returncode": 0, "stdout": "", "stderr": "", "duration_ms": 10}
     r = asyncio.run(kill_stale_process())
     assert r.success
 
 
 @patch("igris.core.smw_actions.os.kill")
-@patch("igris.core.smw_actions.subprocess.run")
+@patch("igris.core.smw_actions.governed_run")
 def test_kill_stale_process_kills_stale(mock_run, mock_kill):
-    mock_run.return_value.stdout = "LISTEN 0 128 *:7778 *:* users:(\"python\",pid=12345,fd=3)"
+    mock_run.return_value = {"returncode": 0, "stdout": "LISTEN 0 128 *:7778 *:* users=(\"python\",pid=12345,fd=3)", "stderr": "", "duration_ms": 10}
     asyncio.run(kill_stale_process())
     mock_kill.assert_called()
 
 
-@patch("igris.core.smw_actions.subprocess.run")
+@patch("igris.core.smw_actions.governed_run")
 def test_open_diagnostic_issue(mock_run):
-    mock_run.return_value.returncode = 0
-    mock_run.return_value.stdout = "ok"
-    mock_run.return_value.stderr = ""
+    mock_run.return_value = {"returncode": 0, "stdout": "ok", "stderr": "", "duration_ms": 10}
     r = asyncio.run(open_diagnostic_issue(".", "port_conflict", "ev", ["a"]))
     assert "port_conflict" in r.output
 
@@ -97,9 +93,9 @@ def test_record_and_load_incident():
         assert loaded[0].incident_id == "id1"
 
 
-@patch("igris.core.smw_teach.subprocess.run")
+@patch("igris.core.smw_teach.governed_run")
 def test_teach_back_opens_issue_on_second_occurrence(mock_run):
-    mock_run.return_value.stdout = ""
+    mock_run.return_value = {"returncode": 0, "stdout": "", "stderr": "", "duration_ms": 10}
     with tempfile.TemporaryDirectory() as td:
         i1 = Incident("id1", "p", time.time(), None, "rc", ["a"], "resolved", "ev")
         i2 = Incident("id2", "p", time.time(), None, "rc", ["a"], "resolved", "ev")

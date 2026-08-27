@@ -4,12 +4,12 @@ import asyncio
 import json
 import os
 import shlex
-import subprocess
 from dataclasses import dataclass
 from typing import List
 
 from igris.core.smw_patterns import DetectedPattern
 from igris.core.smw_sensors import SystemSnapshot
+from igris.core.tool_runtime import governed_run
 
 
 @dataclass
@@ -47,11 +47,11 @@ async def diagnose_with_llm(detected: DetectedPattern, snapshot: SystemSnapshot,
     try:
         proc = await asyncio.get_running_loop().run_in_executor(
             None,
-            lambda: subprocess.run(shlex.split(cmd), input=json.dumps(payload), capture_output=True, text=True, cwd=project_root, timeout=45),
+            lambda: governed_run(shlex.split(cmd), input_text=json.dumps(payload), cwd=project_root, timeout=45, caller="smw_diagnosis.diagnose_with_llm"),
         )
-        if proc.returncode != 0:
+        if proc["returncode"] != 0:
             return diagnose(detected, project_root)
-        data = json.loads(proc.stdout or "{}")
+        data = json.loads(proc["stdout"] or "{}")
         return Diagnosis(detected.pattern.name, str(data.get("diagnosis", "llm diagnosis unavailable")), float(data.get("confidence", 0.5)), 2, [str(data.get("suggested_repair_strategy", "open_diagnostic_issue"))], detected.evidence, False)
-    except (OSError, subprocess.SubprocessError, json.JSONDecodeError, ValueError, TypeError):
+    except (OSError, json.JSONDecodeError, ValueError, TypeError):
         return diagnose(detected, project_root)

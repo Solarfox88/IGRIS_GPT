@@ -764,3 +764,105 @@ class ToolRuntime:
             {"tool": "test", "actions": "pytest runner"},
             {"tool": "ssh_host", "actions": "register, list, get"},
         ]
+
+
+# =====================================================================
+# Governed subprocess execution (#1322 Phase 2)
+# =====================================================================
+
+def governed_run(
+    cmd: List[str],
+    cwd: Optional[str] = None,
+    timeout: int = 30,
+    input_text: Optional[str] = None,
+    caller: str = "",
+) -> Dict[str, Any]:
+    """Execute a subprocess with audit trail and governed output capture.
+
+    This is the centralized execution path for modules that previously
+    called subprocess.run() directly (#1322). It provides:
+    - Audit trail (structured log of every command)
+    - Timeout handling
+    - Output capture and truncation
+    - Error handling
+
+    This does NOT replace ToolRuntime.shell_execute() for user-facing
+    command execution (which has risk classification and allowlist).
+    It is for internal infrastructure commands (git, gh, ss, etc.)
+    that need audit but don't go through the full risk pipeline.
+
+    Args:
+        cmd: Command and arguments as a list
+        cwd: Working directory
+        timeout: Timeout in seconds
+        input_text: Optional stdin input
+        caller: Name of the calling module (for audit trail)
+
+    Returns:
+        Dict with returncode, stdout, stderr, duration_ms
+    """
+    import time as _time
+
+    start = _time.time()
+    work_dir = cwd or os.getcwd()
+    cmd_name = cmd[0] if cmd else "unknown"
+
+    logger.info(
+        "governed_run_start",
+        extra={
+            "tool": "governed_run",
+            "command": cmd_name,
+            "caller": caller,
+            "cwd": work_dir,
+            "timeout": timeout,
+        },
+    )
+
+    try:
+        result = subprocess.run(
+            cmd,
+            cwd=work_dir,
+            text=True,
+            input=input_text,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            timeout=timeout,
+            check=False,
+        )
+        elapsed = int((_time.time() - start) * 1000)
+        logger.info(
+            "governed_run_done",
+            extra={
+                "tool": "governed_run",
+                "command": cmd_name,
+                "caller": caller,
+                "returncode": result.returncode,
+                "duration_ms": elapsed,
+            },
+        )
+        return {
+            "returncode": result.returncode,
+            "stdout": truncate_output(result.stdout),
+            "stderr": truncate_output(result.stderr),
+            "duration_ms": elapsed,
+        }
+    except subprocess.TimeoutExpired:
+        elapsed = int((_time.time() - start) * 1000)
+        logger.warning(
+            "governed_run_timeout",
+            extra={"tool": "governed_run", "command": cmd_name, "caller": caller, "timeout": timeout},
+        )
+        return {"returncode": 124, "stdout": "", "stderr": "Command timed out", "duration_ms": elapsed}
+    except FileNotFoundError:
+        logger.warning(
+            "governed_run_not_found",
+            extra={"tool": "governed_run", "command": cmd_name, "caller": caller},
+        )
+        return {"returncode": 127, "stdout": "", "stderr": f"Command not found: {cmd_name}", "duration_ms": 0}
+    except (subprocess.SubprocessError, OSError) as exc:
+        elapsed = int((_time.time() - start) * 1000)
+        logger.warning(
+            "governed_run_error",
+            extra={"tool": "governed_run", "command": cmd_name, "caller": caller, "error": str(exc)},
+        )
+        return {"returncode": 1, "stdout": "", "stderr": str(exc), "duration_ms": elapsed}
