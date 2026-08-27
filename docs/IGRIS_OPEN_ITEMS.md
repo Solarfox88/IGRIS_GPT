@@ -2,7 +2,7 @@
 
 Open issues and tech debt for IGRIS_GPT. Updated after every task.
 
-Last updated: 2026-08-27 (Stabilization audit after second 10-issue roadmap)
+Last updated: 2026-08-27 (Stabilization audit after third roadmap)
 
 ## Completion policy
 
@@ -121,3 +121,21 @@ A runtime refactor with missing import graph evidence is not complete.
 | #1417 | **CLOSED** — 141 catches now log with debug, 13 silent pass kept (ImportError etc). PR #1419 merged b23a0a0. | Closed |
 | #1371 | **CLOSED** — supervisor split complete, 1,844 lines (below 2,000) | Closed 2026-08-15 |
 | #1395 | **CLOSED** (PR #1425 merged `403e2e0`) | agent_reasoning_loop.py 2477→1968 lines, 2 modules extracted |
+## Third roadmap phase-complete items (2026-08-27)
+
+| Issue | Phase completed | Remaining work | Child issues |
+|---|---|---|---|
+| #1322 | Phase 2 — 16 MIGRATE calls migrated to governed_run() | Phase 3 — lint rule + 25 INFRASTRUCTURE imports | — |
+| #1324 | Phase 2 — FastAPI trace middleware (X-Trace-Id, X-Request-Id) | Phase 3 — OTel SDK bridge/export, Phase 4 — UI dashboard | — |
+| #1325 | Phase 2 — /api/plugins read-only endpoint | Phase 3 — UI integration, Phase 4 — sandboxing | — |
+| #1323 | Phase 2 — word-by-word streaming (fallback simulation) | Phase 3 — real token streaming via orchestrator, Phase 4 — HTTP fallback | — |
+| #1328 | Phase 2 — 15 interaction tests (chat, tab, status) | Broader coverage — login, task, terminal, file browse | — |
+| #1307 | Evaluation + 3 child issues created | #1446, #1447, #1448 implementation | #1446, #1447, #1448 |
+
+## New child issues (2026-08-27)
+
+| Issue | Scope | Priority | Risk |
+|---|---|---|---|
+| #1446 | Worktree recovery — dirty state detection | Medium | Medium |
+| #1447 | Provider degraded states — circuit breaker | Medium | Medium |
+| #1448 | Partial restore — integrity verification | Medium | Medium |

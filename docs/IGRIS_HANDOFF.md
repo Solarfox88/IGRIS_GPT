@@ -2,7 +2,7 @@
 
 The exact point where work resumes. Updated by every agent at the end of each task.
 
-Last updated: 2026-08-27 (Stabilization audit after second 10-issue roadmap)
+Last updated: 2026-08-27 (Stabilization audit after third roadmap)
 
 ## Process violation recorded (2026-08-16)
 
@@ -57,35 +57,48 @@ A runtime refactor with missing import graph evidence is not complete.
 
 ## Current next issue
 
-**Second 10-issue roadmap COMPLETE. 4 issues closed, 6 phase-complete (open). 9 PRs merged. Stabilization audit passed: 7203 tests, 0 errors pyright, 15/15 gauntlet, VM healthy.**
+**Third roadmap COMPLETE. 6 PRs merged, 6 issues advanced to Phase 2 (all remain open). 3 child issues created for #1307. Stabilization audit passed: 7217 tests, 0 errors pyright, 15/15 gauntlet, VM healthy.**
 
-### Second roadmap completed (2026-08-26)
+### Third roadmap completed (2026-08-27)
 
-| # | Issue | PR | State | Merge commit |
+| # | Issue | PR | State | Phase |
 |---|---|---|---|---|
-| 1 | #1430 | — | CLOSED | (VM env) |
-| 2 | #1330 | #1431 | CLOSED | `6f98d4b` |
-| 3 | #1320 | #1432 | CLOSED | `35ef021` |
-| 4 | #1322 | #1433 | OPEN (Phase 1) | `75a9127` |
-| 5 | #1329 | #1434 | CLOSED | `b69a68b` |
-| 6 | #1324 | #1435 | OPEN (Phase 1) | `b69a68b` |
-| 7 | #1328 | #1436 | OPEN (Phase 1) | `b69a68b` |
-| 8 | #1323 | #1437 | OPEN (Phase 1) | `b69a68b` |
-| 9 | #1325 | #1438 | OPEN (Phase 1) | `5b66d0c` |
-| 10 | #1307 | #1439 | OPEN (evaluation) | `b69a68b` |
+| 1 | #1322 | #1441 | OPEN | Phase 2 (migrate 16 calls). Phase 3 (lint rule + INFRASTRUCTURE) pending |
+| 2 | #1324 | #1442 | OPEN | Phase 2 (trace middleware). Phase 3 (OTel SDK) pending |
+| 3 | #1325 | #1443 | OPEN | Phase 2 (plugin API). Phase 3 (UI + sandboxing) pending |
+| 4 | #1323 | #1444 | OPEN | Phase 2 (word streaming). Phase 3 (real token streaming) pending |
+| 5 | #1328 | #1445 | OPEN | Phase 2 (interaction tests). Broader coverage pending |
+| 6 | #1307 | #1449 | OPEN | Child issues #1446, #1447, #1448 created |
 
-### Second roadmap audit results (2026-08-27)
+### Third roadmap audit results (2026-08-27)
 
 - compileall: PASS
-- pyright: 0 errors, 908 warnings
-- pytest: 7203 passed, 30 skipped, 0 failed
-- targeted suites: 119 tests all passed
+- pyright: 0 errors, 915 warnings
+- pytest: 7217 passed, 40 skipped, 0 failed
+- targeted suites: 184 passed, 25 skipped (E2E gated)
 - VM gauntlet: 15/15 PASSED
-- VM pyright: 0 errors, 910 warnings (libatomic1 installed and persistent)
+- VM pyright: 0 errors, 910 warnings
 - VM diagnostics: healthy=true, 0 findings
 - VM os/brief: ok=true
-- Backup/restore smoke: OK
-- Rate limit smoke: OK (per-user isolation, role-based limits, no secret leakage)
+- VM trace headers: x-trace-id, x-request-id on every response
+- VM plugin API: {"plugins":[],"count":0}
+- Subprocess governance: 4 migrated modules clean. 25 unauthorized INFRASTRUCTURE imports remain.
+- Trace middleware: X-Trace-Id propagation verified
+- Plugin API: read-only, no execution, no secret leakage
+- WebSocket streaming: word_split fallback, auth enforced
+- Playwright E2E: 25 tests, all skip by default
+- #1307 children: #1446, #1447, #1448 all OPEN
+
+### Next roadmap priority
+
+1. #1322 Phase 3 — lint rule + INFRASTRUCTURE migration
+2. #1324 Phase 3 — OTel SDK bridge/export
+3. #1325 Phase 3 — plugin UI integration
+4. #1323 Phase 3 — real token streaming
+5. #1328 — broader interaction coverage
+6. #1446 — worktree recovery
+7. #1447 — provider degraded states
+8. #1448 — partial restore
 - WebSocket smoke: OK (auth integration, admin-only /ws/loop, error handling)
 - Plugin safety smoke: OK (discovery limited to configured dirs, no sandboxing yet)
 - Integration gating: 13 skipped (IGRIS_INTEGRATION_TESTS=1)

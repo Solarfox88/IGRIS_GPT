@@ -2,13 +2,13 @@
 
 Stable project state — source of truth for all agents.
 
-Last updated: 2026-08-27 (Stabilization audit after second 10-issue roadmap)
+Last updated: 2026-08-27 (Stabilization audit after third roadmap)
 
 ## Repository
 
 - repo: `Solarfox88/IGRIS_GPT` (public)
 - default branch: `main`
-- current `main` commit: `5b66d0c` (post-second-roadmap, 4 closed + 6 phase-complete)
+- current `main` commit: `b362778` (post-third-roadmap, 6 phase-2 advances + 3 child issues)
 
 ## Mandatory operating method
 
@@ -266,3 +266,22 @@ Network config: /etc/netplan/01-static.yaml with static IP 192.168.1.253/24, gat
 The IGRIS External Switch is bound to WiFi (Realtek RTL8822CE) via a Microsoft network bridge — VM is directly reachable on the LAN.
 
 **Conclusion**: Hyper-V VM audit performed; no newer IGRIS work found. GitHub `main` is the most advanced state. The VM's only non-main branch is PR #1345 which is already on GitHub.
+
+## Stabilization audit after third roadmap
+
+Main commit: `b362778`
+Roadmap PRs verified: #1441, #1442, #1443, #1444, #1445, #1449 (all MERGED)
+Issues verified: #1322, #1324, #1325, #1323, #1328, #1307 (all OPEN, phase-complete)
+Child issues verified: #1446, #1447, #1448 (all OPEN)
+CI: all green (8 recent runs success)
+Local tests: 7217 passed, 40 skipped, 0 failed. pyright 0 errors, 915 warnings.
+VM: `b362778`, gauntlet 15/15, healthy=true, os/brief ok=true
+VM pyright: 0 errors, 910 warnings
+Subprocess governance: 4 migrated modules clean (no subprocess import, use governed_run). 25 unauthorized modules still import subprocess (INFRASTRUCTURE class). #1322 acceptance criteria NOT fully met.
+Trace middleware: X-Trace-Id and X-Request-Id on every response. Incoming propagation verified.
+Plugin API: GET /api/plugins read-only, no execution, no secret leakage.
+WebSocket streaming: word-by-word fallback simulation (streaming_mode=word_split). Auth enforced.
+Playwright E2E: 25 tests, all skip by default (IGRIS_E2E_TESTS=1 gate).
+#1307 child issues: #1446 (worktree recovery), #1447 (provider degraded states), #1448 (partial restore) — all OPEN.
+Open concerns: 25 unauthorized subprocess imports remain. Memory files were not updated during third roadmap (fixed in this audit).
+Recommended next roadmap: #1322 Phase 3 (lint rule + INFRASTRUCTURE migration), #1324 Phase 3 (OTel SDK), #1325 Phase 3 (UI), #1323 Phase 3 (real token streaming), #1328 (broader coverage), #1446/#1447/#1448 (reliability children).
