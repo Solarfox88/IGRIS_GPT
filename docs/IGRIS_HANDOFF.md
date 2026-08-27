@@ -2,7 +2,7 @@
 
 The exact point where work resumes. Updated by every agent at the end of each task.
 
-Last updated: 2026-08-26 (Post-roadmap stabilization audit — 10-issue roadmap complete)
+Last updated: 2026-08-27 (Stabilization audit after second 10-issue roadmap)
 
 ## Process violation recorded (2026-08-16)
 
@@ -57,50 +57,54 @@ A runtime refactor with missing import graph evidence is not complete.
 
 ## Current next issue
 
-**10-issue autonomous roadmap COMPLETE. All 10 issues closed, all 10 PRs merged. Post-roadmap stabilization audit passed: 7113 tests, 0 errors pyright, 15/15 gauntlet, VM healthy.**
+**Second 10-issue roadmap COMPLETE. 4 issues closed, 6 phase-complete (open). 9 PRs merged. Stabilization audit passed: 7203 tests, 0 errors pyright, 15/15 gauntlet, VM healthy.**
 
-### Roadmap completed (2026-08-26)
+### Second roadmap completed (2026-08-26)
 
-| # | Issue | PR | Merge commit |
-|---|---|---|---|
-| 1 | #1417 | #1419 | `b23a0a0` |
-| 2 | #1314 | #1420 | (docs) |
-| 3 | #1316 | #1421 | (docs) |
-| 4 | #1289 | #1422 | (squash) |
-| 5 | #1297 | #1423 | (squash) |
-| 6 | #1317 | #1424 | (squash) |
-| 7 | #1395 | #1425 | `403e2e0` |
-| 8 | #1318 | #1426 | `68c5818` |
-| 9 | #1319 | #1427 | `1357ea5` |
-| 10 | #1321 | #1428 | `6aa78e3` |
+| # | Issue | PR | State | Merge commit |
+|---|---|---|---|---|
+| 1 | #1430 | — | CLOSED | (VM env) |
+| 2 | #1330 | #1431 | CLOSED | `6f98d4b` |
+| 3 | #1320 | #1432 | CLOSED | `35ef021` |
+| 4 | #1322 | #1433 | OPEN (Phase 1) | `75a9127` |
+| 5 | #1329 | #1434 | CLOSED | `b69a68b` |
+| 6 | #1324 | #1435 | OPEN (Phase 1) | `b69a68b` |
+| 7 | #1328 | #1436 | OPEN (Phase 1) | `b69a68b` |
+| 8 | #1323 | #1437 | OPEN (Phase 1) | `b69a68b` |
+| 9 | #1325 | #1438 | OPEN (Phase 1) | `5b66d0c` |
+| 10 | #1307 | #1439 | OPEN (evaluation) | `b69a68b` |
 
-### Post-roadmap audit results
+### Second roadmap audit results (2026-08-27)
 
 - compileall: PASS
-- pyright: 0 errors, 897 warnings
-- pytest: 7113 passed, 2 skipped, 0 failed
-- targeted suites: 165 tests all passed
+- pyright: 0 errors, 908 warnings
+- pytest: 7203 passed, 30 skipped, 0 failed
+- targeted suites: 119 tests all passed
 - VM gauntlet: 15/15 PASSED
+- VM pyright: 0 errors, 910 warnings (libatomic1 installed and persistent)
 - VM diagnostics: healthy=true, 0 findings
 - VM os/brief: ok=true
-- UI smoke: all 14 JS modules 200, index 200, chat form present
-- SQLite migration smoke: all 4 components have schema_version, data preserved
-- Checkpoint smoke: save/load/clear OK, watchdog OK, shutdown handler OK
-- Import graph: all 34 modules import OK
+- Backup/restore smoke: OK
+- Rate limit smoke: OK (per-user isolation, role-based limits, no secret leakage)
+- WebSocket smoke: OK (auth integration, admin-only /ws/loop, error handling)
+- Plugin safety smoke: OK (discovery limited to configured dirs, no sandboxing yet)
+- Integration gating: 13 skipped (IGRIS_INTEGRATION_TESTS=1)
+- E2E gating: 15 skipped (IGRIS_E2E_TESTS=1)
 
-### Next recommended work
+### Next recommended roadmap (Phase 2 focus)
 
-Select next 10-issue roadmap from open issues. Candidates by priority:
-- #1322 — [I3] Safety: 80 subprocess calls bypass ToolRuntime
-- #1320 — [I5] Testing: integration test with real LLM
-- #1330 — [M8] Reliability: backup automatico .igris/
-- #1329 — [M7] Security: rate limiting per-user
-- #1328 — [M6] Testing: Playwright E2E
-- #1323 — [M1] Feature: WebSocket chat streaming
-- #1324 — [M2] Observability: OpenTelemetry
-- #1325 — [M3] Architecture: plugin system
-- #1326 — [M4] Feature: multi-tenancy RBAC
-- #1327 — [M5] DevOps: Docker Compose production-ready
+| Priority | Issue | Scope | Risk |
+|---:|---|---|---|
+| 1 | #1322 Phase 2 | Migrate 18 subprocess calls to ToolRuntime | Medium |
+| 2 | #1324 Phase 2 | FastAPI middleware auto-inject trace_id | Low |
+| 3 | #1325 Phase 2 | Plugin API endpoint (/api/plugins) | Low |
+| 4 | #1323 Phase 2 | Token-by-token LLM streaming via WebSocket | Medium |
+| 5 | #1328 Phase 2 | Playwright interaction tests (login, chat, task) | Low |
+| 6 | #1307 follow-up | Worktree recovery / provider degraded states | Medium |
+| 7 | #1327 | Docker Compose production-ready | Medium |
+| 8 | #1326 | Multi-tenancy RBAC | High |
+| 9 | #1306 | Observability health dashboard | Medium |
+| 10 | pyright warnings | Bounded warning reduction (unused imports/vars) | Low |
 
 ## Final 20-block audit summary
 
