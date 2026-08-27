@@ -1,11 +1,13 @@
-"""WebSocket chat streaming endpoint (#1323 Phase 1).
+"""WebSocket chat streaming endpoint (#1323 Phase 2).
 
 Provides /ws/chat for real-time chat streaming and /ws/loop for
 reasoning loop step streaming.
 
-Phase 1: basic WebSocket endpoint with auth integration and
-fallback to HTTP polling. Token-by-token streaming will be
-added in Phase 2 when LLM streaming is integrated.
+Phase 1: basic WebSocket endpoint with auth integration.
+Phase 2: structured word-by-word streaming (fallback simulation).
+  The chat engine is synchronous, so we split the complete response
+  into word chunks. Real token-by-token streaming requires
+  orchestrator changes (Phase 3).
 
 Usage:
     # Connect to /ws/chat with session token in query param or header
@@ -21,6 +23,7 @@ Usage:
 """
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import os
@@ -122,8 +125,10 @@ async def ws_chat(websocket: WebSocket) -> None:
 
                 message_id = f"msg-{uuid.uuid4().hex[:8]}"
 
-                # Phase 1: send the full response as a single chunk
-                # Phase 2 will integrate with LLM streaming
+                # Phase 2: structured streaming
+                # The chat engine is synchronous and returns a complete response.
+                # We stream the response word-by-word to simulate token streaming.
+                # Real token-by-token streaming requires orchestrator changes (Phase 3).
                 try:
                     from igris.core.chat_engine import chat as chat_fn
                     response = chat_fn(message)
@@ -131,18 +136,42 @@ async def ws_chat(websocket: WebSocket) -> None:
                     # Extract text from response dict
                     if isinstance(response, dict):
                         text = response.get("text", "")
+                        provider = response.get("provider", "unknown")
+                        model = response.get("model", "unknown")
                     else:
                         text = str(response)
+                        provider = "unknown"
+                        model = "unknown"
 
-                    # Send as a single chunk (Phase 1)
+                    # Send metadata first
                     await websocket.send_json({
-                        "type": "chunk",
-                        "content": text,
+                        "type": "start",
                         "message_id": message_id,
+                        "provider": provider,
+                        "model": model,
+                        "streaming_mode": "word_split",
+                        "timestamp": time.time(),
                     })
+
+                    # Stream word by word (fallback simulation)
+                    # Each chunk is a word to simulate token streaming.
+                    # Real token streaming will be added in Phase 3 when
+                    # the orchestrator exposes a streaming generator.
+                    words = text.split()
+                    for i, word in enumerate(words):
+                        await websocket.send_json({
+                            "type": "chunk",
+                            "content": word + (" " if i < len(words) - 1 else ""),
+                            "message_id": message_id,
+                            "chunk_index": i,
+                        })
+                        # Small delay to simulate streaming
+                        await asyncio.sleep(0.02)
+
                     await websocket.send_json({
                         "type": "done",
                         "message_id": message_id,
+                        "total_chunks": len(words),
                         "timestamp": time.time(),
                     })
                 except Exception as exc:

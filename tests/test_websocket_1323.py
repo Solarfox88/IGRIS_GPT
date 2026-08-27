@@ -72,6 +72,47 @@ class TestWebSocketChat:
             assert data["type"] == "error"
             assert "Empty message" in data["message"]
 
+    def test_ws_chat_streaming(self) -> None:
+        """WebSocket chat should stream response in chunks (Phase 2)."""
+        from unittest.mock import patch
+
+        app = _create_app()
+        client = TestClient(app)
+        with client.websocket_connect("/ws/chat") as ws:
+            ws.receive_json()  # consume connected message
+
+            with patch("igris.core.chat_engine.chat") as mock_chat:
+                mock_chat.return_value = {
+                    "text": "Hello world test",
+                    "provider": "test",
+                    "model": "test-model",
+                }
+                ws.send_json({"type": "chat", "message": "hi"})
+
+                # Receive start message
+                start = ws.receive_json()
+                assert start["type"] == "start"
+                assert start["message_id"].startswith("msg-")
+                assert start["provider"] == "test"
+                assert start["streaming_mode"] == "word_split"
+
+                # Receive word chunks
+                chunks = []
+                while True:
+                    data = ws.receive_json()
+                    if data["type"] == "done":
+                        assert data["total_chunks"] == 3
+                        break
+                    assert data["type"] == "chunk"
+                    assert "content" in data
+                    chunks.append(data["content"])
+
+                # Reconstruct text
+                streamed_text = "".join(chunks)
+                assert "Hello" in streamed_text
+                assert "world" in streamed_text
+                assert "test" in streamed_text
+
 
 class TestWebSocketLoop:
     """Tests for /ws/loop WebSocket endpoint."""
