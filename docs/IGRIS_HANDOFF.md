@@ -2,7 +2,7 @@
 
 The exact point where work resumes. Updated by every agent at the end of each task.
 
-Last updated: 2026-08-27 (Stabilization audit after third roadmap)
+Last updated: 2026-08-27 (#1322 Phase 3 subprocess governance lint)
 
 ## Process violation recorded (2026-08-16)
 
@@ -281,3 +281,12 @@ Previous Hyper-V VM at 192.168.1.253 is no longer in use (VHDX could not boot on
 6. ~~#1417 follow-up~~ — DONE (141 catches now log, 13 silent pass kept, #1417 CLOSED)
 7. Continue #1395 (agent_reasoning_loop.py split — 2,477 lines, target <2,000)
 8. Do NOT declare issues complete until acceptance criteria are fully met
+
+### #1322 Phase 3 completed (2026-08-27)
+
+- PR #1451 merged: subprocess governance lint rule
+- AST-based check: scripts/check_subprocess_governance.py
+- 13 pytest tests: tests/test_subprocess_governance_1322.py
+- Policy: 3 always-allowed + 25 infrastructure-allowed + 4 forbidden
+- #1322 remains OPEN (Phase 4: INFRASTRUCTURE migration)
+- Next: #1322 Phase 4 or next roadmap priority
