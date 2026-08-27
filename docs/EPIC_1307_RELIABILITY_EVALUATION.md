@@ -122,3 +122,14 @@ This EPIC covers 7 scope areas. Several have been addressed by recent roadmap wo
 - Restore partial/dry-run (scope 4 remaining)
 - Provider degraded state handling (scope 6 remaining)
 - Worktree recovery (scope 7)
+
+## Follow-up issues created (Phase 2)
+
+The following child issues were created to track remaining scope from #1307:
+
+- #1446 — Worktree recovery — dirty state detection and automatic cleanup
+- #1447 — Provider degraded states — LLM provider failover and circuit breaker
+- #1448 — Partial restore — backup restore with integrity verification
+
+These issues track the remaining scope areas that were NOT DONE in the initial
+evaluation. #1307 remains OPEN until all child issues are resolved.
