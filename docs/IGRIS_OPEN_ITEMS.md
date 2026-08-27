@@ -2,7 +2,7 @@
 
 Open issues and tech debt for IGRIS_GPT. Updated after every task.
 
-Last updated: 2026-08-26 (Post-roadmap stabilization audit — 10-issue roadmap complete, all closed)
+Last updated: 2026-08-27 (Stabilization audit after second 10-issue roadmap)
 
 ## Completion policy
 
@@ -76,18 +76,18 @@ A runtime refactor with missing import graph evidence is not complete.
 | Feature | #1319 (I4) | **CLOSED** (PR #1427 merged) | SchemaManager + per-component migration registries, 12 tests |
 | Testing | #1320 (I5) | open | integration tests with real LLM |
 | Reliability | #1321 (I6) | **CLOSED** (PR #1428 merged) | LoopCheckpointManager + GracefulShutdownHandler + StepWatchdog, 17 tests |
-| Safety | #1322 (I3) | open | 80 direct subprocess calls bypass ToolRuntime |
+| Safety | #1322 (I3) | **OPEN (Phase 1 done)** | 79 calls classified (55 INFRA, 18 MIGRATE). Phase 2: migrate 18 calls to ToolRuntime |
 
 ## Milestones (M1–M8)
 
 | Milestone | Issue | Status |
 |---|---|---|
-| M1 WebSocket streaming | #1323 | open |
-| M2 OpenTelemetry / distributed tracing | #1324 | open |
-| M3 Plugin system for extensible tools | #1325 | open |
+| M1 WebSocket streaming | #1323 | **OPEN (Phase 1 done)** | /ws/chat + /ws/loop implemented. Phase 2: token-by-token LLM streaming |
+| M2 OpenTelemetry / distributed tracing | #1324 | **OPEN (Phase 1 done)** | TraceContext + TraceSpan implemented. Phase 2: FastAPI middleware |
+| M3 Plugin system for extensible tools | #1325 | **OPEN (Phase 1 done)** | ToolPlugin + PluginRegistry + discovery. Phase 2: API endpoint |
 | M4 Multi-tenancy with RBAC | #1326 | open |
 | M5 Docker Compose production-ready | #1327 | open |
-| M6 Playwright E2E tests | #1328 | open |
+| M6 Playwright E2E tests | #1328 | **OPEN (Phase 1 done)** | tests/e2e/ with 15 gated tests. Phase 2: interaction tests |
 | M7 Rate limiting per-user | #1329 | open |
 | M8 Backup automatico `.igris/` | #1330 | open |
 
@@ -100,7 +100,7 @@ A runtime refactor with missing import graph evidence is not complete.
 | Mission Control UX / Approval Center / Evidence Viewer | #1304 | open |
 | Verifier Hard Gates / Capability Manifest | #1305 | open |
 | Observability / Health Dashboard | #1306 | open |
-| Reliability / Crash Recovery / Backup / Migration Safety | #1307 | open |
+| Reliability / Crash Recovery / Backup / Migration Safety | #1307 | **OPEN (evaluation done)** | 2/7 scope done, 4/7 partial, 1/7 not started. See docs/EPIC_1307_RELIABILITY_EVALUATION.md |
 | Jarvis Red-Team Gauntlet | #1308 | open |
 | Model Role Matrix / Benchmarking | #1309 | open |
 | Product Documentation / Operator Runbooks | #1310 | open |

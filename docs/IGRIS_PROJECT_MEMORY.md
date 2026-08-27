@@ -2,13 +2,13 @@
 
 Stable project state — source of truth for all agents.
 
-Last updated: 2026-08-26 (Post-roadmap stabilization audit — 10-issue roadmap complete)
+Last updated: 2026-08-27 (Stabilization audit after second 10-issue roadmap)
 
 ## Repository
 
 - repo: `Solarfox88/IGRIS_GPT` (public)
 - default branch: `main`
-- current `main` commit: `6aa78e3` (post-roadmap, all 10 issues closed)
+- current `main` commit: `5b66d0c` (post-second-roadmap, 4 closed + 6 phase-complete)
 
 ## Mandatory operating method
 
@@ -161,6 +161,16 @@ A task cannot be considered production-complete if VM evidence is missing.
 | #1318 app.js modularization | #1318 / PR #1426 | done | `68c5818` | app.js 2401→170 lines; 13 ES modules; tests/_js_helpers.py |
 | #1319 SQLite migrations | #1319 / PR #1427 | done | `1357ea5` | SchemaManager + per-component migration registries; 12 tests |
 | #1321 graceful shutdown | #1321 / PR #1428 | done | `6aa78e3` | LoopCheckpointManager + GracefulShutdownHandler + StepWatchdog; 17 tests |
+| #1430 VM pyright fix | #1430 | done | (VM env) | installed libatomic1 on VM; VM pyright now runs (0 errors, 910 warnings) |
+| #1330 backup .igris | #1330 / PR #1431 | done | `6f98d4b` | BackupManager with backup/restore/retention; 13 tests |
+| #1320 integration tests | #1320 / PR #1432 | done | `35ef021` | tests/integration/ with 4 files, 13 gated tests |
+| #1322 subprocess audit | #1322 / PR #1433 | **PARTIAL** (Phase 1) | `75a9127` | 79 calls classified (55 INFRA, 18 MIGRATE); 10 tests |
+| #1329 rate limiting per-user | #1329 / PR #1434 | done | `b69a68b` | UserRateLimiter + role-based limits + /api/rate-limit/status; 18 tests |
+| #1324 trace context | #1324 / PR #1435 | **PARTIAL** (Phase 1) | `b69a68b` | TraceContext + TraceSpan + trace_span; 20 tests |
+| #1328 Playwright E2E | #1328 / PR #1436 | **PARTIAL** (Phase 1) | `b69a68b` | tests/e2e/ with 4 files, 15 gated tests |
+| #1323 WebSocket | #1323 / PR #1437 | **PARTIAL** (Phase 1) | `b69a68b` | /ws/chat + /ws/loop with auth; 9 tests |
+| #1325 plugin system | #1325 / PR #1438 | **PARTIAL** (Phase 1) | `5b66d0c` | ToolPlugin + PluginRegistry + discovery; 20 tests |
+| #1307 EPIC reliability | #1307 / PR #1439 | **PARTIAL** (evaluation) | `b69a68b` | 2/7 scope done, 4/7 partial, 1/7 not started |
 
 ## Security baseline
 
@@ -195,6 +205,7 @@ Previous Hyper-V VM at 192.168.1.253 is no longer in use (VHDX could not boot on
 - **#1319 CLOSED** — SQLite schema versioning added via PR #1427. `SchemaManager` in `igris/core/schema_manager.py` with per-component migration registries.
 - **#1321 CLOSED** — Graceful shutdown and crash recovery added via PR #1428. `LoopCheckpointManager`, `GracefulShutdownHandler`, `StepWatchdog` in `igris/core/loop_checkpoint_manager.py`.
 - **Post-roadmap audit (2026-08-26)**: 7113 tests passed, 0 failed. pyright 0 errors. Gauntlet 15/15. VM healthy. All 14 JS modules load (200). SQLite migration smoke OK. Checkpoint smoke OK. Import graph OK.
+- **Second roadmap audit (2026-08-27)**: 7203 tests passed, 0 failed. pyright 0 errors/908 warnings. VM pyright 0 errors/910 warnings (libatomic1 installed). Gauntlet 15/15. VM healthy. Backup/restore smoke OK. Rate limit smoke OK. WebSocket smoke OK. Plugin safety smoke OK. 4 issues closed, 6 phase-complete (open). 128 new tests added.
 - **#1290 is closed** — diagnostics starvation false positive fixed (Block 37, PR #1408). 3 stale tasks processed (Block 38). VM diagnostics now healthy=true.
 - **#1312, #1371, #1356, #1355, #1315, #1296, #1291 are closed** — supervisor split complete (1,844 lines), pyright 0 errors with CI blocking, structured logging foundation complete, task engine worker, chat intent auth.
 - **`memory_cross_session` gauntlet check fails on Windows** with `[WinError 32]` SQLite graph.db file lock — pre-existing, NOT a regression. Passes on Linux VM. Tests now skip on Windows with pytest.skip().
