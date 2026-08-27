@@ -172,13 +172,18 @@ class TraceContext:
 
     @classmethod
     def from_headers(cls, headers: Dict[str, str]) -> "TraceContext":
-        """Create a TraceContext from incoming headers."""
+        """Create a TraceContext from incoming headers.
+
+        Header lookup is case-insensitive (HTTP headers are case-insensitive).
+        """
+        # Build a case-insensitive lookup
+        lower_headers = {k.lower(): v for k, v in headers.items()}
         ctx = cls(
-            trace_id=headers.get("X-Trace-Id", _generate_id("trace-")),
-            request_id=headers.get("X-Request-Id", _generate_id("req-")),
-            session_id=headers.get("X-Session-Id", ""),
-            mission_id=headers.get("X-Mission-Id", ""),
-            run_id=headers.get("X-Run-Id", ""),
+            trace_id=lower_headers.get("x-trace-id", _generate_id("trace-")),
+            request_id=lower_headers.get("x-request-id", _generate_id("req-")),
+            session_id=lower_headers.get("x-session-id", ""),
+            mission_id=lower_headers.get("x-mission-id", ""),
+            run_id=lower_headers.get("x-run-id", ""),
         )
         return ctx
 
