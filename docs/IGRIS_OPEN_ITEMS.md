@@ -2,7 +2,7 @@
 
 Open issues and tech debt for IGRIS_GPT. Updated after every task.
 
-Last updated: 2026-08-27 (Stabilization audit after third roadmap)
+Last updated: 2026-08-27 (#1322 Phase 3 subprocess governance lint)
 
 ## Completion policy
 
@@ -139,3 +139,13 @@ A runtime refactor with missing import graph evidence is not complete.
 | #1446 | Worktree recovery — dirty state detection | Medium | Medium |
 | #1447 | Provider degraded states — circuit breaker | Medium | Medium |
 | #1448 | Partial restore — integrity verification | Medium | Medium |
+
+## #1322 Phase 3 complete (2026-08-27)
+
+| Item | Status |
+|---|---|
+| Phase 1 (audit) | Complete (PR #1433) |
+| Phase 2 (migrate 16 MIGRATE calls) | Complete (PR #1441) |
+| Phase 3 (lint rule) | Complete (PR #1451) |
+| Phase 4 (INFRASTRUCTURE migration) | PENDING — 25 modules still import subprocess |
+| #1322 issue state | OPEN |

@@ -2,13 +2,13 @@
 
 Stable project state — source of truth for all agents.
 
-Last updated: 2026-08-27 (Stabilization audit after third roadmap)
+Last updated: 2026-08-27 (#1322 Phase 3 subprocess governance lint)
 
 ## Repository
 
 - repo: `Solarfox88/IGRIS_GPT` (public)
 - default branch: `main`
-- current `main` commit: `b362778` (post-third-roadmap, 6 phase-2 advances + 3 child issues)
+- current `main` commit: `ec8a358` (post-#1322 Phase 3, subprocess governance lint)
 
 ## Mandatory operating method
 
@@ -285,3 +285,15 @@ Playwright E2E: 25 tests, all skip by default (IGRIS_E2E_TESTS=1 gate).
 #1307 child issues: #1446 (worktree recovery), #1447 (provider degraded states), #1448 (partial restore) — all OPEN.
 Open concerns: 25 unauthorized subprocess imports remain. Memory files were not updated during third roadmap (fixed in this audit).
 Recommended next roadmap: #1322 Phase 3 (lint rule + INFRASTRUCTURE migration), #1324 Phase 3 (OTel SDK), #1325 Phase 3 (UI), #1323 Phase 3 (real token streaming), #1328 (broader coverage), #1446/#1447/#1448 (reliability children).
+
+## #1322 Phase 3 subprocess governance lint
+
+Main commit: `ec8a358`
+Before: no automated check to prevent subprocess import regression
+After: AST-based governance check with explicit allowlist + 13 pytest tests
+Lint rule: scripts/check_subprocess_governance.py (306 lines)
+CI: pytest enforcement (test_subprocess_governance_1322.py). CI workflow job pending (OAuth scope).
+Remaining subprocess policy: 3 always-allowed + 25 infrastructure-allowed (with rationale) + 4 forbidden (migrated)
+Remaining INFRASTRUCTURE calls: 25 modules still import subprocess (pending Phase 4)
+Issue state: #1322 OPEN (Phase 3 complete, Phase 4 needed)
+Follow-up: Phase 4 — evaluate/migrate 25 INFRASTRUCTURE subprocess imports
