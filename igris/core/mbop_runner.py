@@ -20,12 +20,13 @@ from __future__ import annotations
 
 import json
 import re
-import subprocess
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 import logging
+
+from igris.core.tool_runtime import governed_run
 
 
 # ---------------------------------------------------------------------------
@@ -90,14 +91,14 @@ def mbop_phase1_intake(issue_number: int, project_root: str) -> MBOPIntakeResult
     if not issue_number:
         return result
     try:
-        proc = subprocess.run(
+        proc = governed_run(
             ["gh", "issue", "view", str(issue_number), "--json", "title,body,labels"],
-            capture_output=True, text=True, timeout=15, cwd=project_root,
+            timeout=15, cwd=project_root, caller="mbop_runner.phase1_intake",
         )
-        if proc.returncode != 0:
+        if proc["returncode"] != 0:
             return result
         import json as _json
-        data = _json.loads(proc.stdout)
+        data = _json.loads(proc["stdout"])
         body = data.get("body") or ""
         title = data.get("title") or ""
         labels = [lbl.get("name", "") for lbl in data.get("labels", [])]
@@ -109,7 +110,7 @@ def mbop_phase1_intake(issue_number: int, project_root: str) -> MBOPIntakeResult
         result.constraints = _extract_list_section(body, ["### Constraints", "**Constraints**"])
         result.acceptance_criteria = _extract_acceptance_criteria(body)
         result.extraction_ok = True
-    except (subprocess.SubprocessError, OSError, json.JSONDecodeError, KeyError, ValueError, TypeError) as exc:  # noqa: BLE001
+    except (OSError, json.JSONDecodeError, KeyError, ValueError, TypeError) as exc:  # noqa: BLE001
         _log.debug("mbop_runner: narrowed catch failed: %s", exc, exc_info=True)
     return result
 
@@ -288,26 +289,26 @@ def mbop_phase9_quality_gate(
                 _pytest_cmd = [str(_venv_pytest)]
             else:
                 _pytest_cmd = [_sys.executable, "-m", "pytest"]
-                _check = subprocess.run(
+                _check = governed_run(
                     [_sys.executable, "-m", "pytest", "--version"],
-                    capture_output=True, text=True, timeout=5, cwd=project_root,
+                    timeout=5, cwd=project_root, caller="mbop_runner.phase9_pytest_check",
                 )
-                if _check.returncode != 0:
+                if _check["returncode"] != 0:
                     result.error = "pytest not available"
                     result.evidence = "pytest not found — skipped"
                     result.passed = len(stub_found) == 0
                     return result
             cmd = _pytest_cmd + ["--tb=short", "-q", "--no-header"] + test_files
-            proc = subprocess.run(cmd, capture_output=True, text=True,
-                                  timeout=_MAX_PYTEST_SECONDS, cwd=project_root)
+            proc = governed_run(cmd,
+                                timeout=_MAX_PYTEST_SECONDS, cwd=project_root,
+                                caller="mbop_runner.phase9_pytest_run")
             result.pytest_ran = True
-            result.pytest_passed = proc.returncode == 0
-            result.evidence = (proc.stdout + proc.stderr)[-1000:]
-        except subprocess.TimeoutExpired:
-            result.pytest_ran = True
-            result.pytest_passed = False
-            result.evidence = f"pytest timed out after {_MAX_PYTEST_SECONDS}s"
-        except (subprocess.SubprocessError, OSError, ImportError, ValueError, TypeError) as exc:  # noqa: BLE001
+            result.pytest_passed = proc["returncode"] == 0
+            if proc["returncode"] == 124:
+                result.evidence = f"pytest timed out after {_MAX_PYTEST_SECONDS}s"
+            else:
+                result.evidence = (proc["stdout"] + proc["stderr"])[-1000:]
+        except (OSError, ImportError, ValueError, TypeError) as exc:  # noqa: BLE001
             result.error = f"pytest error: {exc}"
     elif not test_files:
         result.evidence = "no test files in diff — pytest skipped"
@@ -501,10 +502,10 @@ def _get_modified_files(project_root: str, base_branch: str = "main") -> List[st
         ["git", "diff", "--name-only", "HEAD^", "HEAD"],
     ]:
         try:
-            proc = subprocess.run(cmd, capture_output=True, text=True, timeout=10, cwd=project_root)
-            if proc.returncode == 0:
-                return [f.strip() for f in proc.stdout.splitlines() if f.strip()]
-        except (subprocess.SubprocessError, OSError, FileNotFoundError) as exc:  # noqa: BLE001
+            proc = governed_run(cmd, timeout=10, cwd=project_root, caller="mbop_runner._get_modified_files")
+            if proc["returncode"] == 0:
+                return [f.strip() for f in proc["stdout"].splitlines() if f.strip()]
+        except (OSError, FileNotFoundError) as exc:  # noqa: BLE001
             _log.debug("mbop_runner: narrowed catch failed: %s", exc, exc_info=True)
     return []
 
@@ -512,13 +513,13 @@ def _get_modified_files(project_root: str, base_branch: str = "main") -> List[st
 def _get_diff_text(project_root: str, base_branch: str = "main") -> str:
     """Get unified diff text vs base branch (truncated)."""
     try:
-        proc = subprocess.run(
+        proc = governed_run(
             ["git", "diff", base_branch, "HEAD"],
-            capture_output=True, text=True, timeout=15, cwd=project_root,
+            timeout=15, cwd=project_root, caller="mbop_runner._get_diff_text",
         )
-        if proc.returncode == 0:
-            return proc.stdout[:10000]
-    except (subprocess.SubprocessError, OSError, FileNotFoundError) as exc:  # noqa: BLE001
+        if proc["returncode"] == 0:
+            return proc["stdout"][:10000]
+    except (OSError, FileNotFoundError) as exc:  # noqa: BLE001
         _log.debug("mbop_runner: narrowed catch failed: %s", exc, exc_info=True)
     return ""
 
@@ -526,13 +527,13 @@ def _get_diff_text(project_root: str, base_branch: str = "main") -> str:
 def _get_last_commit_message(project_root: str) -> str:
     """Get the last commit message."""
     try:
-        proc = subprocess.run(
+        proc = governed_run(
             ["git", "log", "-1", "--pretty=%B"],
-            capture_output=True, text=True, timeout=5, cwd=project_root,
+            timeout=5, cwd=project_root, caller="mbop_runner._get_last_commit_message",
         )
-        if proc.returncode == 0:
-            return proc.stdout.strip()
-    except (subprocess.SubprocessError, OSError, FileNotFoundError) as exc:  # noqa: BLE001
+        if proc["returncode"] == 0:
+            return proc["stdout"].strip()
+    except (OSError, FileNotFoundError) as exc:  # noqa: BLE001
         _log.debug("mbop_runner: narrowed catch failed: %s", exc, exc_info=True)
     return ""
 
@@ -662,20 +663,20 @@ def mbop_post_run(
         modified_files: List[str] = []
         try:
             modified_files = _get_modified_files(project_root)
-        except (subprocess.SubprocessError, OSError) as exc:  # noqa: BLE001
+        except (OSError,) as exc:  # noqa: BLE001
             _log.debug("mbop_runner: narrowed catch failed: %s", exc, exc_info=True)
 
         # Get diff text early — used by Phase 9 destructive-patch detection and Phase 10
         diff_text_early = ""
         try:
             diff_text_early = _get_diff_text(project_root)
-        except (subprocess.SubprocessError, OSError) as exc:  # noqa: BLE001
+        except (OSError,) as exc:  # noqa: BLE001
             _log.debug("mbop_runner: narrowed catch failed: %s", exc, exc_info=True)
 
         quality = MBOPQualityGateResult()
         try:
             quality = mbop_phase9_quality_gate(project_root, modified_files, diff_text=diff_text_early)
-        except (OSError, subprocess.SubprocessError, json.JSONDecodeError, ValueError, TypeError, KeyError) as exc:  # noqa: BLE001
+        except (OSError, json.JSONDecodeError, ValueError, TypeError, KeyError) as exc:  # noqa: BLE001
             quality.error = str(exc)
 
         # Bug fix: distinguish real PASS (pytest ran+green) from vacuous PASS (pytest skipped).
@@ -723,7 +724,7 @@ def mbop_post_run(
         try:
             diff_text = _get_diff_text(project_root)
             commit_msg = _get_last_commit_message(project_root)
-        except (subprocess.SubprocessError, OSError) as exc:  # noqa: BLE001
+        except (OSError,) as exc:  # noqa: BLE001
             _log.debug("mbop_runner: narrowed catch failed: %s", exc, exc_info=True)
 
         satisfaction = MBOPSatisfactionGateResult()

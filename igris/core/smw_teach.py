@@ -2,11 +2,12 @@ from __future__ import annotations
 
 import json
 import logging
-import subprocess
 import time
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import List, Optional
+
+from igris.core.tool_runtime import governed_run
 
 logger = logging.getLogger(__name__)
 
@@ -62,8 +63,8 @@ def should_open_igris_issue(pattern_name: str, project_root: str) -> bool:
     incidents = [i for i in load_incidents(project_root) if i.pattern_name == pattern_name]
     if len(incidents) < 2:
         return False
-    p = subprocess.run(["gh", "issue", "list", "--state", "open", "--label", "smw-teach", "--search", pattern_name], cwd=project_root, capture_output=True, text=True)
-    return not bool((p.stdout or "").strip())
+    p = governed_run(["gh", "issue", "list", "--state", "open", "--label", "smw-teach", "--search", pattern_name], cwd=project_root, caller="smw_teach.should_open_igris_issue")
+    return not bool((p["stdout"] or "").strip())
 
 
 async def teach_back(incident: Incident, project_root: str, outcome_label: str = "positive") -> None:
@@ -118,4 +119,4 @@ async def teach_back(incident: Incident, project_root: str, outcome_label: str =
             f"## Evidence\n\n{incident.evidence}\n\n"
             f"---\n*Opened by: IGRIS (autonomous agent)*"
         )
-        subprocess.run(["gh", "issue", "create", "--title", title, "--body", body, "--label", "smw-teach,created-by:igris"], cwd=project_root, capture_output=True, text=True)
+        governed_run(["gh", "issue", "create", "--title", title, "--body", body, "--label", "smw-teach,created-by:igris"], cwd=project_root, caller="smw_teach.teach_back")

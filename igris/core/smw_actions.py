@@ -3,10 +3,11 @@ from __future__ import annotations
 import asyncio
 import os
 import signal
-import subprocess
 import time
 from dataclasses import dataclass
 from typing import Any, Callable, Dict, List
+
+from igris.core.tool_runtime import governed_run
 
 
 @dataclass
@@ -19,14 +20,14 @@ class ActionResult:
 
 async def git_clean_root(project_root: str) -> ActionResult:
     t = time.time()
-    p = subprocess.run(["git", "clean", "-fd", "."], cwd=project_root, capture_output=True, text=True)
-    return ActionResult("git_clean_root", p.returncode == 0, p.stdout + p.stderr, time.time() - t)
+    p = governed_run(["git", "clean", "-fd", "."], cwd=project_root, caller="smw_actions.git_clean_root")
+    return ActionResult("git_clean_root", p["returncode"] == 0, p["stdout"] + p["stderr"], time.time() - t)
 
 
 async def git_restore_all(project_root: str) -> ActionResult:
     t = time.time()
-    p = subprocess.run(["git", "restore", "--worktree", "--staged", "."], cwd=project_root, capture_output=True, text=True)
-    return ActionResult("git_restore_all", p.returncode == 0, p.stdout + p.stderr, time.time() - t)
+    p = governed_run(["git", "restore", "--worktree", "--staged", "."], cwd=project_root, caller="smw_actions.git_restore_all")
+    return ActionResult("git_restore_all", p["returncode"] == 0, p["stdout"] + p["stderr"], time.time() - t)
 
 
 async def wait_and_recheck(seconds: int) -> ActionResult:
@@ -37,9 +38,9 @@ async def wait_and_recheck(seconds: int) -> ActionResult:
 
 async def kill_stale_process(port: int = 7778) -> ActionResult:
     t = time.time()
-    out = subprocess.run(["ss", "-tlnp"], capture_output=True, text=True)
+    out = governed_run(["ss", "-tlnp"], caller="smw_actions.kill_stale_process")
     killed = []
-    for line in out.stdout.splitlines():
+    for line in out["stdout"].splitlines():
         if f":{port}" in line and "python" in line and "pid=" in line:
             pid = int(line.split("pid=")[1].split(",")[0].split(")")[0])
             if pid != os.getpid():
@@ -60,21 +61,21 @@ async def open_diagnostic_issue(project_root: str, pattern_name: str, evidence: 
         f"## Azioni già tentate\n\n{', '.join(actions_tried) if actions_tried else 'nessuna'}\n\n"
         f"---\n*Opened by: IGRIS (autonomous agent)*"
     )
-    p = subprocess.run(["gh", "issue", "create", "--title", title, "--body", body, "--label", "smw,diagnostic,created-by:igris"], cwd=project_root, capture_output=True, text=True)
-    return ActionResult("open_diagnostic_issue", p.returncode == 0, p.stdout + p.stderr + pattern_name, time.time() - t)
+    p = governed_run(["gh", "issue", "create", "--title", title, "--body", body, "--label", "smw,diagnostic,created-by:igris"], cwd=project_root, caller="smw_actions.open_diagnostic_issue")
+    return ActionResult("open_diagnostic_issue", p["returncode"] == 0, p["stdout"] + p["stderr"] + pattern_name, time.time() - t)
 
 
 async def check_issue_list(project_root: str) -> ActionResult:
     t = time.time()
-    p = subprocess.run(["gh", "issue", "list", "--state", "open", "--limit", "20"], cwd=project_root, capture_output=True, text=True)
-    return ActionResult("check_issue_list", p.returncode == 0, p.stdout + p.stderr, time.time() - t)
+    p = governed_run(["gh", "issue", "list", "--state", "open", "--limit", "20"], cwd=project_root, caller="smw_actions.check_issue_list")
+    return ActionResult("check_issue_list", p["returncode"] == 0, p["stdout"] + p["stderr"], time.time() - t)
 
 
 async def restart_igris_service(project_root: str) -> ActionResult:
     t = time.time()
-    p = subprocess.run(["systemctl", "restart", "igris"], capture_output=True, text=True)
-    if p.returncode != 0:
-        return ActionResult("restart_igris_service", False, p.stdout + p.stderr, time.time() - t)
+    p = governed_run(["systemctl", "restart", "igris"], caller="smw_actions.restart_igris_service")
+    if p["returncode"] != 0:
+        return ActionResult("restart_igris_service", False, p["stdout"] + p["stderr"], time.time() - t)
     return ActionResult("restart_igris_service", True, "service restarted", time.time() - t)
 
 
@@ -86,8 +87,8 @@ async def wait_port_free(port: int = 7778, timeout: int = 30) -> ActionResult:
     t = time.time()
     end = t + timeout
     while time.time() < end:
-        out = subprocess.run(["ss", "-tlnp"], capture_output=True, text=True)
-        if not any(f":{port}" in ln for ln in out.stdout.splitlines()):
+        out = governed_run(["ss", "-tlnp"], caller="smw_actions.wait_port_free")
+        if not any(f":{port}" in ln for ln in out["stdout"].splitlines()):
             return ActionResult("wait_port_free", True, "port free", time.time() - t)
         await asyncio.sleep(2)
     return ActionResult("wait_port_free", False, "timeout", time.time() - t)
