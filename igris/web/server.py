@@ -595,6 +595,10 @@ def create_app() -> FastAPI:
     app = FastAPI(title="IGRIS_GPT", version="0.1.0", lifespan=_lifespan)
     apply_security_middleware(app)
 
+    # ---- Trace context middleware (#1324 Phase 2) ----
+    from igris.web.trace_middleware import apply_trace_middleware
+    apply_trace_middleware(app)
+
     # ---- Static files ----
     if STATIC_DIR.exists():
         app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
